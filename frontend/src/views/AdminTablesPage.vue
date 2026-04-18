@@ -81,6 +81,10 @@ const serverPrometheusId = ref(null)
 const serverCleanupId = ref(null)
 const provisionActionError = ref(null)
 
+const loadSyncLoading = ref(false)
+const loadSyncError = ref(null)
+const loadSyncOk = ref(null)
+
 /** Какая строка серверов: открыто выпадающее меню действий */
 const serverMenuOpenId = ref(null)
 /** Кнопка-триггер (для fixed-позиции панели в Teleport) */
@@ -229,6 +233,23 @@ async function loadServers() {
   }
 }
 
+async function syncServerLoadFromPrometheus() {
+  loadSyncLoading.value = true
+  loadSyncError.value = null
+  loadSyncOk.value = null
+  try {
+    const res = await fetchJson('/api/servers/sync-load-from-prometheus', {
+      method: 'POST',
+    })
+    loadSyncOk.value = `Загрузка обновлена: удачно ${res.updated}, с ошибками ${res.failed}.`
+    await loadServers()
+  } catch (e) {
+    loadSyncError.value = e.message || String(e)
+  } finally {
+    loadSyncLoading.value = false
+  }
+}
+
 watch(
   section,
   (s) => {
@@ -236,6 +257,8 @@ watch(
     editingServerId.value = null
     serverModalTab.value = 'general'
     closeServerMenu()
+    loadSyncOk.value = null
+    loadSyncError.value = null
     if (s === 'users') loadUsers()
     else loadServers()
   },
@@ -638,9 +661,22 @@ const statsValue = computed(() =>
       </nav>
       <div class="head-row">
         <h2 class="section-heading">{{ sectionTitle }}</h2>
-        <button type="button" class="btn-primary" @click="openModal">
-          {{ addButtonLabel }}
-        </button>
+        <div class="head-actions">
+          <button
+            v-if="section === 'servers'"
+            type="button"
+            class="btn-secondary"
+            :disabled="loadSyncLoading || serversLoading"
+            @click="syncServerLoadFromPrometheus"
+          >
+            {{
+              loadSyncLoading ? 'Обновление загрузки…' : 'Обновить загрузку (Prometheus)'
+            }}
+          </button>
+          <button type="button" class="btn-primary" @click="openModal">
+            {{ addButtonLabel }}
+          </button>
+        </div>
       </div>
       <p class="sub">{{ sectionSub }}</p>
     </header>
@@ -730,6 +766,12 @@ const statsValue = computed(() =>
         Пока нет серверов. Добавьте первый узел.
       </div>
       <div v-else-if="!serversLoading" class="servers-table-block">
+        <p v-if="loadSyncOk" class="provision-banner provision-banner--ok">
+          {{ loadSyncOk }}
+        </p>
+        <p v-if="loadSyncError" class="provision-banner">
+          {{ loadSyncError }}
+        </p>
         <p v-if="provisionActionError" class="provision-banner">
           {{ provisionActionError }}
         </p>
@@ -1262,6 +1304,13 @@ const statsValue = computed(() =>
   gap: 0.75rem;
 }
 
+.head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .section-heading {
   font-size: 1.25rem;
   margin: 0;
@@ -1463,6 +1512,12 @@ const statsValue = computed(() =>
   color: var(--danger);
   background: var(--danger-soft);
   border: 1px solid var(--danger);
+}
+
+.provision-banner--ok {
+  color: var(--text-h);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
 }
 
 .field-readonly .readonly-value {

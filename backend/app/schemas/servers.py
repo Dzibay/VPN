@@ -308,3 +308,20 @@ class ServerRead(BaseModel):
         default=None,
         description="Тарифный потолок канала (Мбит/с) для графика сети",
     )
+
+
+class ServerLoadSyncItemRead(BaseModel):
+    server_id: int
+    host: str
+    ok: bool
+    load_percent: int | None = None
+    detail: str = ""
+
+
+class ServerLoadSyncResultRead(BaseModel):
+    """Ответ POST /servers/sync-load-from-prometheus."""
+
+    hours: int
+    items: list[ServerLoadSyncItemRead]
+    updated: int = Field(ge=0, description="Число серверов, где load_percent обновлён")
+    failed: int = Field(ge=0, description="Число серверов с ошибкой или без данных")

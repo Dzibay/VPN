@@ -2,7 +2,8 @@ import logging
 import secrets
 import uuid as uuid_lib
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from starlette.concurrency import run_in_threadpool
 from redis.exceptions import RedisError
 from rq.job import Job
 from sqlalchemy import func, select
@@ -13,8 +14,17 @@ from app.api.deps import SessionDep, require_admin
 from app.core.config import settings
 from app.core.queue import get_install_queue, get_redis
 from app.database.operations import table_insert
+from app.database.session import SessionLocal
 from app.models.server import Server
-from app.schemas.servers import ServerCreate, ServerRead, ServerUpdate, ServersCountResponse
+from app.schemas.servers import (
+    ServerCreate,
+    ServerLoadSyncItemRead,
+    ServerLoadSyncResultRead,
+    ServerRead,
+    ServerUpdate,
+    ServersCountResponse,
+)
+from app.services.server_load_sync import sync_all_servers_load_from_prometheus
 
 log = logging.getLogger("app.servers")
 
@@ -86,6 +96,45 @@ async def list_servers(session: SessionDep) -> list[Server]:
     return list(session.scalars(stmt).all())
 
 
+@router.post(
+    "/sync-load-from-prometheus",
+    response_model=ServerLoadSyncResultRead,
+    summary=(
+        "Записать в БД load_percent по Prometheus: среднее «узкое место» за окно "
+        "(как на графике аналитики)"
+    ),
+)
+async def sync_load_from_prometheus(
+    hours: int = Query(
+        24,
+        ge=1,
+        le=168,
+        description="Окно в часах для усреднения (по умолчанию сутки)",
+    ),
+) -> ServerLoadSyncResultRead:
+    def _run() -> ServerLoadSyncResultRead:
+        db = SessionLocal()
+        try:
+            rep = sync_all_servers_load_from_prometheus(db, hours=hours)
+        finally:
+            db.close()
+        return ServerLoadSyncResultRead(
+            hours=rep.hours,
+            items=[
+                ServerLoadSyncItemRead(
+                    server_id=i.server_id,
+                    host=i.host,
+                    ok=i.ok,
+                    load_percent=i.load_percent,
+                    detail=i.detail,
+                )
+                for i in rep.items
+            ],
+            updated=sum(1 for i in rep.items if i.ok),
+            failed=sum(1 for i in rep.items if not i.ok),
+        )
+
+    return await run_in_threadpool(_run)
 @router.post(
     "",
     response_model=ServerRead,

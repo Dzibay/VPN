@@ -12,16 +12,13 @@ import shlex
 import shutil
 import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.database.session import SessionLocal
 from app.models.server import Server
-
-if TYPE_CHECKING:
-    pass
 
 log = logging.getLogger("worker.provision")
 

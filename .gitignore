@@ -55,3 +55,7 @@ Thumbs.db
 
 # Prometheus
 deploy/prometheus/sd_bearer.txt
+
+# Deploy SSH keys (worker mount); keep only structure in repo
+deploy/secrets/ssh/*
+!deploy/secrets/ssh/.gitkeep

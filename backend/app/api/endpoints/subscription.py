@@ -1,5 +1,8 @@
 """
 Публичный эндпоинт подписки (без префикса /api — стабильные ссылки /sub/{token}).
+
+Перед выдачей списка узлов обновляется servers.load_percent из Prometheus, затем
+узлы сортируются по возрастанию нагрузки (как и раньше).
 """
 
 from __future__ import annotations
@@ -13,15 +16,20 @@ from urllib.parse import quote, urlencode
 from fastapi import APIRouter, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import SessionDep
 from app.database.operations import table_select_one
+from app.database.session import SessionLocal
 from app.models.server import Server
 from app.models.user import User
 from app.schemas.users import SubscriptionPayload
+from app.services.server_load_sync import sync_all_servers_load_from_prometheus
 
 router = APIRouter(tags=["subscription"])
 log = logging.getLogger("app.subscription")
+
+_SUBSCRIPTION_LOAD_SYNC_HOURS = 24
 
 
 def _user_subscription_active(user: User) -> bool:
@@ -42,6 +50,16 @@ def _subscription_server_rows(session: Session) -> list[Server]:
         .order_by(Server.load_percent.asc(), Server.id.asc())
     )
     return list(session.scalars(stmt).all())
+
+
+def _subscription_servers_after_prometheus_sync() -> list[Server]:
+    """Обновить load_percent из Prometheus, затем выбрать узлы подписки (сортировка по нагрузке)."""
+    db = SessionLocal()
+    try:
+        sync_all_servers_load_from_prometheus(db, hours=_SUBSCRIPTION_LOAD_SYNC_HOURS)
+        return _subscription_server_rows(db)
+    finally:
+        db.close()
 
 
 def _primary_sni(server_names: str, dest: str) -> str:
@@ -163,7 +181,7 @@ async def subscription_by_token(token: str, session: SessionDep) -> Subscription
             subscription_base64="",
         )
 
-    rows = _subscription_server_rows(session)
+    rows = await run_in_threadpool(_subscription_servers_after_prometheus_sync)
     return _build_payload_for_rows(user, rows)
 
 
@@ -180,7 +198,8 @@ async def subscription_base64_raw(token: str, session: SessionDep) -> Response:
     if not _user_subscription_active(user):
         return Response(content="", media_type="text/plain; charset=utf-8")
 
-    payload = _build_payload_for_rows(user, _subscription_server_rows(session))
+    rows = await run_in_threadpool(_subscription_servers_after_prometheus_sync)
+    payload = _build_payload_for_rows(user, rows)
     return Response(
         content=payload.subscription_base64,
         media_type="text/plain; charset=utf-8",
