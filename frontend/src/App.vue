@@ -1,9 +1,10 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import { RouterLink, RouterView, useRouter } from 'vue-router'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { clearAdminToken, getAdminToken } from './auth/session.js'
 
 const router = useRouter()
+const route = useRoute()
 const hasAdminToken = ref(false)
 
 function refreshAdminSession() {
@@ -27,9 +28,18 @@ router.afterEach(refreshAdminSession)
       <RouterLink
         v-if="hasAdminToken"
         class="nav-link"
-        to="/admin/users"
+        :class="{ 'router-link-active': route.name === 'admin-data' }"
+        to="/admin"
       >
-        Пользователи
+        Управление данными
+      </RouterLink>
+      <RouterLink
+        v-if="hasAdminToken"
+        class="nav-link"
+        :class="{ 'router-link-active': route.name === 'admin-analytics' }"
+        to="/admin/analytics"
+      >
+        Аналитика
       </RouterLink>
       <span class="nav-spacer" />
       <RouterLink

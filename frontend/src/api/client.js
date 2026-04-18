@@ -80,3 +80,16 @@ export function subscriptionPublicUrl(token) {
   }
   return `/sub/${token}`
 }
+
+/** URL для импорта в v2rayNG / Nekoray: тело ответа — одна строка Base64 (vless по строке). */
+export function subscriptionImportUrl(token) {
+  const base =
+    import.meta.env.VITE_SUBSCRIPTION_BASE_URL?.replace(/\/$/, '') ?? ''
+  if (base) {
+    return `${base}/sub/${token}/raw`
+  }
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}/sub/${token}/raw`
+  }
+  return `/sub/${token}/raw`
+}

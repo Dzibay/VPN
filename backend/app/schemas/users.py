@@ -54,12 +54,23 @@ class UserRead(BaseModel):
 
 
 class SubscriptionPayload(BaseModel):
-    """Ответ по токену подписки (список серверов — позже)."""
+    """Ответ по токену подписки: срок, узлы и готовые ссылки для VPN-клиентов (VLESS+REALITY)."""
 
     valid_until: date | None = Field(
         description="Подписка действительна до (включительно, календарная дата), null — без ограничения",
     )
+    subscription_active: bool = Field(
+        description="Если false (срок истёк), servers / vless_uris / subscription_base64 пустые",
+    )
     servers: list[dict[str, Any]] = Field(
         default_factory=list,
-        description="Список узлов VPN (заглушка до появления конфигурации серверов)",
+        description="Активные узлы: host, port, uuid, REALITY (pbk, sid, sni…) без приватного ключа",
+    )
+    vless_uris: list[str] = Field(
+        default_factory=list,
+        description="Стандартные share-ссылки vless:// (v2rayN, v2rayNG, Nekoray, Streisand и др.)",
+    )
+    subscription_base64: str = Field(
+        default="",
+        description="Base64 от UTF-8 текста: по одной vless-ссылке на строку (как тело «subscription URL»)",
     )

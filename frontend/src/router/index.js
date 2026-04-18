@@ -5,8 +5,9 @@ import {
   isAdminAuthRequired,
 } from '../auth/session.js'
 import AdminLoginView from '../views/AdminLoginView.vue'
+import AdminTablesPage from '../views/AdminTablesPage.vue'
 import HomeView from '../views/HomeView.vue'
-import UsersPage from '../views/UsersPage.vue'
+import ServerAnalyticsView from '../views/ServerAnalyticsView.vue'
 
 const routes = [
   { path: '/', name: 'home', component: HomeView },
@@ -16,9 +17,14 @@ const routes = [
     component: AdminLoginView,
   },
   {
-    path: '/admin/users',
-    name: 'admin-users',
-    component: UsersPage,
+    path: '/admin',
+    name: 'admin-data',
+    component: AdminTablesPage,
+  },
+  {
+    path: '/admin/analytics',
+    name: 'admin-analytics',
+    component: ServerAnalyticsView,
   },
 ]
 
@@ -29,7 +35,7 @@ export const router = createRouter({
 
 function isAdminProtectedRoute(to) {
   if (to.path === '/admin/login') return false
-  return to.path.startsWith('/admin/')
+  return to.path.startsWith('/admin')
 }
 
 router.beforeEach(async (to, _from, next) => {
@@ -56,7 +62,7 @@ router.beforeEach(async (to, _from, next) => {
     }
     if (getAdminToken()) {
       const r = to.query.redirect
-      return next(typeof r === 'string' && r ? r : '/admin/users')
+      return next(typeof r === 'string' && r ? r : '/admin')
     }
   }
 

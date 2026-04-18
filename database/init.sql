@@ -13,3 +13,30 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_users_telegram_id ON users (telegram_id)
     WHERE telegram_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_users_subscription_until ON users (subscription_until);
+
+-- Узлы прокси (xray и т.п.): адрес для выдачи в подписке и учёта в админке
+CREATE TABLE IF NOT EXISTS servers (
+    id BIGSERIAL PRIMARY KEY,
+    name TEXT,
+    host TEXT NOT NULL,
+    port INTEGER NOT NULL DEFAULT 443 CHECK (port >= 1 AND port <= 65535),
+    country TEXT NOT NULL DEFAULT '',
+    load_percent INTEGER NOT NULL DEFAULT 0 CHECK (load_percent >= 0 AND load_percent <= 100),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    provision_ready BOOLEAN NOT NULL DEFAULT FALSE,
+    provision_status TEXT NOT NULL DEFAULT 'idle',
+    provision_error TEXT,
+    provision_job_id TEXT,
+    vless_uuid TEXT NOT NULL,
+    reality_private_key TEXT,
+    reality_public_key TEXT,
+    reality_short_id TEXT NOT NULL,
+    reality_dest TEXT NOT NULL DEFAULT 'www.amazon.com:443',
+    reality_server_names TEXT NOT NULL DEFAULT 'www.amazon.com,amazon.com',
+    reality_fingerprint TEXT NOT NULL DEFAULT 'chrome',
+    vless_flow TEXT NOT NULL DEFAULT 'xtls-rprx-vision',
+    prometheus_instance TEXT,
+    CONSTRAINT uq_servers_host_port UNIQUE (host, port)
+);
+
+CREATE INDEX IF NOT EXISTS idx_servers_is_active ON servers (is_active);

@@ -236,3 +236,7 @@ code {
   font-size: 0.72rem;
   font-weight: 600;
 }
+
+a.btn-secondary {
+  text-decoration: none;
+}

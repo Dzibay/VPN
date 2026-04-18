@@ -29,16 +29,16 @@ async function checkAuthMode() {
       const redirect =
         typeof route.query.redirect === 'string'
           ? route.query.redirect
-          : '/admin/users'
-      router.replace(redirect || '/admin/users')
+          : '/admin'
+      router.replace(redirect || '/admin')
       return
     }
     if (getAdminToken()) {
       const redirect =
         typeof route.query.redirect === 'string'
           ? route.query.redirect
-          : '/admin/users'
-      router.replace(redirect || '/admin/users')
+          : '/admin'
+      router.replace(redirect || '/admin')
     }
   } catch (e) {
     error.value = e.message || String(e)
@@ -59,8 +59,8 @@ async function submit() {
     const redirect =
       typeof route.query.redirect === 'string'
         ? route.query.redirect
-        : '/admin/users'
-    router.replace(redirect || '/admin/users')
+        : '/admin'
+    router.replace(redirect || '/admin')
   } catch (e) {
     error.value = e.message || String(e)
   } finally {
