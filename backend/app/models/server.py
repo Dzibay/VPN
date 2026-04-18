@@ -38,3 +38,4 @@ class Server(Base):
         Text, nullable=False, default="xtls-rprx-vision"
     )
     prometheus_instance: Mapped[str | None] = mapped_column(Text, nullable=True)
+    network_cap_mbps: Mapped[int | None] = mapped_column(Integer, nullable=True)

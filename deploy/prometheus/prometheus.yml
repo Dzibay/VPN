@@ -1,0 +1,27 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: [localhost:9090]
+
+  # Цели node_exporter с VPN API (активные серверы из БД).
+  # Подготовка: скопируйте sd_bearer.example.txt → sd_bearer.txt; строка = PROMETHEUS_SD_TOKEN в .env API.
+  # URL: API на хосте (uvicorn) — часто :5000; API только в Docker compose — http://api:8000/...
+  - job_name: node_exporter
+    honor_timestamps: true
+    http_sd_configs:
+      - url: http://host.docker.internal:5000/api/prometheus/sd/node-exporter
+        refresh_interval: 30s
+        authorization:
+          type: Bearer
+          credentials_file: /etc/prometheus/sd_bearer.txt
+
+  # Ручной список (если отключите HTTP SD — закомментируйте блок выше и раскомментируйте):
+  # - job_name: node_exporter
+  #   file_sd_configs:
+  #     - files:
+  #         - /etc/prometheus/targets/node_exporter.json
+  #       refresh_interval: 30s

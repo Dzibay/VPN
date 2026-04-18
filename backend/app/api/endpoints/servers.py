@@ -113,6 +113,7 @@ async def create_server(body: ServerCreate, session: SessionDep) -> Server:
         reality_fingerprint=reality_fingerprint,
         vless_flow=vless_flow,
         prometheus_instance=body.prometheus_instance,
+        network_cap_mbps=body.network_cap_mbps,
     )
     try:
         table_insert(session, server)

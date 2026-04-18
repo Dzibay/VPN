@@ -71,7 +71,16 @@ class ServerCreate(BaseModel):
     prometheus_instance: str | None = Field(
         default=None,
         max_length=256,
-        description="Label instance в Prometheus (node_exporter), напр. 1.2.3.4:9100; пусто — host:9100",
+        description=(
+            "Опционально: label instance в Prometheus; пусто — используется host и порт из "
+            "PROVISION_NODE_EXPORTER_PORT на API"
+        ),
+    )
+    network_cap_mbps: int | None = Field(
+        default=None,
+        ge=1,
+        le=1_000_000,
+        description="Тарифный потолок канала (Мбит/с) для шкалы графика сети; пусто — только NIC из метрик",
     )
 
     @field_validator("name", mode="before")
@@ -148,6 +157,19 @@ class ServerCreate(BaseModel):
         s = str(v).strip()
         return s if s else None
 
+    @field_validator("network_cap_mbps", mode="before")
+    @classmethod
+    def normalize_network_cap_create(cls, v: Any) -> int | None:
+        if v is None or v == "":
+            return None
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            raise ValueError("network_cap_mbps: ожидается целое число") from None
+        if n < 1 or n > 1_000_000:
+            raise ValueError("network_cap_mbps: 1…1000000")
+        return n
+
 
 class ServerUpdate(BaseModel):
     """Частичное обновление (админка: правка нагрузки и метаданных)."""
@@ -169,7 +191,13 @@ class ServerUpdate(BaseModel):
     prometheus_instance: str | None = Field(
         default=None,
         max_length=256,
-        description="Prometheus instance (node_exporter); null — очистить, пустая строка — как null",
+        description="Override label instance; null/пусто — по умолчанию host:PROVISION_NODE_EXPORTER_PORT",
+    )
+    network_cap_mbps: int | None = Field(
+        default=None,
+        ge=1,
+        le=1_000_000,
+        description="Тарифный потолок (Мбит/с); null — сбросить",
     )
 
     @field_validator("name", mode="before")
@@ -232,6 +260,21 @@ class ServerUpdate(BaseModel):
         s = str(v).strip()
         return s if s else None
 
+    @field_validator("network_cap_mbps", mode="before")
+    @classmethod
+    def normalize_network_cap_patch(cls, v: object) -> int | None:
+        if v is None:
+            return None
+        if v == "":
+            return None
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            raise ValueError("network_cap_mbps: ожидается целое число") from None
+        if n < 1 or n > 1_000_000:
+            raise ValueError("network_cap_mbps: 1…1000000")
+        return n
+
 
 class ServerRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -259,5 +302,9 @@ class ServerRead(BaseModel):
     vless_flow: str
     prometheus_instance: str | None = Field(
         default=None,
-        description="Цель Prometheus (label instance) для метрик node_exporter",
+        description="Override instance для PromQL; null — host + порт из настроек API",
+    )
+    network_cap_mbps: int | None = Field(
+        default=None,
+        description="Тарифный потолок канала (Мбит/с) для графика сети",
     )

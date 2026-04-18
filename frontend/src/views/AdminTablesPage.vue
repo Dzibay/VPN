@@ -1,5 +1,12 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { fetchJson, subscriptionPublicUrl } from '../api/client.js'
 
@@ -30,10 +37,10 @@ const formName = ref('')
 const formHost = ref('')
 const formPort = ref(443)
 const formCountry = ref('')
-const formLoadPercent = ref(0)
 const formActive = ref(true)
-/** Label instance в Prometheus (node_exporter); пусто — host:9100 */
+/** Override label instance в Prometheus; пусто — host + порт из PROVISION_NODE_EXPORTER_PORT API (часто 9100) */
 const formPrometheusInstance = ref('')
+const formNetworkCapMbps = ref('')
 const formRealityDest = ref('')
 const formRealityServerNames = ref('')
 const formRealityFingerprint = ref('')
@@ -73,6 +80,109 @@ const serverXrayId = ref(null)
 const serverPrometheusId = ref(null)
 const serverCleanupId = ref(null)
 const provisionActionError = ref(null)
+
+/** Какая строка серверов: открыто выпадающее меню действий */
+const serverMenuOpenId = ref(null)
+/** Кнопка-триггер (для fixed-позиции панели в Teleport) */
+const serverMenuAnchorEl = ref(null)
+const serverMenuPanelEl = ref(null)
+const serverMenuFloatStyle = ref({})
+
+const serverMenuTarget = computed(() => {
+  const id = serverMenuOpenId.value
+  if (id == null) return null
+  return servers.value.find((x) => x.id === id) ?? null
+})
+
+async function updateServerMenuPosition() {
+  const btn = serverMenuAnchorEl.value
+  if (!(btn instanceof HTMLElement) || serverMenuOpenId.value == null) return
+  await nextTick()
+  const r = btn.getBoundingClientRect()
+  const gap = 6
+  const menuMin = 216
+  const w = Math.max(menuMin, r.width)
+  let left = r.right - w
+  left = Math.max(8, Math.min(left, window.innerWidth - w - 8))
+  const h = serverMenuPanelEl.value?.offsetHeight ?? 300
+  let top = r.bottom + gap
+  if (top + h > window.innerHeight - 8) {
+    top = Math.max(8, r.top - gap - h)
+  }
+  serverMenuFloatStyle.value = {
+    position: 'fixed',
+    top: `${top}px`,
+    left: `${left}px`,
+    minWidth: `${w}px`,
+    zIndex: 2000,
+  }
+}
+
+function closeServerMenu() {
+  serverMenuOpenId.value = null
+  serverMenuAnchorEl.value = null
+}
+
+/**
+ * Действие из Teleport-меню: сначала снимаем текущий server с computed, потом закрываем меню —
+ * иначе после closeServerMenu() serverMenuTarget уже null.
+ */
+function withOpenServerMenu(fn) {
+  const s = serverMenuTarget.value
+  closeServerMenu()
+  if (s) fn(s)
+}
+
+function toggleServerMenu(s, e) {
+  const id = s.id
+  if (serverMenuOpenId.value === id) {
+    closeServerMenu()
+    return
+  }
+  serverMenuAnchorEl.value =
+    e?.currentTarget instanceof HTMLElement ? e.currentTarget : null
+  serverMenuOpenId.value = id
+  requestAnimationFrame(() => {
+    void updateServerMenuPosition()
+  })
+}
+
+function onServerMenuDocClick(ev) {
+  if (!(ev.target instanceof Node)) return
+  if (
+    ev.target.closest('.server-row-dropdown') ||
+    ev.target.closest('.server-actions-dropdown-panel')
+  ) {
+    return
+  }
+  closeServerMenu()
+}
+
+function onServerMenuEscape(e) {
+  if (e.key === 'Escape') closeServerMenu()
+}
+
+function onServerMenuScrollResize() {
+  if (serverMenuOpenId.value != null) void updateServerMenuPosition()
+}
+
+onMounted(() => {
+  document.addEventListener('click', onServerMenuDocClick)
+  document.addEventListener('keydown', onServerMenuEscape)
+  document.addEventListener('scroll', onServerMenuScrollResize, true)
+  window.addEventListener('resize', onServerMenuScrollResize)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onServerMenuDocClick)
+  document.removeEventListener('keydown', onServerMenuEscape)
+  document.removeEventListener('scroll', onServerMenuScrollResize, true)
+  window.removeEventListener('resize', onServerMenuScrollResize)
+})
+
+watch(serverMenuTarget, (s) => {
+  if (serverMenuOpenId.value != null && s == null) closeServerMenu()
+})
 
 const loading = computed(() =>
   section.value === 'users' ? usersLoading.value : serversLoading.value,
@@ -125,6 +235,7 @@ watch(
     modalOpen.value = false
     editingServerId.value = null
     serverModalTab.value = 'general'
+    closeServerMenu()
     if (s === 'users') loadUsers()
     else loadServers()
   },
@@ -143,9 +254,9 @@ function openModal() {
     formHost.value = ''
     formPort.value = 443
     formCountry.value = ''
-    formLoadPercent.value = 0
     formActive.value = true
     formPrometheusInstance.value = ''
+    formNetworkCapMbps.value = ''
     formVlessUuid.value = ''
     formRealityPublicKey.value = ''
     applyDefaultProxyFields()
@@ -161,11 +272,11 @@ function openEditServer(s) {
   formHost.value = s.host
   formPort.value = s.port
   formCountry.value = s.country ?? ''
-  formLoadPercent.value =
-    typeof s.load_percent === 'number' ? s.load_percent : 0
   formActive.value = Boolean(s.is_active)
   formPrometheusInstance.value =
     (s.prometheus_instance && String(s.prometheus_instance).trim()) || ''
+  formNetworkCapMbps.value =
+    s.network_cap_mbps != null ? String(s.network_cap_mbps) : ''
   formRealityDest.value =
     (s.reality_dest && String(s.reality_dest).trim()) || DEFAULT_REALITY_DEST
   formRealityServerNames.value =
@@ -211,10 +322,13 @@ function normalizePort(raw) {
   return Math.min(65535, Math.max(1, n))
 }
 
-function normalizeLoadPercent(raw) {
-  const n = Number.parseInt(String(raw ?? ''), 10)
-  if (Number.isNaN(n)) return 0
-  return Math.min(100, Math.max(0, n))
+/** Тариф Мбит/с: пусто → null; иначе 1…1e6 */
+function normalizeNetworkCapMbps(raw) {
+  const s = String(raw ?? '').trim()
+  if (!s) return null
+  const n = Number.parseInt(s, 10)
+  if (Number.isNaN(n) || n < 1) return null
+  return Math.min(1_000_000, n)
 }
 
 async function submitCreateUser() {
@@ -255,12 +369,10 @@ async function submitSaveServer() {
         return
       }
     }
-    const load = normalizeLoadPercent(formLoadPercent.value)
     if (editingServerId.value != null) {
       const patch = {
         name: String(formName.value ?? '').trim() || null,
         country,
-        load_percent: load,
         is_active: formActive.value,
       }
       const rd = String(formRealityDest.value ?? '').trim()
@@ -277,6 +389,7 @@ async function submitSaveServer() {
       if (rpk) patch.reality_private_key = rpk
       const pinst = String(formPrometheusInstance.value ?? '').trim()
       patch.prometheus_instance = pinst || null
+      patch.network_cap_mbps = normalizeNetworkCapMbps(formNetworkCapMbps.value)
       await fetchJson(`/api/servers/${editingServerId.value}`, {
         method: 'PATCH',
         body: JSON.stringify(patch),
@@ -287,7 +400,6 @@ async function submitSaveServer() {
         host: String(formHost.value ?? '').trim(),
         port: normalizePort(formPort.value),
         country,
-        load_percent: load,
         is_active: formActive.value,
       }
       const rd = String(formRealityDest.value ?? '').trim()
@@ -302,6 +414,8 @@ async function submitSaveServer() {
       if (rsid) createBody.reality_short_id = rsid
       const pinst = String(formPrometheusInstance.value ?? '').trim()
       if (pinst) createBody.prometheus_instance = pinst
+      const cap = normalizeNetworkCapMbps(formNetworkCapMbps.value)
+      if (cap != null) createBody.network_cap_mbps = cap
       await fetchJson('/api/servers', {
         method: 'POST',
         body: JSON.stringify(createBody),
@@ -337,12 +451,6 @@ async function copyText(text) {
   } catch {
     /* ignore */
   }
-}
-
-function shortPrometheusInstance(s) {
-  const p = (s.prometheus_instance && String(s.prometheus_instance).trim()) || ''
-  if (p) return p.length > 20 ? `${p.slice(0, 18)}…` : p
-  return 'auto'
 }
 
 function formatProvisionStatus(status) {
@@ -527,13 +635,6 @@ const statsValue = computed(() =>
         >
           Серверы
         </RouterLink>
-        <RouterLink
-          class="tab"
-          :class="{ 'tab-active': route.path.startsWith('/admin/analytics') }"
-          to="/admin/analytics"
-        >
-          Аналитика
-        </RouterLink>
       </nav>
       <div class="head-row">
         <h2 class="section-heading">{{ sectionTitle }}</h2>
@@ -640,14 +741,9 @@ const statsValue = computed(() =>
               <th>Название</th>
               <th>Страна</th>
               <th>Нагрузка</th>
-              <th>Prometheus</th>
+              <th>Тариф Мбит/с</th>
               <th>Host</th>
-              <th>Порт</th>
-              <th>Активен</th>
-              <th>Маскировка</th>
-              <th>ПО</th>
               <th>Статус</th>
-              <th>Ошибка</th>
               <th />
             </tr>
           </thead>
@@ -666,104 +762,25 @@ const statsValue = computed(() =>
                   aria-hidden="true"
                 />
               </td>
-              <td
-                class="mono mono-tiny"
-                :title="s.prometheus_instance || `${s.host}:9100`"
-              >
-                {{ shortPrometheusInstance(s) }}
+              <td class="mono tabular">
+                {{ s.network_cap_mbps != null ? s.network_cap_mbps : '—' }}
               </td>
               <td class="mono">{{ s.host }}</td>
-              <td class="mono">{{ s.port }}</td>
-              <td>{{ s.is_active ? 'Да' : 'Нет' }}</td>
-              <td class="mono mask-cell" :title="s.reality_dest">
-                {{ s.reality_dest || '—' }}
-              </td>
-              <td>{{ s.provision_ready ? 'Да' : 'Нет' }}</td>
               <td>{{ formatProvisionStatus(s.provision_status) }}</td>
-              <td class="cell-err mono" :title="s.provision_error || ''">
-                {{ s.provision_error ? String(s.provision_error).slice(0, 48) + (String(s.provision_error).length > 48 ? '…' : '') : '—' }}
-              </td>
               <td class="row-actions">
-                <RouterLink
-                  class="btn-secondary btn-tiny"
-                  :to="{ path: '/admin/analytics', query: { server: s.id } }"
-                >
-                  Графики
-                </RouterLink>
-                <button
-                  type="button"
-                  class="btn-secondary btn-tiny"
-                  @click="openEditServer(s)"
-                >
-                  Правка
-                </button>
-                <button
-                  type="button"
-                  class="btn-primary btn-tiny"
-                  :disabled="!canEnqueueProvision(s) || isServerProvisionBusy(s)"
-                  :title="
-                    canEnqueueProvision(s)
-                      ? 'Xray + node_exporter (если включено в настройках воркера)'
-                      : 'Недоступно: уже готов или задача в работе'
-                  "
-                  @click="enqueueProvision(s)"
-                >
-                  {{
-                    serverProvisioningId === s.id
-                      ? 'Очередь…'
-                      : 'Полная установка'
-                  }}
-                </button>
-                <button
-                  type="button"
-                  class="btn-secondary btn-tiny"
-                  :disabled="!canEnqueueReconcile(s) || isServerProvisionBusy(s)"
-                  title="Повторно всё: xray, REALITY, node_exporter (как в полной установке)"
-                  @click="enqueueReconcile(s)"
-                >
-                  {{ serverReconcileId === s.id ? 'Обновление…' : 'Обновить всё' }}
-                </button>
-                <button
-                  type="button"
-                  class="btn-secondary btn-tiny"
-                  :disabled="!canEnqueueReconcile(s) || isServerProvisionBusy(s)"
-                  title="Только Xray и конфиг VLESS+REALITY"
-                  @click="enqueueProvisionXray(s)"
-                >
-                  {{ serverXrayId === s.id ? 'Xray…' : 'Xray' }}
-                </button>
-                <button
-                  type="button"
-                  class="btn-secondary btn-tiny"
-                  :disabled="!canEnqueueReconcile(s) || isServerProvisionBusy(s)"
-                  title="Только node_exporter для Prometheus"
-                  @click="enqueueProvisionPrometheus(s)"
-                >
-                  {{
-                    serverPrometheusId === s.id ? 'Prometheus…' : 'Prometheus'
-                  }}
-                </button>
-                <button
-                  type="button"
-                  class="btn-secondary btn-tiny"
-                  :disabled="!canEnqueueReconcile(s) || isServerProvisionBusy(s)"
-                  title="Снять ПО с узла и очистить ключи/метрики в БД"
-                  @click="enqueueProvisionCleanup(s)"
-                >
-                  {{ serverCleanupId === s.id ? 'Очистка…' : 'Очистить' }}
-                </button>
-                <button
-                  v-if="canResetProvision(s)"
-                  type="button"
-                  class="btn-secondary btn-tiny"
-                  :disabled="
-                    serverProvisionResetId === s.id || isServerProvisionBusy(s)
-                  "
-                  title="Если воркер упал, а статус «в очереди» или «установка» — сбросить и поставить задачу снова"
-                  @click="resetProvisionQueue(s)"
-                >
-                  {{ serverProvisionResetId === s.id ? 'Сброс…' : 'Сброс очереди' }}
-                </button>
+                <div class="server-row-dropdown">
+                  <button
+                    type="button"
+                    class="btn-dropdown-trigger btn-secondary btn-tiny"
+                    :aria-expanded="serverMenuOpenId === s.id"
+                    aria-haspopup="menu"
+                    :aria-controls="'server-actions-' + s.id"
+                    @click.stop="toggleServerMenu(s, $event)"
+                  >
+                    Действия
+                    <span class="btn-dropdown-chevron" aria-hidden="true">▾</span>
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -771,6 +788,139 @@ const statsValue = computed(() =>
         </div>
       </div>
     </template>
+
+    <Teleport to="body">
+      <div
+        v-if="serverMenuOpenId != null && serverMenuTarget"
+        :id="'server-actions-' + serverMenuOpenId"
+        ref="serverMenuPanelEl"
+        class="dropdown-panel server-actions-dropdown-panel"
+        :style="serverMenuFloatStyle"
+        role="menu"
+        aria-label="Действия с сервером"
+      >
+        <RouterLink
+          class="dropdown-item"
+          role="menuitem"
+          :to="{
+            path: '/admin/analytics',
+            query: { server: serverMenuTarget.id },
+          }"
+          @click="closeServerMenu"
+        >
+          Графики
+        </RouterLink>
+        <button
+          type="button"
+          class="dropdown-item"
+          role="menuitem"
+          @click="withOpenServerMenu(openEditServer)"
+        >
+          Правка
+        </button>
+        <div class="dropdown-sep" role="separator" />
+        <button
+          type="button"
+          class="dropdown-item dropdown-item--primary"
+          role="menuitem"
+          :disabled="
+            !canEnqueueProvision(serverMenuTarget) ||
+            isServerProvisionBusy(serverMenuTarget)
+          "
+          :title="canEnqueueProvision(serverMenuTarget) ? 'Xray + node_exporter (если включено в настройках воркера)' : 'Недоступно: уже готов или задача в работе'"
+          @click="withOpenServerMenu(enqueueProvision)"
+        >
+          {{
+            serverProvisioningId === serverMenuTarget.id
+              ? 'Полная установка…'
+              : 'Полная установка'
+          }}
+        </button>
+        <button
+          type="button"
+          class="dropdown-item"
+          role="menuitem"
+          :disabled="
+            !canEnqueueReconcile(serverMenuTarget) ||
+            isServerProvisionBusy(serverMenuTarget)
+          "
+          title="Повторно всё: xray, REALITY, node_exporter (как в полной установке)"
+          @click="withOpenServerMenu(enqueueReconcile)"
+        >
+          {{
+            serverReconcileId === serverMenuTarget.id
+              ? 'Обновление…'
+              : 'Обновить всё'
+          }}
+        </button>
+        <button
+          type="button"
+          class="dropdown-item"
+          role="menuitem"
+          :disabled="
+            !canEnqueueReconcile(serverMenuTarget) ||
+            isServerProvisionBusy(serverMenuTarget)
+          "
+          title="Только Xray и конфиг VLESS+REALITY"
+          @click="withOpenServerMenu(enqueueProvisionXray)"
+        >
+          {{
+            serverXrayId === serverMenuTarget.id ? 'Xray…' : 'Xray'
+          }}
+        </button>
+        <button
+          type="button"
+          class="dropdown-item"
+          role="menuitem"
+          :disabled="
+            !canEnqueueReconcile(serverMenuTarget) ||
+            isServerProvisionBusy(serverMenuTarget)
+          "
+          title="Только node_exporter для Prometheus"
+          @click="withOpenServerMenu(enqueueProvisionPrometheus)"
+        >
+          {{
+            serverPrometheusId === serverMenuTarget.id
+              ? 'Prometheus…'
+              : 'Prometheus'
+          }}
+        </button>
+        <div class="dropdown-sep" role="separator" />
+        <button
+          type="button"
+          class="dropdown-item dropdown-item--danger"
+          role="menuitem"
+          :disabled="
+            !canEnqueueReconcile(serverMenuTarget) ||
+            isServerProvisionBusy(serverMenuTarget)
+          "
+          title="Снять ПО с узла и очистить ключи/метрики в БД"
+          @click="withOpenServerMenu(enqueueProvisionCleanup)"
+        >
+          {{
+            serverCleanupId === serverMenuTarget.id ? 'Очистка…' : 'Очистить'
+          }}
+        </button>
+        <button
+          v-if="canResetProvision(serverMenuTarget)"
+          type="button"
+          class="dropdown-item"
+          role="menuitem"
+          :disabled="
+            serverProvisionResetId === serverMenuTarget.id ||
+            isServerProvisionBusy(serverMenuTarget)
+          "
+          title="Если воркер упал, а статус «в очереди» или «установка» — сбросить и поставить задачу снова"
+          @click="withOpenServerMenu(resetProvisionQueue)"
+        >
+          {{
+            serverProvisionResetId === serverMenuTarget.id
+              ? 'Сброс…'
+              : 'Сброс очереди'
+          }}
+        </button>
+      </div>
+    </Teleport>
 
     <Teleport to="body">
       <div
@@ -877,16 +1027,6 @@ const statsValue = computed(() =>
                   placeholder="NL, США или полное название"
                 />
               </label>
-              <label class="field">
-                <span>Нагрузка, % (0 — свободен, 100 — перегружен)</span>
-                <input
-                  v-model.number="formLoadPercent"
-                  type="number"
-                  min="0"
-                  max="100"
-                  required
-                />
-              </label>
               <label v-if="editingServerId == null" class="field">
                 <span>Host</span>
                 <input
@@ -927,6 +1067,21 @@ const statsValue = computed(() =>
                   spellcheck="false"
                   placeholder="Напр. 72.56.110.181:9100 — как label instance в Prometheus"
                 />
+              </label>
+              <label class="field">
+                <span>Тариф канала (Мбит/с)</span>
+                <input
+                  v-model="formNetworkCapMbps"
+                  type="number"
+                  min="1"
+                  max="1000000"
+                  step="1"
+                  autocomplete="off"
+                  placeholder="Напр. 200 — верх шкалы графика сети в аналитике"
+                />
+                <span class="field-hint"
+                  >Пусто — шкала по скорости порта из метрик. Задано — потолок по тарифу.</span
+                >
               </label>
             </div>
             <div
@@ -1201,14 +1356,6 @@ const statsValue = computed(() =>
   color: var(--text-h);
 }
 
-.mono-tiny {
-  font-size: 0.72rem;
-  max-width: 6.5rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .load-bar {
   display: block;
   height: 4px;
@@ -1222,11 +1369,84 @@ const statsValue = computed(() =>
 }
 
 .row-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.server-row-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.btn-dropdown-trigger {
+  display: inline-flex;
   align-items: center;
-  max-width: 22rem;
+  justify-content: center;
+  gap: 0.35rem;
+  min-width: 6.75rem;
+}
+
+.btn-dropdown-chevron {
+  font-size: 0.62rem;
+  opacity: 0.75;
+  line-height: 1;
+}
+
+.dropdown-panel {
+  min-width: 13.5rem;
+  padding: 0.4rem;
+  border-radius: 12px;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  box-shadow: var(--shadow-md);
+}
+
+.server-actions-dropdown-panel {
+  max-height: min(70vh, 28rem);
+  overflow-y: auto;
+}
+
+.dropdown-sep {
+  height: 1px;
+  margin: 0.35rem 0.25rem;
+  background: var(--border);
+  border: none;
+  padding: 0;
+}
+
+.dropdown-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  text-align: left;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.5rem 0.65rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-h);
+  cursor: pointer;
+  text-decoration: none;
+  box-sizing: border-box;
+}
+
+.dropdown-item:hover:not(:disabled) {
+  background: var(--surface);
+}
+
+.dropdown-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.dropdown-item--primary {
+  color: var(--accent-hover);
+}
+
+.dropdown-item--danger {
+  color: var(--danger);
 }
 
 .servers-table-block {
@@ -1243,12 +1463,6 @@ const statsValue = computed(() =>
   color: var(--danger);
   background: var(--danger-soft);
   border: 1px solid var(--danger);
-}
-
-.cell-err {
-  max-width: 12rem;
-  font-size: 0.78rem;
-  color: var(--danger);
 }
 
 .field-readonly .readonly-value {
@@ -1270,14 +1484,6 @@ const statsValue = computed(() =>
   font-size: 0.8rem;
   color: var(--muted);
   line-height: 1.45;
-}
-
-.mask-cell {
-  max-width: 7rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.78rem;
 }
 
 .mono .btn-secondary,

@@ -1,0 +1,6 @@
+[
+  {
+    "targets": ["203.0.113.50:9100"],
+    "labels": {"env": "production"}
+  }
+]

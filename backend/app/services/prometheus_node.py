@@ -2,7 +2,7 @@
 Загрузка метрик node_exporter из Prometheus (query_range).
 
 Ожидается, что у цели в Prometheus label ``instance`` совпадает с
-``servers.prometheus_instance`` или по умолчанию ``{host}:9100``.
+``servers.prometheus_instance`` (если задано) или с ``{host}:{PROVISION_NODE_EXPORTER_PORT}``.
 """
 
 from __future__ import annotations
@@ -54,6 +54,85 @@ def _escape_instance(i: str) -> str:
 
 def _base_url() -> str:
     return (settings.prometheus_base_url or "").strip().rstrip("/")
+
+
+def _query_instant_scalar(client: httpx.Client, query: str) -> float | None:
+    """Один числовой sample из /api/v1/query (vector/scalar)."""
+    r = client.get(
+        f"{_base_url()}/api/v1/query",
+        params={"query": query},
+    )
+    r.raise_for_status()
+    payload = r.json()
+    if payload.get("status") != "success":
+        log.warning("Prometheus instant query: %s", payload.get("error") or payload)
+        return None
+    res = payload.get("data", {}).get("result") or []
+    if not res:
+        return None
+    try:
+        return float(res[0]["value"][1])
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
+
+
+def fetch_analytics_axis_hints(instance: str) -> dict[str, Any]:
+    """
+    Instant-запросы к Prometheus: скорость NIC (верх сетевого графика), число CPU.
+    """
+    base = _base_url()
+    if not base:
+        return {}
+    inst = _escape_instance(instance.strip())
+    hints: dict[str, Any] = {}
+    try:
+        timeout = min(float(settings.prometheus_timeout_seconds), 15.0)
+        with httpx.Client(timeout=timeout) as client:
+            speed = _query_instant_scalar(
+                client,
+                f'max(node_network_speed_bytes{{instance="{inst}",device!="lo"}})',
+            )
+            cores = _query_instant_scalar(
+                client,
+                f'count(node_cpu_seconds_total{{instance="{inst}",mode="idle"}})',
+            )
+        if speed is not None and speed > 0:
+            hints["nic_mbps"] = round(speed * 8 / 1_000_000, 2)
+        if cores is not None and cores >= 1:
+            hints["cpu_cores"] = int(cores)
+    except httpx.HTTPError as e:
+        log.warning("Prometheus axis hints HTTP: %s", e)
+    except Exception as e:
+        log.warning("Prometheus axis hints: %s", e)
+    return hints
+
+
+def format_query_with_instance(template: str, instance: str) -> str:
+    """Заменяет в шаблоне PromQL подстроку {instance} на экранированное значение label."""
+    inst = _escape_instance(instance.strip())
+    t = (template or "").strip()
+    if "{instance}" in t:
+        return t.replace("{instance}", inst)
+    return t
+
+
+def fetch_instant_scalar(query: str) -> float | None:
+    """
+    Произвольный PromQL instant query; одно скалярное/векторное значение.
+    """
+    base = _base_url()
+    q = (query or "").strip()
+    if not base or not q:
+        return None
+    try:
+        timeout = min(float(settings.prometheus_timeout_seconds), 15.0)
+        with httpx.Client(timeout=timeout) as client:
+            return _query_instant_scalar(client, q)
+    except httpx.HTTPError as e:
+        log.warning("Prometheus instant (custom) HTTP: %s", e)
+    except Exception as e:
+        log.warning("Prometheus instant (custom): %s", e)
+    return None
 
 
 def _matrix_to_pairs(result: dict[str, Any]) -> list[tuple[float, float]]:

@@ -41,6 +41,13 @@ class Settings(BaseSettings):
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ]
+    cors_origin_regex: str = Field(
+        default="",
+        description=(
+            "Regex для дополнительных Origin (Starlette CORSMiddleware). "
+            "Пусто — только cors_origins. Для одного HTTPS-домена: https://vpn\\.example\\.com"
+        ),
+    )
 
     admin_panel_password: str = Field(
         default="",
@@ -128,6 +135,21 @@ class Settings(BaseSettings):
         ge=2.0,
         le=120.0,
         description="Таймаут HTTP к Prometheus при query_range.",
+    )
+    prometheus_online_clients_query: str = Field(
+        default="",
+        description=(
+            "Опционально: PromQL для instant query — число онлайн VPN-клиентов на узле. "
+            "В строке используйте плейсхолдер {instance} (подставится label instance как в node_exporter). "
+            "Пусто — в аналитике показывается только TCP established из node_exporter."
+        ),
+    )
+    prometheus_sd_token: str = Field(
+        default="",
+        description=(
+            "Секрет Bearer для GET /api/prometheus/sd/node-exporter (HTTP SD). "
+            "Пусто — эндпоинт отвечает 404."
+        ),
     )
 
     @computed_field

@@ -16,6 +16,7 @@ env/
 .env.*
 !.env.example
 !**/.env.example
+deploy/.env
 
 # Distribution / packaging
 build/
@@ -51,3 +52,6 @@ Thumbs.db
 # Local databases (if any)
 *.db
 *.sqlite3
+
+# Prometheus
+deploy/prometheus/sd_bearer.txt

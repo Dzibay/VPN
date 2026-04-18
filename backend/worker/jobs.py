@@ -211,15 +211,8 @@ def _finalize_success(db: Session, server: Server, *, component: ProvisionCompon
     server.provision_ready = True
     server.provision_status = "success"
     server.provision_error = None
-    if component == "prometheus":
-        server.prometheus_instance = (
-            f"{server.host.strip()}:{settings.provision_node_exporter_port}"
-        )
-    elif component == "all" and settings.provision_install_node_exporter:
-        if not (server.prometheus_instance or "").strip():
-            server.prometheus_instance = (
-                f"{server.host.strip()}:{settings.provision_node_exporter_port}"
-            )
+    # prometheus_instance в БД только если нужен override (другой порт, hostname в scrape);
+    # иначе пусто — в API/PromQL берётся host + provision_node_exporter_port
     db.commit()
 
 

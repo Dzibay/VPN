@@ -36,6 +36,9 @@ CREATE TABLE IF NOT EXISTS servers (
     reality_fingerprint TEXT NOT NULL DEFAULT 'chrome',
     vless_flow TEXT NOT NULL DEFAULT 'xtls-rprx-vision',
     prometheus_instance TEXT,
+    network_cap_mbps INTEGER CHECK (
+        network_cap_mbps IS NULL OR (network_cap_mbps >= 1 AND network_cap_mbps <= 1000000)
+    ),
     CONSTRAINT uq_servers_host_port UNIQUE (host, port)
 );
 
