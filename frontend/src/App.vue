@@ -28,7 +28,10 @@ router.afterEach(refreshAdminSession)
       <RouterLink
         v-if="hasAdminToken"
         class="nav-link"
-        :class="{ 'router-link-active': route.name === 'admin-data' }"
+        :class="{
+          'router-link-active':
+            route.name === 'admin-data' || route.name === 'admin-user-analytics',
+        }"
         to="/admin"
       >
         Управление данными

@@ -8,6 +8,7 @@ import AdminLoginView from '../views/AdminLoginView.vue'
 import AdminTablesPage from '../views/AdminTablesPage.vue'
 import HomeView from '../views/HomeView.vue'
 import ServerAnalyticsView from '../views/ServerAnalyticsView.vue'
+import UserAnalyticsView from '../views/UserAnalyticsView.vue'
 
 const routes = [
   { path: '/', name: 'home', component: HomeView },
@@ -20,6 +21,11 @@ const routes = [
     path: '/admin',
     name: 'admin-data',
     component: AdminTablesPage,
+  },
+  {
+    path: '/admin/users/:userId/analytics',
+    name: 'admin-user-analytics',
+    component: UserAnalyticsView,
   },
   {
     path: '/admin/analytics',

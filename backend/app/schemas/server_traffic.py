@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -78,3 +78,29 @@ class UserTrafficCollectPollResponse(BaseModel):
         default=None,
         description="Текст при падении задачи RQ (исключение воркера)",
     )
+
+
+class UserTrafficPerServerRow(BaseModel):
+    """Трафик одного пользователя на одном узле + краткие поля сервера."""
+
+    server_id: int
+    name: str | None = None
+    host: str
+    port: int
+    country: str = ""
+    is_active: bool = True
+    provision_ready: bool = False
+    up_bytes: int = Field(ge=0)
+    down_bytes: int = Field(ge=0)
+    total_bytes: int = Field(ge=0, description="up + down (накоплено в БД)")
+
+
+class UserTrafficByServersBundle(BaseModel):
+    """Сводка по пользователю: все узлы из БД и трафик (LEFT JOIN, без трафика — нули)."""
+
+    user_id: int
+    telegram_id: str | None = None
+    subscription_until: date | None = None
+    servers: list[UserTrafficPerServerRow] = Field(default_factory=list)
+    total_up_bytes: int = Field(ge=0)
+    total_down_bytes: int = Field(ge=0)

@@ -38,6 +38,8 @@ const formSubUntil = ref('')
 const usersSyncLoading = ref(false)
 const usersSyncError = ref(null)
 const usersSyncOk = ref(null)
+/** @type {import('vue').Ref<number | null>} */
+const deletingUserId = ref(null)
 
 const formName = ref('')
 const formHost = ref('')
@@ -427,6 +429,48 @@ async function syncXrayClientsAllServers() {
   }
 }
 
+async function deleteUser(u, opts = {}) {
+  const { fromModal = false } = opts
+  const label =
+    u.telegram_id && String(u.telegram_id).trim()
+      ? u.telegram_id
+      : `id ${u.id}`
+  if (
+    !window.confirm(
+      `Удалить пользователя «${label}» из базы?\n\n` +
+        'Строки трафика по узлам удалятся вместе с записью. На всех узлах с готовым провижинингом в очередь поставится синхронизация Xray — UUID исчезнет из inbound.',
+    )
+  ) {
+    return
+  }
+  deletingUserId.value = u.id
+  usersSyncError.value = null
+  usersSyncOk.value = null
+  try {
+    await fetchJson(`/api/users/${u.id}`, { method: 'DELETE' })
+    usersSyncOk.value =
+      'Пользователь удалён. Синхронизация клиентов Xray на узлах поставлена в очередь.'
+    await loadUsers()
+    if (fromModal) {
+      modalOpen.value = false
+      editingUserId.value = null
+      createError.value = null
+    }
+  } catch (e) {
+    usersSyncError.value = e.message || String(e)
+  } finally {
+    deletingUserId.value = null
+  }
+}
+
+function deleteUserFromModal() {
+  const id = editingUserId.value
+  if (id == null) return
+  const u = users.value.find((x) => x.id === id)
+  if (!u) return
+  void deleteUser(u, { fromModal: true })
+}
+
 async function submitSaveServer() {
   creating.value = true
   createError.value = null
@@ -803,9 +847,8 @@ const statsValue = computed(() =>
               <th>ID</th>
               <th>Telegram</th>
               <th>Подписка до</th>
-              <th>VLESS UUID</th>
-              <th>Токен</th>
               <th>Ссылка подписки</th>
+              <th>Аналитика</th>
               <th />
             </tr>
           </thead>
@@ -814,28 +857,6 @@ const statsValue = computed(() =>
               <td>{{ u.id }}</td>
               <td>{{ u.telegram_id ?? '—' }}</td>
               <td>{{ formatDate(u.subscription_until) }}</td>
-              <td class="mono">
-                <span class="token token-wide" :title="u.vless_uuid">{{
-                  u.vless_uuid
-                }}</span>
-                <button
-                  type="button"
-                  class="btn-secondary btn-tiny"
-                  @click="copyText(u.vless_uuid)"
-                >
-                  Копировать
-                </button>
-              </td>
-              <td class="mono">
-                <span class="token" :title="u.token">{{ u.token }}</span>
-                <button
-                  type="button"
-                  class="btn-secondary btn-tiny"
-                  @click="copyText(u.token)"
-                >
-                  Копировать
-                </button>
-              </td>
               <td class="link-cell">
                 <a
                   class="sub-link"
@@ -850,6 +871,14 @@ const statsValue = computed(() =>
                 >
                   Копировать
                 </button>
+              </td>
+              <td>
+                <RouterLink
+                  class="user-analytics-link"
+                  :to="`/admin/users/${u.id}/analytics`"
+                >
+                  По серверам
+                </RouterLink>
               </td>
               <td class="row-actions">
                 <button
@@ -1136,28 +1165,48 @@ const statsValue = computed(() =>
               <input v-model="formSubUntil" type="date" />
             </label>
             <p v-if="createError" class="form-err">{{ createError }}</p>
-            <div class="modal-actions">
+            <div
+              class="modal-actions"
+              :class="{ 'modal-actions-split': editingUserId != null }"
+            >
               <button
+                v-if="editingUserId != null"
                 type="button"
-                class="btn-secondary"
-                :disabled="creating"
-                @click="closeModal"
-              >
-                Отмена
-              </button>
-              <button
-                type="submit"
-                class="btn-primary"
-                :disabled="creating"
+                class="btn-danger-modal"
+                :disabled="
+                  creating || deletingUserId === editingUserId
+                "
+                @click="deleteUserFromModal"
               >
                 {{
-                  creating
-                    ? 'Сохранение…'
-                    : editingUserId != null
-                      ? 'Сохранить'
-                      : 'Создать'
+                  deletingUserId === editingUserId
+                    ? 'Удаление…'
+                    : 'Удалить пользователя'
                 }}
               </button>
+              <div class="modal-actions-right">
+                <button
+                  type="button"
+                  class="btn-secondary"
+                  :disabled="creating || deletingUserId != null"
+                  @click="closeModal"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="submit"
+                  class="btn-primary"
+                  :disabled="creating || deletingUserId != null"
+                >
+                  {{
+                    creating
+                      ? 'Сохранение…'
+                      : editingUserId != null
+                        ? 'Сохранить'
+                        : 'Создать'
+                  }}
+                </button>
+              </div>
             </div>
           </form>
         </div>
@@ -1566,6 +1615,26 @@ const statsValue = computed(() =>
   white-space: nowrap;
 }
 
+.btn-danger-modal {
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.88rem;
+  padding: 0.5rem 0.95rem;
+  border-radius: 10px;
+  border: 1px solid rgba(220, 38, 38, 0.45);
+  color: var(--danger);
+  background: var(--danger-soft);
+  cursor: pointer;
+}
+.btn-danger-modal:hover:not(:disabled) {
+  border-color: var(--danger);
+  filter: brightness(1.02);
+}
+.btn-danger-modal:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .server-row-dropdown {
   position: relative;
   display: inline-block;
@@ -1690,16 +1759,6 @@ const statsValue = computed(() =>
   margin-top: 0.45rem;
   margin-right: 0.35rem;
 }
-.token {
-  display: block;
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.token-wide {
-  max-width: 280px;
-}
 .link-cell {
   font-size: 0.78rem;
 }
@@ -1716,6 +1775,18 @@ const statsValue = computed(() =>
 }
 
 .sub-link:hover {
+  color: var(--accent-hover);
+}
+
+.user-analytics-link {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.user-analytics-link:hover {
+  text-decoration: underline;
   color: var(--accent-hover);
 }
 .modal-backdrop {
@@ -1934,5 +2005,16 @@ const statsValue = computed(() =>
   flex-wrap: wrap;
   gap: 0.6rem;
   margin-top: 0.65rem;
+}
+
+.modal-actions-split {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-actions-right {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
 }
 </style>
