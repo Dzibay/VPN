@@ -1,0 +1,2 @@
+# Установка: pip install -r scripts/loadtest/requirements-loadtest.txt
+httpx[socks]>=0.27.0,<0.29.0

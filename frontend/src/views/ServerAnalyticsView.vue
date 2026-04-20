@@ -33,6 +33,7 @@ const metrics = computed(() => metricsBundle.value?.points ?? [])
 const axis = computed(() => metricsBundle.value?.axis ?? null)
 
 const hourOptions = [
+  { value: 1, label: '1 ч' },
   { value: 6, label: '6 ч' },
   { value: 24, label: '24 ч' },
   { value: 72, label: '3 суток' },
@@ -178,7 +179,13 @@ async function loadMetrics() {
   metricsBundle.value = null
   try {
     const step =
-      hours.value <= 24 ? 60 : hours.value <= 72 ? 120 : 180
+      hours.value <= 3
+        ? 15
+        : hours.value <= 24
+          ? 60
+          : hours.value <= 72
+            ? 120
+            : 180
     metricsBundle.value = await fetchJson(
       `/api/servers/${serverId.value}/metrics?hours=${hours.value}&step=${step}`,
     )

@@ -21,3 +21,4 @@ class User(Base):
     telegram_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     subscription_until: Mapped[date | None] = mapped_column(Date, nullable=True)
     token: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    vless_uuid: Mapped[str] = mapped_column(Text, unique=True, nullable=False)

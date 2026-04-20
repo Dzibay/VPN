@@ -23,6 +23,8 @@ from app.schemas.servers import (
     ServerRead,
     ServerUpdate,
     ServersCountResponse,
+    XrayClientsSyncOneResultRead,
+    XrayClientsSyncResultRead,
 )
 from app.services.server_load_sync import sync_all_servers_load_from_prometheus
 
@@ -176,6 +178,64 @@ async def create_server(body: ServerCreate, session: SessionDep) -> Server:
 
 
 @router.post(
+    "/sync-xray-clients",
+    response_model=XrayClientsSyncResultRead,
+    status_code=202,
+    summary="Синхронизировать список клиентов VLESS на всех готовых узлах (очередь RQ)",
+)
+async def enqueue_sync_xray_clients_all() -> XrayClientsSyncResultRead:
+    _provision_command_blocks_split_install()
+    try:
+        q = get_install_queue()
+        job = q.enqueue(
+            "worker.jobs.sync_xray_clients_all_servers",
+            job_timeout=max(settings.provision_job_timeout, 600),
+        )
+    except RedisError as e:
+        log.exception("Redis/RQ недоступен (sync Xray)")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Очередь недоступна: {e}",
+        ) from e
+    return XrayClientsSyncResultRead(job_id=job.id)
+
+
+@router.post(
+    "/{server_id}/sync-xray-clients",
+    response_model=XrayClientsSyncOneResultRead,
+    status_code=202,
+    summary="Синхронизировать список клиентов VLESS только на одном узле",
+)
+async def enqueue_sync_xray_clients_one(
+    server_id: int,
+    session: SessionDep,
+) -> XrayClientsSyncOneResultRead:
+    _provision_command_blocks_split_install()
+    server = session.get(Server, server_id)
+    if server is None:
+        raise HTTPException(status_code=404, detail="Сервер не найден")
+    if not server.provision_ready:
+        raise HTTPException(
+            status_code=409,
+            detail="Узел не готов (provision_ready=false); сначала установите ПО",
+        )
+    try:
+        q = get_install_queue()
+        job = q.enqueue(
+            "worker.jobs.sync_xray_clients_to_server",
+            server_id,
+            job_timeout=max(settings.provision_subprocess_timeout, 300),
+        )
+    except RedisError as e:
+        log.exception("Redis/RQ недоступен (sync Xray)")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Очередь недоступна: {e}",
+        ) from e
+    return XrayClientsSyncOneResultRead(server_id=server_id, job_id=job.id)
+
+
+@router.post(
     "/{server_id}/provision",
     response_model=ServerRead,
     status_code=202,
@@ -316,6 +376,28 @@ async def enqueue_server_provision_prometheus(
             detail="Уже в очереди или выполняется",
         )
     return _enqueue_software_job(session, server, component="prometheus")
+
+
+@router.post(
+    "/{server_id}/provision/fair-egress",
+    response_model=ServerRead,
+    status_code=202,
+    summary="Только справедливая очередь uplink (CAKE/fq_codel) на узле",
+)
+async def enqueue_server_provision_fair_egress(
+    server_id: int,
+    session: SessionDep,
+) -> Server:
+    _provision_command_blocks_split_install()
+    server = session.get(Server, server_id)
+    if server is None:
+        raise HTTPException(status_code=404, detail="Сервер не найден")
+    if server.provision_status in ("queued", "running"):
+        raise HTTPException(
+            status_code=409,
+            detail="Уже в очереди или выполняется",
+        )
+    return _enqueue_software_job(session, server, component="fair_egress")
 
 
 @router.post(

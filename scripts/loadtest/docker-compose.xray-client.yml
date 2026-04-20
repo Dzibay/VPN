@@ -1,0 +1,21 @@
+# Клиент Xray в Docker для нагрузочного теста (SOCKS 1080).
+# Образ xxxsen/xray-core по умолчанию запускает только /bin/sh и сразу выходит —
+# нужно явно задать command.
+#
+# Запуск из этой папки (нужен файл xray-client.json рядом):
+#   docker compose -f docker-compose.xray-client.yml up -d
+# Остановка:
+#   docker compose -f docker-compose.xray-client.yml down
+#
+# Проверка: curl -x socks5h://127.0.0.1:1080 -I https://www.cloudflare.com
+
+services:
+  xray-client:
+    image: xxxsen/xray-core:latest
+    container_name: xray-client-loadtest
+    command: ["/bin/xray", "run", "-c", "/etc/xray/config.json"]
+    volumes:
+      - ./xray-client.json:/etc/xray/config.json:ro
+    ports:
+      - "127.0.0.1:1080:1080"
+    restart: unless-stopped

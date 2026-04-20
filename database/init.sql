@@ -5,7 +5,9 @@ CREATE TABLE IF NOT EXISTS users (
     telegram_id TEXT,
     subscription_until DATE,
     token TEXT NOT NULL,
-    CONSTRAINT users_token_key UNIQUE (token)
+    vless_uuid TEXT NOT NULL,
+    CONSTRAINT users_token_key UNIQUE (token),
+    CONSTRAINT users_vless_uuid_key UNIQUE (vless_uuid)
 );
 
 -- Уникальность только для непустых telegram_id (несколько NULL допустимо)

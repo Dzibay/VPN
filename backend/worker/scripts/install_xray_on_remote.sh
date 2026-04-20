@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
-# Удалённый хост: root. Режим: VPN_PROVISION_COMPONENT = all | xray | prometheus | cleanup
+# Удалённый хост: root. Режим: VPN_PROVISION_COMPONENT = all | xray | sync_clients | prometheus | fair_egress | cleanup
 # all/xray: curl/wget, python3. prometheus: curl, systemctl. cleanup: curl/wget для uninstall xray.
+#
+# Справедливость uplink (между TCP/UDP-потоками, не «на UUID Xray»):
+#   VPN_INSTALL_FAIR_EGRESS — для all/xray: 1 (по умолчанию) ставит CAKE или fq_codel на интерфейс default route.
+#   fair_egress — только перенастроить очередь (systemd vpn-egress-fairness).
+# Настройки в /etc/default/vpn-egress-fairness:
+#   VPN_EGRESS_IFACE — явный интерфейс (иначе авто по ip route)
+#   VPN_EGRESS_BANDWIDTH — для CAKE, напр. 900mbit (≈95% от лимита VPS — уменьшает буферизацию)
 
 set -euo pipefail
 
@@ -31,6 +38,76 @@ _x25519_pick() {
   local label="$2"
   echo "$out" | grep -iE "^[[:space:]]*${label}[[:space:]]*:" | head -1 \
     | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//'
+}
+
+# Список UUID: VPN_VLESS_CLIENT_UUIDS (через запятую) или один VPN_VLESS_UUID.
+_write_xray_config() {
+  python3 - << 'PY'
+import json
+import os
+
+port = int(os.environ["VPN_SERVER_PORT"])
+fallback_uid = os.environ["VPN_VLESS_UUID"].strip()
+raw = (os.environ.get("VPN_VLESS_CLIENT_UUIDS") or "").strip()
+if raw:
+    uuids = [x.strip() for x in raw.split(",") if x.strip()]
+else:
+    uuids = [fallback_uid]
+seen = set()
+uuids_deduped = []
+for u in uuids:
+    if u not in seen:
+        seen.add(u)
+        uuids_deduped.append(u)
+uuids = uuids_deduped
+if not uuids:
+    uuids = [fallback_uid]
+
+dest = os.environ["VPN_REALITY_DEST"]
+names = [x.strip() for x in os.environ["VPN_REALITY_SERVER_NAMES"].split(",") if x.strip()]
+fp = os.environ.get("VPN_REALITY_FINGERPRINT", "chrome")
+flow = os.environ.get("VPN_VLESS_FLOW", "xtls-rprx-vision")
+short_id = os.environ["VPN_REALITY_SHORT_ID"].strip()
+priv = os.environ["VPN_REALITY_PRIVATE_KEY"]
+
+short_ids = ["", short_id] if short_id else [""]
+
+clients = [{"id": u, "flow": flow} for u in uuids]
+cfg = {
+    "log": {"loglevel": "warning"},
+    "inbounds": [
+        {
+            "listen": "0.0.0.0",
+            "port": port,
+            "protocol": "vless",
+            "settings": {
+                "clients": clients,
+                "decryption": "none",
+            },
+            "streamSettings": {
+                "network": "tcp",
+                "security": "reality",
+                "realitySettings": {
+                    "show": False,
+                    "dest": dest,
+                    "xver": 0,
+                    "serverNames": names,
+                    "privateKey": priv,
+                    "shortIds": short_ids,
+                    "fingerprint": fp,
+                },
+            },
+        }
+    ],
+    "outbounds": [
+        {"protocol": "freedom", "tag": "direct"},
+    ],
+}
+
+path = os.environ.get("VPN_XRAY_CONFIG_PATH", "/usr/local/etc/xray/config.json")
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(cfg, f, indent=2)
+PY
 }
 
 _xray_install() {
@@ -74,56 +151,7 @@ _xray_install() {
   mkdir -p "$(dirname "$CFG")"
 
   echo "[xray] запись $CFG (VLESS REALITY → ${VPN_REALITY_DEST})…"
-  python3 - << 'PY'
-import json
-import os
-
-port = int(os.environ["VPN_SERVER_PORT"])
-uid = os.environ["VPN_VLESS_UUID"]
-dest = os.environ["VPN_REALITY_DEST"]
-names = [x.strip() for x in os.environ["VPN_REALITY_SERVER_NAMES"].split(",") if x.strip()]
-fp = os.environ.get("VPN_REALITY_FINGERPRINT", "chrome")
-flow = os.environ.get("VPN_VLESS_FLOW", "xtls-rprx-vision")
-short_id = os.environ["VPN_REALITY_SHORT_ID"].strip()
-priv = os.environ["VPN_REALITY_PRIVATE_KEY"]
-
-short_ids = ["", short_id] if short_id else [""]
-
-cfg = {
-    "log": {"loglevel": "warning"},
-    "inbounds": [
-        {
-            "listen": "0.0.0.0",
-            "port": port,
-            "protocol": "vless",
-            "settings": {
-                "clients": [{"id": uid, "flow": flow}],
-                "decryption": "none",
-            },
-            "streamSettings": {
-                "network": "tcp",
-                "security": "reality",
-                "realitySettings": {
-                    "show": False,
-                    "dest": dest,
-                    "xver": 0,
-                    "serverNames": names,
-                    "privateKey": priv,
-                    "shortIds": short_ids,
-                    "fingerprint": fp,
-                },
-            },
-        }
-    ],
-    "outbounds": [
-        {"protocol": "freedom", "tag": "direct"},
-    ],
-}
-
-path = os.environ.get("VPN_XRAY_CONFIG_PATH", "/usr/local/etc/xray/config.json")
-with open(path, "w", encoding="utf-8") as f:
-    json.dump(cfg, f, indent=2)
-PY
+  _write_xray_config
 
   if command -v systemctl >/dev/null 2>&1; then
     systemctl enable xray 2>/dev/null || true
@@ -194,7 +222,296 @@ NEUNIT
   echo "[node_exporter] сервис обновлён, ${NE_LH}:${NE_PORT}"
 }
 
+_egress_fairness_install() {
+  if [[ "${VPN_INSTALL_FAIR_EGRESS:-1}" == "0" || "${VPN_INSTALL_FAIR_EGRESS:-}" == "false" ]]; then
+    echo "[egress_fairness] пропуск (VPN_INSTALL_FAIR_EGRESS отключён)"
+    return 0
+  fi
+  if ! command -v tc >/dev/null 2>&1; then
+    echo "[egress_fairness] нет tc (пакет iproute2) — apt-get install -y iproute2" >&2
+    return 1
+  fi
+
+  install -d -m 755 /usr/local/sbin 2>/dev/null || mkdir -p /usr/local/sbin
+
+  cat > /usr/local/sbin/vpn-egress-fairness-apply.sh <<'EOS'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ -f /etc/default/vpn-egress-fairness ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source /etc/default/vpn-egress-fairness
+  set +a
+fi
+IFACE="${VPN_EGRESS_IFACE:-}"
+if [[ -z "$IFACE" ]]; then
+  IFACE=$(ip -4 route show default | awk '/^default/ {print $5; exit}')
+fi
+if [[ -z "$IFACE" ]]; then
+  echo "[vpn-egress-fairness] не найден интерфейс default route" >&2
+  exit 1
+fi
+if ! ip link show "$IFACE" >/dev/null 2>&1; then
+  echo "[vpn-egress-fairness] интерфейс $IFACE не существует" >&2
+  exit 1
+fi
+modprobe sch_cake 2>/dev/null || true
+BW="${VPN_EGRESS_BANDWIDTH:-}"
+cake_ok=0
+if [[ -n "$BW" ]]; then
+  if tc qdisc replace dev "$IFACE" root cake bandwidth "$BW" besteffort 2>/dev/null; then
+    cake_ok=1
+  elif tc qdisc replace dev "$IFACE" root cake bandwidth "$BW" 2>/dev/null; then
+    cake_ok=1
+  fi
+else
+  if tc qdisc replace dev "$IFACE" root cake besteffort 2>/dev/null; then
+    cake_ok=1
+  elif tc qdisc replace dev "$IFACE" root cake 2>/dev/null; then
+    cake_ok=1
+  fi
+fi
+if [[ "$cake_ok" -eq 1 ]]; then
+  echo "[vpn-egress-fairness] CAKE на $IFACE${BW:+ bandwidth=$BW}"
+  exit 0
+fi
+if tc qdisc replace dev "$IFACE" root fq_codel 2>/dev/null; then
+  echo "[vpn-egress-fairness] fq_codel на $IFACE (модуль CAKE недоступен; на Ubuntu: linux-modules-extra-$(uname -r))"
+  exit 0
+fi
+echo "[vpn-egress-fairness] не удалось применить qdisc" >&2
+exit 1
+EOS
+  chmod 755 /usr/local/sbin/vpn-egress-fairness-apply.sh
+
+  cat > /usr/local/sbin/vpn-egress-fairness-remove.sh <<'EOS'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ -f /etc/default/vpn-egress-fairness ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source /etc/default/vpn-egress-fairness
+  set +a
+fi
+IFACE="${VPN_EGRESS_IFACE:-}"
+if [[ -z "$IFACE" ]]; then
+  IFACE=$(ip -4 route show default | awk '/^default/ {print $5; exit}')
+fi
+[[ -n "$IFACE" ]] || exit 0
+tc qdisc del dev "$IFACE" root 2>/dev/null || true
+EOS
+  chmod 755 /usr/local/sbin/vpn-egress-fairness-remove.sh
+
+  # Держите в синхроне с worker/scripts/check_egress_fairness.sh
+  cat > /usr/local/sbin/vpn-egress-fairness-check.sh <<'EOSCHK'
+#!/usr/bin/env bash
+# Проверка справедливой очереди на uplink (CAKE / fq_codel / fq) на Linux.
+# Не нагрузочный тест: только конфигурация tc и (если есть) сервис vpn-egress-fairness.
+#
+# Запуск: /usr/local/sbin/vpn-egress-fairness-check.sh
+# Сохранить снимок: ... | tee /root/egress-check-before.txt
+
+set -uo pipefail
+
+QUIET=0
+LOG_APPEND=""
+IFACE_OVERRIDE=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --iface)
+      IFACE_OVERRIDE="${2:?}"
+      shift 2
+      ;;
+    --log-append)
+      LOG_APPEND="${2:?}"
+      shift 2
+      ;;
+    --quiet)
+      QUIET=1
+      shift
+      ;;
+    -h|--help)
+      sed -n '2,22p' "$0"
+      exit 0
+      ;;
+    *)
+      echo "Неизвестный аргумент: $1 (см. --help)" >&2
+      exit 2
+      ;;
+  esac
+done
+
+_detect_iface() {
+  if [[ -n "$IFACE_OVERRIDE" ]]; then
+    echo "$IFACE_OVERRIDE"
+    return
+  fi
+  if [[ -f /etc/default/vpn-egress-fairness ]]; then
+    set -a
+    # shellcheck source=/dev/null
+    source /etc/default/vpn-egress-fairness
+    set +a
+  fi
+  if [[ -n "${VPN_EGRESS_IFACE:-}" ]]; then
+    echo "$VPN_EGRESS_IFACE"
+    return
+  fi
+  ip -4 route show default 2>/dev/null | awk '/^default/ {print $5; exit}'
+}
+
+_classify_root() {
+  local dev="$1"
+  local line
+  line=$(tc qdisc show dev "$dev" root 2>/dev/null | head -1 || true)
+  if [[ -z "$line" ]]; then
+    echo "none|"
+    return
+  fi
+  if [[ "$line" =~ qdisc[[:space:]]+cake([[:space:]]|$) ]]; then
+    echo "cake|$line"
+    return
+  fi
+  if [[ "$line" =~ qdisc[[:space:]]+fq_codel([[:space:]]|$) ]]; then
+    echo "fq_codel|$line"
+    return
+  fi
+  if [[ "$line" =~ qdisc[[:space:]]+fq([[:space:]]|$) ]]; then
+    echo "fq|$line"
+    return
+  fi
+  echo "other|$line"
+}
+
+if ! command -v tc >/dev/null 2>&1; then
+  [[ "$QUIET" -eq 1 ]] || echo "FAIL: нет tc (iproute2)" >&2
+  exit 1
+fi
+
+IFACE=$(_detect_iface)
+if [[ -z "$IFACE" ]]; then
+  [[ "$QUIET" -eq 1 ]] || echo "FAIL: не удалось определить интерфейс (нет default route?)" >&2
+  exit 1
+fi
+
+if ! ip link show "$IFACE" >/dev/null 2>&1; then
+  [[ "$QUIET" -eq 1 ]] || echo "FAIL: интерфейс $IFACE не существует" >&2
+  exit 1
+fi
+
+IFS='|' read -r KIND ROOTLINE <<<"$(_classify_root "$IFACE")"
+
+FAIR=0
+case "$KIND" in
+  cake|fq_codel|fq) FAIR=1 ;;
+esac
+
+if [[ "$QUIET" -ne 1 ]]; then
+  echo "=== Проверка egress fairness ==="
+  echo "Интерфейс (uplink): $IFACE"
+  echo "Root qdisc:         $KIND"
+  echo "Строка tc root:     $ROOTLINE"
+  echo
+  echo "--- tc qdisc (root) ---"
+  tc qdisc show dev "$IFACE" root 2>/dev/null || true
+  echo
+  echo "--- tc -s qdisc (root, счётчики) ---"
+  tc -s qdisc show dev "$IFACE" root 2>/dev/null || true
+  echo
+  if command -v systemctl >/dev/null 2>&1; then
+    echo "--- systemd vpn-egress-fairness ---"
+    systemctl status vpn-egress-fairness.service --no-pager 2>/dev/null || echo "(юнит не найден или нет прав)"
+    echo
+  fi
+  if [[ -f /etc/default/vpn-egress-fairness ]]; then
+    echo "--- /etc/default/vpn-egress-fairness (активные строки) ---"
+    grep -E '^[[:space:]]*[^#]' /etc/default/vpn-egress-fairness 2>/dev/null || true
+    echo
+  fi
+  if [[ "$FAIR" -eq 1 ]]; then
+    echo "Итог: OK — на uplink стоит справедливая очередь ($KIND)."
+  else
+    echo "Итог: FAIL — ожидались cake / fq_codel / fq на root, сейчас: $KIND."
+    echo "       До провижининга обычно видно pfifo_fast или другой «other»."
+  fi
+fi
+
+if [[ -n "$LOG_APPEND" ]]; then
+  ts=$(date -Iseconds 2>/dev/null || date)
+  if [[ "$FAIR" -eq 1 ]]; then
+    echo "$ts $IFACE $KIND OK" >>"$LOG_APPEND"
+  else
+    echo "$ts $IFACE $KIND FAIL" >>"$LOG_APPEND"
+  fi
+fi
+
+[[ "$QUIET" -eq 1 ]] && { [[ "$FAIR" -eq 1 ]] && echo OK || echo FAIL; }
+
+exit $((1 - FAIR))
+EOSCHK
+  chmod 755 /usr/local/sbin/vpn-egress-fairness-check.sh
+
+  if [[ ! -f /etc/default/vpn-egress-fairness ]]; then
+    cat > /etc/default/vpn-egress-fairness <<'EOF'
+# Справедливая очередь на исходящем интерфейсе (после перезагрузки — systemd).
+# Один клиент с многими параллельными загрузками всё ещё может взять больше полосы, чем клиент с одним потоком.
+#
+# VPN_EGRESS_IFACE=ens3
+# VPN_EGRESS_BANDWIDTH=950mbit
+EOF
+    chmod 644 /etc/default/vpn-egress-fairness
+  fi
+
+  if command -v systemctl >/dev/null 2>&1; then
+    cat > /etc/systemd/system/vpn-egress-fairness.service <<'UNIT'
+[Unit]
+Description=VPN egress fair queue (CAKE / fq_codel on default route iface)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=-/etc/default/vpn-egress-fairness
+ExecStart=/usr/local/sbin/vpn-egress-fairness-apply.sh
+ExecStop=/usr/local/sbin/vpn-egress-fairness-remove.sh
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+    systemctl daemon-reload
+    systemctl enable vpn-egress-fairness.service 2>/dev/null || true
+    systemctl restart vpn-egress-fairness.service || true
+    echo "[egress_fairness] сервис vpn-egress-fairness, см. /etc/default/vpn-egress-fairness"
+    echo "[egress_fairness] проверка: /usr/local/sbin/vpn-egress-fairness-check.sh"
+  else
+    echo "[egress_fairness] нет systemctl — однократный запуск apply…"
+    /usr/local/sbin/vpn-egress-fairness-apply.sh || true
+    echo "[egress_fairness] проверка: /usr/local/sbin/vpn-egress-fairness-check.sh"
+  fi
+}
+
+_egress_fairness_purge() {
+  echo "[cleanup] vpn-egress-fairness: остановка и снятие qdisc…"
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl stop vpn-egress-fairness.service 2>/dev/null || true
+    systemctl disable vpn-egress-fairness.service 2>/dev/null || true
+  fi
+  if [[ -x /usr/local/sbin/vpn-egress-fairness-remove.sh ]]; then
+    /usr/local/sbin/vpn-egress-fairness-remove.sh 2>/dev/null || true
+  fi
+  rm -f /etc/systemd/system/vpn-egress-fairness.service
+  rm -f /usr/local/sbin/vpn-egress-fairness-apply.sh
+  rm -f /usr/local/sbin/vpn-egress-fairness-remove.sh
+  rm -f /usr/local/sbin/vpn-egress-fairness-check.sh
+  rm -f /etc/default/vpn-egress-fairness
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload
+  fi
+}
+
 _cleanup() {
+  _egress_fairness_purge
   echo "[cleanup] node_exporter: остановка и удаление…"
   if command -v systemctl >/dev/null 2>&1; then
     systemctl stop node_exporter 2>/dev/null || true
@@ -228,15 +545,29 @@ case "$COMPONENT" in
   cleanup)
     _cleanup
     ;;
+  sync_clients)
+    CFG="${VPN_XRAY_CONFIG_PATH:-/usr/local/etc/xray/config.json}"
+    echo "[xray] sync_clients: запись $CFG (без установки пакета)…"
+    _write_xray_config
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl restart xray || true
+    fi
+    echo "[xray] sync_clients: перезапуск xray выполнен"
+    ;;
   xray)
     _xray_install
+    _egress_fairness_install
     _emit_meta
+    ;;
+  fair_egress)
+    VPN_INSTALL_FAIR_EGRESS=1 _egress_fairness_install
     ;;
   prometheus|node_exporter)
     _ne_install
     ;;
   all|*)
     _xray_install
+    _egress_fairness_install
     _ne_install
     _emit_meta
     ;;

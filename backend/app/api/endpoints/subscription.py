@@ -73,7 +73,7 @@ def _primary_sni(server_names: str, dest: str) -> str:
     return d.rsplit(":", 1)[0] if ":" in d else d
 
 
-def _vless_reality_share_uri(s: Server) -> str | None:
+def _vless_reality_share_uri(s: Server, *, client_uuid: str) -> str | None:
     """Ссылка vless:// в формате, совместимом с Xray / v2rayNG (tcp + REALITY + flow)."""
     pbk = (s.reality_public_key or "").strip()
     if not pbk or "(" in pbk:
@@ -104,23 +104,24 @@ def _vless_reality_share_uri(s: Server) -> str | None:
     query = urlencode(params, quote_via=quote, safe="")
     remark = (s.name or s.country or s.host or "node").strip()
     fragment = quote(remark, safe="")
-    uuid = (s.vless_uuid or "").strip()
+    uuid = (client_uuid or "").strip()
     host = (s.host or "").strip()
     if not uuid or not host:
         return None
     return f"vless://{uuid}@{host}:{int(s.port)}?{query}#{fragment}"
 
 
-def _server_to_subscription_dict(s: Server) -> dict[str, Any]:
+def _server_to_subscription_dict(s: Server, *, client_uuid: str) -> dict[str, Any]:
     """Структурированные поля + удобные для клиента имена (sni, pbk, sid)."""
     sni = _primary_sni(s.reality_server_names, s.reality_dest)
+    uid = (client_uuid or "").strip()
     return {
         "id": s.id,
         "name": s.name or s.host,
         "country": s.country,
         "address": s.host,
         "port": s.port,
-        "uuid": s.vless_uuid,
+        "uuid": uid,
         "flow": s.vless_flow,
         "encryption": "none",
         "network": "tcp",
@@ -133,7 +134,7 @@ def _server_to_subscription_dict(s: Server) -> dict[str, Any]:
         "server_names": s.reality_server_names,
         # прежние имена полей — для совместимости
         "host": s.host,
-        "vless_uuid": s.vless_uuid,
+        "vless_uuid": uid,
         "vless_flow": s.vless_flow,
         "reality_public_key": s.reality_public_key,
         "reality_short_id": s.reality_short_id,
@@ -144,11 +145,12 @@ def _server_to_subscription_dict(s: Server) -> dict[str, Any]:
 
 
 def _build_payload_for_rows(user: User, rows: list[Server]) -> SubscriptionPayload:
+    client_uuid = (user.vless_uuid or "").strip()
     servers_out: list[dict[str, Any]] = []
     uris: list[str] = []
     for s in rows:
-        servers_out.append(_server_to_subscription_dict(s))
-        uri = _vless_reality_share_uri(s)
+        servers_out.append(_server_to_subscription_dict(s, client_uuid=client_uuid))
+        uri = _vless_reality_share_uri(s, client_uuid=client_uuid)
         if uri:
             uris.append(uri)
     raw = "\n".join(uris) + ("\n" if uris else "")

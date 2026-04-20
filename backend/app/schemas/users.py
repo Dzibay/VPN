@@ -51,6 +51,32 @@ class UserRead(BaseModel):
     telegram_id: str | None
     subscription_until: date | None
     token: str = Field(description="Токен для ссылки подписки /sub/{token}")
+    vless_uuid: str = Field(description="UUID клиента VLESS (общий для всех узлов в подписке)")
+
+
+class UserUpdate(BaseModel):
+    """Частичное обновление пользователя (админка)."""
+
+    subscription_until: date | None = Field(
+        default=None,
+        description="Дата окончания подписки; null — без срока",
+    )
+
+    @field_validator("subscription_until", mode="before")
+    @classmethod
+    def coerce_subscription_until(cls, v: object) -> date | None:
+        if v is None:
+            return None
+        if isinstance(v, datetime):
+            return v.date()
+        if isinstance(v, date):
+            return v
+        if isinstance(v, str):
+            s = v.strip()
+            if not s:
+                return None
+            return date.fromisoformat(s[:10])
+        raise ValueError("subscription_until: ожидается дата (YYYY-MM-DD)")
 
 
 class SubscriptionPayload(BaseModel):

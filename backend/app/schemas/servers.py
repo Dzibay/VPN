@@ -325,3 +325,16 @@ class ServerLoadSyncResultRead(BaseModel):
     items: list[ServerLoadSyncItemRead]
     updated: int = Field(ge=0, description="Число серверов, где load_percent обновлён")
     failed: int = Field(ge=0, description="Число серверов с ошибкой или без данных")
+
+
+class XrayClientsSyncResultRead(BaseModel):
+    """Ответ POST /servers/sync-xray-clients — постановка задачи RQ."""
+
+    job_id: str = Field(description="ID задачи воркера (синхронизация inbound по всем готовым узлам)")
+
+
+class XrayClientsSyncOneResultRead(BaseModel):
+    """Ответ POST /servers/{id}/sync-xray-clients."""
+
+    server_id: int
+    job_id: str = Field(description="ID задачи RQ на один узел")

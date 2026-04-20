@@ -29,9 +29,15 @@ const serversError = ref(null)
 const modalOpen = ref(false)
 const creating = ref(false)
 const createError = ref(null)
+/** null — создание пользователя; иначе id для PATCH */
+const editingUserId = ref(null)
 
 const formTelegramId = ref('')
 const formSubUntil = ref('')
+
+const usersSyncLoading = ref(false)
+const usersSyncError = ref(null)
+const usersSyncOk = ref(null)
 
 const formName = ref('')
 const formHost = ref('')
@@ -78,6 +84,7 @@ const serverProvisionResetId = ref(null)
 const serverReconcileId = ref(null)
 const serverXrayId = ref(null)
 const serverPrometheusId = ref(null)
+const serverFairEgressId = ref(null)
 const serverCleanupId = ref(null)
 const provisionActionError = ref(null)
 
@@ -255,10 +262,13 @@ watch(
   (s) => {
     modalOpen.value = false
     editingServerId.value = null
+    editingUserId.value = null
     serverModalTab.value = 'general'
     closeServerMenu()
     loadSyncOk.value = null
     loadSyncError.value = null
+    usersSyncOk.value = null
+    usersSyncError.value = null
     if (s === 'users') loadUsers()
     else loadServers()
   },
@@ -268,6 +278,7 @@ watch(
 function openModal() {
   createError.value = null
   editingServerId.value = null
+  editingUserId.value = null
   serverModalTab.value = 'general'
   if (section.value === 'users') {
     formTelegramId.value = ''
@@ -323,7 +334,22 @@ function closeModal() {
   if (creating.value) return
   modalOpen.value = false
   editingServerId.value = null
+  editingUserId.value = null
   serverModalTab.value = 'general'
+}
+
+function openEditUser(u) {
+  createError.value = null
+  editingServerId.value = null
+  editingUserId.value = u.id
+  const tg = u.telegram_id != null ? String(u.telegram_id) : ''
+  formTelegramId.value = tg.startsWith('@') ? tg.slice(1) : tg
+  const su = u.subscription_until
+  formSubUntil.value =
+    su != null && String(su).trim()
+      ? String(su).slice(0, 10)
+      : ''
+  modalOpen.value = true
 }
 
 function subscriptionDateOrNull(dateStr) {
@@ -354,23 +380,50 @@ function normalizeNetworkCapMbps(raw) {
   return Math.min(1_000_000, n)
 }
 
-async function submitCreateUser() {
+async function submitSaveUser() {
   creating.value = true
   createError.value = null
   try {
-    await fetchJson('/api/users', {
-      method: 'POST',
-      body: JSON.stringify({
-        telegram_id: normalizeTelegramId(formTelegramId.value),
-        subscription_until: subscriptionDateOrNull(formSubUntil.value),
-      }),
-    })
+    if (editingUserId.value != null) {
+      await fetchJson(`/api/users/${editingUserId.value}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          subscription_until: subscriptionDateOrNull(formSubUntil.value),
+        }),
+      })
+    } else {
+      await fetchJson('/api/users', {
+        method: 'POST',
+        body: JSON.stringify({
+          telegram_id: normalizeTelegramId(formTelegramId.value),
+          subscription_until: subscriptionDateOrNull(formSubUntil.value),
+        }),
+      })
+    }
     modalOpen.value = false
+    editingUserId.value = null
     await loadUsers()
   } catch (e) {
     createError.value = e.message || String(e)
   } finally {
     creating.value = false
+  }
+}
+
+async function syncXrayClientsAllServers() {
+  usersSyncLoading.value = true
+  usersSyncError.value = null
+  usersSyncOk.value = null
+  try {
+    const res = await fetchJson('/api/servers/sync-xray-clients', {
+      method: 'POST',
+    })
+    usersSyncOk.value = `Задача синхронизации Xray поставлена (job: ${res.job_id}).`
+    await loadUsers()
+  } catch (e) {
+    usersSyncError.value = e.message || String(e)
+  } finally {
+    usersSyncLoading.value = false
   }
 }
 
@@ -518,6 +571,7 @@ function isServerProvisionBusy(s) {
     serverProvisionResetId.value === id ||
     serverXrayId.value === id ||
     serverPrometheusId.value === id ||
+    serverFairEgressId.value === id ||
     serverCleanupId.value === id
   )
 }
@@ -591,6 +645,21 @@ async function enqueueProvisionPrometheus(s) {
   }
 }
 
+async function enqueueProvisionFairEgress(s) {
+  provisionActionError.value = null
+  serverFairEgressId.value = s.id
+  try {
+    await fetchJson(`/api/servers/${s.id}/provision/fair-egress`, {
+      method: 'POST',
+    })
+    await loadServers()
+  } catch (e) {
+    provisionActionError.value = e.message || String(e)
+  } finally {
+    serverFairEgressId.value = null
+  }
+}
+
 async function enqueueProvisionCleanup(s) {
   if (
     !window.confirm(
@@ -617,8 +686,12 @@ const sectionTitle = computed(() =>
 
 const sectionSub = computed(() =>
   section.value === 'users'
-    ? 'Токен подписки создаётся на сервере'
-    : 'Провижининг по SSH: отдельно Xray, отдельно Prometheus (node_exporter), полный прогон, обновление и очистка узла. Нужны Redis и воркер RQ.',
+    ? 'У каждого пользователя свой VLESS UUID в подписке; на узлах в inbound перечислены UUID активных подписок. После изменений — «Синхронизировать Xray».'
+    : 'Провижининг по SSH: Xray, Prometheus (node_exporter), справедливая очередь uplink (CAKE/fq_codel), полный прогон, обновление и очистка. Нужны Redis и воркер RQ.',
+)
+
+const userModalTitle = computed(() =>
+  editingUserId.value != null ? 'Редактировать пользователя' : 'Новый пользователь',
 )
 
 const serverModalTitle = computed(() =>
@@ -663,6 +736,19 @@ const statsValue = computed(() =>
         <h2 class="section-heading">{{ sectionTitle }}</h2>
         <div class="head-actions">
           <button
+            v-if="section === 'users'"
+            type="button"
+            class="btn-secondary"
+            :disabled="usersSyncLoading || usersLoading"
+            @click="syncXrayClientsAllServers"
+          >
+            {{
+              usersSyncLoading
+                ? 'Синхронизация Xray…'
+                : 'Синхронизировать Xray на узлах'
+            }}
+          </button>
+          <button
             v-if="section === 'servers'"
             type="button"
             class="btn-secondary"
@@ -692,6 +778,12 @@ const statsValue = computed(() =>
 
     <!-- Пользователи -->
     <template v-if="section === 'users'">
+      <p v-if="usersSyncOk" class="provision-banner provision-banner--ok">
+        {{ usersSyncOk }}
+      </p>
+      <p v-if="usersSyncError" class="provision-banner">
+        {{ usersSyncError }}
+      </p>
       <div v-if="!usersLoading && usersError" class="card err">
         {{ usersError }}
         <button type="button" class="btn-secondary" @click="loadUsers">
@@ -711,8 +803,10 @@ const statsValue = computed(() =>
               <th>ID</th>
               <th>Telegram</th>
               <th>Подписка до</th>
+              <th>VLESS UUID</th>
               <th>Токен</th>
               <th>Ссылка подписки</th>
+              <th />
             </tr>
           </thead>
           <tbody>
@@ -720,6 +814,18 @@ const statsValue = computed(() =>
               <td>{{ u.id }}</td>
               <td>{{ u.telegram_id ?? '—' }}</td>
               <td>{{ formatDate(u.subscription_until) }}</td>
+              <td class="mono">
+                <span class="token token-wide" :title="u.vless_uuid">{{
+                  u.vless_uuid
+                }}</span>
+                <button
+                  type="button"
+                  class="btn-secondary btn-tiny"
+                  @click="copyText(u.vless_uuid)"
+                >
+                  Копировать
+                </button>
+              </td>
               <td class="mono">
                 <span class="token" :title="u.token">{{ u.token }}</span>
                 <button
@@ -743,6 +849,15 @@ const statsValue = computed(() =>
                   @click="copyText(subscriptionPublicUrl(u.token))"
                 >
                   Копировать
+                </button>
+              </td>
+              <td class="row-actions">
+                <button
+                  type="button"
+                  class="btn-secondary btn-tiny"
+                  @click="openEditUser(u)"
+                >
+                  Правка
                 </button>
               </td>
             </tr>
@@ -927,6 +1042,23 @@ const statsValue = computed(() =>
               : 'Prometheus'
           }}
         </button>
+        <button
+          type="button"
+          class="dropdown-item"
+          role="menuitem"
+          :disabled="
+            !canEnqueueReconcile(serverMenuTarget) ||
+            isServerProvisionBusy(serverMenuTarget)
+          "
+          title="Только CAKE/fq_codel на uplink (без переустановки Xray и метрик); для узла, где софт уже стоит"
+          @click="withOpenServerMenu(enqueueProvisionFairEgress)"
+        >
+          {{
+            serverFairEgressId === serverMenuTarget.id
+              ? 'Справедливость…'
+              : 'Справедливость uplink'
+          }}
+        </button>
         <div class="dropdown-sep" role="separator" />
         <button
           type="button"
@@ -971,14 +1103,14 @@ const statsValue = computed(() =>
         role="dialog"
         aria-modal="true"
         :aria-labelledby="
-          section === 'users' ? 'modal-user' : 'modal-server-title'
+          section === 'users' ? 'modal-user-title' : 'modal-server-title'
         "
         @click.self="closeModal"
       >
         <div v-if="section === 'users'" class="modal">
-          <h2 id="modal-user">Новый пользователь</h2>
-          <form class="form" @submit.prevent="submitCreateUser">
-            <label class="field">
+          <h2 id="modal-user-title">{{ userModalTitle }}</h2>
+          <form class="form" @submit.prevent="submitSaveUser">
+            <label v-if="editingUserId == null" class="field">
               <span>Telegram (необязательно)</span>
               <div class="input-with-at">
                 <span class="input-at" aria-hidden="true">@</span>
@@ -993,6 +1125,12 @@ const statsValue = computed(() =>
                 />
               </div>
             </label>
+            <div v-else class="field field-readonly">
+              <span>Telegram</span>
+              <p class="readonly-value">
+                {{ formTelegramId ? '@' + formTelegramId : '—' }}
+              </p>
+            </div>
             <label class="field">
               <span>Подписка до (необязательно)</span>
               <input v-model="formSubUntil" type="date" />
@@ -1012,7 +1150,13 @@ const statsValue = computed(() =>
                 class="btn-primary"
                 :disabled="creating"
               >
-                {{ creating ? 'Создание…' : 'Создать' }}
+                {{
+                  creating
+                    ? 'Сохранение…'
+                    : editingUserId != null
+                      ? 'Сохранить'
+                      : 'Создать'
+                }}
               </button>
             </div>
           </form>
@@ -1552,6 +1696,9 @@ const statsValue = computed(() =>
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.token-wide {
+  max-width: 280px;
 }
 .link-cell {
   font-size: 0.78rem;

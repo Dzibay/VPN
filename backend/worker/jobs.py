@@ -14,17 +14,26 @@ import subprocess
 from pathlib import Path
 from typing import Literal
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.database.session import SessionLocal
 from app.models.server import Server
+from app.services.xray_clients import vless_client_uuids_csv_for_server
 
 log = logging.getLogger("worker.provision")
 
 _REMOTE_SCRIPT = Path(__file__).resolve().parent / "scripts" / "install_xray_on_remote.sh"
 
-ProvisionComponent = Literal["all", "xray", "prometheus", "cleanup"]
+ProvisionComponent = Literal[
+    "all",
+    "xray",
+    "prometheus",
+    "fair_egress",
+    "cleanup",
+    "sync_clients",
+]
 
 
 def _parse_xray_meta(stdout: str) -> dict[str, str] | None:
@@ -115,12 +124,14 @@ def _node_exporter_env_lines(*, force_install: bool | None) -> str:
     return lines
 
 
-def _xray_env_lines(server: Server) -> str:
+def _xray_env_lines(db: Session, server: Server) -> str:
+    uuids_csv = vless_client_uuids_csv_for_server(db, server)
     remote_env = (
         f"export VPN_SERVER_PORT={server.port}\n"
         f"export VPN_SERVER_ID={server.id}\n"
         f"export VPN_XRAY_INSTALLER_URL={shlex.quote(settings.provision_xray_installer_url)}\n"
         f"export VPN_VLESS_UUID={shlex.quote(server.vless_uuid)}\n"
+        f"export VPN_VLESS_CLIENT_UUIDS={shlex.quote(uuids_csv)}\n"
         f"export VPN_REALITY_SHORT_ID={shlex.quote(server.reality_short_id)}\n"
         f"export VPN_REALITY_DEST={shlex.quote(server.reality_dest)}\n"
         f"export VPN_REALITY_SERVER_NAMES={shlex.quote(server.reality_server_names)}\n"
@@ -146,11 +157,16 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
     elif component == "prometheus":
         remote_env += f"export VPN_SERVER_ID={server.id}\n"
         remote_env += _node_exporter_env_lines(force_install=True)
+    elif component == "fair_egress":
+        remote_env += f"export VPN_SERVER_ID={server.id}\n"
     elif component == "xray":
-        remote_env += _xray_env_lines(server)
+        remote_env += _xray_env_lines(db, server)
         remote_env += _node_exporter_env_lines(force_install=False)
+    elif component == "sync_clients":
+        remote_env += f"export VPN_SERVER_ID={server.id}\n"
+        remote_env += _xray_env_lines(db, server)
     else:
-        remote_env += _xray_env_lines(server)
+        remote_env += _xray_env_lines(db, server)
         remote_env += _node_exporter_env_lines(force_install=None)
 
     payload = (remote_env + script_body).replace("\r\n", "\n").replace("\r", "\n")
@@ -177,6 +193,7 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
 
     if component in ("all", "xray"):
         _persist_reality_keys(db, server, stdout_t)
+    # sync_clients не генерирует ключи REALITY
 
 
 def _execute_provision(db: Session, server: Server, *, component: ProvisionComponent) -> None:
@@ -219,7 +236,7 @@ def install_server_software(
     component: ProvisionComponent = "all",
 ) -> None:
     """
-    Установка по SSH: all | xray | prometheus (node_exporter) | cleanup.
+    Установка по SSH: all | xray | prometheus (node_exporter) | fair_egress | cleanup.
     Ожидает, что API уже выставил provision_status=queued.
     """
     db: Session = SessionLocal()
@@ -260,3 +277,54 @@ def install_server_software(
         )
     finally:
         db.close()
+
+
+def sync_xray_clients_to_server(server_id: int) -> None:
+    """
+    Перезаписать inbound Xray на узле: список UUID = активные подписки (или fallback UUID узла).
+    Не трогает provision_status и не требует очереди провижининга.
+    """
+    db: Session = SessionLocal()
+    try:
+        server = db.get(Server, server_id)
+        if server is None:
+            log.error("sync_xray_clients: сервер id=%s не найден", server_id)
+            return
+        if not server.provision_ready:
+            log.warning(
+                "sync_xray_clients: пропуск id=%s (узел не provision_ready)",
+                server_id,
+            )
+            return
+        if server.provision_status in ("queued", "running"):
+            log.warning(
+                "sync_xray_clients: пропуск id=%s (идёт установка/очередь)",
+                server_id,
+            )
+            return
+        if (settings.provision_command or "").strip():
+            raise RuntimeError(
+                "Задан provision_command: SSH-синхронизация списка клиентов Xray недоступна",
+            )
+        _run_ssh_remote_provision(db, server, component="sync_clients")
+    finally:
+        db.close()
+
+
+def sync_xray_clients_all_servers() -> None:
+    """Обновить inbound на всех узлах с provision_ready."""
+    db = SessionLocal()
+    try:
+        stmt = select(Server.id).where(Server.provision_ready.is_(True))
+        ids = list(db.scalars(stmt).all())
+    finally:
+        db.close()
+    errors: list[str] = []
+    for sid in ids:
+        try:
+            sync_xray_clients_to_server(sid)
+        except Exception as e:
+            errors.append(f"{sid}: {e!s}")
+            log.exception("sync_xray_clients_all: server_id=%s", sid)
+    if errors:
+        raise RuntimeError("; ".join(errors[:24]))
