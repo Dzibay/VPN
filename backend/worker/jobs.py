@@ -9,10 +9,10 @@ from __future__ import annotations
 import logging
 import os
 import shlex
-import shutil
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -20,11 +20,29 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.database.session import SessionLocal
 from app.models.server import Server
-from app.services.xray_clients import vless_client_uuids_csv_for_server
+from app.services.provision_ssh import ssh_base_argv
+from app.services.xray_clients import (
+    vless_client_uuids_csv_for_server,
+    vless_clients_b64_for_server,
+)
+from app.services.xray_stats_collect import collect_xray_traffic_for_server
 
 log = logging.getLogger("worker.provision")
 
 _REMOTE_SCRIPT = Path(__file__).resolve().parent / "scripts" / "install_xray_on_remote.sh"
+
+
+def _format_ssh_capture(stdout_t: str, stderr_t: str, *, limit: int = 14000) -> str:
+    """
+    Текст для исключения/логов. stderr в конце — иначе при обрезке [-N:] теряются ошибки,
+    если stdout длинный (curl, install-release).
+    """
+    out = (stdout_t or "").strip()
+    err = (stderr_t or "").strip()
+    if not out and not err:
+        return ""
+    combined = out + ("\n--- stderr ---\n" + err if err else "")
+    return combined if len(combined) <= limit else combined[-limit:]
 
 ProvisionComponent = Literal[
     "all",
@@ -81,31 +99,8 @@ def _run_provision_command(server: Server) -> None:
 
 
 def _ssh_base_cmd(server: Server) -> list[str]:
-    ssh_bin = shutil.which("ssh")
-    if not ssh_bin:
-        raise RuntimeError(
-            "Не найден исполняемый файл ssh. Установите OpenSSH-клиент на машине воркера.",
-        )
-    cmd: list[str] = [
-        ssh_bin,
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "StrictHostKeyChecking=accept-new",
-        "-o",
-        "ConnectTimeout=30",
-        "-p",
-        str(settings.provision_ssh_port),
-    ]
-    key = (settings.provision_ssh_key_path or "").strip()
-    if key:
-        cmd.extend(["-i", key])
-    extra = (settings.provision_ssh_extra_args or "").strip()
-    if extra:
-        cmd.extend(shlex.split(extra))
     target = f"{settings.provision_ssh_user}@{server.host}"
-    cmd.extend([target, "bash", "-s"])
-    return cmd
+    return ssh_base_argv(server) + [target, "bash", "-s"]
 
 
 def _node_exporter_env_lines(*, force_install: bool | None) -> str:
@@ -126,12 +121,15 @@ def _node_exporter_env_lines(*, force_install: bool | None) -> str:
 
 def _xray_env_lines(db: Session, server: Server) -> str:
     uuids_csv = vless_client_uuids_csv_for_server(db, server)
+    clients_b64 = vless_clients_b64_for_server(db, server)
     remote_env = (
         f"export VPN_SERVER_PORT={server.port}\n"
         f"export VPN_SERVER_ID={server.id}\n"
         f"export VPN_XRAY_INSTALLER_URL={shlex.quote(settings.provision_xray_installer_url)}\n"
         f"export VPN_VLESS_UUID={shlex.quote(server.vless_uuid)}\n"
         f"export VPN_VLESS_CLIENT_UUIDS={shlex.quote(uuids_csv)}\n"
+        f"export VPN_VLESS_CLIENTS_B64={shlex.quote(clients_b64)}\n"
+        f"export VPN_XRAY_API_PORT={int(settings.xray_remote_api_port)}\n"
         f"export VPN_REALITY_SHORT_ID={shlex.quote(server.reality_short_id)}\n"
         f"export VPN_REALITY_DEST={shlex.quote(server.reality_dest)}\n"
         f"export VPN_REALITY_SERVER_NAMES={shlex.quote(server.reality_server_names)}\n"
@@ -149,7 +147,9 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
         raise FileNotFoundError(f"Нет скрипта установки: {_REMOTE_SCRIPT}")
 
     script_body = _REMOTE_SCRIPT.read_text(encoding="utf-8")
-    remote_env = f"export VPN_PROVISION_COMPONENT={shlex.quote(component)}\n"
+    # Иначе на удалённой стороне TERM пустой → tput в сторонних скриптах (install-release.sh) даёт ошибку и ненулевой exit.
+    remote_env = 'export TERM="${TERM:-xterm-256color}"\n'
+    remote_env += f"export VPN_PROVISION_COMPONENT={shlex.quote(component)}\n"
 
     if component == "cleanup":
         remote_env += f"export VPN_SERVER_ID={server.id}\n"
@@ -188,8 +188,26 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
     stdout_t = (result.stdout or b"").decode("utf-8", errors="replace")
     stderr_t = (result.stderr or b"").decode("utf-8", errors="replace")
     if result.returncode != 0:
-        err = (stderr_t + "\n" + stdout_t).strip()
-        raise RuntimeError(err[-12000:] or f"ssh завершился с кодом {result.returncode}")
+        if (stderr_t or "").strip():
+            log.error(
+                "SSH stderr (tail 8000) rc=%s:\n%s",
+                result.returncode,
+                (stderr_t or "")[-8000:],
+            )
+        if (stdout_t or "").strip():
+            log.error(
+                "SSH stdout (tail 8000) rc=%s:\n%s",
+                result.returncode,
+                (stdout_t or "")[-8000:],
+            )
+        detail = _format_ssh_capture(stdout_t, stderr_t)
+        raise RuntimeError(
+            f"ssh завершился с кодом {result.returncode}\n"
+            + (
+                detail
+                or "(пустой stdout/stderr — смотрите логи воркера выше)"
+            ),
+        )
 
     if component in ("all", "xray"):
         _persist_reality_keys(db, server, stdout_t)
@@ -328,3 +346,70 @@ def sync_xray_clients_all_servers() -> None:
             log.exception("sync_xray_clients_all: server_id=%s", sid)
     if errors:
         raise RuntimeError("; ".join(errors[:24]))
+
+
+def collect_xray_user_traffic(server_id: int) -> dict[str, Any]:
+    """
+    RQ: SSH + xray api statsquery на узле (тот же ключ/окружение, что и провижининг).
+    Возвращает сериализуемый dict для API (опрос статуса задачи).
+    """
+    log.info(
+        "collect_xray_user_traffic: старт задачи RQ server_id=%s",
+        server_id,
+    )
+    db: Session = SessionLocal()
+    try:
+        server = db.get(Server, server_id)
+        if server is None:
+            log.error("collect_xray_user_traffic: сервер id=%s не найден", server_id)
+            return {
+                "ok": False,
+                "error": "Сервер не найден",
+                "detail": None,
+                "collected_at": None,
+            }
+        log.info(
+            "collect_xray_user_traffic: SSH statsquery %s@%s server_id=%s (как при провижининге)",
+            settings.provision_ssh_user,
+            server.host,
+            server_id,
+        )
+        err, detail = collect_xray_traffic_for_server(db, server)
+        collected_at: datetime | None = None
+        if err is None:
+            db.commit()
+            collected_at = datetime.now(timezone.utc)
+            pu = getattr(detail, "parsed_users", None) if detail else None
+            log.info(
+                "collect_xray_user_traffic: готово server_id=%s host=%s пользователей в ответе=%s",
+                server_id,
+                server.host,
+                pu if pu is not None else "—",
+            )
+        else:
+            db.rollback()
+            log.warning(
+                "collect_xray_user_traffic: без обновления БД server_id=%s: %s",
+                server_id,
+                (err or "")[:400],
+            )
+        return {
+            "ok": err is None,
+            "error": err,
+            "detail": detail.model_dump() if detail else None,
+            "collected_at": collected_at.isoformat() if collected_at else None,
+        }
+    except Exception as e:
+        log.exception("collect_xray_user_traffic server_id=%s", server_id)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {
+            "ok": False,
+            "error": str(e)[:2000],
+            "detail": None,
+            "collected_at": None,
+        }
+    finally:
+        db.close()

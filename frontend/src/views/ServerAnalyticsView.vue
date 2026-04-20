@@ -20,13 +20,45 @@ const chartBottleneck = ref(null)
 const chartNet = ref(null)
 const chartTcp = ref(null)
 const chartLoad = ref(null)
+const chartTrafficUsers = ref(null)
+
+/** @type {import('vue').Ref<{ server_id: number, collected_at: string | null, collect_error: string | null, collect_detail?: object | null, users: Array<{ user_id: number, telegram_id: string | null, up_bytes: number, down_bytes: number, total_bytes: number }> } | null>} */
+const userTrafficBundle = ref(null)
+const userTrafficLoading = ref(false)
+/** true только при запросе с collect=true (SSH), чтобы различать «тихую» подгрузку из БД */
+const userTrafficCollectPending = ref(false)
+const userTrafficError = ref(null)
+/** Пока true — идёт collect=true (SSH); не вызывать loadUserTraffic(false) из loadMetrics, иначе сбросится надпись SSH и начнётся гонка. */
+const userTrafficSSHInFlight = ref(false)
+
+/** Счётчик параллельных запросов трафика — только последний обновляет UI. */
+let userTrafficFetchGen = 0
+
+/** Интервал опроса RQ-задачи сбора трафика (слишком частый — сотни строк в access-логе uvicorn). */
+const USER_TRAFFIC_JOB_POLL_MS = 2500
+
+/** Таймаут fetch (чуть больше бэкенда XRAY_STATS_SSH_TIMEOUT_SECONDS). Полифилл, если нет AbortSignal.timeout. */
+function abortSignalAfterMs(ms) {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return AbortSignal.timeout(ms)
+  }
+  const c = new AbortController()
+  setTimeout(() => c.abort(), ms)
+  return c.signal
+}
 
 /** @type {Chart[]} */
 let chartInstances = []
+/** @type {Chart | null} */
+let chartTrafficUsersInstance = null
 
 function destroyCharts() {
   chartInstances.forEach((c) => c.destroy())
   chartInstances = []
+  if (chartTrafficUsersInstance) {
+    chartTrafficUsersInstance.destroy()
+    chartTrafficUsersInstance = null
+  }
 }
 
 const metrics = computed(() => metricsBundle.value?.points ?? [])
@@ -92,6 +124,37 @@ const latest = computed(() => {
 
 const promInstance = computed(() => metricsBundle.value?.instance ?? '—')
 const promStep = computed(() => metricsBundle.value?.step_seconds ?? '—')
+
+const userTrafficCollectedLabel = computed(() => {
+  const t = userTrafficBundle.value?.collected_at
+  if (!t) return ''
+  return formatTs(t)
+})
+
+const userTrafficLoadingHeadline = computed(() => {
+  if (!userTrafficLoading.value) return ''
+  if (userTrafficCollectPending.value) {
+    const h = selectedServer.value?.host
+    return h
+      ? `Воркер RQ: узел ${h} — SSH + xray api statsquery…`
+      : 'Воркер RQ: выполняется сбор трафика (SSH + statsquery)…'
+  }
+  return 'Загрузка трафика из БД…'
+})
+
+/** Подсказки при SSH-опросе: цепочка не «порт с интернета», а localhost на VPS после SSH */
+const userTrafficLoadingHints = computed(() => {
+  if (!userTrafficLoading.value || !userTrafficCollectPending.value) return []
+  return [
+    'Запрос ставит задачу в очередь Redis; SSH выполняет процесс воркера (как при установке Xray) — на той же машине должен быть запущен «python -m worker.run» и доступен Redis.',
+    'На узле после SSH выполняется xray api statsquery к 127.0.0.1 (Stats API). Снаружи этот порт открывать не нужно.',
+    'Долго висит — проверьте воркер и ключ PROVISION_SSH_KEY_PATH на его машине; в «Детали опроса» — stdout/stderr и код выхода.',
+  ]
+})
+
+const userTrafficCollectDetail = computed(
+  () => userTrafficBundle.value?.collect_detail ?? null,
+)
 
 function formatTs(iso) {
   if (!iso) return '—'
@@ -197,6 +260,187 @@ async function loadMetrics() {
   }
   await nextTick()
   drawCharts()
+  if (!userTrafficSSHInFlight.value) {
+    await loadUserTraffic(false)
+  }
+}
+
+function userTrafficLabel(u) {
+  if (u.telegram_id && String(u.telegram_id).trim()) return String(u.telegram_id)
+  return `id ${u.user_id}`
+}
+
+function drawTrafficUserChart() {
+  if (chartTrafficUsers.value == null) return
+  if (chartTrafficUsersInstance) {
+    chartTrafficUsersInstance.destroy()
+    chartTrafficUsersInstance = null
+  }
+  const bundle = userTrafficBundle.value
+  if (!bundle?.users?.length) return
+  const users = [...bundle.users].sort((a, b) => b.total_bytes - a.total_bytes)
+  const mib = (b) => b / (1024 * 1024)
+  chartTrafficUsersInstance = new Chart(chartTrafficUsers.value, {
+    type: 'bar',
+    data: {
+      labels: users.map((u) => userTrafficLabel(u)),
+      datasets: [
+        {
+          label: 'Исходящий к клиенту (down), МиБ',
+          data: users.map((u) => mib(u.down_bytes)),
+          backgroundColor: 'rgba(59, 130, 246, 0.78)',
+        },
+        {
+          label: 'От клиента (up), МиБ',
+          data: users.map((u) => mib(u.up_bytes)),
+          backgroundColor: 'rgba(34, 197, 94, 0.78)',
+        },
+      ],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: {
+            color: tickColor(),
+            font: { family: 'var(--sans)', size: 12 },
+          },
+        },
+        tooltip: {
+          backgroundColor: 'rgba(26, 18, 38, 0.92)',
+          titleFont: { family: 'var(--sans)', size: 12 },
+          bodyFont: { family: 'var(--mono)', size: 12 },
+        },
+      },
+      scales: {
+        x: {
+          stacked: true,
+          min: 0,
+          ticks: { color: tickColor() },
+          grid: { color: gridColor(), drawBorder: false },
+          title: {
+            display: true,
+            text: 'МиБ',
+            color: tickColor(),
+            font: { size: 11, weight: '600' },
+          },
+        },
+        y: {
+          stacked: true,
+          ticks: { color: tickColor(), maxRotation: 0 },
+          grid: { color: gridColor(), drawBorder: false },
+        },
+      },
+    },
+  })
+}
+
+/**
+ * @param {boolean} collect — всегда false: только строки из БД. Сбор с узла — отдельно loadUserTrafficFromNode (RQ).
+ */
+async function loadUserTraffic(collect = false) {
+  if (serverId.value == null) return
+  const gen = ++userTrafficFetchGen
+  userTrafficLoading.value = true
+  userTrafficCollectPending.value = collect
+  userTrafficError.value = null
+  try {
+    const fetchOpts = {
+      signal: abortSignalAfterMs(45000),
+    }
+    const data = await fetchJson(
+      `/api/servers/${serverId.value}/user-traffic?collect=${collect}`,
+      fetchOpts,
+    )
+    if (gen !== userTrafficFetchGen) return
+    userTrafficBundle.value = data
+  } catch (e) {
+    if (gen !== userTrafficFetchGen) return
+    const name = e?.name || ''
+    if (name === 'AbortError' || name === 'TimeoutError') {
+      userTrafficError.value = 'Таймаут запроса к API.'
+    } else {
+      userTrafficError.value = e.message || String(e)
+    }
+    userTrafficBundle.value = null
+  } finally {
+    if (gen === userTrafficFetchGen) {
+      userTrafficLoading.value = false
+      userTrafficCollectPending.value = false
+    }
+  }
+  if (gen !== userTrafficFetchGen) return
+  await nextTick()
+  drawTrafficUserChart()
+}
+
+async function loadUserTrafficFromNode() {
+  if (serverId.value == null) return
+  const gen = ++userTrafficFetchGen
+  userTrafficLoading.value = true
+  userTrafficCollectPending.value = true
+  userTrafficSSHInFlight.value = true
+  userTrafficError.value = null
+  try {
+    const enq = await fetchJson(
+      `/api/servers/${serverId.value}/user-traffic/collect`,
+      { method: 'POST' },
+    )
+    if (gen !== userTrafficFetchGen) return
+    const jobId = enq.job_id
+    const deadline = Date.now() + 130000
+    let poll = null
+    while (Date.now() < deadline) {
+      poll = await fetchJson(
+        `/api/servers/${serverId.value}/user-traffic/collect-jobs/${jobId}`,
+      )
+      if (gen !== userTrafficFetchGen) return
+      if (poll.status === 'finished' || poll.status === 'failed') break
+      await new Promise((r) => setTimeout(r, USER_TRAFFIC_JOB_POLL_MS))
+    }
+    if (gen !== userTrafficFetchGen) return
+    if (!poll) {
+      userTrafficError.value = 'Нет ответа от опроса задачи'
+      userTrafficBundle.value = null
+      return
+    }
+    if (poll.status === 'failed') {
+      userTrafficError.value =
+        poll.job_error || poll.bundle?.collect_error || 'Ошибка задачи воркера'
+      userTrafficBundle.value = poll.bundle
+      return
+    }
+    if (poll.status === 'finished' && poll.bundle) {
+      userTrafficBundle.value = poll.bundle
+    } else if (poll.status === 'queued' || poll.status === 'started') {
+      userTrafficError.value =
+        'Таймаут ожидания воркера. Запустите процесс «python -m worker.run» и проверьте Redis.'
+      userTrafficBundle.value = null
+    } else {
+      userTrafficError.value = 'Нет данных после сбора'
+    }
+  } catch (e) {
+    if (gen !== userTrafficFetchGen) return
+    const name = e?.name || ''
+    if (name === 'AbortError' || name === 'TimeoutError') {
+      userTrafficError.value = 'Таймаут запроса к API.'
+    } else {
+      userTrafficError.value = e.message || String(e)
+    }
+    userTrafficBundle.value = null
+  } finally {
+    if (gen === userTrafficFetchGen) {
+      userTrafficLoading.value = false
+      userTrafficCollectPending.value = false
+      userTrafficSSHInFlight.value = false
+    }
+  }
+  if (gen !== userTrafficFetchGen) return
+  await nextTick()
+  drawTrafficUserChart()
 }
 
 function labelsFor(m) {
@@ -632,6 +876,13 @@ watch(hours, () => {
   loadMetrics()
 })
 
+watch(serverId, () => {
+  userTrafficFetchGen++
+  userTrafficSSHInFlight.value = false
+  userTrafficLoading.value = false
+  userTrafficCollectPending.value = false
+})
+
 onMounted(async () => {
   try {
     await loadServers()
@@ -687,7 +938,7 @@ onBeforeUnmount(() => {
       <button
         type="button"
         class="btn-refresh"
-        :disabled="loading || serverId == null"
+        :disabled="loading || userTrafficLoading || serverId == null"
         @click="loadMetrics"
       >
         Обновить
@@ -744,6 +995,138 @@ onBeforeUnmount(() => {
         >— детали по CPU, памяти, сети и т.д. на графиках ниже.</span
       >
     </p>
+
+    <div v-if="serverId != null" class="chart-panel glass traffic-users-block">
+      <div class="chart-head traffic-chart-head">
+        <h3 class="chart-title">Трафик по пользователям (Xray)</h3>
+        <div class="traffic-chart-actions">
+          <span v-if="userTrafficCollectedLabel" class="chart-unit">{{
+            userTrafficCollectedLabel
+          }}</span>
+          <button
+            type="button"
+            class="btn-traffic-sync"
+            :disabled="userTrafficLoading || serverId == null"
+            @click="loadUserTrafficFromNode"
+          >
+            {{
+              userTrafficLoading ? 'Опрос узла…' : 'Собрать с узла (SSH)'
+            }}
+          </button>
+        </div>
+      </div>
+      <p class="chart-hint">
+        По умолчанию — данные из БД (быстро). Кнопка справа: SSH на узел, затем на самом VPS —
+        <code class="inline">xray api statsquery</code> к
+        <code class="inline">127.0.0.1</code> (Stats API). Порт API не должен быть открыт в интернет; его
+        слушает только Xray на localhost. Сбор ставит задачу в очередь воркера (SSH с той же машины, что и провижининг). Метки в Xray:
+        <code class="inline">u12@vpn</code> = id пользователя в БД.
+      </p>
+      <p v-if="userTrafficBundle?.collect_error" class="banner-warn">
+        {{ userTrafficBundle.collect_error }}
+      </p>
+      <p v-if="userTrafficError" class="banner-err">{{ userTrafficError }}</p>
+      <div v-if="userTrafficLoading" class="traffic-loading-block">
+        <p class="loading-line">{{ userTrafficLoadingHeadline }}</p>
+        <ul
+          v-if="userTrafficLoadingHints.length"
+          class="loading-hint-list"
+        >
+          <li v-for="(line, i) in userTrafficLoadingHints" :key="i">
+            {{ line }}
+          </li>
+        </ul>
+      </div>
+      <div
+        v-else
+        class="chart-wrap chart-wrap-tall traffic-users-canvas-wrap"
+      >
+        <canvas ref="chartTrafficUsers" />
+      </div>
+      <details
+        v-if="userTrafficCollectDetail && !userTrafficLoading"
+        class="traffic-collect-detail"
+      >
+        <summary class="traffic-collect-summary">
+          Детали опроса узла (SSH)
+          <span
+            v-if="userTrafficCollectDetail.parsed_users != null"
+            class="traffic-collect-badge"
+            >пользователей в ответе: {{ userTrafficCollectDetail.parsed_users }}</span
+          >
+        </summary>
+        <dl class="traffic-collect-dl">
+          <template v-if="userTrafficCollectDetail.ssh_target">
+            <dt>SSH</dt>
+            <dd>
+              <code class="inline">{{ userTrafficCollectDetail.ssh_target }}</code>
+              <span v-if="userTrafficCollectDetail.ssh_port != null" class="traffic-collect-meta">
+                порт {{ userTrafficCollectDetail.ssh_port }}</span
+              >
+            </dd>
+          </template>
+          <template v-if="userTrafficCollectDetail.xray_api_listen">
+            <dt>Stats API на узле</dt>
+            <dd>
+              <code class="inline">{{ userTrafficCollectDetail.xray_api_listen }}</code>
+            </dd>
+          </template>
+          <template v-if="userTrafficCollectDetail.remote_command">
+            <dt>Удалённая команда</dt>
+            <dd class="traffic-collect-cmd">{{ userTrafficCollectDetail.remote_command }}</dd>
+          </template>
+          <template
+            v-if="
+              userTrafficCollectDetail.exit_code != null ||
+              userTrafficCollectDetail.duration_ms != null
+            "
+          >
+            <dt>Результат</dt>
+            <dd class="traffic-collect-meta">
+              <span v-if="userTrafficCollectDetail.exit_code != null"
+                >код {{ userTrafficCollectDetail.exit_code }}</span
+              >
+              <span
+                v-if="
+                  userTrafficCollectDetail.exit_code != null &&
+                  userTrafficCollectDetail.duration_ms != null
+                "
+                class="traffic-collect-sep"
+                aria-hidden="true"
+                >·</span
+              >
+              <span v-if="userTrafficCollectDetail.duration_ms != null"
+                >{{ Math.round(userTrafficCollectDetail.duration_ms) }} мс</span
+              >
+            </dd>
+          </template>
+          <template v-if="userTrafficCollectDetail.skipped_reason">
+            <dt>Примечание</dt>
+            <dd>{{ userTrafficCollectDetail.skipped_reason }}</dd>
+          </template>
+        </dl>
+        <div v-if="userTrafficCollectDetail.stdout_preview" class="traffic-collect-pre-wrap">
+          <div class="traffic-collect-pre-label">stdout (фрагмент)</div>
+          <pre class="traffic-collect-pre">{{ userTrafficCollectDetail.stdout_preview }}</pre>
+        </div>
+        <div v-if="userTrafficCollectDetail.stderr_preview" class="traffic-collect-pre-wrap">
+          <div class="traffic-collect-pre-label">stderr (фрагмент)</div>
+          <pre class="traffic-collect-pre">{{ userTrafficCollectDetail.stderr_preview }}</pre>
+        </div>
+      </details>
+      <p
+        v-if="
+          !userTrafficLoading &&
+          userTrafficBundle &&
+          userTrafficBundle.users &&
+          userTrafficBundle.users.length === 0
+        "
+        class="chart-hint muted-hint"
+      >
+        Нет строк в БД для этого узла — после синхронизации Xray и подключений клиентов данные
+        появятся.
+      </p>
+    </div>
 
     <details v-if="selectedServer" class="server-params glass">
       <summary class="server-params-summary">
@@ -959,6 +1342,15 @@ onBeforeUnmount(() => {
   opacity: 0.45;
   cursor: not-allowed;
 }
+.banner-warn {
+  padding: 0.85rem 1.1rem;
+  border-radius: 14px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.42);
+  color: var(--text-h);
+  font-size: 0.88rem;
+  margin: 0 0 1rem;
+}
 .banner-err {
   padding: 0.85rem 1.1rem;
   border-radius: 14px;
@@ -967,6 +1359,47 @@ onBeforeUnmount(() => {
   color: var(--danger);
   font-size: 0.9rem;
   margin: 0 0 1rem;
+}
+.traffic-chart-head {
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.traffic-chart-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  margin-left: auto;
+}
+.btn-traffic-sync {
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+  color: var(--text-h);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-traffic-sync:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+.btn-traffic-sync:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.traffic-users-block {
+  margin-bottom: 1.15rem;
+}
+.traffic-users-canvas-wrap {
+  min-height: 280px;
+}
+.muted-hint {
+  margin-top: 0.65rem;
+  color: var(--muted);
 }
 .empty-hint {
   padding: 1.25rem 1.25rem;
@@ -1107,10 +1540,128 @@ onBeforeUnmount(() => {
 .chart-wrap-tall {
   height: 280px;
 }
+.traffic-loading-block {
+  margin-top: 1rem;
+  padding: 0.75rem 0.5rem 1rem;
+}
 .loading-line {
-  margin-top: 1.25rem;
+  margin: 0;
   text-align: center;
+  color: var(--text-h);
+  font-weight: 700;
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+.loading-hint-list {
+  margin: 0.65rem 0 0;
+  padding: 0 0 0 1.15rem;
+  max-width: 46rem;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: left;
   color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+.loading-hint-list li {
+  margin: 0.35rem 0;
+}
+.traffic-collect-detail {
+  margin-top: 1rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  background: rgba(0, 0, 0, 0.12);
+}
+.traffic-collect-summary {
+  cursor: pointer;
+  list-style: none;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--text-h);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+.traffic-collect-summary::-webkit-details-marker {
+  display: none;
+}
+.traffic-collect-summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 0.35rem;
+  opacity: 0.55;
+  transition: transform 0.15s ease;
+}
+.traffic-collect-detail[open] .traffic-collect-summary::before {
+  transform: rotate(90deg);
+}
+.traffic-collect-badge {
   font-weight: 600;
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.traffic-collect-dl {
+  display: grid;
+  grid-template-columns: minmax(6rem, 9rem) 1fr;
+  gap: 0.35rem 0.75rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  font-size: 0.78rem;
+}
+.traffic-collect-dl dt {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.traffic-collect-dl dd {
+  margin: 0;
+  color: var(--text);
+  word-break: break-word;
+}
+.traffic-collect-cmd {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+.traffic-collect-meta {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.traffic-collect-sep {
+  margin: 0 0.35rem;
+  color: var(--card-border);
+}
+.traffic-collect-pre-wrap {
+  margin-top: 0.65rem;
+}
+.traffic-collect-pre-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+.traffic-collect-pre {
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  max-height: 220px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--card-border);
+  color: var(--text-h);
 }
 </style>

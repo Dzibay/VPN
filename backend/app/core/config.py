@@ -126,6 +126,26 @@ class Settings(BaseSettings):
         description="Адрес прослушивания node_exporter (0.0.0.0 — для scrape снаружи).",
     )
 
+    xray_remote_api_port: int = Field(
+        default=10085,
+        ge=1,
+        le=65535,
+        description="Порт Stats API Xray на 127.0.0.1 узла (совпадает с inbound в config.json).",
+    )
+    xray_remote_binary_path: str = Field(
+        default="/usr/local/bin/xray",
+        description="Путь к бинарнику xray на удалённом узле (команда api statsquery).",
+    )
+    xray_stats_ssh_timeout_seconds: float = Field(
+        default=120.0,
+        ge=5.0,
+        le=600.0,
+        description=(
+            "Таймаут SSH для xray api statsquery (отдельно от provision_subprocess_timeout). "
+            "Должен быть ≥ proxy_read_timeout nginx и согласован с фронтом (~120 с)."
+        ),
+    )
+
     prometheus_base_url: str = Field(
         default="",
         description="Базовый URL Prometheus API, напр. http://127.0.0.1:9090 — для аналитики node_exporter.",

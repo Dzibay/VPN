@@ -34,6 +34,8 @@ export async function fetchJson(path, options = {}) {
   const res = await fetch(apiUrl(path), {
     ...options,
     headers,
+    // Иначе GET /api/... с разными query (collect=true/false) иногда не доходит до сервера — ответ из кэша.
+    cache: options.cache ?? 'no-store',
   })
   const text = await res.text()
   let data = null

@@ -33,10 +33,13 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
         except BaseException:
             duration_ms = (time.perf_counter() - start) * 1000
+            path = request.url.path
+            if request.url.query:
+                path = f"{path}?{request.url.query}"
             log.exception(
                 "%s %s — ошибка после %.1f ms",
                 request.method,
-                request.url.path,
+                path,
                 duration_ms,
             )
             raise
@@ -44,10 +47,13 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             duration_ms = (time.perf_counter() - start) * 1000
             response.headers["X-Request-ID"] = rid
             client = request.client.host if request.client else "-"
+            path = request.url.path
+            if request.url.query:
+                path = f"{path}?{request.url.query}"
             log.info(
                 "%s %s %d %.1fms %s",
                 request.method,
-                request.url.path,
+                path,
                 response.status_code,
                 duration_ms,
                 client,

@@ -11,6 +11,9 @@
 
 set -euo pipefail
 
+# Неинтерактивный SSH часто без TERM; XTLS install-release.sh вызывает tput → ненулевой код и обрыв при set -e.
+export TERM="${TERM:-xterm-256color}"
+
 INSTALLER_URL="${VPN_XRAY_INSTALLER_URL:-https://github.com/XTLS/Xray-install/raw/main/install-release.sh}"
 COMPONENT="${VPN_PROVISION_COMPONENT:-all}"
 
@@ -32,58 +35,125 @@ fetch_installer() {
   fi
 }
 
-# x25519: метки только в начале строки (без мусора [Info]).
-_x25519_pick() {
+# x25519: разбор вывода `xray x25519` / `xray x25519 -i`.
+# Xray-core (curve25519.go): «PrivateKey: …», «Password (PublicKey): …», «Hash32: …» — публичный ключ в строке Password (PublicKey), не «Password:».
+# Старый формат: Private key / Public key.
+# set -o pipefail: в конвейере нужен || true.
+_x25519_line() {
   local out="$1"
-  local label="$2"
-  echo "$out" | grep -iE "^[[:space:]]*${label}[[:space:]]*:" | head -1 \
-    | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//'
+  local pattern="$2"
+  echo "$out" | grep -iE "^[[:space:]]*${pattern}[[:space:]]*:" | head -1 \
+    | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//' || true
 }
 
-# Список UUID: VPN_VLESS_CLIENT_UUIDS (через запятую) или один VPN_VLESS_UUID.
+_x25519_pick_private() {
+  local out="$1"
+  local v
+  v=$(_x25519_line "$out" "PrivateKey")
+  if [[ -n "$v" ]]; then echo "$v"; return 0; fi
+  v=$(_x25519_line "$out" "Private[[:space:]]+key")
+  if [[ -n "$v" ]]; then echo "$v"; return 0; fi
+  echo ""
+}
+
+_x25519_pick_public() {
+  local out="$1"
+  local v
+  v=$(_x25519_line "$out" "PublicKey")
+  if [[ -n "$v" ]]; then echo "$v"; return 0; fi
+  v=$(_x25519_line "$out" "Public[[:space:]]+key")
+  if [[ -n "$v" ]]; then echo "$v"; return 0; fi
+  # Актуальный Xray: «Password (PublicKey):» — не «Password:».
+  v=$(_x25519_line "$out" "Password[[:space:]]*\(PublicKey\)")
+  if [[ -n "$v" ]]; then echo "$v"; return 0; fi
+  v=$(_x25519_line "$out" "Password")
+  if [[ -n "$v" ]]; then echo "$v"; return 0; fi
+  echo ""
+}
+
+# Клиенты: VPN_VLESS_CLIENTS_B64 (base64 JSON [{id,email,flow,level},…]) или legacy VPN_VLESS_CLIENT_UUIDS.
+# Stats API: упрощённый режим Xray (api.listen), без dokodemo-door + routing.
+# См. https://xtls.github.io/en/config/api.html — иначе `xray api statsquery` даёт failed to dial.
 _write_xray_config() {
   python3 - << 'PY'
+import base64
 import json
 import os
 
 port = int(os.environ["VPN_SERVER_PORT"])
+api_port = int(os.environ.get("VPN_XRAY_API_PORT") or "10085")
 fallback_uid = os.environ["VPN_VLESS_UUID"].strip()
-raw = (os.environ.get("VPN_VLESS_CLIENT_UUIDS") or "").strip()
-if raw:
-    uuids = [x.strip() for x in raw.split(",") if x.strip()]
-else:
-    uuids = [fallback_uid]
-seen = set()
-uuids_deduped = []
-for u in uuids:
-    if u not in seen:
-        seen.add(u)
-        uuids_deduped.append(u)
-uuids = uuids_deduped
-if not uuids:
-    uuids = [fallback_uid]
+flow_def = os.environ.get("VPN_VLESS_FLOW", "xtls-rprx-vision")
+
+b64 = (os.environ.get("VPN_VLESS_CLIENTS_B64") or "").strip()
+clients = []
+if b64:
+    try:
+        clients = json.loads(base64.b64decode(b64).decode("utf-8"))
+    except Exception:
+        clients = []
+if not clients:
+    raw = (os.environ.get("VPN_VLESS_CLIENT_UUIDS") or "").strip()
+    if raw:
+        uuids = [x.strip() for x in raw.split(",") if x.strip()]
+    else:
+        uuids = [fallback_uid]
+    seen = set()
+    uuids_deduped = []
+    for u in uuids:
+        if u not in seen:
+            seen.add(u)
+            uuids_deduped.append(u)
+    uuids = uuids_deduped or [fallback_uid]
+    for i, u in enumerate(uuids):
+        clients.append(
+            {
+                "id": u,
+                "flow": flow_def,
+                "email": "u%d@vpn" % i,
+                "level": 0,
+            }
+        )
 
 dest = os.environ["VPN_REALITY_DEST"]
 names = [x.strip() for x in os.environ["VPN_REALITY_SERVER_NAMES"].split(",") if x.strip()]
 fp = os.environ.get("VPN_REALITY_FINGERPRINT", "chrome")
-flow = os.environ.get("VPN_VLESS_FLOW", "xtls-rprx-vision")
+flow = flow_def
 short_id = os.environ["VPN_REALITY_SHORT_ID"].strip()
 priv = os.environ["VPN_REALITY_PRIVATE_KEY"]
 
 short_ids = ["", short_id] if short_id else [""]
 
-clients = [{"id": u, "flow": flow} for u in uuids]
+for c in clients:
+    if "flow" not in c:
+        c["flow"] = flow
+    if "level" not in c:
+        c["level"] = 0
+    if "email" not in c:
+        c["email"] = "u0@vpn"
+
 cfg = {
     "log": {"loglevel": "warning"},
+    "stats": {},
+    "api": {
+        "tag": "api",
+        "listen": "127.0.0.1:%d" % api_port,
+        "services": ["StatsService", "HandlerService"],
+    },
+    "policy": {
+        "levels": {
+            "0": {
+                "statsUserUplink": True,
+                "statsUserDownlink": True,
+            }
+        }
+    },
     "inbounds": [
         {
             "listen": "0.0.0.0",
             "port": port,
             "protocol": "vless",
-            "settings": {
-                "clients": clients,
-                "decryption": "none",
-            },
+            "settings": {"clients": clients, "decryption": "none"},
             "streamSettings": {
                 "network": "tcp",
                 "security": "reality",
@@ -97,11 +167,9 @@ cfg = {
                     "fingerprint": fp,
                 },
             },
-        }
+        },
     ],
-    "outbounds": [
-        {"protocol": "freedom", "tag": "direct"},
-    ],
+    "outbounds": [{"protocol": "freedom", "tag": "direct"}],
 }
 
 path = os.environ.get("VPN_XRAY_CONFIG_PATH", "/usr/local/etc/xray/config.json")
@@ -117,31 +185,48 @@ _xray_install() {
   fi
 
   echo "[xray] установка (XTLS install-release.sh)…"
+  # Скрипт XTLS в конце включает/запускает xray со своим дефолтным config.json — часто невалиден для узла,
+  # systemctl возвращает ошибку, exit≠0, хотя бинарник уже установлен. Дальше мы пишем свой config.json.
+  set +e
   bash -c "$(fetch_installer)" @ install
+  rc_install=$?
+  set -e
+  if [[ "$rc_install" -ne 0 ]]; then
+    echo "[xray] предупреждение: install-release.sh завершился с кодом $rc_install (часто из-за первого start xray до подмены config); проверяем бинарник…" >&2
+  fi
+  echo "[xray] install-release.sh код выхода: $rc_install"
 
   XRAY_BIN=$(command -v xray || true)
-  [[ -z "$XRAY_BIN" ]] && XRAY_BIN=/usr/local/bin/xray
+  # Не использовать [[ -z ]] && присвоение: при непустом PATH set -e обрывает скрипт на ложном [[.
+  if [[ -z "$XRAY_BIN" ]]; then
+    XRAY_BIN=/usr/local/bin/xray
+  fi
   if [[ ! -x "$XRAY_BIN" ]]; then
     echo "[xray] не найден бинарник xray" >&2
     exit 1
   fi
 
   if [[ -n "${VPN_REALITY_PRIVATE_KEY:-}" ]]; then
-    PRIVATE_KEY="$VPN_REALITY_PRIVATE_KEY"
-    PUB_OUT=$($XRAY_BIN x25519 -i "$PRIVATE_KEY" 2>/dev/null || true)
-    PUBLIC_KEY=$(_x25519_pick "$PUB_OUT" PublicKey)
-    [[ -z "$PUBLIC_KEY" ]] && PUBLIC_KEY=$(_x25519_pick "$PUB_OUT" "Public[[:space:]]+Key")
-    [[ -z "$PUBLIC_KEY" ]] && PUBLIC_KEY=$(_x25519_pick "$PUB_OUT" Password)
+    PRIVATE_KEY=$(echo "${VPN_REALITY_PRIVATE_KEY}" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    # Часть сборок пишет ключи в stderr — смотрим оба потока.
+    PUB_OUT=$($XRAY_BIN x25519 -i "$PRIVATE_KEY" 2>&1 || true)
+    PUBLIC_KEY=$(_x25519_pick_public "$PUB_OUT")
   else
-    KP=$($XRAY_BIN x25519)
-    PRIVATE_KEY=$(_x25519_pick "$KP" PrivateKey)
-    PUBLIC_KEY=$(_x25519_pick "$KP" PublicKey)
-    [[ -z "$PUBLIC_KEY" ]] && PUBLIC_KEY=$(_x25519_pick "$KP" "Public[[:space:]]+Key")
-    [[ -z "$PUBLIC_KEY" ]] && PUBLIC_KEY=$(_x25519_pick "$KP" Password)
+    # set -e: ненулевой код x25519 убил бы скрипт без сообщения
+    set +e
+    KP=$($XRAY_BIN x25519 2>&1)
+    rc_x25519=$?
+    set -e
+    if [[ "$rc_x25519" -ne 0 ]]; then
+      echo "[xray] ошибка: $XRAY_BIN x25519 завершился с кодом $rc_x25519" >&2
+      exit 1
+    fi
+    PRIVATE_KEY=$(_x25519_pick_private "$KP")
+    PUBLIC_KEY=$(_x25519_pick_public "$KP")
   fi
 
   if [[ -z "$PRIVATE_KEY" || -z "$PUBLIC_KEY" ]]; then
-    echo "[xray] не удалось получить ключи REALITY (x25519)" >&2
+    echo "[xray] не удалось получить ключи REALITY (x25519): проверьте формат вывода xray x25519 (нужны PrivateKey и PublicKey или Password)." >&2
     exit 1
   fi
 
@@ -160,8 +245,14 @@ _xray_install() {
 }
 
 _ne_install() {
-  [[ "${VPN_INSTALL_NODE_EXPORTER:-1}" == "0" ]] && { echo "[node_exporter] отключено (VPN_INSTALL_NODE_EXPORTER=0)"; return 0; }
-  [[ "${VPN_INSTALL_NODE_EXPORTER}" == "false" ]] && { echo "[node_exporter] отключено"; return 0; }
+  if [[ "${VPN_INSTALL_NODE_EXPORTER:-1}" == "0" ]]; then
+    echo "[node_exporter] отключено (VPN_INSTALL_NODE_EXPORTER=0)"
+    return 0
+  fi
+  if [[ "${VPN_INSTALL_NODE_EXPORTER}" == "false" ]]; then
+    echo "[node_exporter] отключено"
+    return 0
+  fi
   if ! command -v systemctl >/dev/null 2>&1; then
     echo "[node_exporter] нет systemctl — пропуск" >&2
     return 0

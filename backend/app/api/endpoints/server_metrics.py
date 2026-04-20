@@ -5,19 +5,32 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from redis.exceptions import RedisError
+from rq.exceptions import NoSuchJobError
+from rq.job import Job, JobStatus
 from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import SessionDep, require_admin
 from app.core.config import settings
+from app.core.queue import get_install_queue, get_redis
+from app.database.session import SessionLocal
 from app.models.server import Server
 from app.schemas.server_metrics import (
     ServerMetricPoint,
     ServerMetricsAxisHints,
     ServerMetricsFromPrometheus,
 )
+from app.schemas.server_traffic import (
+    ServerUserTrafficBundle,
+    UserTrafficCollectDetail,
+    UserTrafficCollectEnqueueResponse,
+    UserTrafficCollectPollResponse,
+)
+from app.services.xray_stats_collect import load_user_traffic_bundle_rows
 from app.services.bottleneck_metrics import enrich_bottleneck_metrics
 from app.services.prometheus_node import (
     fetch_analytics_axis_hints,
@@ -126,3 +139,187 @@ async def get_server_metrics_prometheus(
         online_clients_from_prometheus=online_from_cfg,
         points=points,
     )
+
+
+def _rq_poll_status(job: Job) -> str:
+    st = job.get_status()
+    if st in (
+        JobStatus.QUEUED,
+        JobStatus.SCHEDULED,
+        JobStatus.CREATED,
+        JobStatus.DEFERRED,
+    ):
+        return "queued"
+    if st == JobStatus.STARTED:
+        return "started"
+    if st == JobStatus.FINISHED:
+        return "finished"
+    if st in (JobStatus.FAILED, JobStatus.STOPPED, JobStatus.CANCELED):
+        return "failed"
+    return "queued"
+
+
+@router.post(
+    "/{server_id}/user-traffic/collect",
+    response_model=UserTrafficCollectEnqueueResponse,
+    status_code=202,
+    dependencies=[Depends(require_admin)],
+    summary="Поставить в очередь RQ сбор трафика Xray по SSH (выполняет воркер, как провижининг)",
+)
+async def enqueue_user_traffic_collect(
+    server_id: int,
+    session: SessionDep,
+) -> UserTrafficCollectEnqueueResponse:
+    if session.get(Server, server_id) is None:
+        raise HTTPException(status_code=404, detail="Сервер не найден")
+    job_timeout = max(300, int(settings.xray_stats_ssh_timeout_seconds) + 120)
+    try:
+        q = get_install_queue()
+        job = q.enqueue(
+            "worker.jobs.collect_xray_user_traffic",
+            server_id,
+            job_timeout=job_timeout,
+        )
+    except RedisError as e:
+        log.exception("Redis/RQ недоступен (сбор трафика)")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Очередь недоступна: {e}",
+        ) from e
+    return UserTrafficCollectEnqueueResponse(server_id=server_id, job_id=job.id)
+
+
+@router.get(
+    "/{server_id}/user-traffic/collect-jobs/{job_id}",
+    response_model=UserTrafficCollectPollResponse,
+    dependencies=[Depends(require_admin)],
+    summary="Статус задачи сбора трафика (RQ) и результат после завершения",
+)
+async def poll_user_traffic_collect_job(
+    server_id: int,
+    job_id: str,
+    session: SessionDep,
+) -> UserTrafficCollectPollResponse:
+    if session.get(Server, server_id) is None:
+        raise HTTPException(status_code=404, detail="Сервер не найден")
+    try:
+        job = Job.fetch(job_id, connection=get_redis())
+    except NoSuchJobError:
+        raise HTTPException(status_code=404, detail="Задача не найдена") from None
+    if not job.args or job.args[0] != server_id:
+        raise HTTPException(status_code=404, detail="Задача не относится к этому серверу")
+
+    status = _rq_poll_status(job)
+    if status in ("queued", "started"):
+        return UserTrafficCollectPollResponse(
+            server_id=server_id,
+            job_id=job_id,
+            status=status,  # type: ignore[arg-type]
+            bundle=None,
+            job_error=None,
+        )
+
+    def _bundle_from_result(result: dict | None) -> ServerUserTrafficBundle:
+        db = SessionLocal()
+        try:
+            detail = None
+            if result and result.get("detail"):
+                detail = UserTrafficCollectDetail.model_validate(result["detail"])
+            collected_at = None
+            raw_ca = (result or {}).get("collected_at")
+            if raw_ca:
+                collected_at = datetime.fromisoformat(
+                    str(raw_ca).replace("Z", "+00:00"),
+                )
+            return load_user_traffic_bundle_rows(
+                db,
+                server_id,
+                collected_at=collected_at,
+                collect_error=(result or {}).get("error"),
+                collect_detail=detail,
+            )
+        finally:
+            db.close()
+
+    if status == "failed":
+        err_txt = None
+        try:
+            job.refresh()
+            err_txt = (job.exc_info or str(job.result) or "Задача завершилась с ошибкой")[
+                :8000
+            ]
+        except Exception:
+            err_txt = "Задача завершилась с ошибкой"
+        bundle = _bundle_from_result(None)
+        return UserTrafficCollectPollResponse(
+            server_id=server_id,
+            job_id=job_id,
+            status="failed",
+            bundle=bundle,
+            job_error=err_txt,
+        )
+
+    # finished
+    result = job.result
+    if not isinstance(result, dict):
+        bundle = _bundle_from_result(None)
+        return UserTrafficCollectPollResponse(
+            server_id=server_id,
+            job_id=job_id,
+            status="finished",
+            bundle=bundle.model_copy(
+                update={
+                    "collect_error": "Неверный результат задачи воркера",
+                },
+            ),
+            job_error=None,
+        )
+    bundle = _bundle_from_result(result)
+    return UserTrafficCollectPollResponse(
+        server_id=server_id,
+        job_id=job_id,
+        status="finished",
+        bundle=bundle,
+        job_error=None,
+    )
+
+
+@router.get(
+    "/{server_id}/user-traffic",
+    response_model=ServerUserTrafficBundle,
+    dependencies=[Depends(require_admin)],
+    summary="Трафик по пользователям из БД (сбор с узла — POST …/user-traffic/collect, воркер RQ)",
+)
+async def get_server_user_traffic(
+    server_id: int,
+    session: SessionDep,
+    response: Response,
+    collect: bool = Query(
+        False,
+        description="Устарело: SSH не выполняется в API. Используйте POST …/user-traffic/collect",
+    ),
+) -> ServerUserTrafficBundle:
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    if session.get(Server, server_id) is None:
+        raise HTTPException(status_code=404, detail="Сервер не найден")
+    if collect:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Сбор по SSH выполняет воркер RQ: "
+                "POST /api/servers/{id}/user-traffic/collect, затем GET "
+                "/api/servers/{id}/user-traffic/collect-jobs/{job_id}"
+            ),
+        )
+
+    def _run() -> ServerUserTrafficBundle:
+        db = SessionLocal()
+        try:
+            server = db.get(Server, server_id)
+            if server is None:
+                raise RuntimeError("server disappeared")
+            return load_user_traffic_bundle_rows(db, server_id)
+        finally:
+            db.close()
+
+    return await run_in_threadpool(_run)
