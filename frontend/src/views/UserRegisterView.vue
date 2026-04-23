@@ -82,9 +82,12 @@ async function submit() {
 
 <style scoped>
 .page {
+  width: 100%;
   max-width: 420px;
+  min-width: min(280px, 100%);
   margin: 0 auto;
   padding: 1.75rem 1rem 2.5rem;
+  box-sizing: border-box;
 }
 
 .head {
