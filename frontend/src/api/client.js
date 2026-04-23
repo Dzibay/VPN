@@ -84,7 +84,8 @@ export async function fetchJson(path, options = {}) {
 }
 
 /**
- * Полный URL подписки для клиента (ссылка вида …/sub/{token}).
+ * URL подписки для VPN-клиента: GET возвращает text/plain — одна строка Base64.
+ * JSON с узлами и vless://: …/sub/{token}/json
  * В проде задайте VITE_SUBSCRIPTION_BASE_URL=https://api.yourvpn.com
  */
 export function subscriptionPublicUrl(token) {
@@ -97,17 +98,4 @@ export function subscriptionPublicUrl(token) {
     return `${window.location.origin}/sub/${token}`
   }
   return `/sub/${token}`
-}
-
-/** URL для импорта в v2rayNG / Nekoray: тело ответа — одна строка Base64 (vless по строке). */
-export function subscriptionImportUrl(token) {
-  const base =
-    import.meta.env.VITE_SUBSCRIPTION_BASE_URL?.replace(/\/$/, '') ?? ''
-  if (base) {
-    return `${base}/sub/${token}/raw`
-  }
-  if (typeof window !== 'undefined') {
-    return `${window.location.origin}/sub/${token}/raw`
-  }
-  return `/sub/${token}/raw`
 }

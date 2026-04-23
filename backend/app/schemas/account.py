@@ -22,5 +22,5 @@ class AccountMeResponse(BaseModel):
     subscription_active: bool = False
     subscription_token: str = Field(
         default="",
-        description="Токен для URL подписки /sub/{token}; для admin пусто",
+        description="Токен для /sub/{token} (Base64) и /sub/{token}/json; для admin пусто",
     )

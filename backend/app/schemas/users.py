@@ -51,7 +51,9 @@ class UserRead(BaseModel):
     telegram_id: str | None
     email: str | None = None
     subscription_until: date | None
-    token: str = Field(description="Токен для ссылки подписки /sub/{token}")
+    token: str = Field(
+        description="Токен для URL /sub/{token} (Base64) и /sub/{token}/json",
+    )
     vless_uuid: str = Field(description="UUID клиента VLESS (общий для всех узлов в подписке)")
 
 

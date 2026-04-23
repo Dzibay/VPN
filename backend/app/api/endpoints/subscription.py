@@ -23,12 +23,9 @@ from app.services.subscription_delivery import (
 router = APIRouter(tags=["subscription"])
 
 
-@router.get(
-    "/sub/{token}",
-    response_model=SubscriptionPayload,
-    summary="Подписка (JSON): узлы, vless:// и Base64 для импорта",
-)
-async def subscription_by_token(token: str, session: ReadonlySessionDep) -> SubscriptionPayload:
+async def _subscription_payload_for_token(
+    token: str, session: ReadonlySessionDep
+) -> SubscriptionPayload:
     user = table_select_one(session, User, filters={"token": token})
     if user is None:
         raise HTTPException(status_code=404, detail="Неизвестный токен")
@@ -47,21 +44,22 @@ async def subscription_by_token(token: str, session: ReadonlySessionDep) -> Subs
 
 
 @router.get(
-    "/sub/{token}/raw",
-    summary="Тело подписки как text/plain (только Base64) — для v2rayNG, Nekoray и др.",
+    "/sub/{token}",
+    summary="Подписка: text/plain, одна строка Base64 (v2rayNG, Nekoray и др.)",
     response_class=Response,
 )
-async def subscription_base64_raw(token: str, session: ReadonlySessionDep) -> Response:
-    user = table_select_one(session, User, filters={"token": token})
-    if user is None:
-        raise HTTPException(status_code=404, detail="Неизвестный токен")
-
-    if not user_has_active_subscription(user):
-        return Response(content="", media_type="text/plain; charset=utf-8")
-
-    rows = await run_in_threadpool(subscription_servers_after_prometheus_sync)
-    payload = build_subscription_payload(user, rows)
+async def subscription_base64_by_token(token: str, session: ReadonlySessionDep) -> Response:
+    payload = await _subscription_payload_for_token(token, session)
     return Response(
         content=payload.subscription_base64,
         media_type="text/plain; charset=utf-8",
     )
+
+
+@router.get(
+    "/sub/{token}/json",
+    response_model=SubscriptionPayload,
+    summary="Подписка (JSON): узлы, vless:// и поле subscription_base64",
+)
+async def subscription_json_by_token(token: str, session: ReadonlySessionDep) -> SubscriptionPayload:
+    return await _subscription_payload_for_token(token, session)
