@@ -3,6 +3,8 @@
 CREATE TABLE IF NOT EXISTS users (
     id BIGSERIAL PRIMARY KEY,
     telegram_id TEXT,
+    email TEXT,
+    password_hash TEXT,
     subscription_until DATE,
     token TEXT NOT NULL,
     vless_uuid TEXT NOT NULL,
@@ -10,9 +12,16 @@ CREATE TABLE IF NOT EXISTS users (
     CONSTRAINT users_vless_uuid_key UNIQUE (vless_uuid)
 );
 
+-- Миграция для уже существующих БД (до появления колонок в CREATE выше)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+
 -- Уникальность только для непустых telegram_id (несколько NULL допустимо)
 CREATE UNIQUE INDEX IF NOT EXISTS uq_users_telegram_id ON users (telegram_id)
     WHERE telegram_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email ON users (email)
+    WHERE email IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_users_subscription_until ON users (subscription_until);
 

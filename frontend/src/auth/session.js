@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'vpn_admin_token'
+const USER_STORAGE_KEY = 'vpn_user_token'
 
 let authRequiredCache = null
 
@@ -15,6 +16,19 @@ export function setAdminToken(token) {
 export function clearAdminToken() {
   localStorage.removeItem(STORAGE_KEY)
   authRequiredCache = null
+}
+
+export function getUserToken() {
+  if (typeof localStorage === 'undefined') return null
+  return localStorage.getItem(USER_STORAGE_KEY)
+}
+
+export function setUserToken(token) {
+  localStorage.setItem(USER_STORAGE_KEY, token)
+}
+
+export function clearUserToken() {
+  localStorage.removeItem(USER_STORAGE_KEY)
 }
 
 /** Сброс кэша (например после смены настроек на сервере). */

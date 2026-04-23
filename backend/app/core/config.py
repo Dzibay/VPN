@@ -57,6 +57,14 @@ class Settings(BaseSettings):
         default="",
         description="Секрет HS256 для JWT админки. Пусто — выводится из ADMIN_PANEL_PASSWORD.",
     )
+    user_jwt_secret: str = Field(
+        default="",
+        description=(
+            "Секрет HS256 для JWT пользовательского портала (/api/account/*). "
+            "Пусто — выводится из admin_jwt_secret или ADMIN_PANEL_PASSWORD (отдельный salt). "
+            "В debug без секрета используется небезопасный запасной ключ."
+        ),
+    )
 
     redis_url: str = Field(
         default="redis://127.0.0.1:6379/0",

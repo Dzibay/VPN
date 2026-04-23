@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -160,21 +161,32 @@ def _query_range(
     end: float,
     step: int,
 ) -> list[tuple[float, float]]:
-    r = client.get(
-        f"{_base_url()}/api/v1/query_range",
-        params={
-            "query": query,
-            "start": str(start),
-            "end": str(end),
-            "step": str(step),
-        },
-    )
-    r.raise_for_status()
-    payload = r.json()
-    if payload.get("status") != "success":
-        log.warning("Prometheus query_range не success: %s", payload.get("error") or payload)
-        return []
-    return _matrix_to_pairs(payload)
+    """503/502 от Prometheus при query_range часто кратковременные (старт TSDB, нагрузка)."""
+    max_attempts = 3
+    backoff_s = 0.4
+    last: httpx.Response | None = None
+    for attempt in range(max_attempts):
+        last = client.get(
+            f"{_base_url()}/api/v1/query_range",
+            params={
+                "query": query,
+                "start": str(start),
+                "end": str(end),
+                "step": str(step),
+            },
+        )
+        if last.status_code in (502, 503) and attempt + 1 < max_attempts:
+            time.sleep(backoff_s * (attempt + 1))
+            continue
+        last.raise_for_status()
+        payload = last.json()
+        if payload.get("status") != "success":
+            log.warning("Prometheus query_range не success: %s", payload.get("error") or payload)
+            return []
+        return _matrix_to_pairs(payload)
+    if last is not None:
+        last.raise_for_status()
+    return []
 
 
 def _forward_fill(t: float, pairs: list[tuple[float, float]]) -> float | None:

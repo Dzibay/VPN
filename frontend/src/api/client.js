@@ -1,4 +1,41 @@
-import { clearAdminToken, getAdminToken } from '../auth/session.js'
+import {
+  clearAdminToken,
+  clearUserToken,
+  getAdminToken,
+  getUserToken,
+} from '../auth/session.js'
+
+/** Какой Bearer использовать для пути API (админский и пользовательский токены разделены). */
+function tokenForApiPath(path) {
+  if (!path.startsWith('/api/')) return null
+  if (
+    path === '/api/auth/login' ||
+    path === '/api/auth/status' ||
+    path === '/api/account/register' ||
+    path === '/api/account/login'
+  ) {
+    return null
+  }
+  if (path.startsWith('/api/account')) return getUserToken()
+  return getAdminToken()
+}
+
+function formatErrorDetail(data) {
+  if (data == null || typeof data !== 'object') return null
+  const d = data.detail
+  if (d == null) return null
+  if (typeof d === 'string') return d
+  if (Array.isArray(d)) {
+    return d
+      .map((x) =>
+        typeof x === 'object' && x != null && typeof x.msg === 'string'
+          ? x.msg
+          : JSON.stringify(x),
+      )
+      .join('; ')
+  }
+  return JSON.stringify(d)
+}
 
 /**
  * Базовый URL API. В dev оставьте пустым — запросы идут на тот же хост (прокси Vite).
@@ -15,13 +52,8 @@ export async function fetchJson(path, options = {}) {
     Accept: 'application/json',
     ...options.headers,
   }
-  const token = getAdminToken()
-  if (
-    token &&
-    path.startsWith('/api/') &&
-    path !== '/api/auth/login' &&
-    path !== '/api/auth/status'
-  ) {
+  const token = tokenForApiPath(path)
+  if (token) {
     headers.Authorization = `Bearer ${token}`
   }
   if (
@@ -47,18 +79,17 @@ export async function fetchJson(path, options = {}) {
     }
   }
   if (!res.ok) {
-    if (
-      res.status === 401 &&
-      token &&
-      path.startsWith('/api/') &&
-      path !== '/api/auth/login'
-    ) {
-      clearAdminToken()
+    const authSent = headers.Authorization
+    if (res.status === 401 && authSent?.startsWith('Bearer ')) {
+      const sent = authSent.slice(7).trim()
+      const ut = getUserToken()
+      const at = getAdminToken()
+      if (sent && ut && sent === ut) clearUserToken()
+      else if (sent && at && sent === at) clearAdminToken()
     }
+    const detailMsg = formatErrorDetail(data)
     const err = new Error(
-      typeof data === 'object' && data?.detail != null
-        ? JSON.stringify(data.detail)
-        : res.statusText || `HTTP ${res.status}`,
+      detailMsg || res.statusText || `HTTP ${res.status}`,
     )
     err.status = res.status
     err.data = data

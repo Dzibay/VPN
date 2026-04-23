@@ -845,6 +845,7 @@ const statsValue = computed(() =>
           <thead>
             <tr>
               <th>ID</th>
+              <th>Email</th>
               <th>Telegram</th>
               <th>Подписка до</th>
               <th>Ссылка подписки</th>
@@ -855,6 +856,7 @@ const statsValue = computed(() =>
           <tbody>
             <tr v-for="u in users" :key="u.id">
               <td>{{ u.id }}</td>
+              <td>{{ u.email ?? '—' }}</td>
               <td>{{ u.telegram_id ?? '—' }}</td>
               <td>{{ formatDate(u.subscription_until) }}</td>
               <td class="link-cell">

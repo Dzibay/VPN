@@ -19,6 +19,8 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     telegram_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    email: Mapped[str | None] = mapped_column(Text, nullable=True)
+    password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     subscription_until: Mapped[date | None] = mapped_column(Date, nullable=True)
     token: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     vless_uuid: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
