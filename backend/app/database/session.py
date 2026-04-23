@@ -5,9 +5,13 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
 
+# psycopg3 по умолчанию готовит именованные server-side statements (_pg3_*).
+# С пулом соединений и/или PgBouncer (transaction) это даёт DuplicatePreparedStatement
+# на batch UPDATE/executemany (например при flush() после сбора трафика Xray).
 engine = create_engine(
     settings.sqlalchemy_database_url,
     pool_pre_ping=True,
+    connect_args={"prepare_threshold": None},
 )
 
 SessionLocal = sessionmaker(
