@@ -9,11 +9,11 @@ scrape_configs:
 
   # Цели node_exporter с VPN API (активные серверы из БД).
   # Подготовка: скопируйте sd_bearer.example.txt → sd_bearer.txt; строка = PROMETHEUS_SD_TOKEN в .env API.
-  # URL: API на хосте (uvicorn) — часто :5000; API только в Docker compose — http://api:8000/...
+  # URL: в Docker Compose — сервис api:8000. Для uvicorn на хосте замените на host.docker.internal:ПОРТ.
   - job_name: node_exporter
     honor_timestamps: true
     http_sd_configs:
-      - url: http://host.docker.internal:5000/api/prometheus/sd/node-exporter
+      - url: http://api:8000/api/prometheus/sd/node-exporter
         refresh_interval: 30s
         authorization:
           type: Bearer
