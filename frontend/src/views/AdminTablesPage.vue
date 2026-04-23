@@ -99,6 +99,8 @@ const provisionActionError = ref(null)
 const serverPingId = ref(null)
 const serverReachabilityOk = ref(null)
 const serverReachabilityMsg = ref(null)
+/** Подпункты ответа GET /servers/:id/ping (TCP, БД, каскад, node_exporter) */
+const serverHealthChecks = ref([])
 const deletingServerId = ref(null)
 
 const loadSyncLoading = ref(false)
@@ -282,6 +284,7 @@ watch(
     loadSyncError.value = null
     serverReachabilityOk.value = null
     serverReachabilityMsg.value = null
+    serverHealthChecks.value = []
     usersSyncOk.value = null
     usersSyncError.value = null
     if (s === 'users') loadUsers()
@@ -770,19 +773,31 @@ async function enqueueProvisionCleanup(s) {
 async function pingServerReachability(s) {
   serverReachabilityOk.value = null
   serverReachabilityMsg.value = null
+  serverHealthChecks.value = []
   provisionActionError.value = null
   serverPingId.value = s.id
   try {
     const res = await fetchJson(`/api/servers/${s.id}/ping`)
-    serverReachabilityOk.value = Boolean(res.reachable)
-    const ms =
-      res.latency_ms != null ? `${res.latency_ms} мс` : '—'
-    serverReachabilityMsg.value = res.reachable
-      ? `Узел доступен: TCP ${res.host}:${res.port}, ${ms} (проверка с хоста API, не ICMP).`
-      : `Узел недоступен по TCP ${res.host}:${res.port} (${ms}). ${res.detail || ''}`.trim()
+    const checks = Array.isArray(res.checks) ? res.checks : []
+    serverHealthChecks.value = checks
+    const overall =
+      res.overall_ok === true
+        ? true
+        : res.overall_ok === false
+          ? false
+          : Boolean(res.reachable)
+    serverReachabilityOk.value = overall
+    serverReachabilityMsg.value =
+      (res.summary && String(res.summary).trim()) ||
+      (res.reachable
+        ? `Узел отвечает по TCP ${res.host}:${res.port}` +
+            (res.latency_ms != null ? `, ${res.latency_ms} мс` : '') +
+            ' (с хоста API, не ICMP).'
+        : `Нет ответа по TCP ${res.host}:${res.port}. ${res.detail || ''}`.trim())
   } catch (e) {
     serverReachabilityOk.value = false
     serverReachabilityMsg.value = e.message || String(e)
+    serverHealthChecks.value = []
   } finally {
     serverPingId.value = null
   }
@@ -804,6 +819,7 @@ async function deleteServer(s, opts = {}) {
   provisionActionError.value = null
   serverReachabilityOk.value = null
   serverReachabilityMsg.value = null
+  serverHealthChecks.value = []
   try {
     await fetchJson(`/api/servers/${s.id}`, { method: 'DELETE' })
     await loadServers()
@@ -1077,13 +1093,40 @@ watch(formIsCascadeRuEntry, (v) => {
         <p v-if="provisionActionError" class="provision-banner">
           {{ provisionActionError }}
         </p>
-        <p
+        <div
           v-if="serverReachabilityMsg"
           class="provision-banner"
           :class="{ 'provision-banner--ok': serverReachabilityOk === true }"
         >
-          {{ serverReachabilityMsg }}
-        </p>
+          <p class="server-health-summary">
+            {{ serverReachabilityMsg }}
+          </p>
+          <ul
+            v-if="serverHealthChecks.length"
+            class="server-health-list"
+            aria-label="Пункты проверки"
+          >
+            <li
+              v-for="c in serverHealthChecks"
+              :key="c.id"
+              class="server-health-item"
+              :class="{
+                'server-health-item--ok': c.ok,
+                'server-health-item--fail': !c.ok,
+              }"
+            >
+              <span class="server-health-mark" aria-hidden="true">{{ c.ok ? '✓' : '×' }}</span>
+              <span class="server-health-line">
+                <strong>{{ c.label }}</strong>
+                <span
+                  v-if="c.latency_ms != null"
+                  class="server-health-lat"
+                >· {{ c.latency_ms }} мс</span>
+              </span>
+              <span class="server-health-detail">{{ c.detail }}</span>
+            </li>
+          </ul>
+        </div>
         <div class="cascade-overview" aria-label="Каскадные пары">
           <h3 class="cascade-overview-title">Каскад (вход РФ → внешний exit)</h3>
           <p class="cascade-muted cascade-provision-hint">
@@ -1235,13 +1278,13 @@ watch(formIsCascadeRuEntry, (v) => {
           class="dropdown-item"
           role="menuitem"
           :disabled="isServerProvisionBusy(serverMenuTarget)"
-          title="TCP-соединение с API до host:port inbound (не ICMP)"
+          title="С API: TCP к Xray, node_exporter, каскадный exit, сверка с БД (provision, ключи)"
           @click="withOpenServerMenu(pingServerReachability)"
         >
           {{
             serverPingId === serverMenuTarget.id
               ? 'Проверка…'
-              : 'Проверить доступность'
+              : 'Полная проверка узла'
           }}
         </button>
         <div class="dropdown-sep" role="separator" />
@@ -2043,6 +2086,62 @@ watch(formIsCascadeRuEntry, (v) => {
   color: var(--text-h);
   background: var(--accent-soft);
   border-color: var(--accent-border);
+}
+
+.provision-banner .server-health-summary {
+  margin: 0 0 0.55rem;
+  line-height: 1.45;
+}
+
+.server-health-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.35rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  border-top: 1px solid var(--card-border, rgba(128, 128, 128, 0.25));
+}
+
+.server-health-item {
+  display: grid;
+  grid-template-columns: 1.1em 1fr;
+  gap: 0.35rem 0.5rem;
+  align-items: start;
+}
+
+.server-health-line {
+  grid-column: 2;
+  display: block;
+  color: var(--text-h);
+}
+
+.server-health-lat {
+  color: var(--muted);
+  font-weight: 400;
+  margin-left: 0.2rem;
+}
+
+.server-health-detail {
+  grid-column: 2;
+  display: block;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.server-health-item--ok .server-health-mark {
+  color: #1a7f37;
+}
+
+.server-health-item--fail .server-health-mark {
+  color: var(--danger);
+}
+
+.server-health-item--ok .server-health-line strong,
+.server-health-item--fail .server-health-line strong {
+  font-weight: 600;
 }
 
 .field-readonly .readonly-value {

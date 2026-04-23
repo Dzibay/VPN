@@ -227,9 +227,11 @@ if cascade:
     ru_direct = (os.environ.get("VPN_CASCADE_RU_DIRECT") or "1").strip() == "1"
     if ru_direct:
         # Sniff: домен/протокол для geosite-правил (без SNI сначала сработает geoip:ru)
+        # http/tls без quic: часть старых сборок Xray падает на quic; routeOnly — только маршрут, не ломаем dest
         cfg["inbounds"][0]["sniffing"] = {
             "enabled": True,
-            "destOverride": ["http", "tls", "quic"],
+            "destOverride": ["http", "tls"],
+            "routeOnly": True,
         }
         cfg["routing"] = {
             "domainStrategy": "IPIfNonMatch",
@@ -310,6 +312,38 @@ _xray_ensure_geo_dats() {
   echo "[xray] geo: готово"
 }
 
+# Проверка JSON и маршрутов; иначе systemctl даст мёртвый сокет (TCP connection refused)
+_xray_test_config_and_restart() {
+  local cfg="$1"
+  local xb="${2:-}"
+  if [[ -z "$xb" || ! -x "$xb" ]]; then
+    xb=$(command -v xray 2>/dev/null) || true
+  fi
+  if [[ -z "$xb" || ! -x "$xb" ]]; then
+    if [[ -x /usr/local/bin/xray ]]; then
+      xb=/usr/local/bin/xray
+    else
+      echo "[xray] нет бинарника xray для run -test" >&2
+      return 1
+    fi
+  fi
+  echo "[xray] проверка: $xb run -test -c $cfg"
+  if ! "$xb" run -test -c "$cfg" 2>&1; then
+    echo "[xray] run -test: конфиг невалиден или нет geosite/geoip (см. выше)" >&2
+    return 1
+  fi
+  if command -v systemctl >/dev/null 2>&1; then
+    if ! systemctl restart xray; then
+      echo "[xray] systemctl restart xray неудача, последние логи:" >&2
+      journalctl -u xray -n 50 --no-pager 2>&1 | head -80 >&2
+      return 1
+    fi
+  else
+    echo "[xray] нет systemctl — перезапустите xray вручную" >&2
+  fi
+  return 0
+}
+
 _xray_install() {
   if ! command -v python3 >/dev/null 2>&1; then
     echo "[xray] нужен python3 для записи config.json" >&2
@@ -373,11 +407,10 @@ _xray_install() {
 
   echo "[xray] запись $CFG (VLESS REALITY → ${VPN_REALITY_DEST})…"
   _write_xray_config
-
   if command -v systemctl >/dev/null 2>&1; then
     systemctl enable xray 2>/dev/null || true
-    systemctl restart xray || true
   fi
+  _xray_test_config_and_restart "$CFG" "$XRAY_BIN" || exit 1
 }
 
 _ne_install() {
@@ -779,9 +812,14 @@ case "$COMPONENT" in
     fi
     echo "[xray] sync_clients: запись $CFG (без установки пакета)…"
     _write_xray_config
-    if command -v systemctl >/dev/null 2>&1; then
-      systemctl restart xray || true
+    XBIN="$XRAY_BIN"
+    if [[ -z "$XBIN" || ! -x "$XBIN" ]]; then
+      XBIN=$(command -v xray 2>/dev/null) || true
     fi
+    if [[ -z "$XBIN" && -x /usr/local/bin/xray ]]; then
+      XBIN=/usr/local/bin/xray
+    fi
+    _xray_test_config_and_restart "$CFG" "$XBIN" || exit 1
     echo "[xray] sync_clients: перезапуск xray выполнен"
     ;;
   xray)

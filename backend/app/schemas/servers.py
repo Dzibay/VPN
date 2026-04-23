@@ -1,6 +1,6 @@
 import re
 import uuid as uuid_lib
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -396,8 +396,31 @@ class XrayClientsSyncOneResultRead(BaseModel):
     job_id: str = Field(description="ID задачи RQ на один узел")
 
 
+class HealthCheckItemRead(BaseModel):
+    """Одна подпункт в комплексной проверке /servers/{id}/ping."""
+
+    id: str = Field(description="стабильный идентификатор, напр. tcp_vless_inbound")
+    label: str
+    ok: bool
+    detail: str = Field(
+        default="",
+        description="Пояснение: «OK» или причина сбоя / что не так в БД",
+    )
+    severity: Literal["critical", "warning", "info"] = Field(
+        default="critical",
+        description="critical — блокирует overall_ok; warning/info — важность ниже",
+    )
+    latency_ms: float | None = Field(
+        default=None,
+        description="для TCP-проверок, мс",
+    )
+
+
 class ServerPingRead(BaseModel):
-    """Ответ GET /servers/{id}/ping — доступность host:port с API (TCP connect)."""
+    """
+    GET /servers/{id}/ping — с хоста API: TCP к узлу + сверка с БД, каскад, node_exporter.
+    `reachable` — только TCP к порту Xray; `overall_ok` — совокупная оценка.
+    """
 
     server_id: int
     host: str
@@ -405,10 +428,25 @@ class ServerPingRead(BaseModel):
     reachable: bool
     latency_ms: float | None = Field(
         default=None,
-        description="Время до успешного TCP connect, мс",
+        description="время до успешного TCP connect к host:port (VLESS/REALITY), мс",
     )
-    detail: str = Field(default="", description="Текст ошибки или краткое пояснение")
+    detail: str = Field(
+        default="",
+        description="кратко: как при одной проверке; для совместимости повторяет начало summary",
+    )
     check: str = Field(
-        default="tcp_connect",
-        description="Метод проверки (не ICMP: с хоста API проверяется порт inbound)",
+        default="health_multi",
+        description="Сейчас: health_multi (TCP + БД + каскад + метрики).",
+    )
+    overall_ok: bool = Field(
+        default=False,
+        description="true, если критичные проверки пройдены (см. checks[].severity).",
+    )
+    summary: str = Field(
+        default="",
+        description="2–4 предложения на русском: итог и что сделать при ошибке",
+    )
+    checks: list[HealthCheckItemRead] = Field(
+        default_factory=list,
+        description="подробные пункты в порядке важности",
     )

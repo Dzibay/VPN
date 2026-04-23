@@ -1,7 +1,5 @@
 import logging
 import secrets
-import socket
-import time
 import uuid as uuid_lib
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -29,6 +27,7 @@ from app.schemas.servers import (
     XrayClientsSyncOneResultRead,
     XrayClientsSyncResultRead,
 )
+from app.services.server_health_check import build_server_health_read, run_tcp_probes
 from app.services.server_load_sync import sync_all_servers_load_from_prometheus
 from app.services.user_provision import enqueue_sync_xray_clients_all_servers
 
@@ -576,24 +575,10 @@ async def patch_server(
     return server
 
 
-def _tcp_connect_probe(host: str, port: int, timeout: float) -> tuple[bool, float | None, str]:
-    """Проверка доступности узла: TCP connect с хоста API (не ICMP)."""
-    start = time.perf_counter()
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
-            pass
-    except OSError as e:
-        elapsed_ms = round((time.perf_counter() - start) * 1000.0, 2)
-        msg = str(e).strip() or type(e).__name__
-        return False, elapsed_ms, msg
-    elapsed_ms = round((time.perf_counter() - start) * 1000.0, 2)
-    return True, elapsed_ms, ""
-
-
 @router.get(
     "/{server_id}/ping",
     response_model=ServerPingRead,
-    summary="Проверить доступность узла (TCP к host:port с API)",
+    summary="Проверка узла: TCP, БД, каскад, node_exporter (с API-сервера)",
 )
 async def ping_server_reachable(
     server_id: int,
@@ -602,7 +587,7 @@ async def ping_server_reachable(
         5.0,
         ge=0.5,
         le=15.0,
-        description="Таймаут TCP connect, с",
+        description="Таймаут TCP connect (VPN, exit, metrics), с",
     ),
 ) -> ServerPingRead:
     server = session.get(Server, server_id)
@@ -610,19 +595,31 @@ async def ping_server_reachable(
         raise HTTPException(status_code=404, detail="Сервер не найден")
     host = (server.host or "").strip()
     port = int(server.port)
+    ex_host: str | None = None
+    ex_port: int | None = None
+    if server.is_cascade_ru_entry and server.cascade_next_server_id is not None:
+        ex = session.get(Server, int(server.cascade_next_server_id))
+        if ex is not None:
+            ex_host = (ex.host or "").strip() or None
+            ex_port = int(ex.port)
 
-    def _run() -> tuple[bool, float | None, str]:
-        return _tcp_connect_probe(host, port, timeout_sec)
+    def _run_tcp() -> dict:
+        return run_tcp_probes(
+            host,
+            port,
+            ne_port=int(settings.provision_node_exporter_port),
+            exit_host=ex_host,
+            exit_port=ex_port,
+            timeout_sec=timeout_sec,
+        )
 
-    ok, latency_ms, err = await run_in_threadpool(_run)
-    return ServerPingRead(
-        server_id=server_id,
-        host=host,
-        port=port,
-        reachable=ok,
-        latency_ms=latency_ms,
-        detail="OK" if ok else err,
-        check="tcp_connect",
+    tcp = await run_in_threadpool(_run_tcp)
+    return build_server_health_read(
+        session,
+        server,
+        settings,
+        timeout_sec=timeout_sec,
+        tcp=tcp,
     )
 
 
