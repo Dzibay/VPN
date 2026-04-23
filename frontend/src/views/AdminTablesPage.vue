@@ -59,6 +59,10 @@ const formRealityShortId = ref('')
 const formVlessUuid = ref('')
 const formRealityPublicKey = ref('')
 const formRealityPrivateKey = ref('')
+/** Вход (РФ) в каскаде: дальше трафик на внешний exit (подготовка к Xray) */
+const formIsCascadeRuEntry = ref(false)
+/** id внешнего сервера; '' = не задано */
+const formCascadeNextServerId = ref('')
 /** Вкладки модалки сервера: общие параметры | VLESS+REALITY */
 const serverModalTab = ref('general')
 /** null — создание сервера; иначе id для PATCH */
@@ -299,6 +303,8 @@ function openModal() {
     formVlessUuid.value = ''
     formRealityPublicKey.value = ''
     applyDefaultProxyFields()
+    formIsCascadeRuEntry.value = false
+    formCascadeNextServerId.value = ''
   }
   modalOpen.value = true
 }
@@ -332,6 +338,9 @@ function openEditServer(s) {
   formVlessUuid.value = s.vless_uuid ?? ''
   formRealityPublicKey.value = s.reality_public_key ?? ''
   formRealityPrivateKey.value = s.reality_private_key ?? ''
+  formIsCascadeRuEntry.value = Boolean(s.is_cascade_ru_entry)
+  formCascadeNextServerId.value =
+    s.cascade_next_server_id != null ? String(s.cascade_next_server_id) : ''
   modalOpen.value = true
 }
 
@@ -523,6 +532,11 @@ async function submitSaveServer() {
       const pinst = String(formPrometheusInstance.value ?? '').trim()
       patch.prometheus_instance = pinst || null
       patch.network_cap_mbps = normalizeNetworkCapMbps(formNetworkCapMbps.value)
+      patch.is_cascade_ru_entry = formIsCascadeRuEntry.value
+      const cnx = String(formCascadeNextServerId.value ?? '').trim()
+      patch.cascade_next_server_id = cnx
+        ? Number.parseInt(cnx, 10)
+        : null
       await fetchJson(`/api/servers/${editingServerId.value}`, {
         method: 'PATCH',
         body: JSON.stringify(patch),
@@ -549,6 +563,13 @@ async function submitSaveServer() {
       if (pinst) createBody.prometheus_instance = pinst
       const cap = normalizeNetworkCapMbps(formNetworkCapMbps.value)
       if (cap != null) createBody.network_cap_mbps = cap
+      createBody.is_cascade_ru_entry = formIsCascadeRuEntry.value
+      const cnx = String(formCascadeNextServerId.value ?? '').trim()
+      if (cnx) {
+        createBody.cascade_next_server_id = Number.parseInt(cnx, 10)
+      } else {
+        createBody.cascade_next_server_id = null
+      }
       await fetchJson('/api/servers', {
         method: 'POST',
         body: JSON.stringify(createBody),
@@ -744,7 +765,7 @@ const sectionTitle = computed(() =>
 const sectionSub = computed(() =>
   section.value === 'users'
     ? 'У каждого пользователя свой VLESS UUID в подписке; на узлах в inbound перечислены UUID активных подписок. После изменений — «Синхронизировать Xray».'
-    : 'Провижининг по SSH: Xray, Prometheus (node_exporter), справедливая очередь uplink (CAKE/fq_codel), полный прогон, обновление и очистка. Нужны Redis и воркер RQ.',
+    : 'Провижининг по SSH: Xray, Prometheus (node_exporter), справедливая очередь uplink (CAKE/fq_codel), полный прогон, обновление и очистка. Нужны Redis и воркер RQ. Каскад: внешний exit можно добавить отдельно, затем вход (РФ) и привязка в «Правка» — конфиг Xray на узлах пока не меняется.',
 )
 
 const userModalTitle = computed(() =>
@@ -766,6 +787,46 @@ const statsTitle = computed(() =>
 const statsValue = computed(() =>
   section.value === 'users' ? usersCount.value : serversCount.value,
 )
+
+/** id внешнего, на которые ссылаются входы (РФ) */
+const cascadeReferencedExitIds = computed(() => {
+  const s = new Set()
+  for (const x of servers.value) {
+    if (x.cascade_next_server_id != null) s.add(x.cascade_next_server_id)
+  }
+  return s
+})
+
+const serverCascadePairs = computed(() => {
+  const out = []
+  for (const s of servers.value) {
+    if (!s.is_cascade_ru_entry || !s.cascade_next_server_id) continue
+    const exitS = servers.value.find((e) => e.id === s.cascade_next_server_id) ?? null
+    out.push({ entry: s, exit: exitS })
+  }
+  return out
+})
+
+const ruEntryAwaitingCascade = computed(() =>
+  servers.value.filter((s) => s.is_cascade_ru_entry && !s.cascade_next_server_id),
+)
+
+const externalServersUnpaired = computed(() =>
+  servers.value.filter(
+    (s) => !s.is_cascade_ru_entry && !cascadeReferencedExitIds.value.has(s.id),
+  ),
+)
+
+/** Под селектор: кто может быть внешним exit (не «вход РФ»; не self при правке) */
+function cascadeExitCandidates(editingId) {
+  return servers.value.filter(
+    (s) => !s.is_cascade_ru_entry && s.id !== editingId,
+  )
+}
+
+watch(formIsCascadeRuEntry, (v) => {
+  if (!v) formCascadeNextServerId.value = ''
+})
 </script>
 
 <template>
@@ -947,6 +1008,56 @@ const statsValue = computed(() =>
         <p v-if="provisionActionError" class="provision-banner">
           {{ provisionActionError }}
         </p>
+        <div class="cascade-overview" aria-label="Каскадные пары">
+          <h3 class="cascade-overview-title">Каскад (вход РФ → внешний exit)</h3>
+          <p class="cascade-muted cascade-provision-hint">
+            Установка: сначала полный прогон на <strong>внешнем</strong> exit (Xray с REALITY). Затем на
+            <strong>РФ-входе</strong> — «Xray» или полная установка: трафик пользователей уйдёт на exit по
+            отдельному UUID. При смене пары в БД exit обновится в очереди sync Xray (если Redis доступен).
+          </p>
+          <p v-if="!serverCascadePairs.length && !ruEntryAwaitingCascade.length && !externalServersUnpaired.length" class="cascade-muted">
+            Каскадов нет. Добавьте внешний сервер, при необходимости — отметьте вход (РФ) и привяжите exit.
+          </p>
+          <ul v-else class="cascade-pair-list">
+            <li
+              v-for="row in serverCascadePairs"
+              :key="`pair-${row.entry.id}`"
+              class="cascade-pair-item cascade-pair-item--ok"
+            >
+              <span class="cascade-pair-line">
+                <strong>Вход (РФ)</strong> id {{ row.entry.id }}
+                <span v-if="row.entry.name" class="cascade-muted"> · {{ row.entry.name }}</span>
+                <span class="cascade-mono"> · {{ row.entry.host }}</span>
+                <span class="cascade-arrow" aria-hidden="true"> → </span>
+                <strong>Exit</strong> id {{ row.exit?.id ?? row.entry.cascade_next_server_id }}
+                <span v-if="row.exit?.name" class="cascade-muted"> · {{ row.exit.name }}</span>
+                <span v-if="row.exit" class="cascade-mono"> · {{ row.exit.host }}</span>
+              </span>
+            </li>
+            <li
+              v-for="s in ruEntryAwaitingCascade"
+              :key="`ru-wait-${s.id}`"
+              class="cascade-pair-item cascade-pair-item--wait"
+            >
+              <span class="cascade-pair-line">
+                <strong>Вход (РФ)</strong> id {{ s.id }}{{ s.name ? ` · ${s.name}` : '' }}
+                <span class="cascade-mono"> · {{ s.host }}</span>
+                <span class="cascade-pair-hint">— внешний exit ещё не привязан (правка сервера)</span>
+              </span>
+            </li>
+            <li
+              v-for="s in externalServersUnpaired"
+              :key="`ext-${s.id}`"
+              class="cascade-pair-item cascade-pair-item--ext"
+            >
+              <span class="cascade-pair-line">
+                <strong>Только внешний</strong> id {{ s.id }}{{ s.name ? ` · ${s.name}` : '' }}
+                <span class="cascade-mono"> · {{ s.host }}</span>
+                <span v-if="s.country" class="cascade-muted"> ({{ s.country }})</span>
+              </span>
+            </li>
+          </ul>
+        </div>
         <div class="table-wrap">
         <table class="table">
           <thead>
@@ -954,6 +1065,7 @@ const statsValue = computed(() =>
               <th>ID</th>
               <th>Название</th>
               <th>Страна</th>
+              <th>Каскад</th>
               <th>Нагрузка</th>
               <th>Тариф Мбит/с</th>
               <th>Host</th>
@@ -966,6 +1078,16 @@ const statsValue = computed(() =>
               <td>{{ s.id }}</td>
               <td>{{ s.name ?? '—' }}</td>
               <td>{{ s.country || '—' }}</td>
+              <td class="cascade-col">
+                <span v-if="!s.is_cascade_ru_entry" class="cascade-pill">внешний</span>
+                <template v-else-if="s.cascade_next_server_id">
+                  <span class="cascade-pill cascade-pill--ru">РФ</span>
+                  <span class="cascade-nowrap" title="cascade_next_server_id"
+                    >→ {{ s.cascade_next_server_id }}</span
+                  >
+                </template>
+                <span v-else class="cascade-pill cascade-pill--ru">РФ (без exit)</span>
+              </td>
               <td class="mono">
                 {{ s.load_percent ?? 0 }}%
                 <span
@@ -1320,6 +1442,45 @@ const statsValue = computed(() =>
                 <input v-model="formActive" type="checkbox" />
                 <span>Активен (учитывать в подписке)</span>
               </label>
+              <div class="field field-cascade">
+                <label class="field field-check">
+                  <input v-model="formIsCascadeRuEntry" type="checkbox" />
+                  <span>Вход (РФ) в каскаде — дальше трафик на внешний exit</span>
+                </label>
+                <p class="field-hint field-hint--cascade">
+                  Можно сначала создать только внешний сервер (флажок снят), затем вход и
+                  привязать exit. Цепь настраивается в БД, установка Xray на узлах — позже.
+                </p>
+                <label
+                  v-show="formIsCascadeRuEntry"
+                  class="field"
+                >
+                  <span>Внешний exit (id сервера)</span>
+                  <select
+                    v-model="formCascadeNextServerId"
+                    class="cascade-exit-select"
+                  >
+                    <option value="">— не привязан (только договорились, что это вход РФ) —</option>
+                    <option
+                      v-for="c in cascadeExitCandidates(editingServerId)"
+                      :key="c.id"
+                      :value="String(c.id)"
+                    >
+                      #{{ c.id }}{{ c.name ? ` ${c.name}` : '' }} — {{ c.host }}
+                    </option>
+                  </select>
+                </label>
+                <p
+                  v-if="
+                    formIsCascadeRuEntry &&
+                    !cascadeExitCandidates(editingServerId).length
+                  "
+                  class="field-hint"
+                >
+                  Нет внешних кандидатов (нужен узел без флажка «вход РФ»). Создайте такой
+                  сервер и сохраните снова.
+                </p>
+              </div>
               <label class="field">
                 <span>Prometheus instance (node_exporter)</span>
                 <input
@@ -2044,5 +2205,138 @@ const statsValue = computed(() =>
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
+}
+
+.cascade-overview {
+  margin: 0 0 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+}
+
+.cascade-overview-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.cascade-provision-hint {
+  margin: 0 0 0.6rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.cascade-muted {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.cascade-pair-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cascade-pair-item {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  padding: 0.4rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+}
+
+.cascade-pair-item--ok {
+  border-left: 3px solid var(--accent);
+}
+
+.cascade-pair-item--wait {
+  border-left: 3px solid #b8860b;
+}
+
+.cascade-pair-item--ext {
+  border-left: 3px solid var(--muted);
+}
+
+.cascade-pair-line {
+  display: block;
+}
+
+.cascade-pair-hint {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.cascade-mono {
+  font-family: ui-monospace, monospace;
+  font-size: 0.78em;
+  font-weight: 400;
+  color: var(--text-h);
+}
+
+.cascade-arrow {
+  color: var(--accent);
+  font-weight: 800;
+  padding: 0 0.1rem;
+}
+
+.cascade-exit-select {
+  width: 100%;
+  max-width: 100%;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: 0.5rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  color: var(--text-h);
+}
+
+.field-hint--cascade {
+  margin-top: 0.1rem;
+}
+
+.cascade-col {
+  font-size: 0.8rem;
+  white-space: normal;
+  max-width: 8.5rem;
+}
+
+.cascade-nowrap {
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.cascade-pill {
+  display: inline-block;
+  margin-right: 0.25rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+}
+
+.cascade-pill--ru {
+  color: #b86a1a;
+  border-color: rgba(184, 106, 26, 0.35);
+  background: rgba(184, 106, 26, 0.08);
 }
 </style>

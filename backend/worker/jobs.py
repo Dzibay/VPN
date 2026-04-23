@@ -139,7 +139,49 @@ def _xray_env_lines(db: Session, server: Server) -> str:
     pk = (server.reality_private_key or "").strip()
     if pk:
         remote_env += f"export VPN_REALITY_PRIVATE_KEY={shlex.quote(pk)}\n"
+    remote_env += _cascade_xray_env_for_ru_entry(db, server)
     return remote_env
+
+
+def _cascade_xray_env_for_ru_entry(db: Session, server: Server) -> str:
+    """
+    РФ-вход: VLESS+REALITY outbound на внешний exit (тот же протокол, что у клиентов к exit).
+    """
+    if not server.is_cascade_ru_entry or not server.cascade_next_server_id:
+        return "export VPN_CASCADE_ENABLED=0\n"
+    eid = int(server.cascade_next_server_id)
+    cu = (server.cascade_egress_client_uuid or "").strip()
+    if not cu:
+        raise RuntimeError(
+            "Каскад: у РФ-входа (id=%s) нет cascade_egress_client_uuid; "
+            "сохраните ссылку на exit в админке (или пересоздайте каскад)" % (server.id,)
+        )
+    ex = db.get(Server, eid)
+    if ex is None:
+        raise RuntimeError("Каскад: внешний сервер id=%s не найден" % eid)
+    pbk = (ex.reality_public_key or "").strip()
+    if not pbk:
+        raise RuntimeError(
+            "Каскад: на внешнем узле id=%s (host=%s) нет reality_public_key — "
+            "сначала установите Xray на exit" % (ex.id, ex.host)
+        )
+    ehost = (ex.host or "").strip() or "127.0.0.1"
+    eport = int(ex.port)
+    eflow = (ex.vless_flow or "xtls-rprx-vision").strip() or "xtls-rprx-vision"
+    efp = (ex.reality_fingerprint or "chrome").strip() or "chrome"
+    e_short = (ex.reality_short_id or "").strip() or "0123456789abcdef"
+    e_names = (ex.reality_server_names or "").strip() or "www.amazon.com,amazon.com"
+    return (
+        "export VPN_CASCADE_ENABLED=1\n"
+        f"export VPN_CASCADE_EGRESS_ADDRESS={shlex.quote(ehost)}\n"
+        f"export VPN_CASCADE_EGRESS_PORT={eport}\n"
+        f"export VPN_CASCADE_EGRESS_CLIENT_UUID={shlex.quote(cu)}\n"
+        f"export VPN_CASCADE_EGRESS_PBK={shlex.quote(pbk)}\n"
+        f"export VPN_CASCADE_EGRESS_SERVER_NAMES={shlex.quote(e_names)}\n"
+        f"export VPN_CASCADE_EGRESS_SHORT_ID={shlex.quote(e_short)}\n"
+        f"export VPN_CASCADE_EGRESS_FINGERPRINT={shlex.quote(efp)}\n"
+        f"export VPN_CASCADE_EGRESS_FLOW={shlex.quote(eflow)}\n"
+    )
 
 
 def _run_ssh_remote_provision(db: Session, server: Server, *, component: ProvisionComponent) -> None:

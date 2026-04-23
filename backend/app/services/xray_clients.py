@@ -23,6 +23,22 @@ def active_subscription_users(session: Session) -> list[User]:
     return list(session.scalars(stmt).all())
 
 
+def cascade_egress_uuids_for_exit_server(session: Session, exit_server: Server) -> list[str]:
+    """
+    UUID клиентов с РФ-входов, направленных на этот сервер как exit.
+    """
+    stmt = select(Server).where(
+        Server.cascade_next_server_id == exit_server.id,
+        Server.cascade_egress_client_uuid.isnot(None),
+    )
+    out: list[str] = []
+    for s in session.scalars(stmt).all():
+        u = (s.cascade_egress_client_uuid or "").strip()
+        if u and u not in out:
+            out.append(u)
+    return out
+
+
 def active_subscription_user_uuids(session: Session) -> list[str]:
     """UUID пользователей с действующей подпиской (без срока или дата ≥ сегодня)."""
     out: list[str] = []
@@ -40,7 +56,12 @@ def vless_client_uuids_csv_for_server(session: Session, server: Server) -> str:
     Строка UUID через запятую для VPN_VLESS_CLIENT_UUIDS (legacy).
     Если нет ни одного активного пользователя — в конфиг попадает только UUID узла (fallback).
     """
-    uuids = active_subscription_user_uuids(session)
+    uuids = list(active_subscription_user_uuids(session))
+    seen = set(uuids)
+    for c in cascade_egress_uuids_for_exit_server(session, server):
+        if c not in seen:
+            seen.add(c)
+            uuids.append(c)
     fallback = (server.vless_uuid or "").strip()
     if not uuids:
         if fallback:
@@ -56,14 +77,36 @@ def vless_clients_b64_for_server(session: Session, server: Server) -> str:
     """
     flow = (server.vless_flow or "xtls-rprx-vision").strip() or "xtls-rprx-vision"
     entries: list[dict[str, object]] = []
+    seen_ids: set[str] = set()
     for u in active_subscription_users(session):
         uid = (u.vless_uuid or "").strip()
         if not uid:
             continue
+        if uid in seen_ids:
+            continue
+        seen_ids.add(uid)
         entries.append(
             {
                 "id": uid,
                 "email": f"u{u.id}@vpn",
+                "flow": flow,
+                "level": 0,
+            }
+        )
+    for ru in session.scalars(
+        select(Server).where(
+            Server.cascade_next_server_id == server.id,
+            Server.cascade_egress_client_uuid.isnot(None),
+        )
+    ).all():
+        cuid = (ru.cascade_egress_client_uuid or "").strip()
+        if not cuid or cuid in seen_ids:
+            continue
+        seen_ids.add(cuid)
+        entries.append(
+            {
+                "id": cuid,
+                "email": f"ru_entry{ru.id}@cascade",
                 "flow": flow,
                 "level": 0,
             }

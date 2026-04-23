@@ -169,8 +169,69 @@ cfg = {
             },
         },
     ],
-    "outbounds": [{"protocol": "freedom", "tag": "direct"}],
+    "outbounds": [{"protocol": "freedom", "tag": "direct", "settings": {}}],
 }
+
+# Каскад: РФ-вход — user traffic VLESS+REALITY inbound → VLESS+REALITY outbound на внешний exit
+cascade = (os.environ.get("VPN_CASCADE_ENABLED") or "").strip() == "1"
+if cascade:
+    eg_sni_list = [
+        x.strip()
+        for x in os.environ.get("VPN_CASCADE_EGRESS_SERVER_NAMES", "").split(",")
+        if x.strip()
+    ]
+    sn0 = eg_sni_list[0] if eg_sni_list else "www.amazon.com"
+    eaddr = os.environ["VPN_CASCADE_EGRESS_ADDRESS"].strip()
+    eport = int(os.environ.get("VPN_CASCADE_EGRESS_PORT", "443"))
+    ecid = os.environ["VPN_CASCADE_EGRESS_CLIENT_UUID"].strip()
+    epbk = os.environ["VPN_CASCADE_EGRESS_PBK"].strip()
+    esid = os.environ.get("VPN_CASCADE_EGRESS_SHORT_ID", "").strip() or "ab"
+    efp = os.environ.get("VPN_CASCADE_EGRESS_FINGERPRINT", "chrome").strip() or "chrome"
+    eflow = os.environ.get("VPN_CASCADE_EGRESS_FLOW", "xtls-rprx-vision").strip() or "xtls-rprx-vision"
+    vless_to_exit = {
+        "tag": "egress-cascade",
+        "protocol": "vless",
+        "settings": {
+            "vnext": [
+                {
+                    "address": eaddr,
+                    "port": eport,
+                    "users": [
+                        {
+                            "id": ecid,
+                            "encryption": "none",
+                            "flow": eflow,
+                        }
+                    ],
+                }
+            ]
+        },
+        "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+                "show": False,
+                "fingerprint": efp,
+                "serverName": sn0,
+                "publicKey": epbk,
+                "shortId": esid,
+                "spiderX": "/",
+            },
+        },
+    }
+    direct_out = {"protocol": "freedom", "tag": "direct", "settings": {}}
+    cfg["outbounds"] = [vless_to_exit, direct_out]
+    cfg["inbounds"][0]["tag"] = "vless-in"
+    cfg["routing"] = {
+        "domainStrategy": "AsIs",
+        "rules": [
+            {
+                "type": "field",
+                "inboundTag": ["vless-in"],
+                "outboundTag": "egress-cascade",
+            }
+        ],
+    }
 
 path = os.environ.get("VPN_XRAY_CONFIG_PATH", "/usr/local/etc/xray/config.json")
 with open(path, "w", encoding="utf-8") as f:

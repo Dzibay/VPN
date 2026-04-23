@@ -37,6 +37,95 @@ router = APIRouter(
 )
 
 
+def _validate_cascade_pair(
+    session: Session,
+    *,
+    self_id: int | None,
+    is_ru_entry: bool,
+    cascade_next_id: int | None,
+) -> None:
+    """
+    Каскад: только «вход» (РФ) может ссылаться на внешний exit-узел.
+    Внешний — тот, у кого is_cascade_ru_entry = false, без дальнейшей цепочки.
+    """
+    if cascade_next_id is None:
+        return
+    if not is_ru_entry:
+        raise HTTPException(
+            status_code=400,
+            detail="cascade_next_server_id задан: включите is_cascade_ru_entry (вход в каскаде) "
+            "или сбросьте внешний id",
+        )
+    if self_id is not None and cascade_next_id == self_id:
+        raise HTTPException(
+            status_code=400,
+            detail="cascade_next_server_id не может совпадать с id этого сервера",
+        )
+    target = session.get(Server, cascade_next_id)
+    if target is None:
+        raise HTTPException(
+            status_code=400,
+            detail="cascade_next_server_id: внешний сервер не найден",
+        )
+    if target.is_cascade_ru_entry:
+        raise HTTPException(
+            status_code=400,
+            detail="Каскад: внешний узел — сервер с is_cascade_ru_entry=false; "
+            "нельзя направлять на вход (РФ) другой пары",
+        )
+    if target.cascade_next_server_id is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Каскад: внешний узел не должен иметь собственного cascade_next (один уровень)",
+        )
+
+
+def _merge_cascade_fields(
+    server: Server,
+    data: dict,
+) -> tuple[bool, int | None]:
+    """Согласованный is_cascade_ru_entry и cascade_next_server_id при PATCH."""
+    is_ru = server.is_cascade_ru_entry
+    next_id = server.cascade_next_server_id
+    if "is_cascade_ru_entry" in data:
+        is_ru = bool(data["is_cascade_ru_entry"])
+    if "cascade_next_server_id" in data:
+        next_id = data["cascade_next_server_id"]
+    if is_ru is False:
+        next_id = None
+    elif next_id is not None:
+        is_ru = True
+    return is_ru, next_id
+
+
+def _try_enqueue_sync_xray_on_exit_for_cascade(
+    session: Session, *exit_ids: int | None
+) -> None:
+    """
+    Добавить/убрать UUID РФ-входа в inbound внешнего exit. Не падает при отсутствии Redis.
+    """
+    need = {int(x) for x in exit_ids if x is not None}
+    for eid in need:
+        ex = session.get(Server, eid)
+        if ex is None or not ex.provision_ready:
+            log.info(
+                "cascade: пропуск sync Xray на exit id=%s (нет или provision_ready=false)",
+                eid,
+            )
+            continue
+        if (settings.provision_command or "").strip():
+            continue
+        try:
+            q = get_install_queue()
+            q.enqueue(
+                "worker.jobs.sync_xray_clients_to_server",
+                eid,
+                job_timeout=max(settings.provision_subprocess_timeout, 300),
+            )
+        except RedisError as e:
+            log.warning("cascade: не поставлена в очередь sync Xray на exit id=%s: %s", eid, e)
+
+
 def _provision_command_blocks_split_install() -> None:
     if (settings.provision_command or "").strip():
         raise HTTPException(
@@ -150,6 +239,14 @@ async def create_server(body: ServerCreate, session: SessionDep) -> Server:
     reality_server_names = body.reality_server_names or "www.amazon.com,amazon.com"
     reality_fingerprint = body.reality_fingerprint or "chrome"
     vless_flow = body.vless_flow or "xtls-rprx-vision"
+    is_ru = bool(body.is_cascade_ru_entry)
+    cnext = body.cascade_next_server_id
+    if cnext is not None:
+        is_ru = True
+    elif not is_ru:
+        cnext = None
+    _validate_cascade_pair(session, self_id=None, is_ru_entry=is_ru, cascade_next_id=cnext)
+    cascade_egress_uuid: str | None = str(uuid_lib.uuid4()) if cnext else None
     server = Server(
         name=body.name,
         host=body.host,
@@ -165,6 +262,9 @@ async def create_server(body: ServerCreate, session: SessionDep) -> Server:
         vless_flow=vless_flow,
         prometheus_instance=body.prometheus_instance,
         network_cap_mbps=body.network_cap_mbps,
+        is_cascade_ru_entry=is_ru,
+        cascade_next_server_id=cnext,
+        cascade_egress_client_uuid=cascade_egress_uuid,
     )
     try:
         table_insert(session, server)
@@ -174,6 +274,7 @@ async def create_server(body: ServerCreate, session: SessionDep) -> Server:
             status_code=409,
             detail="Сервер с таким host и port уже существует",
         ) from e
+    _try_enqueue_sync_xray_on_exit_for_cascade(session, cnext)
     return server
 
 
@@ -440,7 +541,32 @@ async def patch_server(
         return server
     if data.get("reality_private_key"):
         server.reality_public_key = None
+    cascade_touched = False
+    old_cnext: int | None = None
+    if "is_cascade_ru_entry" in data or "cascade_next_server_id" in data:
+        cascade_touched = True
+        old_cnext = server.cascade_next_server_id
+        old_cuuid = server.cascade_egress_client_uuid
+        is_ru, cnext = _merge_cascade_fields(server, data)
+        _validate_cascade_pair(
+            session,
+            self_id=server_id,
+            is_ru_entry=is_ru,
+            cascade_next_id=cnext,
+        )
+        data["is_cascade_ru_entry"] = is_ru
+        data["cascade_next_server_id"] = cnext
+        if cnext is None:
+            data["cascade_egress_client_uuid"] = None
+        elif cnext != old_cnext or not (str(old_cuuid or "").strip()):
+            data["cascade_egress_client_uuid"] = str(uuid_lib.uuid4())
     for key, value in data.items():
         setattr(server, key, value)
     session.flush()
+    if cascade_touched:
+        _try_enqueue_sync_xray_on_exit_for_cascade(
+            session,
+            old_cnext,
+            server.cascade_next_server_id,
+        )
     return server

@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Boolean, Integer, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
@@ -39,3 +39,14 @@ class Server(Base):
     )
     prometheus_instance: Mapped[str | None] = mapped_column(Text, nullable=True)
     network_cap_mbps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_cascade_ru_entry: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    cascade_next_server_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("servers.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    cascade_egress_client_uuid: Mapped[str | None] = mapped_column(
+        Text, nullable=True, unique=True
+    )

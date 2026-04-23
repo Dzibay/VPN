@@ -22,6 +22,15 @@ _LOAD_SYNC_HOURS = 24
 
 
 def _subscription_server_rows(session: Session) -> list[Server]:
+    """
+    Все валидные узлы для ссылки в подписке.
+
+    Каскад (РФ → exit) не скрывает ни одну ногу: и вход (is_cascade_ru + cascade_next),
+    и внешний id из пары, и полностью одиночный сервер (без участия в каскаде) попадают
+    сюда по тем же критериям is_active, provision_ready, REALITY в БД. Пользователь
+    в клиенте выбирает: прямой vless:// на зарубежный хост и/или на РФ-вход (трафик
+    дальше пойдёт на exit по внутреннему каскаду на стороне Xray).
+    """
     stmt = (
         select(Server)
         .where(
@@ -55,7 +64,31 @@ def _primary_sni(server_names: str, dest: str) -> str:
     return d.rsplit(":", 1)[0] if ":" in d else d
 
 
-def _vless_reality_share_uri(s: Server, *, client_uuid: str) -> str | None:
+def _node_subscription_label(
+    s: Server,
+    *,
+    exit_ids_referenced: set[int],
+) -> str:
+    """
+    Имя для подписки (vless #fragment и JSON name): одиночные узлы без пометок;
+    RU-вход с каскадом / без; exit, на который ссылается каскад (прямое подключение).
+    """
+    base = (s.name or s.country or s.host or "node").strip()
+    if s.is_cascade_ru_entry and s.cascade_next_server_id is not None:
+        return f"{base} (каскад)"
+    if s.is_cascade_ru_entry and s.cascade_next_server_id is None:
+        return f"{base} (RU, прямой)"
+    if s.id in exit_ids_referenced and not s.is_cascade_ru_entry:
+        return f"{base} (прямой)"
+    return base
+
+
+def _vless_reality_share_uri(
+    s: Server,
+    *,
+    client_uuid: str,
+    exit_ids_referenced: set[int],
+) -> str | None:
     pbk = (s.reality_public_key or "").strip()
     if not pbk or "(" in pbk:
         log.warning(
@@ -86,7 +119,7 @@ def _vless_reality_share_uri(s: Server, *, client_uuid: str) -> str | None:
         "sid": sid,
     }
     query = urlencode(params, quote_via=quote, safe="")
-    remark = (s.name or s.country or s.host or "node").strip()
+    remark = _node_subscription_label(s, exit_ids_referenced=exit_ids_referenced)
     fragment = quote(remark, safe="")
     uuid = (client_uuid or "").strip()
     host = (s.host or "").strip()
@@ -95,12 +128,18 @@ def _vless_reality_share_uri(s: Server, *, client_uuid: str) -> str | None:
     return f"vless://{uuid}@{host}:{int(s.port)}?{query}#{fragment}"
 
 
-def _server_to_subscription_dict(s: Server, *, client_uuid: str) -> dict[str, Any]:
+def _server_to_subscription_dict(
+    s: Server,
+    *,
+    client_uuid: str,
+    exit_ids_referenced: set[int],
+) -> dict[str, Any]:
     sni = _primary_sni(s.reality_server_names, s.reality_dest)
     uid = (client_uuid or "").strip()
+    display_name = _node_subscription_label(s, exit_ids_referenced=exit_ids_referenced)
     return {
         "id": s.id,
-        "name": s.name or s.host,
+        "name": display_name,
         "country": s.country,
         "address": s.host,
         "port": s.port,
@@ -120,11 +159,27 @@ def _server_to_subscription_dict(s: Server, *, client_uuid: str) -> dict[str, An
 
 def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPayload:
     client_uuid = (user.vless_uuid or "").strip()
+    # id узлов, на которые RU-входа с каскадом ссылаются как на exit
+    exit_ids_referenced: set[int] = {
+        int(s.cascade_next_server_id)
+        for s in rows
+        if s.cascade_next_server_id is not None
+    }
     servers_out: list[dict[str, Any]] = []
     uris: list[str] = []
     for s in rows:
-        servers_out.append(_server_to_subscription_dict(s, client_uuid=client_uuid))
-        uri = _vless_reality_share_uri(s, client_uuid=client_uuid)
+        servers_out.append(
+            _server_to_subscription_dict(
+                s,
+                client_uuid=client_uuid,
+                exit_ids_referenced=exit_ids_referenced,
+            )
+        )
+        uri = _vless_reality_share_uri(
+            s,
+            client_uuid=client_uuid,
+            exit_ids_referenced=exit_ids_referenced,
+        )
         if uri:
             uris.append(uri)
     raw = "\n".join(uris) + ("\n" if uris else "")

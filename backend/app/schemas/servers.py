@@ -82,6 +82,14 @@ class ServerCreate(BaseModel):
         le=1_000_000,
         description="Тарифный потолок канала (Мбит/с) для шкалы графика сети; пусто — только NIC из метрик",
     )
+    is_cascade_ru_entry: bool = Field(
+        default=False,
+        description="Вход в каскаде (РФ): к нему дальше подключается внешний exit-сервер",
+    )
+    cascade_next_server_id: int | None = Field(
+        default=None,
+        description="ID внешнего exit-сервера; только вместе с is_cascade_ru_entry (подготовка к каскаду Xray)",
+    )
 
     @field_validator("name", mode="before")
     @classmethod
@@ -170,6 +178,19 @@ class ServerCreate(BaseModel):
             raise ValueError("network_cap_mbps: 1…1000000")
         return n
 
+    @field_validator("cascade_next_server_id", mode="before")
+    @classmethod
+    def normalize_cascade_next_create(cls, v: Any) -> int | None:
+        if v is None or v == "":
+            return None
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            raise ValueError("cascade_next_server_id: ожидается id сервера") from None
+        if n < 1:
+            raise ValueError("cascade_next_server_id: невалидный id")
+        return n
+
 
 class ServerUpdate(BaseModel):
     """Частичное обновление (админка: правка нагрузки и метаданных)."""
@@ -198,6 +219,14 @@ class ServerUpdate(BaseModel):
         ge=1,
         le=1_000_000,
         description="Тарифный потолок (Мбит/с); null — сбросить",
+    )
+    is_cascade_ru_entry: bool | None = Field(
+        default=None,
+        description="Вход (РФ) в каскаде; false — сбросить каскад (и cascade_next)",
+    )
+    cascade_next_server_id: int | None = Field(
+        default=None,
+        description="Id внешнего exit; null — отвязать. Только у входа is_cascade_ru_entry",
     )
 
     @field_validator("name", mode="before")
@@ -275,6 +304,21 @@ class ServerUpdate(BaseModel):
             raise ValueError("network_cap_mbps: 1…1000000")
         return n
 
+    @field_validator("cascade_next_server_id", mode="before")
+    @classmethod
+    def normalize_cascade_next_patch(cls, v: object) -> int | None:
+        if v is None:
+            return None
+        if v == "":
+            return None
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            raise ValueError("cascade_next_server_id: ожидается id сервера") from None
+        if n < 1:
+            raise ValueError("cascade_next_server_id: невалидный id")
+        return n
+
 
 class ServerRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -307,6 +351,18 @@ class ServerRead(BaseModel):
     network_cap_mbps: int | None = Field(
         default=None,
         description="Тарифный потолок канала (Мбит/с) для графика сети",
+    )
+    is_cascade_ru_entry: bool = Field(
+        default=False,
+        description="Сервер — вход (РФ) в каскаде, дальше трафик на cascade_next",
+    )
+    cascade_next_server_id: int | None = Field(
+        default=None,
+        description="Id внешнего exit-сервера; не null — пара каскада настроена в БД",
+    )
+    cascade_egress_client_uuid: str | None = Field(
+        default=None,
+        description="UUID VLESS: этот (РФ) вход → на внешний exit; должен быть в inbound exit",
     )
 
 

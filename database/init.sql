@@ -38,7 +38,15 @@ CREATE TABLE IF NOT EXISTS servers (
     network_cap_mbps INTEGER CHECK (
         network_cap_mbps IS NULL OR (network_cap_mbps >= 1 AND network_cap_mbps <= 1000000)
     ),
-    CONSTRAINT uq_servers_host_port UNIQUE (host, port)
+    is_cascade_ru_entry BOOLEAN NOT NULL DEFAULT FALSE,
+    cascade_next_server_id BIGINT REFERENCES servers (id) ON DELETE SET NULL,
+    CONSTRAINT uq_servers_host_port UNIQUE (host, port),
+    CONSTRAINT ck_servers_cascade_ru_and_next CHECK (
+        cascade_next_server_id IS NULL OR is_cascade_ru_entry = TRUE
+    ),
+    -- UUID VLESS с РФ-входа на внешний exit (должен быть в inbound exit вместе с пользователями)
+    cascade_egress_client_uuid TEXT,
+    CONSTRAINT uq_servers_cascade_egress_uuid UNIQUE (cascade_egress_client_uuid)
 );
 
 CREATE TABLE IF NOT EXISTS user_server_traffic (

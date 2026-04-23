@@ -24,3 +24,21 @@ CREATE INDEX IF NOT EXISTS idx_users_subscription_until ON users (subscription_u
 CREATE INDEX IF NOT EXISTS idx_servers_is_active ON servers (is_active);
 
 CREATE INDEX IF NOT EXISTS idx_user_server_traffic_server ON user_server_traffic (server_id);
+
+-- Каскад: вход (РФ) → внешний exit; внешний — без собственного cascade_next
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS is_cascade_ru_entry BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS cascade_next_server_id BIGINT REFERENCES servers (id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_servers_cascade_next ON servers (cascade_next_server_id)
+    WHERE cascade_next_server_id IS NOT NULL;
+
+-- Инвариант: ссылка на внешний только у входа в каскаде
+ALTER TABLE servers DROP CONSTRAINT IF EXISTS ck_servers_cascade_ru_and_next;
+ALTER TABLE servers ADD CONSTRAINT ck_servers_cascade_ru_and_next CHECK (
+    cascade_next_server_id IS NULL OR is_cascade_ru_entry = TRUE
+);
+
+-- UUID клиента: РФ-вход → VLESS+REALITY на внешний exit
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS cascade_egress_client_uuid TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_servers_cascade_egress_uuid
+    ON servers (cascade_egress_client_uuid)
+    WHERE cascade_egress_client_uuid IS NOT NULL;
