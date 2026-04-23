@@ -86,7 +86,12 @@ def _preview(text: str, max_len: int = _PREVIEW_LEN) -> str:
 
 def parse_statsquery_json(text: str) -> dict[int, dict[str, int]]:
     """user_id -> {'up': bytes, 'down': bytes} из ответа xray api statsquery."""
-    data = json.loads(text)
+    # stdout+stderr могут содержать один валидный JSON и «хвост» (повторный JSON, строка лога).
+    # json.loads на всём буфере даёт Extra data; берём только первое значение.
+    text = text.lstrip()
+    data, _ = json.JSONDecoder().raw_decode(text)
+    if not isinstance(data, dict):
+        data = {}
     stats = data.get("stat") or data.get("stats") or []
     if isinstance(stats, dict):
         stats = list(stats.values()) if stats else []
