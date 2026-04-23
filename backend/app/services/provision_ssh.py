@@ -142,12 +142,14 @@ def ssh_run_script_with_user_fallback(
         if idx < len(users) - 1 and _ssh_looks_like_auth_failure(
             int(result.returncode), out, err
         ):
+            nxt = users[idx + 1]
+            nxt_at = f"{nxt}@{server.host}"
             log.warning(
-                "SSH %s@%s: rc=%s, пробуем %s. stderr: %s",
+                "SSH %s@%s: rc=%s, следующий кандидат %s. stderr: %s",
                 u,
                 server.host,
                 result.returncode,
-                users[idx + 1],
+                nxt_at,
                 (err or "")[:500].replace("\n", " "),
             )
             continue
