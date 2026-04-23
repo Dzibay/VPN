@@ -71,12 +71,24 @@ def build_server_health_read(
     checks: list[HealthCheckItemRead] = []
 
     v_ok, v_ms, v_err = tcp.get("vpn", (False, None, "no probe"))
+    ne_ok_for_hint = "ne" in tcp and bool(tcp["ne"][0])
+    ne_p = int(settings.provision_node_exporter_port)
+    if v_ok:
+        vpn_detail: str = "Слушатель отвечает"
+    else:
+        vpn_detail = f"недоступен: {v_err}"
+        if ne_ok_for_hint:
+            vpn_detail += (
+                f" — на этом же IP порт {ne_p} (node_exporter) отвечает: машина online, "
+                f"а на {port} нет слушающего Xray. Часто: `systemctl status xray`, "
+                f"`ss -tlnp | grep {port}` и что inbound в config.json = порт {port}."
+            )
     checks.append(
         HealthCheckItemRead(
             id="tcp_vless_inbound",
             label="TCP к порту Xray (VLESS/REALITY на узле)",
             ok=v_ok,
-            detail="Слушатель отвечает" if v_ok else f"недоступен: {v_err}",
+            detail=vpn_detail,
             severity="critical",
             latency_ms=v_ms,
         )
@@ -131,7 +143,6 @@ def build_server_health_read(
 
     if "ne" in tcp:
         n_ok, n_ms, n_err = tcp["ne"]
-        ne_p = int(settings.provision_node_exporter_port)
         checks.append(
             HealthCheckItemRead(
                 id="tcp_node_exporter",
@@ -207,11 +218,19 @@ def build_server_health_read(
         if server.is_cascade_ru_entry and server.cascade_next_server_id:
             summary += "Пара каскада проверена. "
     else:
-        parts = [f"Есть критичные замечания по узлу {host}:{port}."]
+        parts: list[str] = [f"Есть критичные замечания по узлу {host}:{port}."]
         for c in bad:
             parts.append(f"{c.label}: {c.detail}")
         if not v_ok:
-            parts.insert(0, f"Сначала должен отвечать порт {port} (Xray). {v_err or ''}".strip())
+            head = f"Порт {port} (Xray) не принимает соединения: {v_err or 'ошибка'}."
+            if ne_ok_for_hint:
+                head += (
+                    f" При этом {ne_p} (метрики) на том же IP отвечает — на {port} "
+                    f"Xray, скорее всего, не запущен или слушает другой порт."
+                )
+            else:
+                head += " Проверьте файрвол, что процесс Xray на узле listening на этом порту."
+            parts.insert(0, head)
         summary = " ".join(parts)[:2000]
 
     return ServerPingRead(
