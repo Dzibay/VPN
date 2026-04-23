@@ -34,6 +34,8 @@ const editingUserId = ref(null)
 
 const formTelegramId = ref('')
 const formSubUntil = ref('')
+/** @username при редактировании (только отображение) */
+const editingUserTgUsername = ref('')
 
 const usersSyncLoading = ref(false)
 const usersSyncError = ref(null)
@@ -285,6 +287,7 @@ function openModal() {
   if (section.value === 'users') {
     formTelegramId.value = ''
     formSubUntil.value = ''
+    editingUserTgUsername.value = ''
   } else {
     formName.value = ''
     formHost.value = ''
@@ -337,6 +340,7 @@ function closeModal() {
   modalOpen.value = false
   editingServerId.value = null
   editingUserId.value = null
+  editingUserTgUsername.value = ''
   serverModalTab.value = 'general'
 }
 
@@ -344,8 +348,13 @@ function openEditUser(u) {
   createError.value = null
   editingServerId.value = null
   editingUserId.value = u.id
-  const tg = u.telegram_id != null ? String(u.telegram_id) : ''
-  formTelegramId.value = tg.startsWith('@') ? tg.slice(1) : tg
+  formTelegramId.value =
+    u.telegram_id != null ? String(u.telegram_id) : ''
+  editingUserTgUsername.value =
+    u.telegram_properties &&
+    typeof u.telegram_properties.username === 'string'
+      ? u.telegram_properties.username
+      : ''
   const su = u.subscription_until
   formSubUntil.value =
     su != null && String(su).trim()
@@ -361,10 +370,12 @@ function subscriptionDateOrNull(dateStr) {
   return s
 }
 
+/** Числовой Telegram user id (Bot API); пусто → null */
 function normalizeTelegramId(raw) {
-  let t = String(raw ?? '').trim()
-  if (t.startsWith('@')) t = t.slice(1).trim()
-  return t === '' ? null : `@${t}`
+  const s = String(raw ?? '').trim().replace(/^@/, '')
+  if (!s) return null
+  if (!/^\d{1,19}$/.test(s)) return null
+  return Number(s)
 }
 
 function normalizePort(raw) {
@@ -432,9 +443,11 @@ async function syncXrayClientsAllServers() {
 async function deleteUser(u, opts = {}) {
   const { fromModal = false } = opts
   const label =
-    u.telegram_id && String(u.telegram_id).trim()
-      ? u.telegram_id
-      : `id ${u.id}`
+    u.telegram_id != null
+      ? String(u.telegram_id)
+      : u.telegram_properties?.username
+        ? '@' + u.telegram_properties.username
+        : `id ${u.id}`
   if (
     !window.confirm(
       `Удалить пользователя «${label}» из базы?\n\n` +
@@ -857,7 +870,20 @@ const statsValue = computed(() =>
             <tr v-for="u in users" :key="u.id">
               <td>{{ u.id }}</td>
               <td>{{ u.email ?? '—' }}</td>
-              <td>{{ u.telegram_id ?? '—' }}</td>
+              <td>
+                <template v-if="u.telegram_id != null">
+                  {{ u.telegram_id
+                  }}<span
+                    v-if="u.telegram_properties?.username"
+                    class="muted"
+                  > @{{ u.telegram_properties.username }}</span>
+                </template>
+                <template v-else-if="u.telegram_properties?.username">
+                  <span class="muted"
+                    >@{{ u.telegram_properties.username }}</span>
+                </template>
+                <template v-else>—</template>
+              </td>
               <td>{{ formatDate(u.subscription_until) }}</td>
               <td class="link-cell">
                 <a
@@ -1142,24 +1168,24 @@ const statsValue = computed(() =>
           <h2 id="modal-user-title">{{ userModalTitle }}</h2>
           <form class="form" @submit.prevent="submitSaveUser">
             <label v-if="editingUserId == null" class="field">
-              <span>Telegram (необязательно)</span>
-              <div class="input-with-at">
-                <span class="input-at" aria-hidden="true">@</span>
-                <input
-                  v-model="formTelegramId"
-                  type="text"
-                  inputmode="text"
-                  autocomplete="off"
-                  autocapitalize="none"
-                  spellcheck="false"
-                  placeholder="username"
-                />
-              </div>
+              <span>Telegram ID (необязательно)</span>
+              <input
+                v-model="formTelegramId"
+                type="text"
+                inputmode="numeric"
+                autocomplete="off"
+                autocapitalize="none"
+                spellcheck="false"
+                placeholder="например 123456789"
+              />
             </label>
             <div v-else class="field field-readonly">
               <span>Telegram</span>
               <p class="readonly-value">
-                {{ formTelegramId ? '@' + formTelegramId : '—' }}
+                <template v-if="formTelegramId">{{ formTelegramId }}</template>
+                <template v-else>—</template>
+                <span v-if="editingUserTgUsername" class="muted">
+                  @{{ editingUserTgUsername }}</span>
               </p>
             </div>
             <label class="field">

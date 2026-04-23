@@ -69,11 +69,32 @@ onMounted(load)
             <dt>Email</dt>
             <dd>{{ me.email }}</dd>
           </div>
-          <div v-if="me.telegram_id" class="row">
+          <div
+            v-if="me.telegram_id != null || me.telegram_properties?.username"
+            class="row"
+          >
             <dt>Telegram</dt>
-            <dd>{{ me.telegram_id }}</dd>
+            <dd>
+              <template v-if="me.telegram_id != null">
+                {{ me.telegram_id
+                }}<span
+                  v-if="me.telegram_properties?.username"
+                  class="muted"
+                > @{{ me.telegram_properties.username }}</span>
+              </template>
+              <template
+                v-else-if="me.telegram_properties?.username"
+              >
+                <span class="muted"
+                  >@{{ me.telegram_properties.username }}</span
+                >
+              </template>
+            </dd>
           </div>
-          <div v-if="!me.email && !me.telegram_id" class="row">
+          <div
+            v-if="!me.email && me.telegram_id == null && !me.telegram_properties?.username"
+            class="row"
+          >
             <dt>Контакт</dt>
             <dd>—</dd>
           </div>

@@ -29,6 +29,8 @@ from app.schemas.account import (
     AccountMeResponse,
     AccountRegisterBody,
     TelegramAuthBody,
+    merge_telegram_auth_profile,
+    telegram_auth_has_profile_fields,
 )
 from app.schemas.auth import TokenResponse
 from app.services.user_provision import (
@@ -38,6 +40,55 @@ from app.services.user_provision import (
 )
 
 log = logging.getLogger("app.auth")
+
+# Примеры ответа GET /api/auth/me в OpenAPI (ключи с null в JSON стандарте часто не показывают).
+_AUTH_ME_OPENAPI_EXAMPLES: dict = {
+    "user_with_email": {
+        "summary": "Пользователь: email, Telegram, подписка",
+        "description": "Типичный случай после веб-регистрации с привязкой Telegram.",
+        "value": {
+            "role": "user",
+            "id": 42,
+            "email": "user@example.com",
+            "telegram_id": 123456789,
+            "telegram_properties": {
+                "username": "ivan_dev",
+                "first_name": "Ivan",
+                "last_name": "Petrov",
+            },
+            "subscription_until": "2026-12-31",
+            "subscription_active": True,
+            "subscription_token": "subscription-token-example",
+        },
+    },
+    "user_telegram_only": {
+        "summary": "Только Telegram: email/срок подписки часто null",
+        "value": {
+            "role": "user",
+            "id": 7,
+            "telegram_id": 998877665,
+            "telegram_properties": {
+                "username": "daria_vpn",
+                "first_name": "Daria",
+            },
+            "subscription_active": False,
+            "subscription_token": "subscription-token-telegram",
+        },
+    },
+    "admin": {
+        "summary": "Админ (ADMIN_EMAIL / ADMIN_PASSWORD)",
+        "description": (
+            "id, telegram_id, telegram_properties, subscription_until в ответе — null; "
+            "subscription_token — пустая строка. Эти поля в примере опущены (см. схему)."
+        ),
+        "value": {
+            "role": "admin",
+            "email": "admin@example.com",
+            "subscription_active": False,
+            "subscription_token": "",
+        },
+    },
+}
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -91,6 +142,7 @@ async def register(
         email=email,
         password_hash=pwd_hash,
         telegram_id=None,
+        telegram_properties=None,
         subscription_until=None,
         token=new_subscription_token(),
         vless_uuid=new_vless_uuid(),
@@ -134,6 +186,7 @@ async def telegram_auth(
         raise HTTPException(status_code=401, detail="Недействительный секрет бота")
 
     tid = body.telegram_id
+    profile = merge_telegram_auth_profile(body, None)
     stmt = select(User).where(User.telegram_id == tid).limit(1)
     user = session.scalars(stmt).first()
     if user is None:
@@ -141,6 +194,7 @@ async def telegram_auth(
             email=None,
             password_hash=None,
             telegram_id=tid,
+            telegram_properties=profile,
             subscription_until=None,
             token=new_subscription_token(),
             vless_uuid=new_vless_uuid(),
@@ -160,6 +214,12 @@ async def telegram_auth(
                 ) from e
         else:
             background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
+    elif telegram_auth_has_profile_fields(body):
+        user.telegram_properties = merge_telegram_auth_profile(
+            body,
+            user.telegram_properties,
+        )
+        session.flush()
 
     try:
         token = create_access_token(settings, role="user", user_id=user.id)
@@ -171,7 +231,17 @@ async def telegram_auth(
 @router.get(
     "/me",
     response_model=AccountMeResponse,
-    summary="Профиль по Bearer JWT (после login/register): пользователь из БД или админ из env",
+    summary="Профиль по Bearer JWT: пользователь из БД или админ из env",
+    responses={
+        200: {
+            "description": "Профиль",
+            "content": {
+                "application/json": {
+                    "examples": _AUTH_ME_OPENAPI_EXAMPLES,
+                }
+            },
+        }
+    },
 )
 async def me(
     session: ReadonlySessionDep,
@@ -183,6 +253,7 @@ async def me(
             id=None,
             email=admin_email_normalized(settings),
             telegram_id=None,
+            telegram_properties=None,
             subscription_until=None,
             subscription_active=False,
             subscription_token="",
@@ -202,6 +273,7 @@ async def me(
         id=user.id,
         email=user.email,
         telegram_id=user.telegram_id,
+        telegram_properties=user.telegram_properties,
         subscription_until=user.subscription_until,
         subscription_active=user_has_active_subscription(user),
         subscription_token=user.token,

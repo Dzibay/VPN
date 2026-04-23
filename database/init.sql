@@ -1,8 +1,10 @@
 -- Клиенты VPN-сервиса (учётные записи, привязка к Telegram, подписка, токен доступа)
--- telegram_id: логин или произвольная строка. Пусто в БД = NULL, таких записей может быть несколько.
+-- telegram_id: числовой id пользователя в Telegram (Bot API). Пусто = NULL, несколько NULL допустимо.
+-- telegram_properties: JSON (ник, locale и т.д.)
 CREATE TABLE IF NOT EXISTS users (
     id BIGSERIAL PRIMARY KEY,
-    telegram_id TEXT,
+    telegram_id BIGINT,
+    telegram_properties JSONB,
     email TEXT,
     password_hash TEXT,
     subscription_until DATE,
@@ -15,6 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- Миграция для уже существующих БД (до появления колонок в CREATE выше)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_properties JSONB;
 
 -- Уникальность только для непустых telegram_id (несколько NULL допустимо)
 CREATE UNIQUE INDEX IF NOT EXISTS uq_users_telegram_id ON users (telegram_id)

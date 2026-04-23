@@ -21,11 +21,6 @@ async def lifespan(_app: FastAPI):
 def create_app() -> FastAPI:
     application = FastAPI(
         title=settings.app_name,
-        description=(
-            "Админка (серверы, пользователи, Prometheus), личный кабинет и выдача подписки. "
-            "JSON API с префиксом `/api`; публичная подписка: `/sub/{token}` (Base64), "
-            "`/sub/{token}/json` (полный JSON)."
-        ),
         version=settings.api_version,
         debug=settings.debug,
         lifespan=lifespan,

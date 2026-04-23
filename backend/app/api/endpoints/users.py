@@ -59,6 +59,7 @@ async def create_user(
 ) -> User:
     user = User(
         telegram_id=body.telegram_id,
+        telegram_properties=body.telegram_properties,
         subscription_until=body.subscription_until,
         token=new_subscription_token(),
         vless_uuid=new_vless_uuid(),

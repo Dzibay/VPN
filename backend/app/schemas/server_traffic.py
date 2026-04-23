@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 class ServerUserTrafficRow(BaseModel):
     user_id: int
-    telegram_id: str | None = None
+    telegram_id: int | None = None
     up_bytes: int = Field(ge=0)
     down_bytes: int = Field(ge=0)
     total_bytes: int = Field(ge=0, description="up + down (накоплено в БД)")
@@ -99,7 +99,7 @@ class UserTrafficByServersBundle(BaseModel):
     """Сводка по пользователю: все узлы из БД и трафик (LEFT JOIN, без трафика — нули)."""
 
     user_id: int
-    telegram_id: str | None = None
+    telegram_id: int | None = None
     subscription_until: date | None = None
     servers: list[UserTrafficPerServerRow] = Field(default_factory=list)
     total_up_bytes: int = Field(ge=0)

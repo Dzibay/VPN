@@ -9,23 +9,20 @@ class UsersCountResponse(BaseModel):
 
 
 class UserCreate(BaseModel):
-    telegram_id: str | None = Field(
+    telegram_id: int | None = Field(
         default=None,
-        max_length=128,
-        description="Логин Telegram; пусто — не указывать",
+        ge=1,
+        le=9223372036854775807,
+        description="Числовой id пользователя в Telegram; пусто — не указывать",
+    )
+    telegram_properties: dict[str, Any] | None = Field(
+        default=None,
+        description="Доп. поля (username, …); пусто — не указывать",
     )
     subscription_until: date | None = Field(
         default=None,
         description="Дата окончания подписки (календарный день). Пусто — без срока",
     )
-
-    @field_validator("telegram_id", mode="before")
-    @classmethod
-    def normalize_telegram_id(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
-        s = str(v).strip()
-        return s if s else None
 
     @field_validator("subscription_until", mode="before")
     @classmethod
@@ -48,7 +45,8 @@ class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    telegram_id: str | None
+    telegram_id: int | None
+    telegram_properties: dict[str, Any] | None = None
     email: str | None = None
     subscription_until: date | None
     token: str = Field(
@@ -63,6 +61,16 @@ class UserUpdate(BaseModel):
     subscription_until: date | None = Field(
         default=None,
         description="Дата окончания подписки; null — без срока",
+    )
+    telegram_id: int | None = Field(
+        default=None,
+        ge=1,
+        le=9223372036854775807,
+        description="Telegram id; null — сбросить привязку (редко). Не указывайте поле, если не меняете.",
+    )
+    telegram_properties: dict[str, Any] | None = Field(
+        default=None,
+        description="JSON-поля Telegram; null — очистить",
     )
 
     @field_validator("subscription_until", mode="before")
