@@ -45,10 +45,6 @@ async function submit() {
     <header class="head">
       <RouterLink class="back" to="/">← На главную</RouterLink>
       <h1>Вход</h1>
-      <p class="sub">
-        Один вход для кабинета и для администратора (учётные данные из .env на
-        сервере).
-      </p>
     </header>
 
     <form class="card card-pad form" @submit.prevent="submit">
