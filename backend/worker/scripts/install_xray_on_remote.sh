@@ -281,11 +281,9 @@ _xray_ensure_geo_dats() {
   local dir
   dir="${VPN_XRAY_GEO_DIR:-/usr/local/share/xray}"
   mkdir -p "$dir"
-  if [[ -s "$dir/geosite.dat" && -s "$dir/geoip.dat" ]]; then
-    echo "[xray] geo: geosite.dat / geoip.dat уже есть в $dir"
-    return 0
-  fi
-  echo "[xray] geo: подгрузка geosite.dat + geoip.dat (Loyalsoldier/distribution)…"
+  # XTLS install-release кладёт короткие geosite/geoip: в них нет geosite:ru (ошибка code not found: RU).
+  # Всегда перекачиваем полные списки (Loyalsoldier) — нельзя пропускать «файл уже есть».
+  echo "[xray] geo: полные geosite.dat + geoip.dat (Loyalsoldier, правила geosite:ru / geoip:ru)…"
   local base="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
   if command -v curl >/dev/null 2>&1; then
     curl -fL --connect-timeout 45 --retry 2 -o "$dir/geosite.dat" "$base/geosite.dat" || {
