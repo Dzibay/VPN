@@ -95,6 +95,11 @@ const serverPrometheusId = ref(null)
 const serverFairEgressId = ref(null)
 const serverCleanupId = ref(null)
 const provisionActionError = ref(null)
+/** Проверка TCP с API к host:port узла */
+const serverPingId = ref(null)
+const serverReachabilityOk = ref(null)
+const serverReachabilityMsg = ref(null)
+const deletingServerId = ref(null)
 
 const loadSyncLoading = ref(false)
 const loadSyncError = ref(null)
@@ -275,6 +280,8 @@ watch(
     closeServerMenu()
     loadSyncOk.value = null
     loadSyncError.value = null
+    serverReachabilityOk.value = null
+    serverReachabilityMsg.value = null
     usersSyncOk.value = null
     usersSyncError.value = null
     if (s === 'users') loadUsers()
@@ -345,7 +352,7 @@ function openEditServer(s) {
 }
 
 function closeModal() {
-  if (creating.value) return
+  if (creating.value || deletingServerId.value != null) return
   modalOpen.value = false
   editingServerId.value = null
   editingUserId.value = null
@@ -650,7 +657,9 @@ function isServerProvisionBusy(s) {
     serverXrayId.value === id ||
     serverPrometheusId.value === id ||
     serverFairEgressId.value === id ||
-    serverCleanupId.value === id
+    serverCleanupId.value === id ||
+    serverPingId.value === id ||
+    deletingServerId.value === id
   )
 }
 
@@ -756,6 +765,66 @@ async function enqueueProvisionCleanup(s) {
   } finally {
     serverCleanupId.value = null
   }
+}
+
+async function pingServerReachability(s) {
+  serverReachabilityOk.value = null
+  serverReachabilityMsg.value = null
+  provisionActionError.value = null
+  serverPingId.value = s.id
+  try {
+    const res = await fetchJson(`/api/servers/${s.id}/ping`)
+    serverReachabilityOk.value = Boolean(res.reachable)
+    const ms =
+      res.latency_ms != null ? `${res.latency_ms} мс` : '—'
+    serverReachabilityMsg.value = res.reachable
+      ? `Узел доступен: TCP ${res.host}:${res.port}, ${ms} (проверка с хоста API, не ICMP).`
+      : `Узел недоступен по TCP ${res.host}:${res.port} (${ms}). ${res.detail || ''}`.trim()
+  } catch (e) {
+    serverReachabilityOk.value = false
+    serverReachabilityMsg.value = e.message || String(e)
+  } finally {
+    serverPingId.value = null
+  }
+}
+
+async function deleteServer(s, opts = {}) {
+  const { fromModal = false } = opts
+  const label = s.name ? `${s.name} (${s.host})` : s.host
+  if (
+    !window.confirm(
+      `Удалить сервер «${label}» (id ${s.id}) из базы?\n\n` +
+        'Строки трафика по этому узлу удалятся. Привязки каскада к этому id сбросятся. ' +
+        'На оставшихся готовых узлах в очередь поставится синхронизация Xray.',
+    )
+  ) {
+    return
+  }
+  deletingServerId.value = s.id
+  provisionActionError.value = null
+  serverReachabilityOk.value = null
+  serverReachabilityMsg.value = null
+  try {
+    await fetchJson(`/api/servers/${s.id}`, { method: 'DELETE' })
+    await loadServers()
+    if (fromModal) {
+      modalOpen.value = false
+      editingServerId.value = null
+      createError.value = null
+    }
+  } catch (e) {
+    provisionActionError.value = e.message || String(e)
+  } finally {
+    deletingServerId.value = null
+  }
+}
+
+function deleteServerFromModal() {
+  const id = editingServerId.value
+  if (id == null) return
+  const s = servers.value.find((x) => x.id === id)
+  if (!s) return
+  void deleteServer(s, { fromModal: true })
 }
 
 const sectionTitle = computed(() =>
@@ -1008,6 +1077,13 @@ watch(formIsCascadeRuEntry, (v) => {
         <p v-if="provisionActionError" class="provision-banner">
           {{ provisionActionError }}
         </p>
+        <p
+          v-if="serverReachabilityMsg"
+          class="provision-banner"
+          :class="{ 'provision-banner--ok': serverReachabilityOk === true }"
+        >
+          {{ serverReachabilityMsg }}
+        </p>
         <div class="cascade-overview" aria-label="Каскадные пары">
           <h3 class="cascade-overview-title">Каскад (вход РФ → внешний exit)</h3>
           <p class="cascade-muted cascade-provision-hint">
@@ -1154,6 +1230,20 @@ watch(formIsCascadeRuEntry, (v) => {
         >
           Правка
         </button>
+        <button
+          type="button"
+          class="dropdown-item"
+          role="menuitem"
+          :disabled="isServerProvisionBusy(serverMenuTarget)"
+          title="TCP-соединение с API до host:port inbound (не ICMP)"
+          @click="withOpenServerMenu(pingServerReachability)"
+        >
+          {{
+            serverPingId === serverMenuTarget.id
+              ? 'Проверка…'
+              : 'Проверить доступность'
+          }}
+        </button>
         <div class="dropdown-sep" role="separator" />
         <button
           type="button"
@@ -1270,6 +1360,21 @@ watch(formIsCascadeRuEntry, (v) => {
             serverProvisionResetId === serverMenuTarget.id
               ? 'Сброс…'
               : 'Сброс очереди'
+          }}
+        </button>
+        <div class="dropdown-sep" role="separator" />
+        <button
+          type="button"
+          class="dropdown-item dropdown-item--danger"
+          role="menuitem"
+          :disabled="isServerProvisionBusy(serverMenuTarget)"
+          title="Удалить запись сервера из БД"
+          @click="withOpenServerMenu(deleteServer)"
+        >
+          {{
+            deletingServerId === serverMenuTarget.id
+              ? 'Удаление…'
+              : 'Удалить сервер'
           }}
         </button>
       </div>
@@ -1580,28 +1685,46 @@ watch(formIsCascadeRuEntry, (v) => {
               </label>
             </div>
             <p v-if="createError" class="form-err">{{ createError }}</p>
-            <div class="modal-actions">
+            <div
+              class="modal-actions"
+              :class="{ 'modal-actions-split': editingServerId != null }"
+            >
               <button
+                v-if="editingServerId != null"
                 type="button"
-                class="btn-secondary"
-                :disabled="creating"
-                @click="closeModal"
-              >
-                Отмена
-              </button>
-              <button
-                type="submit"
-                class="btn-primary"
-                :disabled="creating"
+                class="btn-danger-modal"
+                :disabled="creating || deletingServerId === editingServerId"
+                @click="deleteServerFromModal"
               >
                 {{
-                  creating
-                    ? 'Сохранение…'
-                    : editingServerId != null
-                      ? 'Сохранить'
-                      : 'Добавить'
+                  deletingServerId === editingServerId
+                    ? 'Удаление…'
+                    : 'Удалить сервер'
                 }}
               </button>
+              <div class="modal-actions-right">
+                <button
+                  type="button"
+                  class="btn-secondary"
+                  :disabled="creating || deletingServerId != null"
+                  @click="closeModal"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="submit"
+                  class="btn-primary"
+                  :disabled="creating || deletingServerId != null"
+                >
+                  {{
+                    creating
+                      ? 'Сохранение…'
+                      : editingServerId != null
+                        ? 'Сохранить'
+                        : 'Добавить'
+                  }}
+                </button>
+              </div>
             </div>
           </form>
         </div>

@@ -1,8 +1,10 @@
 import logging
 import secrets
+import socket
+import time
 import uuid as uuid_lib
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from starlette.concurrency import run_in_threadpool
 from redis.exceptions import RedisError
 from rq.job import Job
@@ -20,6 +22,7 @@ from app.schemas.servers import (
     ServerCreate,
     ServerLoadSyncItemRead,
     ServerLoadSyncResultRead,
+    ServerPingRead,
     ServerRead,
     ServerUpdate,
     ServersCountResponse,
@@ -27,6 +30,7 @@ from app.schemas.servers import (
     XrayClientsSyncResultRead,
 )
 from app.services.server_load_sync import sync_all_servers_load_from_prometheus
+from app.services.user_provision import enqueue_sync_xray_clients_all_servers
 
 log = logging.getLogger("app.servers")
 
@@ -570,3 +574,71 @@ async def patch_server(
             server.cascade_next_server_id,
         )
     return server
+
+
+def _tcp_connect_probe(host: str, port: int, timeout: float) -> tuple[bool, float | None, str]:
+    """Проверка доступности узла: TCP connect с хоста API (не ICMP)."""
+    start = time.perf_counter()
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            pass
+    except OSError as e:
+        elapsed_ms = round((time.perf_counter() - start) * 1000.0, 2)
+        msg = str(e).strip() or type(e).__name__
+        return False, elapsed_ms, msg
+    elapsed_ms = round((time.perf_counter() - start) * 1000.0, 2)
+    return True, elapsed_ms, ""
+
+
+@router.get(
+    "/{server_id}/ping",
+    response_model=ServerPingRead,
+    summary="Проверить доступность узла (TCP к host:port с API)",
+)
+async def ping_server_reachable(
+    server_id: int,
+    session: ReadonlySessionDep,
+    timeout_sec: float = Query(
+        5.0,
+        ge=0.5,
+        le=15.0,
+        description="Таймаут TCP connect, с",
+    ),
+) -> ServerPingRead:
+    server = session.get(Server, server_id)
+    if server is None:
+        raise HTTPException(status_code=404, detail="Сервер не найден")
+    host = (server.host or "").strip()
+    port = int(server.port)
+
+    def _run() -> tuple[bool, float | None, str]:
+        return _tcp_connect_probe(host, port, timeout_sec)
+
+    ok, latency_ms, err = await run_in_threadpool(_run)
+    return ServerPingRead(
+        server_id=server_id,
+        host=host,
+        port=port,
+        reachable=ok,
+        latency_ms=latency_ms,
+        detail="OK" if ok else err,
+        check="tcp_connect",
+    )
+
+
+@router.delete(
+    "/{server_id}",
+    status_code=204,
+    summary="Удалить сервер из БД; на оставшихся узлах — синхронизация inbound (очередь)",
+)
+async def delete_server(
+    server_id: int,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+) -> None:
+    server = session.get(Server, server_id)
+    if server is None:
+        raise HTTPException(status_code=404, detail="Сервер не найден")
+    session.delete(server)
+    session.flush()
+    background_tasks.add_task(enqueue_sync_xray_clients_all_servers)

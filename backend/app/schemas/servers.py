@@ -394,3 +394,21 @@ class XrayClientsSyncOneResultRead(BaseModel):
 
     server_id: int
     job_id: str = Field(description="ID задачи RQ на один узел")
+
+
+class ServerPingRead(BaseModel):
+    """Ответ GET /servers/{id}/ping — доступность host:port с API (TCP connect)."""
+
+    server_id: int
+    host: str
+    port: int
+    reachable: bool
+    latency_ms: float | None = Field(
+        default=None,
+        description="Время до успешного TCP connect, мс",
+    )
+    detail: str = Field(default="", description="Текст ошибки или краткое пояснение")
+    check: str = Field(
+        default="tcp_connect",
+        description="Метод проверки (не ICMP: с хоста API проверяется порт inbound)",
+    )
