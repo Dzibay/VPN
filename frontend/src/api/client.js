@@ -1,23 +1,11 @@
-import {
-  clearAdminToken,
-  clearUserToken,
-  getAdminToken,
-  getUserToken,
-} from '../auth/session.js'
+import { clearSession, getAccessToken } from '../auth/session.js'
 
-/** Какой Bearer использовать для пути API (админский и пользовательский токены разделены). */
 function tokenForApiPath(path) {
   if (!path.startsWith('/api/')) return null
-  if (
-    path === '/api/auth/login' ||
-    path === '/api/auth/status' ||
-    path === '/api/account/register' ||
-    path === '/api/account/login'
-  ) {
+  if (path === '/api/auth/login' || path === '/api/auth/register') {
     return null
   }
-  if (path.startsWith('/api/account')) return getUserToken()
-  return getAdminToken()
+  return getAccessToken()
 }
 
 function formatErrorDetail(data) {
@@ -66,7 +54,6 @@ export async function fetchJson(path, options = {}) {
   const res = await fetch(apiUrl(path), {
     ...options,
     headers,
-    // Иначе GET /api/... с разными query (collect=true/false) иногда не доходит до сервера — ответ из кэша.
     cache: options.cache ?? 'no-store',
   })
   const text = await res.text()
@@ -82,10 +69,8 @@ export async function fetchJson(path, options = {}) {
     const authSent = headers.Authorization
     if (res.status === 401 && authSent?.startsWith('Bearer ')) {
       const sent = authSent.slice(7).trim()
-      const ut = getUserToken()
-      const at = getAdminToken()
-      if (sent && ut && sent === ut) clearUserToken()
-      else if (sent && at && sent === at) clearAdminToken()
+      const t = getAccessToken()
+      if (sent && t && sent === t) clearSession()
     }
     const detailMsg = formatErrorDetail(data)
     const err = new Error(

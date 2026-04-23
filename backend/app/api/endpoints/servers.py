@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.deps import SessionDep, require_admin
+from app.api.deps import ReadonlySessionDep, SessionDep, require_admin
 from app.core.config import settings
 from app.core.queue import get_install_queue, get_redis
 from app.database.operations import table_insert
@@ -83,7 +83,7 @@ def _enqueue_software_job(
     response_model=ServersCountResponse,
     summary="Количество серверов в БД",
 )
-async def servers_count(session: SessionDep) -> ServersCountResponse:
+async def servers_count(session: ReadonlySessionDep) -> ServersCountResponse:
     total = session.scalar(select(func.count()).select_from(Server))
     return ServersCountResponse(servers_count=int(total or 0))
 
@@ -93,7 +93,7 @@ async def servers_count(session: SessionDep) -> ServersCountResponse:
     response_model=list[ServerRead],
     summary="Список серверов",
 )
-async def list_servers(session: SessionDep) -> list[Server]:
+async def list_servers(session: ReadonlySessionDep) -> list[Server]:
     stmt = select(Server).order_by(Server.id.desc())
     return list(session.scalars(stmt).all())
 
@@ -208,7 +208,7 @@ async def enqueue_sync_xray_clients_all() -> XrayClientsSyncResultRead:
 )
 async def enqueue_sync_xray_clients_one(
     server_id: int,
-    session: SessionDep,
+    session: ReadonlySessionDep,
 ) -> XrayClientsSyncOneResultRead:
     _provision_command_blocks_split_install()
     server = session.get(Server, server_id)

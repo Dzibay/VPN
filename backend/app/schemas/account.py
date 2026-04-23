@@ -14,11 +14,13 @@ class AccountLoginBody(BaseModel):
 
 
 class AccountMeResponse(BaseModel):
-    id: int
+    role: str = Field(description="user | admin")
+    id: int | None = Field(default=None, description="Для admin не заполняется")
     email: str
     telegram_id: str | None = None
     subscription_until: date | None = None
-    subscription_active: bool
+    subscription_active: bool = False
     subscription_token: str = Field(
-        description="Токен для URL подписки /sub/{token}",
+        default="",
+        description="Токен для URL подписки /sub/{token}; для admin пусто",
     )

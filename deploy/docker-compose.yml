@@ -1,6 +1,6 @@
 # Продакшен-стек: Caddy (TLS) → Nginx (SPA + /api) → FastAPI; Prometheus; Postgres; Redis; RQ worker.
 # Запуск из каталога deploy/:
-#   cp env.example .env   # отредактируйте
+#   cp env.production.example .env   # отредактируйте пароли и домен
 #   mkdir -p secrets/ssh  # положите ключ для PROVISION_SSH_KEY_PATH
 #   docker compose up -d --build
 #

@@ -14,7 +14,7 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    me.value = await fetchJson('/api/account/me')
+    me.value = await fetchJson('/api/auth/me')
   } catch (e) {
     if (e.status === 401) {
       router.replace({ name: 'login', query: { redirect: '/cabinet' } })
@@ -48,7 +48,21 @@ onMounted(load)
     <div v-if="loading" class="card card-pad muted">Загрузка…</div>
     <div v-else-if="error" class="card card-pad err">{{ error }}</div>
     <div v-else-if="me" class="stack">
-      <div class="card card-pad">
+      <div v-if="me.role === 'admin'" class="card card-pad">
+        <h2 class="block-title">Администратор</h2>
+        <p class="hint">
+          Управление серверами и пользователями — в разделе ниже в шапке или
+          <RouterLink class="sub-link" to="/admin">перейти к данным</RouterLink>.
+        </p>
+        <dl class="dl">
+          <div class="row">
+            <dt>Email</dt>
+            <dd>{{ me.email }}</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div v-else class="card card-pad">
         <h2 class="block-title">Профиль</h2>
         <dl class="dl">
           <div class="row">
@@ -66,7 +80,7 @@ onMounted(load)
         </dl>
       </div>
 
-      <div class="card card-pad">
+      <div v-if="me.role === 'user'" class="card card-pad">
         <h2 class="block-title">Подписка</h2>
         <dl class="dl">
           <div class="row">
@@ -91,7 +105,7 @@ onMounted(load)
         </dl>
       </div>
 
-      <div class="card card-pad">
+      <div v-if="me.role === 'user'" class="card card-pad">
         <h2 class="block-title">Ссылка подписки</h2>
         <p class="hint">
           Используйте в VPN-клиенте как subscription URL (если поддерживается).

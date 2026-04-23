@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { fetchJson } from '../api/client.js'
-import { setUserToken } from '../auth/session.js'
+import { setSession } from '../auth/session.js'
 
 const router = useRouter()
 
@@ -15,14 +15,14 @@ async function submit() {
   submitting.value = true
   error.value = null
   try {
-    const data = await fetchJson('/api/account/register', {
+    const data = await fetchJson('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify({
         email: email.value.trim(),
         password: password.value,
       }),
     })
-    setUserToken(data.access_token)
+    setSession(data.access_token, data.role)
     router.replace('/cabinet')
   } catch (e) {
     error.value = e.message || String(e)

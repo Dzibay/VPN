@@ -91,7 +91,7 @@ class SubscriptionPayload(BaseModel):
     )
     servers: list[dict[str, Any]] = Field(
         default_factory=list,
-        description="Активные узлы: host, port, uuid, REALITY (pbk, sid, sni…) без приватного ключа",
+        description="Активные узлы: address, port, uuid, flow, sni, public_key, short_id, dest, server_names",
     )
     vless_uris: list[str] = Field(
         default_factory=list,

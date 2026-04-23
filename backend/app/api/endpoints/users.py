@@ -1,21 +1,21 @@
 import logging
-import uuid as uuid_lib
-from secrets import token_urlsafe
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from redis.exceptions import RedisError
 from sqlalchemy import and_, func, select
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import SessionDep, require_admin
-from app.core.config import settings
-from app.core.queue import get_install_queue
+from app.api.deps import ReadonlySessionDep, SessionDep, require_admin
 from app.database.operations import table_insert
 from app.models.server import Server
 from app.models.user import User
 from app.models.user_server_traffic import UserServerTraffic
 from app.schemas.server_traffic import UserTrafficByServersBundle, UserTrafficPerServerRow
 from app.schemas.users import UserCreate, UserRead, UsersCountResponse, UserUpdate
+from app.services.user_provision import (
+    enqueue_sync_xray_clients_all_servers,
+    new_subscription_token,
+    new_vless_uuid,
+)
 
 log = logging.getLogger("app.users")
 
@@ -25,38 +25,13 @@ router = APIRouter(
     dependencies=[Depends(require_admin)],
 )
 
-_TOKEN_BYTES = 24
-
-
-def _new_subscription_token() -> str:
-    return token_urlsafe(_TOKEN_BYTES)
-
-
-def _new_vless_uuid() -> str:
-    return str(uuid_lib.uuid4())
-
-
-def _enqueue_sync_xray_clients_all_servers() -> None:
-    """После commit: поставить в RQ обновление inbound на всех provision_ready узлах."""
-    try:
-        q = get_install_queue()
-        q.enqueue(
-            "worker.jobs.sync_xray_clients_all_servers",
-            job_timeout=max(settings.provision_job_timeout, 600),
-        )
-    except RedisError:
-        log.warning(
-            "Не удалось поставить в очередь синхронизацию Xray (Redis недоступен)",
-            exc_info=True,
-        )
-
 
 @router.get(
     "/count",
     response_model=UsersCountResponse,
     summary="Количество пользователей в БД",
 )
-async def users_count(session: SessionDep) -> UsersCountResponse:
+async def users_count(session: ReadonlySessionDep) -> UsersCountResponse:
     total = session.scalar(select(func.count()).select_from(User))
     return UsersCountResponse(users_count=int(total or 0))
 
@@ -66,7 +41,7 @@ async def users_count(session: SessionDep) -> UsersCountResponse:
     response_model=list[UserRead],
     summary="Список пользователей",
 )
-async def list_users(session: SessionDep) -> list[User]:
+async def list_users(session: ReadonlySessionDep) -> list[User]:
     stmt = select(User).order_by(User.id.desc())
     return list(session.scalars(stmt).all())
 
@@ -82,12 +57,11 @@ async def create_user(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> User:
-    token = _new_subscription_token()
     user = User(
         telegram_id=body.telegram_id,
         subscription_until=body.subscription_until,
-        token=token,
-        vless_uuid=_new_vless_uuid(),
+        token=new_subscription_token(),
+        vless_uuid=new_vless_uuid(),
     )
     try:
         table_insert(session, user)
@@ -97,7 +71,7 @@ async def create_user(
             status_code=409,
             detail="Пользователь с таким Telegram (telegram_id) уже существует",
         ) from e
-    background_tasks.add_task(_enqueue_sync_xray_clients_all_servers)
+    background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return user
 
 
@@ -108,7 +82,7 @@ async def create_user(
 )
 async def user_traffic_by_server(
     user_id: int,
-    session: SessionDep,
+    session: ReadonlySessionDep,
 ) -> UserTrafficByServersBundle:
     user = session.get(User, user_id)
     if user is None:
@@ -171,7 +145,7 @@ async def delete_user(
     if user is None:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
     session.delete(user)
-    background_tasks.add_task(_enqueue_sync_xray_clients_all_servers)
+    background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
 
 
 @router.patch(
@@ -194,5 +168,5 @@ async def patch_user(
     for key, value in data.items():
         setattr(user, key, value)
     session.flush()
-    background_tasks.add_task(_enqueue_sync_xray_clients_all_servers)
+    background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return user

@@ -6,11 +6,10 @@ from __future__ import annotations
 
 import base64
 import json
-from datetime import date
-
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
+from app.domain.subscription import subscription_active_sql
 from app.models.server import Server
 from app.models.user import User
 
@@ -18,12 +17,7 @@ from app.models.user import User
 def active_subscription_users(session: Session) -> list[User]:
     stmt: Select[User] = (
         select(User)
-        .where(
-            or_(
-                User.subscription_until.is_(None),
-                User.subscription_until >= date.today(),
-            )
-        )
+        .where(subscription_active_sql())
         .order_by(User.id.asc())
     )
     return list(session.scalars(stmt).all())

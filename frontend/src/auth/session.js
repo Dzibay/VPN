@@ -1,52 +1,60 @@
-const STORAGE_KEY = 'vpn_admin_token'
-const USER_STORAGE_KEY = 'vpn_user_token'
+const TOKEN_KEY = 'vpn_access_token'
+const ROLE_KEY = 'vpn_session_role'
 
-let authRequiredCache = null
-
-export function getAdminToken() {
-  if (typeof localStorage === 'undefined') return null
-  return localStorage.getItem(STORAGE_KEY)
+function publicApiUrl(path) {
+  const base = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? ''
+  const p = path.startsWith('/') ? path : `/${path}`
+  return base ? `${base}${p}` : p
 }
 
-export function setAdminToken(token) {
-  localStorage.setItem(STORAGE_KEY, token)
-  authRequiredCache = null
-}
+/** Кэш: защищены ли админ-эндпоинты (проверка GET /api/users/count без Bearer → 401). */
+let adminJwtRequiredCache = null
 
-export function clearAdminToken() {
-  localStorage.removeItem(STORAGE_KEY)
-  authRequiredCache = null
-}
-
-export function getUserToken() {
-  if (typeof localStorage === 'undefined') return null
-  return localStorage.getItem(USER_STORAGE_KEY)
-}
-
-export function setUserToken(token) {
-  localStorage.setItem(USER_STORAGE_KEY, token)
-}
-
-export function clearUserToken() {
-  localStorage.removeItem(USER_STORAGE_KEY)
-}
-
-/** Сброс кэша (например после смены настроек на сервере). */
-export function invalidateAuthStatusCache() {
-  authRequiredCache = null
+export function invalidateAdminJwtProbe() {
+  adminJwtRequiredCache = null
 }
 
 /**
- * @param {() => Promise<{ admin_auth_required: boolean }>} fetchStatus
+ * Нужен ли JWT для доступа к /api/users и др. (заданы ADMIN_EMAIL + ADMIN_PASSWORD).
  */
-export async function isAdminAuthRequired(fetchStatus) {
-  if (authRequiredCache !== null) return authRequiredCache
+export async function isAdminJwtRequired() {
+  if (adminJwtRequiredCache !== null) return adminJwtRequiredCache
   try {
-    const data = await fetchStatus()
-    authRequiredCache = Boolean(data?.admin_auth_required)
-    return authRequiredCache
+    const res = await fetch(publicApiUrl('/api/users/count'), {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    adminJwtRequiredCache = res.status === 401
+    return adminJwtRequiredCache
   } catch {
-    authRequiredCache = true
+    adminJwtRequiredCache = true
     return true
   }
+}
+
+export function getAccessToken() {
+  if (typeof localStorage === 'undefined') return null
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+export function getSessionRole() {
+  if (typeof localStorage === 'undefined') return null
+  const r = localStorage.getItem(ROLE_KEY)
+  if (r === 'admin' || r === 'user') return r
+  return null
+}
+
+export function setSession(token, role) {
+  localStorage.setItem(TOKEN_KEY, token)
+  if (role === 'admin' || role === 'user') {
+    localStorage.setItem(ROLE_KEY, role)
+  }
+  invalidateAdminJwtProbe()
+}
+
+export function clearSession() {
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(ROLE_KEY)
+  invalidateAdminJwtProbe()
 }

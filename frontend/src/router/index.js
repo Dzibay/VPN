@@ -1,11 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { fetchJson } from '../api/client.js'
-import {
-  getAdminToken,
-  getUserToken,
-  isAdminAuthRequired,
-} from '../auth/session.js'
-import AdminLoginView from '../views/AdminLoginView.vue'
+import { getAccessToken, getSessionRole, isAdminJwtRequired } from '../auth/session.js'
 import AdminTablesPage from '../views/AdminTablesPage.vue'
 import HomeView from '../views/HomeView.vue'
 import ServerAnalyticsView from '../views/ServerAnalyticsView.vue'
@@ -19,11 +13,6 @@ const routes = [
   { path: '/login', name: 'login', component: UserLoginView },
   { path: '/register', name: 'register', component: UserRegisterView },
   { path: '/cabinet', name: 'cabinet', component: UserCabinetView },
-  {
-    path: '/admin/login',
-    name: 'admin-login',
-    component: AdminLoginView,
-  },
   {
     path: '/admin',
     name: 'admin-data',
@@ -47,46 +36,41 @@ export const router = createRouter({
 })
 
 function isAdminProtectedRoute(to) {
-  if (to.path === '/admin/login') return false
   return to.path.startsWith('/admin')
 }
 
 router.beforeEach(async (to, _from, next) => {
-  if (to.name === 'cabinet' && !getUserToken()) {
+  const token = getAccessToken()
+  const role = getSessionRole()
+
+  if (to.name === 'cabinet' && !token) {
     return next({
       name: 'login',
       query: { redirect: to.fullPath },
     })
   }
 
-  if ((to.name === 'login' || to.name === 'register') && getUserToken()) {
+  if ((to.name === 'login' || to.name === 'register') && token) {
+    if (role === 'admin') {
+      return next({ path: '/admin' })
+    }
     return next({ path: '/cabinet' })
   }
 
   const isAdminSection = isAdminProtectedRoute(to)
 
   if (isAdminSection) {
-    const required = await isAdminAuthRequired(() =>
-      fetchJson('/api/auth/status'),
-    )
-    if (required && !getAdminToken()) {
-      return next({
-        name: 'admin-login',
-        query: { redirect: to.fullPath },
-      })
-    }
-  }
-
-  if (to.name === 'admin-login') {
-    const required = await isAdminAuthRequired(() =>
-      fetchJson('/api/auth/status'),
-    )
-    if (!required) {
-      return next({ path: '/' })
-    }
-    if (getAdminToken()) {
-      const r = to.query.redirect
-      return next(typeof r === 'string' && r ? r : '/admin')
+    const required = await isAdminJwtRequired()
+    if (required) {
+      if (!token) {
+        return next({
+          name: 'login',
+          query: { redirect: to.fullPath },
+        })
+      }
+      if (role !== 'admin') {
+        return next({ path: '/cabinet' })
+      }
     }
   }
 

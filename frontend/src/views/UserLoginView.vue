@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { fetchJson } from '../api/client.js'
-import { setUserToken } from '../auth/session.js'
+import { setSession } from '../auth/session.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -16,16 +16,22 @@ async function submit() {
   submitting.value = true
   error.value = null
   try {
-    const data = await fetchJson('/api/account/login', {
+    const data = await fetchJson('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({
         email: email.value.trim(),
         password: password.value,
       }),
     })
-    setUserToken(data.access_token)
+    setSession(data.access_token, data.role)
     const r = route.query.redirect
-    router.replace(typeof r === 'string' && r ? r : '/cabinet')
+    if (data.role === 'admin') {
+      router.replace(
+        typeof r === 'string' && r.startsWith('/admin') ? r : '/admin',
+      )
+    } else {
+      router.replace(typeof r === 'string' && r ? r : '/cabinet')
+    }
   } catch (e) {
     error.value = e.message || String(e)
   } finally {
@@ -39,7 +45,10 @@ async function submit() {
     <header class="head">
       <RouterLink class="back" to="/">← На главную</RouterLink>
       <h1>Вход</h1>
-      <p class="sub">Войдите по email и паролю, указанным при регистрации.</p>
+      <p class="sub">
+        Один вход для кабинета и для администратора (учётные данные из .env на
+        сервере).
+      </p>
     </header>
 
     <form class="card card-pad form" @submit.prevent="submit">

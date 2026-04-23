@@ -7,6 +7,7 @@ from app.api.endpoints.subscription import router as subscription_router
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.logging_config import setup_logging
+from app.core.openapi import attach_openapi
 from app.middleware.request_context import RequestContextMiddleware
 
 
@@ -20,9 +21,19 @@ async def lifespan(_app: FastAPI):
 def create_app() -> FastAPI:
     application = FastAPI(
         title=settings.app_name,
+        description=(
+            "Админка (серверы, пользователи, Prometheus), личный кабинет и выдача подписки. "
+            "JSON API с префиксом `/api`; публичная подписка: `/sub/{token}`."
+        ),
+        version=settings.api_version,
         debug=settings.debug,
         lifespan=lifespan,
+        docs_url="/swagger",
+        redoc_url="/redoc",
+        openapi_url="/openapi.json",
+        swagger_ui_parameters={"persistAuthorization": True},
     )
+    attach_openapi(application)
     application.add_middleware(RequestContextMiddleware)
     application.add_middleware(
         CORSMiddleware,
@@ -37,7 +48,12 @@ def create_app() -> FastAPI:
 
     @application.get("/", include_in_schema=False)
     async def root() -> dict[str, str]:
-        return {"service": settings.app_name}
+        return {
+            "service": settings.app_name,
+            "swagger": "/swagger",
+            "redoc": "/redoc",
+            "openapi": "/openapi.json",
+        }
 
     return application
 

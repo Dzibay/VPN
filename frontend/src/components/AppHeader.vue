@@ -2,50 +2,42 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
-  clearAdminToken,
-  clearUserToken,
-  getAdminToken,
-  getUserToken,
+  clearSession,
+  getAccessToken,
+  getSessionRole,
 } from '../auth/session.js'
 
 const router = useRouter()
 const route = useRoute()
 
-const hasAdminToken = ref(false)
-const hasUserToken = ref(false)
+const hasToken = ref(false)
+const isAdmin = ref(false)
 
 function refreshSessions() {
-  hasAdminToken.value = Boolean(getAdminToken())
-  hasUserToken.value = Boolean(getUserToken())
+  hasToken.value = Boolean(getAccessToken())
+  isAdmin.value = getSessionRole() === 'admin'
 }
 
-/** На главной всегда «Вход» и «Регистрация»; в кабинете и при JWT на других страницах — «Выйти». */
 const showGuestAuthLinks = computed(
   () =>
     route.name === 'home' ||
-    (route.name !== 'cabinet' && !hasUserToken.value),
+    (route.name !== 'cabinet' && !hasToken.value),
 )
 
 const showUserLogout = computed(
   () =>
     route.name === 'cabinet' ||
-    (route.name !== 'home' && hasUserToken.value),
+    (route.name !== 'home' && hasToken.value),
 )
 
-function logoutUser() {
-  clearUserToken()
+function logout() {
+  clearSession()
   refreshSessions()
-  if (route.path.startsWith('/cabinet')) {
+  if (route.path.startsWith('/cabinet') || route.path.startsWith('/admin')) {
     router.push('/login')
   } else {
     router.push('/')
   }
-}
-
-function logoutAdmin() {
-  clearAdminToken()
-  refreshSessions()
-  router.push('/')
 }
 
 onMounted(refreshSessions)
@@ -53,7 +45,11 @@ router.afterEach(refreshSessions)
 </script>
 
 <template>
-  <header class="shell" aria-label="Шапка сайта">
+  <header
+    class="shell"
+    :class="{ 'shell--home': route.name === 'home' }"
+    aria-label="Шапка сайта"
+  >
     <RouterLink class="brand" to="/">
       <span class="brand-mark" aria-hidden="true" />
       <span class="brand-text">VPN</span>
@@ -70,14 +66,14 @@ router.afterEach(refreshSessions)
           </RouterLink>
         </template>
         <template v-else-if="showUserLogout">
-          <button type="button" class="nav-btn ghost" @click="logoutUser">
+          <button type="button" class="nav-btn ghost" @click="logout">
             Выйти
           </button>
         </template>
       </nav>
 
       <nav
-        v-if="hasAdminToken"
+        v-if="hasToken && isAdmin"
         class="group-admin"
         aria-label="Администрирование"
       >
@@ -99,9 +95,6 @@ router.afterEach(refreshSessions)
         >
           Аналитика
         </RouterLink>
-        <button type="button" class="nav-btn" @click="logoutAdmin">
-          Выход из админки
-        </button>
       </nav>
     </div>
   </header>
@@ -119,6 +112,12 @@ router.afterEach(refreshSessions)
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   box-shadow: var(--shadow-sm);
+}
+
+/* На главной иначе видна «линия» между шапкой и героем с градиентом. */
+.shell--home {
+  border-bottom-color: transparent;
+  box-shadow: none;
 }
 
 .spacer {

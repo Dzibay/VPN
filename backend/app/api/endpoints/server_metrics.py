@@ -14,7 +14,7 @@ from rq.exceptions import NoSuchJobError
 from rq.job import Job, JobStatus
 from starlette.concurrency import run_in_threadpool
 
-from app.api.deps import SessionDep, require_admin
+from app.api.deps import ReadonlySessionDep, SessionDep, require_admin
 from app.core.config import settings
 from app.core.queue import get_install_queue, get_redis
 from app.database.session import SessionLocal
@@ -52,7 +52,7 @@ router = APIRouter(prefix="/servers", tags=["server-metrics"])
 )
 async def get_server_metrics_prometheus(
     server_id: int,
-    session: SessionDep,
+    session: ReadonlySessionDep,
     hours: int = Query(24, ge=1, le=720, description="Глубина, часов"),
     step: int = Query(60, ge=15, le=300, description="Шаг разрешения, сек"),
 ) -> ServerMetricsFromPrometheus:
@@ -168,7 +168,7 @@ def _rq_poll_status(job: Job) -> str:
 )
 async def enqueue_user_traffic_collect(
     server_id: int,
-    session: SessionDep,
+    session: ReadonlySessionDep,
 ) -> UserTrafficCollectEnqueueResponse:
     if session.get(Server, server_id) is None:
         raise HTTPException(status_code=404, detail="Сервер не найден")
@@ -198,7 +198,7 @@ async def enqueue_user_traffic_collect(
 async def poll_user_traffic_collect_job(
     server_id: int,
     job_id: str,
-    session: SessionDep,
+    session: ReadonlySessionDep,
 ) -> UserTrafficCollectPollResponse:
     if session.get(Server, server_id) is None:
         raise HTTPException(status_code=404, detail="Сервер не найден")
@@ -292,7 +292,7 @@ async def poll_user_traffic_collect_job(
 )
 async def get_server_user_traffic(
     server_id: int,
-    session: SessionDep,
+    session: ReadonlySessionDep,
     response: Response,
     collect: bool = Query(
         False,

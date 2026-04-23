@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "VPN API"
+    api_version: str = Field(default="1.0.0", description="Версия API в OpenAPI / Swagger")
     debug: bool = False
     log_level: str = "INFO"
     api_prefix: str = "/api"
@@ -49,21 +50,20 @@ class Settings(BaseSettings):
         ),
     )
 
-    admin_panel_password: str = Field(
-        default="",
-        description="Пароль входа в админку (фронт /api/users, /api/status). Пусто — без защиты.",
-    )
-    admin_jwt_secret: str = Field(
-        default="",
-        description="Секрет HS256 для JWT админки. Пусто — выводится из ADMIN_PANEL_PASSWORD.",
-    )
-    user_jwt_secret: str = Field(
+    jwt_secret: str = Field(
         default="",
         description=(
-            "Секрет HS256 для JWT пользовательского портала (/api/account/*). "
-            "Пусто — выводится из admin_jwt_secret или ADMIN_PANEL_PASSWORD (отдельный salt). "
-            "В debug без секрета используется небезопасный запасной ключ."
+            "Единый секрет HS256 для JWT (портал и админ-API). "
+            "Пусто — выводится из ADMIN_EMAIL+ADMIN_PASSWORD или небезопасный ключ в DEBUG."
         ),
+    )
+    admin_email: str = Field(
+        default="",
+        description="Email администратора (вход через POST /api/auth/login вместе с ADMIN_PASSWORD).",
+    )
+    admin_password: str = Field(
+        default="",
+        description="Пароль администратора. Вместе с admin_email защищает админ-эндпоинты.",
     )
 
     redis_url: str = Field(

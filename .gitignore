@@ -49,6 +49,10 @@ Thumbs.db
 # Logs
 *.log
 
+# Локальные отчёты анализаторов
+medium-report.json
+mixed-report.json
+
 # Local databases (if any)
 *.db
 *.sqlite3

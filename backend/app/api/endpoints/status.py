@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.api.deps import SessionDep, require_admin
+from app.api.deps import ReadonlySessionDep, require_admin
 from app.core.config import settings
 from app.database.operations import table_select
 from app.models.user import User
@@ -15,7 +15,7 @@ router = APIRouter(tags=["status"])
     summary="Состояние сервера",
     dependencies=[Depends(require_admin)],
 )
-async def server_status(session: SessionDep) -> StatusResponse:
+async def server_status(session: ReadonlySessionDep) -> StatusResponse:
     db_connected = False
     try:
         table_select(session, User, limit=1)
