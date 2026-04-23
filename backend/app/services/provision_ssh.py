@@ -43,6 +43,27 @@ def _ssh_looks_like_auth_failure(rc: int, stdout: str, stderr: str) -> bool:
     return False
 
 
+def _ssh_provider_rejects_user(stdout: str, stderr: str) -> bool:
+    """
+    Облачные образы (Hetzner и др.): вместо shell печатают в stdout, что нельзя
+    зайти под root — нужен другой логин. rc бывает 142 и т.д., не 255.
+    """
+    blob = f"{stdout}\n{stderr}".lower()
+    if "please login as" in blob and "rather than" in blob:
+        return True
+    return False
+
+
+def _ssh_worth_next_user(rc: int, stdout: str, stderr: str) -> bool:
+    if rc == 0:
+        return False
+    if _ssh_looks_like_auth_failure(rc, stdout, stderr):
+        return True
+    if _ssh_provider_rejects_user(stdout, stderr):
+        return True
+    return False
+
+
 def ssh_base_argv(server: Server) -> list[str]:
     """Аргументы ssh до user@host (без цели и удалённой команды)."""
     ssh_bin = shutil.which("ssh")
@@ -104,7 +125,8 @@ def ssh_run_script_with_user_fallback(
     login_shell: bool = False,
 ) -> tuple[int, str, str, str]:
     """
-    SSH + bash -s, stdin = script. Перебор PROVISION_SSH_USER → fallback при отказе по ключу.
+    SSH + bash -s, stdin = script. Перебор PROVISION_SSH_USER → fallback
+    при отказе по ключу или если облачный образ запрещает root («Please login as …»).
 
     Возвращает: returncode, stdout, stderr, used_ssh_user.
     """
@@ -134,23 +156,24 @@ def ssh_run_script_with_user_fallback(
         if result.returncode == 0:
             if idx > 0:
                 log.info(
-                    "SSH: успех под %s@%s (предыдущий логин не подошёл к ключу)",
+                    "SSH: успех под %s@%s (предыдущий кандидат не подошёл)",
                     u,
                     server.host,
                 )
             return 0, out, err, u
-        if idx < len(users) - 1 and _ssh_looks_like_auth_failure(
+        if idx < len(users) - 1 and _ssh_worth_next_user(
             int(result.returncode), out, err
         ):
             nxt = users[idx + 1]
             nxt_at = f"{nxt}@{server.host}"
+            tail = (f"{out}\n{err}").strip()[:500].replace("\n", " ")
             log.warning(
-                "SSH %s@%s: rc=%s, следующий кандидат %s. stderr: %s",
+                "SSH %s@%s: rc=%s, следующий кандидат %s. вывод: %s",
                 u,
                 server.host,
                 result.returncode,
                 nxt_at,
-                (err or "")[:500].replace("\n", " "),
+                tail,
             )
             continue
         return int(result.returncode), out, err, u
