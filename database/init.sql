@@ -1,6 +1,6 @@
--- Клиенты VPN-сервиса (учётные записи, привязка к Telegram, подписка, токен доступа)
--- telegram_id: числовой id пользователя в Telegram (Bot API). Пусто = NULL, несколько NULL допустимо.
--- telegram_properties: JSON (ник, locale и т.д.)
+-- Базовые таблицы для пустой БД (CREATE IF NOT EXISTS).
+-- Патчи для старых инстансов, ALTER и индексы — в migrate.sql.
+
 CREATE TABLE IF NOT EXISTS users (
     id BIGSERIAL PRIMARY KEY,
     telegram_id BIGINT,
@@ -14,21 +14,6 @@ CREATE TABLE IF NOT EXISTS users (
     CONSTRAINT users_vless_uuid_key UNIQUE (vless_uuid)
 );
 
--- Миграция для уже существующих БД (до появления колонок в CREATE выше)
-ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_properties JSONB;
-
--- Уникальность только для непустых telegram_id (несколько NULL допустимо)
-CREATE UNIQUE INDEX IF NOT EXISTS uq_users_telegram_id ON users (telegram_id)
-    WHERE telegram_id IS NOT NULL;
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email ON users (email)
-    WHERE email IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_users_subscription_until ON users (subscription_until);
-
--- Узлы прокси (xray и т.п.): адрес для выдачи в подписке и учёта в админке
 CREATE TABLE IF NOT EXISTS servers (
     id BIGSERIAL PRIMARY KEY,
     name TEXT,
@@ -56,9 +41,6 @@ CREATE TABLE IF NOT EXISTS servers (
     CONSTRAINT uq_servers_host_port UNIQUE (host, port)
 );
 
-CREATE INDEX IF NOT EXISTS idx_servers_is_active ON servers (is_active);
-
--- Накопленный трафик по паре (пользователь, узел); raw_* — последние сырые счётчики Xray
 CREATE TABLE IF NOT EXISTS user_server_traffic (
     user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     server_id BIGINT NOT NULL REFERENCES servers (id) ON DELETE CASCADE,
@@ -68,5 +50,3 @@ CREATE TABLE IF NOT EXISTS user_server_traffic (
     raw_down BIGINT NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, server_id)
 );
-
-CREATE INDEX IF NOT EXISTS idx_user_server_traffic_server ON user_server_traffic (server_id);

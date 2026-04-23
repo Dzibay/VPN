@@ -9,11 +9,13 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app ./app
-COPY worker ./worker
+COPY backend/app ./app
+COPY backend/worker ./worker
+COPY database/init.sql ./database/init.sql
+COPY database/migrate.sql ./database/migrate.sql
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1

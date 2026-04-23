@@ -13,9 +13,10 @@ from app.middleware.request_context import RequestContextMiddleware
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    # startup
+    from app.database.schema import ensure_schema
+
+    ensure_schema()
     yield
-    # shutdown
 
 
 def create_app() -> FastAPI:

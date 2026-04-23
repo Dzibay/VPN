@@ -35,6 +35,7 @@ from rq.worker import SimpleWorker
 
 from app.core.config import settings
 from app.core.logging_config import setup_logging
+from app.database.schema import ensure_schema
 
 
 def _worker_ttl() -> int:
@@ -62,6 +63,7 @@ def _redis_connection() -> Redis:
 
 def main() -> None:
     setup_logging(settings.log_level)
+    ensure_schema()
     log = logging.getLogger("worker")
     listen = [settings.redis_install_queue_name]
     redis_conn = _redis_connection()
