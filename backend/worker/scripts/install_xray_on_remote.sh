@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Удалённый хост: root. Режим: VPN_PROVISION_COMPONENT = all | xray | sync_clients | prometheus | fair_egress | cleanup
-# Каскад РФ: при VPN_CASCADE_RU_DIRECT=1 — geosite:ru+geoip:ru → direct, остальное → egress; нужны geosite.dat/geoip.
+# Каскад РФ: при VPN_CASCADE_RU_DIRECT=1 — direct для private / *.ru,*.su,*.рф (punycode) / geoip:ru, остальное → egress.
+# geosite:ru в Xray 26.2+ часто падает (code RU not found) — не используем, см. inline regexp в config.
 # all/xray: curl/wget, python3. prometheus: curl, systemctl. cleanup: curl/wget для uninstall xray.
 #
 # Справедливость uplink (между TCP/UDP-потоками, не «на UUID Xray»):
@@ -233,13 +234,21 @@ if cascade:
             "destOverride": ["http", "tls"],
             "routeOnly": True,
         }
+        # Без geosite:ru: в Xray 26.2+ несовпадение кода RU/ru в geosite.dat. Замена: TLD-регэксп + geoip:ru
+        # (Loyalsoldier geosite:ru тоже может не находиться). Инофисные .com и т.д. пойдут в каскад, RU-IP — через geoip:ru
+        _ru_domains = [
+            "geosite:private",
+            "regexp:.*\\.ru$",
+            "regexp:.*\\.su$",
+            "regexp:.*\\.xn--p1ai$",  # .рф
+        ]
         cfg["routing"] = {
             "domainStrategy": "IPIfNonMatch",
             "rules": [
                 {
                     "type": "field",
                     "outboundTag": "direct",
-                    "domain": ["geosite:private", "geosite:ru"],
+                    "domain": _ru_domains,
                 },
                 {
                     "type": "field",
@@ -271,43 +280,17 @@ with open(path, "w", encoding="utf-8") as f:
 PY
 }
 
-# geosite.dat / geoip.dat для правил geosite:/geoip: (каскадный РФ-вход, split RU/foreign)
+# Каталог для dat (кладутся install-release); split RU использует geosite:private+regexp+geoip:ru из дефолтных файлов
 _xray_ensure_geo_dats() {
-  # Отключение: VPN_CASCADE_RU_DIRECT=0 (без скачивания dat — только «всё через exit»)
   if [[ "${VPN_CASCADE_RU_DIRECT:-1}" == "0" ]]; then
-    echo "[xray] geo: VPN_CASCADE_RU_DIRECT=0 — пропуск geosite/geoip и split-правил (см. Python)"
+    echo "[xray] geo: VPN_CASCADE_RU_DIRECT=0 — dat для split RU не обязателен"
     return 0
   fi
   local dir
   dir="${VPN_XRAY_GEO_DIR:-/usr/local/share/xray}"
   mkdir -p "$dir"
-  # XTLS install-release кладёт короткие geosite/geoip: в них нет geosite:ru (ошибка code not found: RU).
-  # Всегда перекачиваем полные списки (Loyalsoldier) — нельзя пропускать «файл уже есть».
-  echo "[xray] geo: полные geosite.dat + geoip.dat (Loyalsoldier, правила geosite:ru / geoip:ru)…"
-  local base="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
-  if command -v curl >/dev/null 2>&1; then
-    curl -fL --connect-timeout 45 --retry 2 -o "$dir/geosite.dat" "$base/geosite.dat" || {
-      echo "[xray] geo: не удалось скачать geosite.dat" >&2
-      return 1
-    }
-    curl -fL --connect-timeout 45 --retry 2 -o "$dir/geoip.dat" "$base/geoip.dat" || {
-      echo "[xray] geo: не удалось скачать geoip.dat" >&2
-      return 1
-    }
-  elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$dir/geosite.dat" "$base/geosite.dat" || {
-      echo "[xray] geo: wget geosite.dat неудача" >&2
-      return 1
-    }
-    wget -qO "$dir/geoip.dat" "$base/geoip.dat" || {
-      echo "[xray] geo: wget geoip.dat неудача" >&2
-      return 1
-    }
-  else
-    echo "[xray] geo: нужен curl или wget для geosite/geoip" >&2
-    return 1
-  fi
-  echo "[xray] geo: готово"
+  echo "[xray] geo: split RU — используются geosite.dat/geoip.dat из XTLS install (без geosite:ru, см. regexp в config)"
+  return 0
 }
 
 # Проверка JSON и маршрутов; иначе systemctl даст мёртвый сокет (TCP connection refused)
