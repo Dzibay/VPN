@@ -148,6 +148,13 @@ class Settings(BaseSettings):
         description="Адрес прослушивания node_exporter (0.0.0.0 — для scrape снаружи).",
     )
 
+    cascade_ru_split_routing: bool = Field(
+        default=True,
+        description=(
+            "Каскадный РФ-вход: geosite:ru+geoip:ru в direct, остальное на внешний exit. "
+            "False — весь трафик через exit, как раньше."
+        ),
+    )
     xray_remote_api_port: int = Field(
         default=10085,
         ge=1,

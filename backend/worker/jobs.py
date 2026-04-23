@@ -166,8 +166,10 @@ def _cascade_xray_env_for_ru_entry(db: Session, server: Server) -> str:
     efp = (ex.reality_fingerprint or "chrome").strip() or "chrome"
     e_short = (ex.reality_short_id or "").strip() or "0123456789abcdef"
     e_names = (ex.reality_server_names or "").strip() or "www.amazon.com,amazon.com"
+    ru_direct = "1" if settings.cascade_ru_split_routing else "0"
     return (
         "export VPN_CASCADE_ENABLED=1\n"
+        f"export VPN_CASCADE_RU_DIRECT={ru_direct}\n"
         f"export VPN_CASCADE_EGRESS_ADDRESS={shlex.quote(ehost)}\n"
         f"export VPN_CASCADE_EGRESS_PORT={eport}\n"
         f"export VPN_CASCADE_EGRESS_CLIENT_UUID={shlex.quote(cu)}\n"

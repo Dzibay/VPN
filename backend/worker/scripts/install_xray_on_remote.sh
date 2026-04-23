@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Удалённый хост: root. Режим: VPN_PROVISION_COMPONENT = all | xray | sync_clients | prometheus | fair_egress | cleanup
+# Каскад РФ: при VPN_CASCADE_RU_DIRECT=1 — geosite:ru+geoip:ru → direct, остальное → egress; нужны geosite.dat/geoip.
 # all/xray: curl/wget, python3. prometheus: curl, systemctl. cleanup: curl/wget для uninstall xray.
 #
 # Справедливость uplink (между TCP/UDP-потоками, не «на UUID Xray»):
@@ -222,21 +223,91 @@ if cascade:
     direct_out = {"protocol": "freedom", "tag": "direct", "settings": {}}
     cfg["outbounds"] = [vless_to_exit, direct_out]
     cfg["inbounds"][0]["tag"] = "vless-in"
-    cfg["routing"] = {
-        "domainStrategy": "AsIs",
-        "rules": [
-            {
-                "type": "field",
-                "inboundTag": ["vless-in"],
-                "outboundTag": "egress-cascade",
-            }
-        ],
-    }
+    # РФ-ресурсы: прямой выход; остальное (иностранные) — через VLESS к exit
+    ru_direct = (os.environ.get("VPN_CASCADE_RU_DIRECT") or "1").strip() == "1"
+    if ru_direct:
+        # Sniff: домен/протокол для geosite-правил (без SNI сначала сработает geoip:ru)
+        cfg["inbounds"][0]["sniffing"] = {
+            "enabled": True,
+            "destOverride": ["http", "tls", "quic"],
+        }
+        cfg["routing"] = {
+            "domainStrategy": "IPIfNonMatch",
+            "rules": [
+                {
+                    "type": "field",
+                    "outboundTag": "direct",
+                    "domain": ["geosite:private", "geosite:ru"],
+                },
+                {
+                    "type": "field",
+                    "outboundTag": "direct",
+                    "ip": ["geoip:ru", "geoip:private"],
+                },
+                {
+                    "type": "field",
+                    "inboundTag": ["vless-in"],
+                    "outboundTag": "egress-cascade",
+                },
+            ],
+        }
+    else:
+        cfg["routing"] = {
+            "domainStrategy": "AsIs",
+            "rules": [
+                {
+                    "type": "field",
+                    "inboundTag": ["vless-in"],
+                    "outboundTag": "egress-cascade",
+                }
+            ],
+        }
 
 path = os.environ.get("VPN_XRAY_CONFIG_PATH", "/usr/local/etc/xray/config.json")
 with open(path, "w", encoding="utf-8") as f:
     json.dump(cfg, f, indent=2)
 PY
+}
+
+# geosite.dat / geoip.dat для правил geosite:/geoip: (каскадный РФ-вход, split RU/foreign)
+_xray_ensure_geo_dats() {
+  # Отключение: VPN_CASCADE_RU_DIRECT=0 (без скачивания dat — только «всё через exit»)
+  if [[ "${VPN_CASCADE_RU_DIRECT:-1}" == "0" ]]; then
+    echo "[xray] geo: VPN_CASCADE_RU_DIRECT=0 — пропуск geosite/geoip и split-правил (см. Python)"
+    return 0
+  fi
+  local dir
+  dir="${VPN_XRAY_GEO_DIR:-/usr/local/share/xray}"
+  mkdir -p "$dir"
+  if [[ -s "$dir/geosite.dat" && -s "$dir/geoip.dat" ]]; then
+    echo "[xray] geo: geosite.dat / geoip.dat уже есть в $dir"
+    return 0
+  fi
+  echo "[xray] geo: подгрузка geosite.dat + geoip.dat (Loyalsoldier/distribution)…"
+  local base="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fL --connect-timeout 45 --retry 2 -o "$dir/geosite.dat" "$base/geosite.dat" || {
+      echo "[xray] geo: не удалось скачать geosite.dat" >&2
+      return 1
+    }
+    curl -fL --connect-timeout 45 --retry 2 -o "$dir/geoip.dat" "$base/geoip.dat" || {
+      echo "[xray] geo: не удалось скачать geoip.dat" >&2
+      return 1
+    }
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$dir/geosite.dat" "$base/geosite.dat" || {
+      echo "[xray] geo: wget geosite.dat неудача" >&2
+      return 1
+    }
+    wget -qO "$dir/geoip.dat" "$base/geoip.dat" || {
+      echo "[xray] geo: wget geoip.dat неудача" >&2
+      return 1
+    }
+  else
+    echo "[xray] geo: нужен curl или wget для geosite/geoip" >&2
+    return 1
+  fi
+  echo "[xray] geo: готово"
 }
 
 _xray_install() {
@@ -295,6 +366,10 @@ _xray_install() {
 
   CFG=/usr/local/etc/xray/config.json
   mkdir -p "$(dirname "$CFG")"
+
+  if [[ "${VPN_CASCADE_ENABLED:-0}" == "1" && "${VPN_CASCADE_RU_DIRECT:-1}" != "0" ]]; then
+    _xray_ensure_geo_dats || exit 1
+  fi
 
   echo "[xray] запись $CFG (VLESS REALITY → ${VPN_REALITY_DEST})…"
   _write_xray_config
@@ -699,6 +774,9 @@ case "$COMPONENT" in
     ;;
   sync_clients)
     CFG="${VPN_XRAY_CONFIG_PATH:-/usr/local/etc/xray/config.json}"
+    if [[ "${VPN_CASCADE_ENABLED:-0}" == "1" && "${VPN_CASCADE_RU_DIRECT:-1}" != "0" ]]; then
+      _xray_ensure_geo_dats || exit 1
+    fi
     echo "[xray] sync_clients: запись $CFG (без установки пакета)…"
     _write_xray_config
     if command -v systemctl >/dev/null 2>&1; then
