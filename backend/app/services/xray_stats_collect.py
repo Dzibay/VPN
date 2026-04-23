@@ -131,8 +131,10 @@ def _collect_base_detail(server: Server) -> UserTrafficCollectDetail:
         f"{shlex.quote(bin_path)} api statsquery --server={listen} "
         f"</dev/null 2>&1"
     )
+    fb = (settings.provision_ssh_user_fallback or "").strip()
+    user_hint = (settings.provision_ssh_user or "root") + (f" → {fb}" if fb else "")
     return UserTrafficCollectDetail(
-        ssh_target=f"{settings.provision_ssh_user}@{server.host}",
+        ssh_target=f"{user_hint}@{server.host}",
         ssh_port=port_ssh,
         xray_api_listen=listen,
         remote_command=remote,

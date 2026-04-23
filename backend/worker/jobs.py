@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.database.session import SessionLocal
 from app.models.server import Server
-from app.services.provision_ssh import ssh_base_argv
+from app.services.provision_ssh import ssh_run_script_with_user_fallback
 from app.services.xray_clients import (
     vless_client_uuids_csv_for_server,
     vless_clients_b64_for_server,
@@ -96,11 +96,6 @@ def _run_provision_command(server: Server) -> None:
         env=env,
         timeout=settings.provision_subprocess_timeout,
     )
-
-
-def _ssh_base_cmd(server: Server) -> list[str]:
-    target = f"{settings.provision_ssh_user}@{server.host}"
-    return ssh_base_argv(server) + [target, "bash", "-s"]
 
 
 def _node_exporter_env_lines(*, force_install: bool | None) -> str:
@@ -212,39 +207,35 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
         remote_env += _node_exporter_env_lines(force_install=None)
 
     payload = (remote_env + script_body).replace("\r\n", "\n").replace("\r", "\n")
-    cmd = _ssh_base_cmd(server)
-
+    rc, stdout_t, stderr_t, used_user = ssh_run_script_with_user_fallback(
+        server,
+        payload,
+        timeout=settings.provision_subprocess_timeout,
+        login_shell=False,
+    )
     log.info(
         "SSH provision component=%s %s@%s server_id=%s",
         component,
-        settings.provision_ssh_user,
+        used_user,
         server.host,
         server.id,
     )
-    result = subprocess.run(
-        cmd,
-        input=payload.encode("utf-8"),
-        capture_output=True,
-        timeout=settings.provision_subprocess_timeout,
-    )
-    stdout_t = (result.stdout or b"").decode("utf-8", errors="replace")
-    stderr_t = (result.stderr or b"").decode("utf-8", errors="replace")
-    if result.returncode != 0:
+    if rc != 0:
         if (stderr_t or "").strip():
             log.error(
                 "SSH stderr (tail 8000) rc=%s:\n%s",
-                result.returncode,
+                rc,
                 (stderr_t or "")[-8000:],
             )
         if (stdout_t or "").strip():
             log.error(
                 "SSH stdout (tail 8000) rc=%s:\n%s",
-                result.returncode,
+                rc,
                 (stdout_t or "")[-8000:],
             )
         detail = _format_ssh_capture(stdout_t, stderr_t)
         raise RuntimeError(
-            f"ssh завершился с кодом {result.returncode}\n"
+            f"ssh завершился с кодом {rc}\n"
             + (
                 detail
                 or "(пустой stdout/stderr — смотрите логи воркера выше)"

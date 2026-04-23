@@ -15,6 +15,34 @@ from app.models.server import Server
 log = logging.getLogger("app.provision_ssh")
 
 
+def provision_ssh_user_candidates() -> list[str]:
+    """
+    Порядок: сначала PROVISION_SSH_USER, затем PROVISION_SSH_USER_FALLBACK (если задан и не дублирует).
+    """
+    primary = (settings.provision_ssh_user or "root").strip() or "root"
+    out: list[str] = [primary]
+    fb = (settings.provision_ssh_user_fallback or "").strip()
+    if fb and fb != primary:
+        out.append(fb)
+    return out
+
+
+def _ssh_looks_like_auth_failure(rc: int, stdout: str, stderr: str) -> bool:
+    """Стоит ли пробовать fallback-пользователя (только типичные отказы в ключе/логине)."""
+    if rc not in (255, 1):
+        return False
+    blob = f"{stdout}\n{stderr}".lower()
+    if "no matching host key" in blob:
+        return False
+    if "connection refused" in blob or "could not resolve hostname" in blob:
+        return False
+    if "permission denied" in blob:
+        return True
+    if "too many authentication failures" in blob:
+        return True
+    return False
+
+
 def ssh_base_argv(server: Server) -> list[str]:
     """Аргументы ssh до user@host (без цели и удалённой команды)."""
     ssh_bin = shutil.which("ssh")
@@ -46,6 +74,87 @@ def ssh_base_argv(server: Server) -> list[str]:
     return cmd
 
 
+def ssh_bash_s_cmd_for_user(
+    server: Server,
+    ssh_user: str,
+    *,
+    login_shell: bool = False,
+) -> list[str]:
+    """
+    Удалённая команда: bash -s (как в провижининге).
+    Если логин не root — `sudo -n -E …` (нужен NOPASSWD в sudoers).
+    """
+    target = f"{ssh_user}@{server.host}"
+    if login_shell:
+        sh_argv = ["bash", "-l", "-s"]
+    else:
+        sh_argv = ["bash", "-s"]
+    base = ssh_base_argv(server) + [target]
+    u = (ssh_user or "").strip()
+    if u != "root":
+        return base + ["sudo", "-n", "-E", *sh_argv]
+    return base + sh_argv
+
+
+def ssh_run_script_with_user_fallback(
+    server: Server,
+    script: str | bytes,
+    *,
+    timeout: float,
+    login_shell: bool = False,
+) -> tuple[int, str, str, str]:
+    """
+    SSH + bash -s, stdin = script. Перебор PROVISION_SSH_USER → fallback при отказе по ключу.
+
+    Возвращает: returncode, stdout, stderr, used_ssh_user.
+    """
+    data = (
+        script.encode("utf-8")
+        if isinstance(script, str)
+        else (script or b"")
+    )
+    if not data.endswith(b"\n"):
+        data = data + b"\n"
+    users = provision_ssh_user_candidates()
+    last_u = users[-1] if users else (settings.provision_ssh_user or "root")
+    last_out, last_err = "", ""
+    last_rc = 255
+    for idx, u in enumerate(users):
+        cmd = ssh_bash_s_cmd_for_user(server, u, login_shell=login_shell)
+        log.debug("ssh %s (кандидат %d/%d)", u, idx + 1, len(users))
+        result = subprocess.run(
+            cmd,
+            input=data,
+            capture_output=True,
+            timeout=timeout,
+        )
+        out = (result.stdout or b"").decode("utf-8", errors="replace")
+        err = (result.stderr or b"").decode("utf-8", errors="replace")
+        last_u, last_out, last_err, last_rc = u, out, err, int(result.returncode)
+        if result.returncode == 0:
+            if idx > 0:
+                log.info(
+                    "SSH: успех под %s@%s (предыдущий логин не подошёл к ключу)",
+                    u,
+                    server.host,
+                )
+            return 0, out, err, u
+        if idx < len(users) - 1 and _ssh_looks_like_auth_failure(
+            int(result.returncode), out, err
+        ):
+            log.warning(
+                "SSH %s@%s: rc=%s, пробуем %s. stderr: %s",
+                u,
+                server.host,
+                result.returncode,
+                users[idx + 1],
+                (err or "")[:500].replace("\n", " "),
+            )
+            continue
+        return int(result.returncode), out, err, u
+    return last_rc, last_out, last_err, last_u
+
+
 def ssh_run_bash_lc(
     server: Server,
     remote_bash_lc: str,
@@ -62,17 +171,10 @@ def ssh_run_bash_lc(
     и он читает конфиг из STDIN (как в логе «Using config from STDIN»).
     Тот же приём, что у провижининга: bash -s + скрипт в stdin.
     """
-    target = f"{settings.provision_ssh_user}@{server.host}"
-    bash_argv = ["bash", "-l", "-s"] if login_shell else ["bash", "-s"]
-    cmd = ssh_base_argv(server) + [target] + bash_argv
-    log.debug("ssh bash %s на %s", bash_argv, target)
-    script = remote_bash_lc if remote_bash_lc.endswith("\n") else remote_bash_lc + "\n"
-    result = subprocess.run(
-        cmd,
-        input=script.encode("utf-8"),
-        capture_output=True,
+    rc, out, err, _u = ssh_run_script_with_user_fallback(
+        server,
+        remote_bash_lc,
         timeout=timeout,
+        login_shell=login_shell,
     )
-    out = (result.stdout or b"").decode("utf-8", errors="replace")
-    err = (result.stderr or b"").decode("utf-8", errors="replace")
-    return result.returncode, out, err
+    return rc, out, err

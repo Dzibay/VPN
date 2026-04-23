@@ -102,7 +102,14 @@ class Settings(BaseSettings):
     )
     provision_ssh_user: str = Field(
         default="root",
-        description="Пользователь SSH для установки xray на узел.",
+        description="Пользователь SSH для установки xray на узел (пробуется первым).",
+    )
+    provision_ssh_user_fallback: str = Field(
+        default="user",
+        description=(
+            "Второй логин SSH, если к первому отказ (Permission denied, publickey). "
+            "Пусто — не пробовать другого пользователя."
+        ),
     )
     provision_ssh_port: int = Field(
         default=22,
