@@ -65,6 +65,13 @@ class Settings(BaseSettings):
         default="",
         description="Пароль администратора. Вместе с admin_email защищает админ-эндпоинты.",
     )
+    telegram_bot_api_secret: str = Field(
+        default="",
+        description=(
+            "Секрет для POST /api/auth/telegram: заголовок X-Telegram-Bot-Secret "
+            "(вызывает только бэкенд бота, не Telegram-клиент). Пусто — эндпоинт отвечает 503."
+        ),
+    )
 
     redis_url: str = Field(
         default="redis://127.0.0.1:6379/0",

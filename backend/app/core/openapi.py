@@ -23,8 +23,9 @@ def attach_openapi(application: FastAPI) -> None:
             "scheme": "bearer",
             "bearerFormat": "JWT",
             "description": (
-                "Регистрация: POST /api/auth/register. Вход: POST /api/auth/login. "
-                "Профиль: GET /api/auth/me с Bearer. В Authorize — только значение токена."
+                "Регистрация: POST /api/auth/register или POST /api/auth/telegram (секрет бота). "
+                "Вход: POST /api/auth/login. Профиль: GET /api/auth/me с Bearer. "
+                "В Authorize — только значение токена."
             ),
         }
         application.openapi_schema = schema

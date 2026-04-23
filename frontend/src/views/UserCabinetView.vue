@@ -65,13 +65,17 @@ onMounted(load)
       <div v-else class="card card-pad">
         <h2 class="block-title">Профиль</h2>
         <dl class="dl">
-          <div class="row">
+          <div v-if="me.email" class="row">
             <dt>Email</dt>
             <dd>{{ me.email }}</dd>
           </div>
           <div v-if="me.telegram_id" class="row">
             <dt>Telegram</dt>
             <dd>{{ me.telegram_id }}</dd>
+          </div>
+          <div v-if="!me.email && !me.telegram_id" class="row">
+            <dt>Контакт</dt>
+            <dd>—</dd>
           </div>
           <div class="row">
             <dt>ID</dt>
