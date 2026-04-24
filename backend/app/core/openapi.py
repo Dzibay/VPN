@@ -1,4 +1,4 @@
-"""Расширение схемы OpenAPI (Swagger UI): общие securitySchemes."""
+"""Расширение схемы OpenAPI: описание для схемы ``BearerAuth`` (см. ``app.api.security_bearer``)."""
 
 from __future__ import annotations
 
@@ -15,19 +15,16 @@ def attach_openapi(application: FastAPI) -> None:
             version=application.version,
             description=application.description,
             routes=application.routes,
+            tags=application.openapi_tags,
         )
-        schema.setdefault("components", {}).setdefault("securitySchemes", {})[
-            "BearerAuth"
-        ] = {
-            "type": "http",
-            "scheme": "bearer",
-            "bearerFormat": "JWT",
-            "description": (
+        schemes = schema.setdefault("components", {}).setdefault("securitySchemes", {})
+        bearer = schemes.get("BearerAuth")
+        if isinstance(bearer, dict):
+            bearer["description"] = (
                 "Регистрация: POST /api/auth/register или POST /api/auth/telegram (секрет бота). "
-                "Вход: POST /api/auth/login. Профиль: GET /api/auth/me с Bearer. "
-                "В Authorize — только значение токена."
-            ),
-        }
+                "Вход: POST /api/auth/login. Профиль: GET /api/auth/me. "
+                "В модалке Authorize вставьте только JWT (без префикса «Bearer » — он добавляется автоматически)."
+            )
         application.openapi_schema = schema
         return application.openapi_schema
 

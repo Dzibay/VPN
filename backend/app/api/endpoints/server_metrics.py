@@ -41,7 +41,7 @@ from app.services.prometheus_node import (
 
 log = logging.getLogger("app.server_metrics")
 
-router = APIRouter(prefix="/servers", tags=["server-metrics"])
+router = APIRouter(prefix="/servers", tags=["admin"])
 
 
 @router.get(

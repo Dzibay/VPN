@@ -21,7 +21,7 @@ log = logging.getLogger("app.users")
 
 router = APIRouter(
     prefix="/users",
-    tags=["users"],
+    tags=["admin"],
     dependencies=[Depends(require_admin)],
 )
 

@@ -9,22 +9,25 @@ from __future__ import annotations
 import secrets
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import select
 
 from app.api.deps import ReadonlySessionDep
+from app.api.security_bearer import bearer_jwt
 from app.core.config import settings
-from app.core.http_bearer import bearer_token_or_none
 from app.models.server import Server
 
-router = APIRouter(prefix="/prometheus/sd", tags=["prometheus-sd"])
+router = APIRouter(prefix="/prometheus/sd", tags=["admin"])
 
 
-def _require_sd_bearer(authorization: Annotated[str | None, Header()] = None) -> None:
+def _require_sd_bearer(
+    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_jwt)] = None,
+) -> None:
     expected = (settings.prometheus_sd_token or "").strip()
     if not expected:
         raise HTTPException(status_code=404, detail="Not Found")
-    got = bearer_token_or_none(authorization)
+    got = (creds.credentials.strip() if creds and creds.credentials else None) or None
     if got is None or not secrets.compare_digest(got, expected):
         raise HTTPException(
             status_code=401,

@@ -29,6 +29,17 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
         openapi_url="/openapi.json",
         swagger_ui_parameters={"persistAuthorization": True},
+        openapi_tags=[
+            {
+                "name": "public",
+            },
+            {
+                "name": "user",
+            },
+            {
+                "name": "admin",
+            },
+        ],
     )
     attach_openapi(application)
     application.add_middleware(RequestContextMiddleware)

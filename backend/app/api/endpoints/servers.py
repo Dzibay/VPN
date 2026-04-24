@@ -35,7 +35,7 @@ log = logging.getLogger("app.servers")
 
 router = APIRouter(
     prefix="/servers",
-    tags=["servers"],
+    tags=["admin"],
     dependencies=[Depends(require_admin)],
 )
 

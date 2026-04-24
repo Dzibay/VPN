@@ -2,7 +2,7 @@ from fastapi import APIRouter
 
 from app.schemas.status import HealthResponse
 
-router = APIRouter(tags=["health"])
+router = APIRouter(tags=["public"])
 
 
 @router.get(

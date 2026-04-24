@@ -6,7 +6,7 @@ from app.database.operations import table_select
 from app.models.user import User
 from app.schemas.status import StatusResponse
 
-router = APIRouter(tags=["status"])
+router = APIRouter(tags=["admin"])
 
 
 @router.get(

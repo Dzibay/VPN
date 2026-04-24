@@ -90,12 +90,13 @@ _AUTH_ME_OPENAPI_EXAMPLES: dict = {
     },
 }
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix="/auth")
 
 
 @router.post(
     "/login",
     response_model=TokenResponse,
+    tags=["public"],
     summary="Вход (администратор из env или пользователь из БД)",
 )
 async def login(body: AccountLoginBody, session: ReadonlySessionDep) -> TokenResponse:
@@ -124,6 +125,7 @@ async def login(body: AccountLoginBody, session: ReadonlySessionDep) -> TokenRes
     "/register",
     response_model=TokenResponse,
     status_code=201,
+    tags=["public"],
     summary="Регистрация пользователя портала (email + пароль)",
 )
 async def register(
@@ -167,6 +169,7 @@ async def register(
     "/telegram",
     response_model=TokenResponse,
     status_code=201,
+    tags=["public"],
     summary="Вход и регистрация через Telegram (секрет X-Telegram-Bot-Secret; вызывает бэкенд бота)",
 )
 async def telegram_auth(
@@ -231,6 +234,7 @@ async def telegram_auth(
 @router.get(
     "/me",
     response_model=AccountMeResponse,
+    tags=["user"],
     summary="Профиль по Bearer JWT: пользователь из БД или админ из env",
     responses={
         200: {

@@ -1,13 +1,15 @@
 from dataclasses import dataclass
 from typing import Annotated, Literal
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
+from app.api.security_bearer import bearer_jwt
 from app.core.access_token import AccessClaims, decode_access_token
 from app.core.config import get_settings
-from app.core.http_bearer import bearer_token_or_none
 from app.database.session import get_db, get_db_readonly
+
 SessionDep = Annotated[Session, Depends(get_db)]
 ReadonlySessionDep = Annotated[Session, Depends(get_db_readonly)]
 
@@ -28,13 +30,20 @@ def _claims_to_principal(claims: AccessClaims) -> BearerPrincipal:
     return BearerPrincipal(role=claims.role, user_id=claims.user_id)
 
 
+def _token_strict(creds: HTTPAuthorizationCredentials | None) -> str | None:
+    if creds is None or not creds.credentials:
+        return None
+    s = str(creds.credentials).strip()
+    return s or None
+
+
 def require_admin(
-    authorization: Annotated[str | None, Header()] = None,
+    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_jwt)] = None,
 ) -> None:
     settings = get_settings()
     if not _admin_protection_enabled(settings):
         return
-    token = bearer_token_or_none(authorization)
+    token = _token_strict(creds)
     if not token:
         raise HTTPException(
             status_code=401,
@@ -51,10 +60,10 @@ def require_admin(
 
 
 def get_bearer_principal_dep(
-    authorization: Annotated[str | None, Header()] = None,
+    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_jwt)] = None,
 ) -> BearerPrincipal:
     settings = get_settings()
-    token = bearer_token_or_none(authorization)
+    token = _token_strict(creds)
     if not token:
         raise HTTPException(
             status_code=401,
@@ -69,4 +78,3 @@ def get_bearer_principal_dep(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return _claims_to_principal(claims)
-

@@ -20,7 +20,7 @@ from app.services.subscription_delivery import (
     subscription_servers_after_prometheus_sync,
 )
 
-router = APIRouter(tags=["subscription"])
+router = APIRouter(tags=["public"])
 
 
 async def _subscription_payload_for_token(
