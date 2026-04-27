@@ -793,7 +793,8 @@ case "$COMPONENT" in
     fi
     echo "[xray] sync_clients: запись $CFG (без установки пакета)…"
     _write_xray_config
-    XBIN="$XRAY_BIN"
+    # XRAY_BIN задаётся только в _xray_install; при sync_clients и set -u нельзя читать несуществующую переменную.
+    XBIN="${XRAY_BIN:-}"
     if [[ -z "$XBIN" || ! -x "$XBIN" ]]; then
       XBIN=$(command -v xray 2>/dev/null) || true
     fi
