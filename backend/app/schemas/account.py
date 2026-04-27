@@ -9,6 +9,13 @@ class SubscriptionOpenClientItem(BaseModel):
 
     slug: str = Field(description="Идентификатор в URL /sub/{token}/open/{slug}")
     display_name: str = Field(description="Подпись на кнопке")
+    store_platforms: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Платформы, для которых задана ссылка «Скачать»: windows, android, ios. "
+            "Пустой список — показывать при любой выбранной платформе (только deeplink)."
+        ),
+    )
 
 
 class AccountRegisterBody(BaseModel):

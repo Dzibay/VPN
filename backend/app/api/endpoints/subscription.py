@@ -14,7 +14,7 @@ import html
 import json
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, HTTPException, Path, Response
+from fastapi import APIRouter, HTTPException, Path, Query, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
@@ -39,6 +39,15 @@ from app.services.subscription_delivery import (
 router = APIRouter(tags=["public"])
 
 _OPEN_APPS_DOC = ", ".join(list_subscription_open_app_slugs())
+
+_STORE_PLATFORM_KEYS = frozenset({"windows", "android", "ios"})
+
+
+def _normalize_store_platform(raw: str | None) -> str | None:
+    if raw is None or not str(raw).strip():
+        return None
+    v = str(raw).strip().lower()
+    return v if v in _STORE_PLATFORM_KEYS else None
 
 
 def _cabinet_redirect_url(*, extra_query: dict[str, str] | None = None) -> str:
@@ -84,7 +93,11 @@ async def _subscription_payload_for_token(
 
 
 def _client_landing_page(
-    request: Request, user: User, app: SubscriptionOpenApp
+    request: Request,
+    user: User,
+    app: SubscriptionOpenApp,
+    *,
+    store_platform: str | None = None,
 ) -> HTMLResponse:
     base = _resolve_public_base(request, settings.subscription_public_base_url)
     subscription_url = f"{base}/sub/{user.token}"
@@ -98,6 +111,7 @@ def _client_landing_page(
         open_label,
         store_links=app.store_links,
         client_display_name=app.display_name,
+        store_platform=store_platform,
     )
     return HTMLResponse(content=content)
 
@@ -249,6 +263,7 @@ def _open_app_page(
     button_text: str,
     store_links: AppStoreLinks | None = None,
     client_display_name: str | None = None,
+    store_platform: str | None = None,
 ) -> str:
     if not deeplink:
         chunks = [
@@ -279,10 +294,11 @@ def _open_app_page(
     dl_name = (client_display_name or "клиент").strip()
     open_l = html.escape(button_text)
     dl_l = html.escape(f"Скачать {dl_name}")
+    forced_js = "null" if not store_platform else json.dumps(store_platform)
     hint = (
         "Если приложение не открылось, нажмите «Открыть». "
         + (
-            "«Скачать» — вручную открыть страницу магазина или сайта для вашей системы."
+            "«Скачать» — страница магазина или сайта для выбранной платформы (из адреса или по устройству)."
             if has_store
             else "Установите клиент вручную, если ещё не стоит."
         )
@@ -290,16 +306,27 @@ def _open_app_page(
     script = (
         "<script>(function(){"
         "var d=" + js_u + ",L=" + js_l + ";"
+        "var FORCED_PLATFORM=" + forced_js + ";"
+        "function storeHrefForPlatform(l,p){"
+        "if(!l||!p)return null;"
+        "if(p===\"android\")return l.android||null;"
+        "if(p===\"ios\")return l.ios||null;"
+        "if(p===\"windows\")return l.windows||l.web||null;"
+        "return null;}"
         "function pick(l){"
-        "if(!l)return null;var u=navigator.userAgent||\"\";"
+        "if(!l)return null;"
+        "if(FORCED_PLATFORM){"
+        "var fh=storeHrefForPlatform(l,FORCED_PLATFORM);"
+        "if(fh)return fh;}"
+        "var u=navigator.userAgent||\"\";"
         "if(/android/i.test(u)&&l.android)return l.android;"
         "if((/iPhone|iPad|iPod/i.test(u))&&l.ios)return l.ios;"
         "if((/Win64|Windows NT|Win32|Windows Phone/i).test(u)){"
         "if(l.windows)return l.windows;if(l.web)return l.web;}"
         "if((/Macintosh|Mac OS X|Linux|X11/).test(u)&&!(/iPhone|iPad|iPod/i.test(u))){"
-        "if(l.web)return l.web;if(l.windows)return l.windows;}"
-        "if(l.web)return l.web;if(l.android)return l.android;if(l.ios)return l.ios;"
-        "if(l.windows)return l.windows;return null;}"
+        "if(l.windows)return l.windows;if(l.web)return l.web;}"
+        "if(l.windows)return l.windows;if(l.web)return l.web;if(l.android)return l.android;if(l.ios)return l.ios;"
+        "return null;}"
         "var s=pick(L);"
         "var loader=document.getElementById(\"sub-loader\");"
         "var btnDl=document.getElementById(\"btn-dl\");"
@@ -374,6 +401,10 @@ async def subscription_open_in_app(
         ...,
         description=f"Идентификатор клиента. Доступно: {_OPEN_APPS_DOC}",
     ),
+    platform: str | None = Query(
+        None,
+        description="Платформа для кнопки «Скачать»: windows | android | ios (иначе — по User-Agent).",
+    ),
 ) -> HTMLResponse:
     app = get_subscription_open_app(client)
     if app is None:
@@ -402,7 +433,12 @@ async def subscription_open_in_app(
                 "",
             ),
         )
-    return _client_landing_page(request, user, app)
+    return _client_landing_page(
+        request,
+        user,
+        app,
+        store_platform=_normalize_store_platform(platform),
+    )
 
 
 @router.get(

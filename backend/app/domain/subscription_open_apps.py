@@ -13,8 +13,8 @@
 
 Имя профиля — SUBSCRIPTION_IMPORT_DISPLAY_NAME.
 
-Скачивание: AppStoreLinks — windows (только если URL отличается от web), android, ios, web
-(сайт / универсальные релизы для ПК). Не дублировать одну и ту же ссылку в windows и web.
+Скачивание: AppStoreLinks — android, ios, windows (ПК / релизы / сайт установки).
+Поле web оставлено для обратной совместимости в скриптах страницы /open/{client}.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ SUBSCRIPTION_IMPORT_DISPLAY_NAME = "Подорожник VPN"
 
 @dataclass(frozen=True)
 class AppStoreLinks:
-    """android / ios / web — основные; windows — только при отдельной ссылке (не дублировать web)."""
+    """Ссылки «Скачать»: android, ios, windows (ПК). web — устар., не использовать в новых записях."""
 
     windows: str | None = None
     android: str | None = None
@@ -39,6 +39,20 @@ class AppStoreLinks:
 
     def any(self) -> bool:
         return bool(self.windows or self.android or self.ios or self.web)
+
+
+def store_platform_tags(links: AppStoreLinks) -> list[str]:
+    """Теги для фильтра в ЛК: windows | android | ios. Пусто — клиент показывается для любой платформы."""
+    if not links.any():
+        return []
+    tags: list[str] = []
+    if links.android:
+        tags.append("android")
+    if links.ios:
+        tags.append("ios")
+    if links.windows or links.web:
+        tags.append("windows")
+    return tags
 
 
 @dataclass(frozen=True)
@@ -116,47 +130,40 @@ def _prizrak_box_deeplink(subscription_https_url: str) -> str:
     return f"prizrak-box://install-config?url={_q(u)}"
 
 
-# windows — заполнять только если ссылка отличается от web (инсталлятор, не сайт/релизы).
 _STORE: dict[str, AppStoreLinks] = {
     "happ": AppStoreLinks(
         android="https://play.google.com/store/apps/details?id=com.happproxy",
         ios="https://apps.apple.com/app/happ-proxy-utility/id6504287215",
-        web="https://github.com/Happ-proxy/happ-android",
+        windows="https://www.happ.su/main/ru",
     ),
     "stash": AppStoreLinks(
-        ios="https://apps.apple.com/app/stash-rule-based-proxy/id1596063349",
-        web="https://stash.ws",
+        ios="https://apps.apple.com/app/stash-rule-based-proxy/id1596063349"
     ),
     "shadowrocket": AppStoreLinks(
-        ios="https://apps.apple.com/app/shadowrocket/id932747118",
-        web="https://apps.apple.com/app/shadowrocket/id932747118",
+        ios="https://apps.apple.com/app/shadowrocket/id932747118"
     ),
     "streisand": AppStoreLinks(
-        ios="https://apps.apple.com/app/streisand/id6450534064",
-        web="https://streisand.onl",
+        ios="https://apps.apple.com/app/streisand/id6450534064"
     ),
     "flclashx": AppStoreLinks(
-        android="https://github.com/pluralplay/FlClashX/releases",
-        web="https://github.com/pluralplay/FlClashX/releases",
+        android="https://github.com/pluralplay/FlClashX/releases"
     ),
     "clashmeta": AppStoreLinks(
-        android="https://github.com/MetaCubeX/ClashMetaForAndroid/releases",
-        web="https://github.com/MetaCubeX/ClashMetaForAndroid/releases",
+        android="https://github.com/MetaCubeX/ClashMetaForAndroid/releases"
     ),
     "v2rayng": AppStoreLinks(
-        android="https://play.google.com/store/apps/details?id=com.v2ray.ang",
-        web="https://github.com/2dust/v2rayNG/releases",
+        android="https://play.google.com/store/apps/details?id=com.v2ray.ang"
     ),
     "v2raytun": AppStoreLinks(
         android="https://play.google.com/store/apps/details?id=com.v2raytun.android",
         ios="https://apps.apple.com/app/v2raytun/id6476628951",
-        web="https://v2raytun.com",
+        windows="https://v2raytun.com",
     ),
     "koala-clash": AppStoreLinks(
-        web="https://github.com/coolcoala/koala-clash/releases",
+        windows="https://github.com/coolcoala/koala-clash/releases",
     ),
     "prizrak-box": AppStoreLinks(
-        web="https://github.com/legiz-ru/Prizrak-Box/releases",
+        windows="https://github.com/legiz-ru/Prizrak-Box/releases",
     ),
 }
 

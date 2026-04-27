@@ -23,7 +23,7 @@ from app.core.config import settings
 from app.core.passwords import hash_password, verify_password
 from app.database.operations import table_insert
 from app.domain.subscription import user_has_active_subscription
-from app.domain.subscription_open_apps import list_subscription_open_apps
+from app.domain.subscription_open_apps import list_subscription_open_apps, store_platform_tags
 from app.models.user import User
 from app.schemas.account import (
     AccountLoginBody,
@@ -63,7 +63,11 @@ _AUTH_ME_OPENAPI_EXAMPLES: dict = {
             "subscription_active": True,
             "subscription_token": "subscription-token-example",
             "subscription_open_clients": [
-                {"slug": "happ", "display_name": "Happ"},
+                {
+                    "slug": "happ",
+                    "display_name": "Happ",
+                    "store_platforms": ["android", "ios", "windows"],
+                },
             ],
         },
     },
@@ -290,7 +294,11 @@ async def me(
         subscription_active=user_has_active_subscription(user),
         subscription_token=user.token,
         subscription_open_clients=[
-            SubscriptionOpenClientItem(slug=a.slug, display_name=a.display_name)
+            SubscriptionOpenClientItem(
+                slug=a.slug,
+                display_name=a.display_name,
+                store_platforms=store_platform_tags(a.store_links),
+            )
             for a in list_subscription_open_apps()
         ],
     )

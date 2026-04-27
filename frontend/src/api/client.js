@@ -100,17 +100,45 @@ export function subscriptionPublicUrl(token) {
   return `/sub/${token}`
 }
 
+/** @typedef {'windows'|'android'|'ios'} StorePlatform */
+
+const STORE_PLATFORM_SET = new Set(['windows', 'android', 'ios'])
+
 /**
- * Страница открытия клиента: deeplink + при необходимости установка (тот же базовый хост, что и подписка).
+ * Платформа для ссылок «Скачать» (как на бэке в pick() для store links).
+ * Для Mac/Linux и неизвестных UA — windows (часто там же релиз под ПК).
+ * @returns {StorePlatform}
  */
-export function subscriptionOpenClientUrl(token, clientSlug) {
+export function detectStorePlatform() {
+  if (typeof navigator === 'undefined') return 'windows'
+  const u = navigator.userAgent || ''
+  if (/android/i.test(u)) return 'android'
+  if (/iPhone|iPad|iPod/i.test(u)) return 'ios'
+  if (/Win64|Windows NT|Win32|Windows Phone/i.test(u)) return 'windows'
+  return 'windows'
+}
+
+/**
+ * Страница открытия клиента (тот же базовый хост, что и подписка).
+ * @param {string} token
+ * @param {string} clientSlug
+ * @param {StorePlatform | null | undefined} [platform] — query `platform` для кнопки «Скачать»; без параметра — только User-Agent на странице.
+ */
+export function subscriptionOpenClientUrl(token, clientSlug, platform) {
   const base =
     import.meta.env.VITE_SUBSCRIPTION_BASE_URL?.replace(/\/$/, '') ?? ''
+  const t = encodeURIComponent(token)
+  const s = encodeURIComponent(clientSlug)
+  let path
   if (base) {
-    return `${base}/sub/${token}/open/${clientSlug}`
+    path = `${base}/sub/${t}/open/${s}`
+  } else if (typeof window !== 'undefined') {
+    path = `${window.location.origin}/sub/${t}/open/${s}`
+  } else {
+    path = `/sub/${t}/open/${s}`
   }
-  if (typeof window !== 'undefined') {
-    return `${window.location.origin}/sub/${token}/open/${clientSlug}`
+  if (platform && STORE_PLATFORM_SET.has(platform)) {
+    path += `?platform=${encodeURIComponent(platform)}`
   }
-  return `/sub/${token}/open/${clientSlug}`
+  return path
 }

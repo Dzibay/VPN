@@ -1,11 +1,18 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
+  detectStorePlatform,
   fetchJson,
   subscriptionOpenClientUrl,
   subscriptionPublicUrl,
 } from '../api/client.js'
+
+const PLATFORM_OPTIONS = [
+  { value: 'windows', label: 'Windows' },
+  { value: 'android', label: 'Android' },
+  { value: 'ios', label: 'iOS' },
+]
 
 const router = useRouter()
 const route = useRoute()
@@ -41,6 +48,35 @@ function formatDate(iso) {
 
 /** После редиректа с бэка (?unknown_client=1) показываем подсказку и чистим URL. */
 const unknownClientHint = ref(false)
+
+/** Платформа для параметра `?platform=` на /sub/.../open/{client} (кнопка «Скачать» на той странице). */
+const storePlatform = ref(
+  typeof window !== 'undefined' ? detectStorePlatform() : 'windows',
+)
+
+function setStorePlatform(p) {
+  storePlatform.value = p
+}
+
+function openClientHref(slug) {
+  return subscriptionOpenClientUrl(
+    String(me.value?.subscription_token ?? ''),
+    slug,
+    storePlatform.value,
+  )
+}
+
+/** Клиенты с учётом выбранной платформы (store_platforms пустой — показываем всегда). */
+const filteredOpenClients = computed(() => {
+  const list = me.value?.subscription_open_clients
+  if (!Array.isArray(list) || !list.length) return []
+  const plat = storePlatform.value
+  return list.filter((c) => {
+    const p = c.store_platforms
+    if (!Array.isArray(p) || p.length === 0) return true
+    return p.includes(plat)
+  })
+})
 
 onMounted(() => {
   const q = route.query.unknown_client
@@ -165,18 +201,44 @@ onMounted(() => {
         >{{ subscriptionPublicUrl(me.subscription_token) }}</a>
         <template v-if="me.subscription_open_clients?.length">
           <h3 class="clients-title">Подключить в приложении</h3>
-          <p class="hint clients-hint">
-            Откроется страница запуска клиента и при необходимости установки.
+          <div class="platform-block">
+            <div
+              class="platform-chips"
+              role="radiogroup"
+              aria-label="Платформа магазина или сайта"
+            >
+              <button
+                v-for="p in PLATFORM_OPTIONS"
+                :key="p.value"
+                type="button"
+                class="platform-chip"
+                :class="{ 'platform-chip--active': storePlatform === p.value }"
+                role="radio"
+                :aria-checked="storePlatform === p.value"
+                @click="setStorePlatform(p.value)"
+              >
+                {{ p.label }}
+              </button>
+            </div>
+          </div>
+          <p
+            v-if="!filteredOpenClients.length"
+            class="hint clients-empty"
+          >
+            Для этой платформы нет клиентов с готовой ссылкой установки — выберите другую ОС выше.
           </p>
-          <div class="client-btns">
+          <div
+            v-else
+            class="client-btns"
+          >
             <template
-              v-for="c in me.subscription_open_clients"
+              v-for="c in filteredOpenClients"
               :key="c.slug"
             >
               <a
                 v-if="me.subscription_active"
                 class="client-btn"
-                :href="subscriptionOpenClientUrl(me.subscription_token, c.slug)"
+                :href="openClientHref(c.slug)"
                 target="_blank"
                 rel="noopener"
               >{{ c.display_name }}</a>
@@ -379,5 +441,66 @@ dd {
 
 .client-btn--off:hover {
   filter: none;
+}
+
+.platform-block {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--nav-border);
+}
+
+.platform-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+
+.platform-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.platform-chip {
+  appearance: none;
+  margin: 0;
+  padding: 0.38rem 0.75rem;
+  border-radius: var(--radius-pill);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--text);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.platform-chip:hover {
+  border-color: var(--accent-border);
+  color: var(--text-h);
+}
+
+.platform-chip:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.platform-chip--active {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.platform-detect-hint {
+  margin: 0.55rem 0 0;
+  font-size: 0.8rem;
 }
 </style>
