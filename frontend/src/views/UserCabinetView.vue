@@ -422,14 +422,18 @@ dd {
   font-size: 0.86rem;
   font-weight: 600;
   text-decoration: none;
-  color: #fff;
-  background: var(--accent);
-  border: 1px solid var(--accent-border);
-  transition: filter 0.15s ease;
+  /* Как .cta.primary: тёмные токены — тёмный текст на акценте, без #fff (слишком ярко на OLED) */
+  color: var(--on-accent);
+  background: color-mix(in srgb, var(--accent) 78%, #050a08 22%);
+  border: 1px solid color-mix(in srgb, var(--accent-border) 75%, #020403 25%);
+  transition:
+    filter 0.15s ease,
+    background 0.15s ease;
 }
 
 .client-btn:hover {
-  filter: brightness(1.06);
+  filter: brightness(1.04);
+  background: color-mix(in srgb, var(--accent-hover) 80%, #050a08 20%);
 }
 
 .client-btn--off {
@@ -441,6 +445,17 @@ dd {
 
 .client-btn--off:hover {
   filter: none;
+}
+
+@media (prefers-color-scheme: light) {
+  .client-btn {
+    background: var(--accent);
+    border-color: var(--accent-border);
+  }
+
+  .client-btn:hover {
+    background: var(--accent-hover);
+  }
 }
 
 .platform-block {
