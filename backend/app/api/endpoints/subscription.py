@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import html
 import json
-from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import HTMLResponse
@@ -40,7 +39,8 @@ def _resolve_public_base(request: Request, configured_base: str) -> str:
 
 
 def _build_happ_add_url(subscription_https_url: str) -> str:
-    return "happ://add/" + quote(subscription_https_url, safe="")
+    """Happ ожидает обычный URL подписки после happ://add/, без percent-encoding."""
+    return "happ://add/" + subscription_https_url.lstrip("/")
 
 
 async def _subscription_payload_for_token(
