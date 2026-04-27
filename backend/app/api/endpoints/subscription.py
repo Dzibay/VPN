@@ -23,6 +23,7 @@ from app.core.config import settings
 from app.database.operations import table_select_one
 from app.domain.subscription import user_has_active_subscription
 from app.domain.subscription_open_apps import (
+    AppStoreLinks,
     SubscriptionOpenApp,
     get_subscription_open_app,
     list_subscription_open_app_slugs,
@@ -74,7 +75,14 @@ def _client_landing_page(
     deeplink = app.build_deeplink(subscription_url)
     title = f"Подключение {app.display_name}"
     button = f"Открыть в {app.display_name}"
-    content = _open_app_page(title, None, deeplink, button)
+    content = _open_app_page(
+        title,
+        None,
+        deeplink,
+        button,
+        store_links=app.store_links,
+        client_display_name=app.display_name,
+    )
     return HTMLResponse(content=content)
 
 
@@ -83,6 +91,8 @@ def _open_app_page(
     paragraph: str | None,
     deeplink: str | None,
     button_text: str,
+    store_links: AppStoreLinks | None = None,
+    client_display_name: str | None = None,
 ) -> str:
     chunks = [
         "<!DOCTYPE html><html lang=\"ru\"><head>",
@@ -92,8 +102,9 @@ def _open_app_page(
         (
             "<style>"
             "body{font-family:system-ui,sans-serif;padding:1.5rem;max-width:28rem;margin:auto;line-height:1.45}"
-            "a{display:inline-block;margin-top:1rem;padding:.6rem 1rem;background:#248bda;color:#fff;"
-            "border-radius:8px;text-decoration:none}"
+            "a.btn{display:inline-block;margin-top:1rem;padding:.6rem 1rem;border-radius:8px;text-decoration:none}"
+            "a.btn-primary{background:#248bda;color:#fff}"
+            "a.btn-secondary{background:#fff;color:#248bda;border:2px solid #248bda}"
             "</style>"
         ),
         "</head><body>",
@@ -103,10 +114,63 @@ def _open_app_page(
         chunks.append(f"<p>{html.escape(paragraph)}</p>")
     if deeplink:
         js_u = json.dumps(deeplink)
-        chunks.append(f"<script>try{{location.replace({js_u});}}catch(e){{}}</script>")
-        chunks.append(f"<p><a href={js_u}>{html.escape(button_text)}</a></p>")
+        sl = store_links or AppStoreLinks()
+        has_store = sl.any()
+        js_l = json.dumps(
+            {"android": sl.android, "ios": sl.ios, "web": sl.web}
+            if has_store
+            else None
+        )
+        dl_name = (client_display_name or "клиент").strip()
         chunks.append(
-            "<p style=\"color:#555;font-size:.9rem\">Если приложение не открылось, нажмите кнопку выше.</p>"
+            f"<p><a class=\"btn btn-primary\" href={js_u}>{html.escape(button_text)}</a></p>"
+        )
+        if has_store:
+            chunks.append(
+                f"<p><a id=\"store-dl\" class=\"btn btn-secondary\" href=\"#\">"
+                f"Скачать {html.escape(dl_name)}</a></p>"
+            )
+        # Выбор магазина по userAgent; нет API «нет handler» — таймаут + blur/hidden
+        chunks.append(
+            "<script>(function(){"
+            "var d="
+            + js_u
+            + ",L="
+            + js_l
+            + ";"
+            "function pick(l){"
+            "if(!l)return null;"
+            "var u=navigator.userAgent||\"\";"
+            "if(/android/i.test(u)&&l.android)return l.android;"
+            "if((/iPhone|iPad|iPod/i.test(u))&&l.ios)return l.ios;"
+            "if(l.web)return l.web;"
+            "if(l.android)return l.android;"
+            "if(l.ios)return l.ios;"
+            "return null;"
+            "}"
+            "var s=pick(L);"
+            "try{location.replace(d);}catch(e){}"
+            "var a=document.getElementById(\"store-dl\");"
+            "if(a){if(s){a.href=s;}else{a.style.display=\"none\";}}"
+            "if(!s)return;"
+            "var t=setTimeout(function(){"
+            "if(document.visibilityState===\"visible\")location.replace(s);"
+            "},3000);"
+            "function c(){if(t){clearTimeout(t);t=null;}}"
+            "window.addEventListener(\"blur\",c,{passive:true});"
+            "document.addEventListener(\"visibilitychange\",function(){if(document.hidden)c();},{passive:true});"
+            "})();</script>"
+        )
+        chunks.append(
+            "<p style=\"color:#555;font-size:.9rem\">"
+            "Если приложение не открылось, нажмите первую кнопку. "
+            + (
+                "Ссылка «Скачать» ведёт в Google Play, App Store или на сайт — в зависимости от устройства. "
+                "Если клиент не установлен, через несколько секунд откроется та же страница."
+                if has_store
+                else "Убедитесь, что приложение установлено."
+            )
+            + "</p>"
         )
     chunks.append("</body></html>")
     return "".join(chunks)

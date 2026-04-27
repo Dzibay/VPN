@@ -10,13 +10,16 @@
 - Streisand: панели (напр. 3x-ui) — streisand://install-subscription?url=…
 
 Имя профиля — SUBSCRIPTION_IMPORT_DISPLAY_NAME.
+
+Скачивание (лендинг /sub/…/open/…): AppStoreLinks — ссылки в Play, App Store и на сайт;
+в браузере выбор делается по navigator.userAgent (Android / iOS / остальное → web).
 """
 
 from __future__ import annotations
 
 import base64
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import quote
 
 # Параметр name/fragment для отображаемого имени подписки
@@ -24,10 +27,24 @@ SUBSCRIPTION_IMPORT_DISPLAY_NAME = "Подорожник VPN"
 
 
 @dataclass(frozen=True)
+class AppStoreLinks:
+    """Куда вести при скачивании: Android → Play, iOS → App Store, ПК/прочее → website."""
+
+    android: str | None = None
+    ios: str | None = None
+    web: str | None = None
+
+    def any(self) -> bool:
+        return bool(self.android or self.ios or self.web)
+
+
+@dataclass(frozen=True)
 class SubscriptionOpenApp:
     slug: str
     display_name: str
     build_deeplink: Callable[[str], str]
+    # Ссылки на магазины / сайт — выбор по userAgent в HTML
+    store_links: AppStoreLinks = field(default_factory=AppStoreLinks)
 
 
 def _sub_url_trim(subscription_https_url: str) -> str:
@@ -91,22 +108,66 @@ def _prizrak_box_deeplink(subscription_https_url: str) -> str:
     return f"prizrak-box://install-config?url={_q(u)}"
 
 
+# См. AppStoreLinks: Android = Play, iOS = App Store, web = ПК / универсальная страница
+_STORE: dict[str, AppStoreLinks] = {
+    "happ": AppStoreLinks(
+        android="https://play.google.com/store/apps/details?id=com.happproxy",
+        ios="https://apps.apple.com/app/happ-proxy-utility/id6504287215",
+        web="https://github.com/Happ-proxy/happ-android",
+    ),
+    "stash": AppStoreLinks(
+        ios="https://apps.apple.com/app/stash-rule-based-proxy/id1596063349",
+        web="https://stash.ws",
+    ),
+    "shadowrocket": AppStoreLinks(
+        ios="https://apps.apple.com/app/shadowrocket/id932747118",
+        web="https://apps.apple.com/app/shadowrocket/id932747118",
+    ),
+    "streisand": AppStoreLinks(
+        ios="https://apps.apple.com/app/streisand/id6450534064",
+        web="https://streisand.onl",
+    ),
+    "flclashx": AppStoreLinks(
+        android="https://github.com/pluralplay/FlClashX/releases",
+        web="https://github.com/pluralplay/FlClashX/releases",
+    ),
+    "clashmeta": AppStoreLinks(
+        android="https://github.com/MetaCubeX/ClashMetaForAndroid/releases",
+        web="https://github.com/MetaCubeX/ClashMetaForAndroid/releases",
+    ),
+    "v2rayng": AppStoreLinks(
+        android="https://play.google.com/store/apps/details?id=com.v2ray.ang",
+        web="https://github.com/2dust/v2rayNG/releases",
+    ),
+    "koala-clash": AppStoreLinks(
+        web="https://github.com/coolcoala/koala-clash/releases",
+    ),
+    "prizrak-box": AppStoreLinks(
+        web="https://github.com/legiz-ru/Prizrak-Box/releases",
+    ),
+}
+
+
+def _app(
+    slug: str,
+    name: str,
+    fn: Callable[[str], str],
+) -> SubscriptionOpenApp:
+    return SubscriptionOpenApp(
+        slug, name, fn, _STORE.get(slug, AppStoreLinks())
+    )
+
+
 SUBSCRIPTION_OPEN_APPS: dict[str, SubscriptionOpenApp] = {
-    "happ": SubscriptionOpenApp("happ", "Happ", _happ_deeplink),
-    "stash": SubscriptionOpenApp("stash", "Stash", _stash_deeplink),
-    "shadowrocket": SubscriptionOpenApp(
-        "shadowrocket", "Shadowrocket", _shadowrocket_deeplink
-    ),
-    "streisand": SubscriptionOpenApp("streisand", "Streisand", _streisand_deeplink),
-    "flclashx": SubscriptionOpenApp("flclashx", "FLClashX", _flclashx_deeplink),
-    "clashmeta": SubscriptionOpenApp("clashmeta", "Clash Meta", _clashmeta_deeplink),
-    "v2rayng": SubscriptionOpenApp("v2rayng", "v2rayNG", _v2rayng_deeplink),
-    "koala-clash": SubscriptionOpenApp(
-        "koala-clash", "Koala Clash", _koala_clash_deeplink
-    ),
-    "prizrak-box": SubscriptionOpenApp(
-        "prizrak-box", "Prizrak Box", _prizrak_box_deeplink
-    ),
+    "happ": _app("happ", "Happ", _happ_deeplink),
+    "stash": _app("stash", "Stash", _stash_deeplink),
+    "shadowrocket": _app("shadowrocket", "Shadowrocket", _shadowrocket_deeplink),
+    "streisand": _app("streisand", "Streisand", _streisand_deeplink),
+    "flclashx": _app("flclashx", "FLClashX", _flclashx_deeplink),
+    "clashmeta": _app("clashmeta", "Clash Meta", _clashmeta_deeplink),
+    "v2rayng": _app("v2rayng", "v2rayNG", _v2rayng_deeplink),
+    "koala-clash": _app("koala-clash", "Koala Clash", _koala_clash_deeplink),
+    "prizrak-box": _app("prizrak-box", "Prizrak Box", _prizrak_box_deeplink),
 }
 
 
