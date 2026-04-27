@@ -1,17 +1,25 @@
 """
 Диплинки для открытия подписки во внешних клиентах (GET /sub/{token}/open/{client}).
 
-Шаблоны от пользователя; query-параметры url/name кодируются через quote.
-Имя профиля для схем с ?name= — см. SUBSCRIPTION_IMPORT_DISPLAY_NAME.
+- happ: сырая ссылка в path — happ://add/https://…/sub/{token}
+- Stash, Clash Meta, v2rayNG (url), flclashx, koala-clash, prizrak-box: в query
+  передаётся url=… (строка URL целиком, при необходимости percent-encoded)
+- Shadowrocket: shadowrocket://add/sub://<base64(UTF-8 ссылки)>?remark=…
+  (3x-ui / community, иначе импорт не срабатывает; не путать с urlencoding в path)
+- v2rayNG: по UrlSchemeActivity читается только query url и fragment (имя), не name=
+- Streisand: панели (напр. 3x-ui) — streisand://install-subscription?url=…
+
+Имя профиля — SUBSCRIPTION_IMPORT_DISPLAY_NAME.
 """
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import quote
 
-# Параметр name= для clashmeta, v2rayng и фрагмент #… для Shadowrocket
+# Параметр name/fragment для отображаемого имени подписки
 SUBSCRIPTION_IMPORT_DISPLAY_NAME = "Подорожник VPN"
 
 
@@ -30,6 +38,10 @@ def _q(s: str) -> str:
     return quote(s, safe="")
 
 
+def _b64_utf8(s: str) -> str:
+    return base64.b64encode(s.encode("utf-8")).decode("ascii")
+
+
 def _happ_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
     return "happ://add/" + u.lstrip("/")
@@ -43,12 +55,13 @@ def _stash_deeplink(subscription_https_url: str) -> str:
 def _shadowrocket_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
     name = SUBSCRIPTION_IMPORT_DISPLAY_NAME
-    return f"shadowrocket://add/{_q(u)}#{_q(name)}"
+    b64 = _b64_utf8(u)
+    return f"shadowrocket://add/sub://{b64}?remark={_q(name)}"
 
 
 def _streisand_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
-    return "streisand://import/" + u.lstrip("/")
+    return f"streisand://install-subscription?url={_q(u)}"
 
 
 def _flclashx_deeplink(subscription_https_url: str) -> str:
@@ -59,13 +72,13 @@ def _flclashx_deeplink(subscription_https_url: str) -> str:
 def _clashmeta_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
     n = SUBSCRIPTION_IMPORT_DISPLAY_NAME
-    return f"clashmeta://install-config?name={_q(n)}&url={_q(u)}"
+    return f"clashmeta://install-config?url={_q(u)}&name={_q(n)}"
 
 
 def _v2rayng_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
     n = SUBSCRIPTION_IMPORT_DISPLAY_NAME
-    return f"v2rayng://install-config?name={_q(n)}&url={_q(u)}"
+    return f"v2rayng://install-sub?url={_q(u)}#{_q(n)}"
 
 
 def _koala_clash_deeplink(subscription_https_url: str) -> str:
