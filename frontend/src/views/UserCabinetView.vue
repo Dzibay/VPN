@@ -58,10 +58,10 @@ function setStorePlatform(p) {
   storePlatform.value = p
 }
 
-function openClientHref(slug) {
+function openClientHref(clientCode) {
   return subscriptionOpenClientUrl(
     String(me.value?.subscription_token ?? ''),
-    slug,
+    clientCode,
     storePlatform.value,
   )
 }
@@ -233,12 +233,12 @@ onMounted(() => {
           >
             <template
               v-for="c in filteredOpenClients"
-              :key="c.slug"
+              :key="c.client_code"
             >
               <a
                 v-if="me.subscription_active"
                 class="client-btn"
-                :href="openClientHref(c.slug)"
+                :href="openClientHref(c.client_code)"
                 target="_blank"
                 rel="noopener"
               >{{ c.display_name }}</a>

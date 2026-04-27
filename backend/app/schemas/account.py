@@ -7,7 +7,9 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 class SubscriptionOpenClientItem(BaseModel):
     """Элемент списка клиентов для кнопок «Подключить» в личном кабинете."""
 
-    slug: str = Field(description="Идентификатор в URL /sub/{token}/open/{slug}")
+    client_code: str = Field(
+        description="Идентификатор клиента в URL /sub/{subscription_token}/open/{client_code}"
+    )
     display_name: str = Field(description="Подпись на кнопке")
     store_platforms: list[str] = Field(
         default_factory=list,
@@ -15,6 +17,40 @@ class SubscriptionOpenClientItem(BaseModel):
             "Платформы, для которых задана ссылка «Скачать»: windows, android, ios. "
             "Пустой список — показывать при любой выбранной платформе (только deeplink)."
         ),
+    )
+
+
+def build_subscription_open_client_items() -> list[SubscriptionOpenClientItem]:
+    """Один список клиентов из app.domain.subscription_open_apps (как в GET /api/auth/me)."""
+    from app.domain.subscription_open_apps import list_subscription_open_apps, store_platform_tags
+
+    return [
+        SubscriptionOpenClientItem(
+            client_code=a.client_code,
+            display_name=a.display_name,
+            store_platforms=store_platform_tags(a.store_links),
+        )
+        for a in list_subscription_open_apps()
+    ]
+
+
+class TelegramSubscriptionOpenClientsResponse(BaseModel):
+    """Список клиентов и шаблон ссылок для бота; данные совпадают с subscription_open_clients в /api/auth/me."""
+
+    clients: list[SubscriptionOpenClientItem] = Field(
+        description="Те же client_code/display_name/store_platforms, что отдаётся пользователю в ЛК.",
+    )
+    public_base_url: str | None = Field(
+        default=None,
+        description=(
+            "SUBSCRIPTION_PUBLIC_BASE_URL из конфигурации (HTTPS origin без хвостового «/»). "
+            "Полная ссылка: {public_base_url}/sub/{subscription_token}/open/{client_code} — "
+            "если null, подставьте origin API или задайте переменную в .env ."
+        ),
+    )
+    open_path_template: str = Field(
+        default="/sub/{subscription_token}/open/{client_code}",
+        description="Относительный путь; опционально ?platform=windows|android|ios для HTML-страницы «Скачать».",
     )
 
 

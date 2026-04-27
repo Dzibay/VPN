@@ -1,8 +1,7 @@
 import logging
-import secrets
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -11,6 +10,7 @@ from app.api.deps import (
     ReadonlySessionDep,
     SessionDep,
     get_bearer_principal_dep,
+    require_telegram_bot_api_secret,
 )
 from app.core.access_token import create_access_token
 from app.core.auth_env import (
@@ -26,14 +26,13 @@ from app.domain.subscription import (
     subscription_until_after_registration,
     user_has_active_subscription,
 )
-from app.domain.subscription_open_apps import list_subscription_open_apps, store_platform_tags
 from app.models.user import User
 from app.schemas.account import (
     AccountLoginBody,
     AccountMeResponse,
     AccountRegisterBody,
-    SubscriptionOpenClientItem,
     TelegramAuthBody,
+    build_subscription_open_client_items,
     merge_telegram_auth_profile,
     telegram_auth_has_profile_fields,
 )
@@ -67,7 +66,7 @@ _AUTH_ME_OPENAPI_EXAMPLES: dict = {
             "subscription_token": "subscription-token-example",
             "subscription_open_clients": [
                 {
-                    "slug": "happ",
+                    "client_code": "happ",
                     "display_name": "Happ",
                     "store_platforms": ["android", "ios", "windows"],
                 },
@@ -184,24 +183,14 @@ async def register(
     response_model=TokenResponse,
     status_code=201,
     tags=["public"],
+    dependencies=[Depends(require_telegram_bot_api_secret)],
     summary="Вход и регистрация через Telegram (секрет X-Telegram-Bot-Secret; вызывает бэкенд бота)",
 )
 async def telegram_auth(
     body: TelegramAuthBody,
     session: SessionDep,
     background_tasks: BackgroundTasks,
-    x_telegram_bot_secret: Annotated[str | None, Header()] = None,
 ) -> TokenResponse:
-    expected = (settings.telegram_bot_api_secret or "").strip()
-    if not expected:
-        raise HTTPException(
-            status_code=503,
-            detail="TELEGRAM_BOT_API_SECRET не задан: эндпоинт отключён",
-        )
-    got = (x_telegram_bot_secret or "").strip()
-    if not got or not secrets.compare_digest(got, expected):
-        raise HTTPException(status_code=401, detail="Недействительный секрет бота")
-
     tid = body.telegram_id
     profile = merge_telegram_auth_profile(body, None)
     stmt = select(User).where(User.telegram_id == tid).limit(1)
@@ -296,12 +285,5 @@ async def me(
         subscription_until=user.subscription_until,
         subscription_active=user_has_active_subscription(user),
         subscription_token=user.token,
-        subscription_open_clients=[
-            SubscriptionOpenClientItem(
-                slug=a.slug,
-                display_name=a.display_name,
-                store_platforms=store_platform_tags(a.store_links),
-            )
-            for a in list_subscription_open_apps()
-        ],
+        subscription_open_clients=build_subscription_open_client_items(),
     )

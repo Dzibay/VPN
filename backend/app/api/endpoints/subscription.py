@@ -1,11 +1,10 @@
 """
-Публичный эндпоинт подписки (без префикса /api — стабильные ссылки /sub/{token}).
+Публичный эндпоинт подписки (без префикса /api — стабильные ссылки /sub/{subscription_token}).
 
 Перед выдачей списка узлов обновляется servers.load_percent из Prometheus, затем
 узлы сортируются по возрастанию нагрузки (как и раньше).
 
-- GET /sub/{token}/open — 302 в личный кабинет (список клиентов в /cabinet).
-- GET /sub/{token}/open/{client} — открытие в приложении; неизвестный client → 302 в /cabinet.
+- GET /sub/{subscription_token}/open/{client} — открытие в приложении; неизвестный client → 302 в /cabinet.
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ from app.domain.subscription_open_apps import (
     AppStoreLinks,
     SubscriptionOpenApp,
     get_subscription_open_app,
-    list_subscription_open_app_slugs,
+    list_subscription_open_app_codes,
 )
 from app.models.user import User
 from app.schemas.users import SubscriptionPayload
@@ -38,7 +37,15 @@ from app.services.subscription_delivery import (
 
 router = APIRouter(tags=["public"])
 
-_OPEN_APPS_DOC = ", ".join(list_subscription_open_app_slugs())
+# Имя path-параметра не «token»: иначе Swagger UI подставляет example=token и URL выглядит как /sub/token/... .
+_SUBSCRIPTION_TOKEN_OPENAPI_EXAMPLE = "R7k4mN9pQ2sT5vX8yZ1aB3cD6eF0gH2j"
+_SUBSCRIPTION_TOKEN_PATH = Path(
+    ...,
+    description="Токен подписки (users.token), сегмент пути /sub/…/…",
+    examples=[_SUBSCRIPTION_TOKEN_OPENAPI_EXAMPLE],
+)
+
+_OPEN_APPS_DOC = ", ".join(list_subscription_open_app_codes())
 
 _STORE_PLATFORM_KEYS = frozenset({"windows", "android", "ios"})
 
@@ -73,9 +80,9 @@ def _resolve_public_base(request: Request, configured_base: str) -> str:
 
 
 async def _subscription_payload_for_token(
-    token: str, session: ReadonlySessionDep
+    subscription_token: str, session: ReadonlySessionDep
 ) -> SubscriptionPayload:
-    user = table_select_one(session, User, filters={"token": token})
+    user = table_select_one(session, User, filters={"token": subscription_token})
     if user is None:
         raise HTTPException(status_code=404, detail="Неизвестный токен")
 
@@ -363,40 +370,14 @@ def _open_app_page(
 
 
 @router.get(
-    "/sub/{token}/open",
-    summary="Редирект в личный кабинет (список клиентов для подключения)",
-    response_model=None,
-)
-async def subscription_open_hub_redirect(
-    token: str,
-    session: ReadonlySessionDep,
-) -> RedirectResponse | HTMLResponse:
-    user = table_select_one(session, User, filters={"token": token})
-    if user is None:
-        return HTMLResponse(
-            content=_open_app_page(
-                "Ссылка недействительна",
-                "Проверьте ссылку или получите новую в боте / личном кабинете.",
-                None,
-                "",
-            ),
-            status_code=404,
-        )
-    return RedirectResponse(
-        url=_cabinet_redirect_url(),
-        status_code=302,
-    )
-
-
-@router.get(
-    "/sub/{token}/open/{client}",
+    "/sub/{subscription_token}/open/{client}",
     summary=f"Открыть подписку в приложении (client: {_OPEN_APPS_DOC})",
     response_class=HTMLResponse,
 )
 async def subscription_open_in_app(
     request: Request,
     session: ReadonlySessionDep,
-    token: str,
+    subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
     client: str = Path(
         ...,
         description=f"Идентификатор клиента. Доступно: {_OPEN_APPS_DOC}",
@@ -413,7 +394,7 @@ async def subscription_open_in_app(
             status_code=302,
         )
 
-    user = table_select_one(session, User, filters={"token": token})
+    user = table_select_one(session, User, filters={"token": subscription_token})
     if user is None:
         return HTMLResponse(
             content=_open_app_page(
@@ -442,12 +423,15 @@ async def subscription_open_in_app(
 
 
 @router.get(
-    "/sub/{token}",
+    "/sub/{subscription_token}",
     summary="Подписка: text/plain, одна строка Base64 (v2rayNG, Nekoray и др.)",
     response_class=Response,
 )
-async def subscription_base64_by_token(token: str, session: ReadonlySessionDep) -> Response:
-    payload = await _subscription_payload_for_token(token, session)
+async def subscription_base64_by_token(
+    session: ReadonlySessionDep,
+    subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
+) -> Response:
+    payload = await _subscription_payload_for_token(subscription_token, session)
     return Response(
         content=payload.subscription_base64,
         media_type="text/plain; charset=utf-8",
@@ -455,9 +439,12 @@ async def subscription_base64_by_token(token: str, session: ReadonlySessionDep) 
 
 
 @router.get(
-    "/sub/{token}/json",
+    "/sub/{subscription_token}/json",
     response_model=SubscriptionPayload,
     summary="Подписка (JSON): узлы, vless:// и поле subscription_base64",
 )
-async def subscription_json_by_token(token: str, session: ReadonlySessionDep) -> SubscriptionPayload:
-    return await _subscription_payload_for_token(token, session)
+async def subscription_json_by_token(
+    session: ReadonlySessionDep,
+    subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
+) -> SubscriptionPayload:
+    return await _subscription_payload_for_token(subscription_token, session)

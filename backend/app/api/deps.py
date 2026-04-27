@@ -1,7 +1,8 @@
+import secrets
 from dataclasses import dataclass
 from typing import Annotated, Literal
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, Header, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
@@ -78,3 +79,22 @@ def get_bearer_principal_dep(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return _claims_to_principal(claims)
+
+
+def require_telegram_bot_api_secret(
+    x_telegram_bot_secret: Annotated[str | None, Header()] = None,
+) -> None:
+    """
+    Тот же секрет, что и для POST /api/auth/telegram и GET /api/telegram/subscription-open-clients
+    (заголовок X-Telegram-Bot-Secret). TELEGRAM_BOT_API_SECRET в env; пусто — 503.
+    """
+    settings = get_settings()
+    expected = (settings.telegram_bot_api_secret or "").strip()
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="TELEGRAM_BOT_API_SECRET не задан: эндпоинт отключён",
+        )
+    got = (x_telegram_bot_secret or "").strip()
+    if not got or not secrets.compare_digest(got, expected):
+        raise HTTPException(status_code=401, detail="Недействительный секрет бота")

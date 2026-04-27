@@ -68,8 +68,9 @@ class Settings(BaseSettings):
     telegram_bot_api_secret: str = Field(
         default="",
         description=(
-            "Секрет для POST /api/auth/telegram: заголовок X-Telegram-Bot-Secret "
-            "(вызывает только бэкенд бота, не Telegram-клиент). Пусто — эндпоинт отвечает 503."
+            "Секрет для POST /api/auth/telegram и GET /api/telegram/subscription-open-clients: "
+            "заголовок X-Telegram-Bot-Secret (вызывает только бэкенд бота, не Telegram-клиент). "
+            "Пусто — эндпоинты отвечают 503."
         ),
     )
     subscription_public_base_url: str = Field(
@@ -82,7 +83,7 @@ class Settings(BaseSettings):
     public_cabinet_url: str = Field(
         default="",
         description=(
-            "Куда вести с /sub/{token}/open и при неверном /open/{client}: личный кабинет. "
+            "Куда вести при неверном /sub/{token}/open/{client}: личный кабинет. "
             "Пусто — относительный путь /cabinet на том же хосте. "
             "Иначе полный URL (https://vpn.example.com/cabinet) или путь (/cabinet)."
         ),

@@ -57,7 +57,7 @@ def store_platform_tags(links: AppStoreLinks) -> list[str]:
 
 @dataclass(frozen=True)
 class SubscriptionOpenApp:
-    slug: str
+    client_code: str
     display_name: str
     build_deeplink: Callable[[str], str]
     # Ссылки на магазины / сайт — выбор по userAgent в HTML
@@ -169,12 +169,12 @@ _STORE: dict[str, AppStoreLinks] = {
 
 
 def _app(
-    slug: str,
+    client_code: str,
     name: str,
     fn: Callable[[str], str],
 ) -> SubscriptionOpenApp:
     return SubscriptionOpenApp(
-        slug, name, fn, _STORE.get(slug, AppStoreLinks())
+        client_code, name, fn, _STORE.get(client_code, AppStoreLinks())
     )
 
 
@@ -192,16 +192,16 @@ SUBSCRIPTION_OPEN_APPS: dict[str, SubscriptionOpenApp] = {
 }
 
 
-def get_subscription_open_app(client_slug: str) -> SubscriptionOpenApp | None:
-    return SUBSCRIPTION_OPEN_APPS.get((client_slug or "").strip().lower())
+def get_subscription_open_app(client_code: str) -> SubscriptionOpenApp | None:
+    return SUBSCRIPTION_OPEN_APPS.get((client_code or "").strip().lower())
 
 
-def list_subscription_open_app_slugs() -> list[str]:
+def list_subscription_open_app_codes() -> list[str]:
     return sorted(SUBSCRIPTION_OPEN_APPS.keys())
 
 
 def list_subscription_open_apps() -> list[SubscriptionOpenApp]:
     return sorted(
         SUBSCRIPTION_OPEN_APPS.values(),
-        key=lambda a: (a.display_name.lower(), a.slug),
+        key=lambda a: (a.display_name.lower(), a.client_code),
     )

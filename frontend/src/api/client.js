@@ -121,14 +121,14 @@ export function detectStorePlatform() {
 /**
  * Страница открытия клиента (тот же базовый хост, что и подписка).
  * @param {string} token
- * @param {string} clientSlug
+ * @param {string} clientCode — client_code из API (сегмент пути /sub/.../open/…).
  * @param {StorePlatform | null | undefined} [platform] — query `platform` для кнопки «Скачать»; без параметра — только User-Agent на странице.
  */
-export function subscriptionOpenClientUrl(token, clientSlug, platform) {
+export function subscriptionOpenClientUrl(token, clientCode, platform) {
   const base =
     import.meta.env.VITE_SUBSCRIPTION_BASE_URL?.replace(/\/$/, '') ?? ''
   const t = encodeURIComponent(token)
-  const s = encodeURIComponent(clientSlug)
+  const s = encodeURIComponent(clientCode)
   let path
   if (base) {
     path = `${base}/sub/${t}/open/${s}`
