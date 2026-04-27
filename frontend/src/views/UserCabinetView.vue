@@ -1,9 +1,14 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
-import { fetchJson, subscriptionPublicUrl } from '../api/client.js'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import {
+  fetchJson,
+  subscriptionOpenClientUrl,
+  subscriptionPublicUrl,
+} from '../api/client.js'
 
 const router = useRouter()
+const route = useRoute()
 
 const loading = ref(true)
 const error = ref(null)
@@ -34,7 +39,17 @@ function formatDate(iso) {
   return d
 }
 
-onMounted(load)
+/** После редиректа с бэка (?unknown_client=1) показываем подсказку и чистим URL. */
+const unknownClientHint = ref(false)
+
+onMounted(() => {
+  const q = route.query.unknown_client
+  if (q === '1' || q === 'true') {
+    unknownClientHint.value = true
+    router.replace({ path: '/cabinet' })
+  }
+  load()
+})
 </script>
 
 <template>
@@ -131,6 +146,13 @@ onMounted(load)
       </div>
 
       <div v-if="me.role === 'user'" class="card card-pad">
+        <div
+          v-if="unknownClientHint"
+          class="banner-warn"
+          role="status"
+        >
+          Такого клиента в ссылке нет — выберите приложение ниже.
+        </div>
         <h2 class="block-title">Ссылка подписки</h2>
         <p class="hint">
           Используйте в VPN-клиенте как subscription URL (если поддерживается).
@@ -141,6 +163,31 @@ onMounted(load)
           target="_blank"
           rel="noopener"
         >{{ subscriptionPublicUrl(me.subscription_token) }}</a>
+        <template v-if="me.subscription_open_clients?.length">
+          <h3 class="clients-title">Подключить в приложении</h3>
+          <p class="hint clients-hint">
+            Откроется страница запуска клиента и при необходимости установки.
+          </p>
+          <div class="client-btns">
+            <template
+              v-for="c in me.subscription_open_clients"
+              :key="c.slug"
+            >
+              <a
+                v-if="me.subscription_active"
+                class="client-btn"
+                :href="subscriptionOpenClientUrl(me.subscription_token, c.slug)"
+                target="_blank"
+                rel="noopener"
+              >{{ c.display_name }}</a>
+              <span
+                v-else
+                class="client-btn client-btn--off"
+                title="Продлите подписку"
+              >{{ c.display_name }}</span>
+            </template>
+          </div>
+        </template>
       </div>
     </div>
   </div>
@@ -276,5 +323,61 @@ dd {
   word-break: break-all;
   color: var(--accent);
   font-weight: 500;
+}
+
+.banner-warn {
+  margin: 0 0 1rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  background: var(--danger-soft);
+  color: var(--danger);
+  border: 1px solid rgba(225, 29, 72, 0.35);
+}
+
+.clients-title {
+  font-size: 0.98rem;
+  margin: 1.15rem 0 0;
+  color: var(--text-h);
+}
+
+.clients-hint {
+  margin-top: 0.35rem;
+}
+
+.client-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.client-btn {
+  display: inline-block;
+  padding: 0.45rem 0.85rem;
+  border-radius: 10px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent-border);
+  transition: filter 0.15s ease;
+}
+
+.client-btn:hover {
+  filter: brightness(1.06);
+}
+
+.client-btn--off {
+  cursor: not-allowed;
+  background: var(--nav-border);
+  color: var(--muted);
+  border-color: var(--card-border);
+}
+
+.client-btn--off:hover {
+  filter: none;
 }
 </style>

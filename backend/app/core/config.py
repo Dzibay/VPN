@@ -79,6 +79,14 @@ class Settings(BaseSettings):
             "напр. https://api.vpn.example.com (без слэша в конце). Пусто — Origin из входящего запроса."
         ),
     )
+    public_cabinet_url: str = Field(
+        default="",
+        description=(
+            "Куда вести с /sub/{token}/open и при неверном /open/{client}: личный кабинет. "
+            "Пусто — относительный путь /cabinet на том же хосте. "
+            "Иначе полный URL (https://vpn.example.com/cabinet) или путь (/cabinet)."
+        ),
+    )
 
     redis_url: str = Field(
         default="redis://127.0.0.1:6379/0",
@@ -191,6 +199,25 @@ class Settings(BaseSettings):
         ge=2.0,
         le=120.0,
         description="Таймаут HTTP к Prometheus при query_range.",
+    )
+    prometheus_range_retries: int = Field(
+        default=1,
+        ge=1,
+        le=5,
+        description="Число попыток query_range при 502/503 (1 — без повторов, меньше «залипаний»).",
+    )
+    prometheus_circuit_cooldown_seconds: float = Field(
+        default=60.0,
+        ge=5.0,
+        le=600.0,
+        description="Пауза без запросов к Prometheus после серии ошибок (circuit breaker).",
+    )
+    prometheus_trust_env: bool = Field(
+        default=False,
+        description=(
+            "Передавать в httpx trust_env: True — учитывать HTTP_PROXY. "
+            "False (по умолчанию) — запросы к Prometheus без системного прокси (удобно для 127.0.0.1:9090)."
+        ),
     )
     prometheus_online_clients_query: str = Field(
         default="",

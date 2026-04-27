@@ -15,7 +15,12 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.server import Server
 from app.services.bottleneck_metrics import enrich_bottleneck_metrics
-from app.services.prometheus_node import fetch_analytics_axis_hints, fetch_node_metrics_merged
+from app.services.prometheus_node import (
+    PROMETHEUS_BATCH_ABORT_DETAIL_PREFIX,
+    fetch_analytics_axis_hints,
+    fetch_node_metrics_merged,
+    prometheus_batch_abort_detail,
+)
 
 log = logging.getLogger("app.server_load_sync")
 
@@ -57,7 +62,7 @@ def sync_server_load_percent_from_prometheus(
             server_id=server.id,
             host=server.host,
             ok=False,
-            detail="PROMETHEUS_BASE_URL не задан",
+            detail=prometheus_batch_abort_detail("PROMETHEUS_BASE_URL не задан"),
         )
 
     inst = _instance_for_server(server)
@@ -119,7 +124,7 @@ def sync_server_load_percent_from_prometheus(
             server_id=server.id,
             host=server.host,
             ok=False,
-            detail=str(e),
+            detail=prometheus_batch_abort_detail(str(e)),
         )
     except httpx.HTTPError as e:
         session.rollback()
@@ -128,7 +133,7 @@ def sync_server_load_percent_from_prometheus(
             server_id=server.id,
             host=server.host,
             ok=False,
-            detail=f"Prometheus: {e}",
+            detail=prometheus_batch_abort_detail(f"Prometheus: {e}"),
         )
     except Exception as e:
         session.rollback()
@@ -148,8 +153,22 @@ def sync_all_servers_load_from_prometheus(
 ) -> ServerLoadSyncReport:
     report = ServerLoadSyncReport(hours=hours)
     stmt = select(Server).order_by(Server.id.asc())
+    skip_remaining = False
     for server in session.scalars(stmt):
-        report.items.append(
-            sync_server_load_percent_from_prometheus(session, server, hours=hours),
-        )
+        if skip_remaining:
+            report.items.append(
+                ServerLoadSyncItem(
+                    server_id=server.id,
+                    host=server.host,
+                    ok=False,
+                    detail="Пропуск синхронизации: Prometheus недоступен (см. предыдущий узел в отчёте).",
+                ),
+            )
+            continue
+        item = sync_server_load_percent_from_prometheus(session, server, hours=hours)
+        report.items.append(item)
+        if not item.ok and (
+            item.detail and PROMETHEUS_BATCH_ABORT_DETAIL_PREFIX in item.detail
+        ):
+            skip_remaining = True
     return report

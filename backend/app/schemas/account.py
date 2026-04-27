@@ -4,6 +4,13 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
+class SubscriptionOpenClientItem(BaseModel):
+    """Элемент списка клиентов для кнопок «Подключить» в личном кабинете."""
+
+    slug: str = Field(description="Идентификатор в URL /sub/{token}/open/{slug}")
+    display_name: str = Field(description="Подпись на кнопке")
+
+
 class AccountRegisterBody(BaseModel):
     email: EmailStr = Field(max_length=320)
     password: str = Field(min_length=8, max_length=72, description="До 72 байт (ограничение bcrypt)")
@@ -132,4 +139,8 @@ class AccountMeResponse(BaseModel):
             "Токен для публичных URL `/sub/{token}` и `/sub/{token}/json` "
             "(не JWT); у admin пустая строка."
         ),
+    )
+    subscription_open_clients: list[SubscriptionOpenClientItem] = Field(
+        default_factory=list,
+        description="Клиенты VPN для кнопок подключения в ЛК; у admin — пустой список.",
     )

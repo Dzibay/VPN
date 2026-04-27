@@ -23,11 +23,13 @@ from app.core.config import settings
 from app.core.passwords import hash_password, verify_password
 from app.database.operations import table_insert
 from app.domain.subscription import user_has_active_subscription
+from app.domain.subscription_open_apps import list_subscription_open_apps
 from app.models.user import User
 from app.schemas.account import (
     AccountLoginBody,
     AccountMeResponse,
     AccountRegisterBody,
+    SubscriptionOpenClientItem,
     TelegramAuthBody,
     merge_telegram_auth_profile,
     telegram_auth_has_profile_fields,
@@ -60,6 +62,9 @@ _AUTH_ME_OPENAPI_EXAMPLES: dict = {
             "subscription_until": "2026-12-31",
             "subscription_active": True,
             "subscription_token": "subscription-token-example",
+            "subscription_open_clients": [
+                {"slug": "happ", "display_name": "Happ"},
+            ],
         },
     },
     "user_telegram_only": {
@@ -74,6 +79,7 @@ _AUTH_ME_OPENAPI_EXAMPLES: dict = {
             },
             "subscription_active": False,
             "subscription_token": "subscription-token-telegram",
+            "subscription_open_clients": [],
         },
     },
     "admin": {
@@ -262,6 +268,7 @@ async def me(
             subscription_until=None,
             subscription_active=False,
             subscription_token="",
+            subscription_open_clients=[],
         )
     if principal.user_id is None:
         raise HTTPException(status_code=401, detail="Недействительный токен")
@@ -282,4 +289,8 @@ async def me(
         subscription_until=user.subscription_until,
         subscription_active=user_has_active_subscription(user),
         subscription_token=user.token,
+        subscription_open_clients=[
+            SubscriptionOpenClientItem(slug=a.slug, display_name=a.display_name)
+            for a in list_subscription_open_apps()
+        ],
     )

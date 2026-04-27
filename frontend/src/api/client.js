@@ -99,3 +99,18 @@ export function subscriptionPublicUrl(token) {
   }
   return `/sub/${token}`
 }
+
+/**
+ * Страница открытия клиента: deeplink + при необходимости установка (тот же базовый хост, что и подписка).
+ */
+export function subscriptionOpenClientUrl(token, clientSlug) {
+  const base =
+    import.meta.env.VITE_SUBSCRIPTION_BASE_URL?.replace(/\/$/, '') ?? ''
+  if (base) {
+    return `${base}/sub/${token}/open/${clientSlug}`
+  }
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}/sub/${token}/open/${clientSlug}`
+  }
+  return `/sub/${token}/open/${clientSlug}`
+}

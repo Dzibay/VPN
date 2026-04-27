@@ -18,6 +18,53 @@ from app.core.config import settings
 
 log = logging.getLogger("app.prometheus")
 
+# Префикс detail при ошибке Prometheus: sync_all_servers пропускает остальные узлы.
+PROMETHEUS_BATCH_ABORT_DETAIL_PREFIX = "[prom-batch-abort]"
+# Внутри сообщения о cooldown circuit breaker.
+PROMETHEUS_COOLDOWN_MARKER = "[prometheus-cooldown]"
+
+_prom_circuit_open_until: float = 0.0
+
+
+def prometheus_batch_abort_detail(message: str) -> str:
+    msg = (message or "").strip()
+    if msg.startswith(PROMETHEUS_BATCH_ABORT_DETAIL_PREFIX):
+        return msg
+    return f"{PROMETHEUS_BATCH_ABORT_DETAIL_PREFIX} {msg}"
+
+
+def _circuit_is_open() -> bool:
+    return time.monotonic() < _prom_circuit_open_until
+
+
+def _circuit_trip(reason: str) -> None:
+    global _prom_circuit_open_until
+    cooldown = float(settings.prometheus_circuit_cooldown_seconds)
+    _prom_circuit_open_until = time.monotonic() + max(5.0, cooldown)
+    log.warning("Prometheus: пауза запросов на %.0f с (%s)", cooldown, reason)
+
+
+def _circuit_reset() -> None:
+    global _prom_circuit_open_until
+    _prom_circuit_open_until = 0.0
+
+
+def _circuit_check() -> None:
+    if _circuit_is_open():
+        left = int(_prom_circuit_open_until - time.monotonic()) + 1
+        raise RuntimeError(
+            prometheus_batch_abort_detail(
+                f"{PROMETHEUS_COOLDOWN_MARKER} Prometheus недоступен, повтор через ~{left} с"
+            )
+        )
+
+
+def _prometheus_http_client(timeout: float) -> httpx.Client:
+    return httpx.Client(
+        timeout=timeout,
+        trust_env=bool(settings.prometheus_trust_env),
+    )
+
 # PromQL для типичного node_exporter; instance подставляется как экранированная строка.
 _QUERIES: dict[str, str] = {
     "cpu_percent": (
@@ -87,8 +134,9 @@ def fetch_analytics_axis_hints(instance: str) -> dict[str, Any]:
     inst = _escape_instance(instance.strip())
     hints: dict[str, Any] = {}
     try:
+        _circuit_check()
         timeout = min(float(settings.prometheus_timeout_seconds), 15.0)
-        with httpx.Client(timeout=timeout) as client:
+        with _prometheus_http_client(timeout) as client:
             speed = _query_instant_scalar(
                 client,
                 f'max(node_network_speed_bytes{{instance="{inst}",device!="lo"}})',
@@ -126,8 +174,9 @@ def fetch_instant_scalar(query: str) -> float | None:
     if not base or not q:
         return None
     try:
+        _circuit_check()
         timeout = min(float(settings.prometheus_timeout_seconds), 15.0)
-        with httpx.Client(timeout=timeout) as client:
+        with _prometheus_http_client(timeout) as client:
             return _query_instant_scalar(client, q)
     except httpx.HTTPError as e:
         log.warning("Prometheus instant (custom) HTTP: %s", e)
@@ -161,31 +210,43 @@ def _query_range(
     end: float,
     step: int,
 ) -> list[tuple[float, float]]:
-    """503/502 от Prometheus при query_range часто кратковременные (старт TSDB, нагрузка)."""
-    max_attempts = 3
+    """502/503: при prometheus_range_retries>1 — короткий backoff (TSDB / краткий сбой)."""
+    max_attempts = max(1, int(settings.prometheus_range_retries))
     backoff_s = 0.4
     last: httpx.Response | None = None
     for attempt in range(max_attempts):
-        last = client.get(
-            f"{_base_url()}/api/v1/query_range",
-            params={
-                "query": query,
-                "start": str(start),
-                "end": str(end),
-                "step": str(step),
-            },
-        )
+        try:
+            last = client.get(
+                f"{_base_url()}/api/v1/query_range",
+                params={
+                    "query": query,
+                    "start": str(start),
+                    "end": str(end),
+                    "step": str(step),
+                },
+            )
+        except httpx.RequestError as e:
+            if attempt + 1 < max_attempts:
+                time.sleep(backoff_s * (attempt + 1))
+                continue
+            _circuit_trip(str(e))
+            raise
         if last.status_code in (502, 503) and attempt + 1 < max_attempts:
             time.sleep(backoff_s * (attempt + 1))
             continue
-        last.raise_for_status()
+        if last.status_code in (502, 503):
+            _circuit_trip(f"HTTP {last.status_code}")
+        try:
+            last.raise_for_status()
+        except httpx.HTTPStatusError:
+            raise
         payload = last.json()
         if payload.get("status") != "success":
             log.warning("Prometheus query_range не success: %s", payload.get("error") or payload)
             return []
-        return _matrix_to_pairs(payload)
-    if last is not None:
-        last.raise_for_status()
+        pairs = _matrix_to_pairs(payload)
+        _circuit_reset()
+        return pairs
     return []
 
 
@@ -215,6 +276,8 @@ def fetch_node_metrics_merged(
     if not base:
         raise RuntimeError("PROMETHEUS_BASE_URL не задан")
 
+    _circuit_check()
+
     inst = _escape_instance(instance.strip())
     end = datetime.now(timezone.utc).timestamp()
     start = end - hours * 3600
@@ -222,14 +285,23 @@ def fetch_node_metrics_merged(
 
     series: dict[str, list[tuple[float, float]]] = {}
     timeout = settings.prometheus_timeout_seconds
-    with httpx.Client(timeout=timeout) as client:
+    prom_failed = False
+    with _prometheus_http_client(timeout) as client:
         for name, tmpl in _QUERIES.items():
+            if prom_failed:
+                series[name] = []
+                continue
             q = tmpl.format(i=inst)
             try:
                 series[name] = _query_range(client, q, start, end, step)
             except httpx.HTTPError as e:
-                log.warning("Prometheus запрос %s: %s", name, e)
+                log.warning(
+                    "Prometheus запрос %s: %s — дальнейшие query_range для этого узла пропущены",
+                    name,
+                    e,
+                )
                 series[name] = []
+                prom_failed = True
 
     times: set[int] = set()
     for pairs in series.values():

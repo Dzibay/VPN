@@ -1,5 +1,6 @@
 """
-Диплинки для открытия подписки во внешних клиентах (GET /sub/{token}/open/{client}).
+Диплинки для открытия подписки во внешних клиентах (GET /sub/{token}/open/{client});
+список клиентов для ЛК — GET /api/auth/me (subscription_open_clients).
 
 - happ: сырая ссылка в path — happ://add/https://…/sub/{token}
 - Stash, Clash Meta, v2rayNG (url), flclashx, koala-clash, prizrak-box: в query
@@ -8,11 +9,12 @@
   (3x-ui / community, иначе импорт не срабатывает; не путать с urlencoding в path)
 - v2rayNG: по UrlSchemeActivity читается только query url и fragment (имя), не name=
 - Streisand: панели (напр. 3x-ui) — streisand://install-subscription?url=…
+- v2raytun: docs.v2raytun.com — v2raytun://import/{subscription} (URL в path, percent-encoded)
 
 Имя профиля — SUBSCRIPTION_IMPORT_DISPLAY_NAME.
 
-Скачивание (лендинг /sub/…/open/…): AppStoreLinks — ссылки в Play, App Store и на сайт;
-в браузере выбор делается по navigator.userAgent (Android / iOS / остальное → web).
+Скачивание: AppStoreLinks — windows (только если URL отличается от web), android, ios, web
+(сайт / универсальные релизы для ПК). Не дублировать одну и ту же ссылку в windows и web.
 """
 
 from __future__ import annotations
@@ -28,14 +30,15 @@ SUBSCRIPTION_IMPORT_DISPLAY_NAME = "Подорожник VPN"
 
 @dataclass(frozen=True)
 class AppStoreLinks:
-    """Куда вести при скачивании: Android → Play, iOS → App Store, ПК/прочее → website."""
+    """android / ios / web — основные; windows — только при отдельной ссылке (не дублировать web)."""
 
+    windows: str | None = None
     android: str | None = None
     ios: str | None = None
     web: str | None = None
 
     def any(self) -> bool:
-        return bool(self.android or self.ios or self.web)
+        return bool(self.windows or self.android or self.ios or self.web)
 
 
 @dataclass(frozen=True)
@@ -98,6 +101,11 @@ def _v2rayng_deeplink(subscription_https_url: str) -> str:
     return f"v2rayng://install-sub?url={_q(u)}#{_q(n)}"
 
 
+def _v2raytun_deeplink(subscription_https_url: str) -> str:
+    u = _sub_url_trim(subscription_https_url)
+    return f"v2raytun://import/{_q(u)}"
+
+
 def _koala_clash_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
     return f"koala-clash://install-config?url={_q(u)}"
@@ -108,7 +116,7 @@ def _prizrak_box_deeplink(subscription_https_url: str) -> str:
     return f"prizrak-box://install-config?url={_q(u)}"
 
 
-# См. AppStoreLinks: Android = Play, iOS = App Store, web = ПК / универсальная страница
+# windows — заполнять только если ссылка отличается от web (инсталлятор, не сайт/релизы).
 _STORE: dict[str, AppStoreLinks] = {
     "happ": AppStoreLinks(
         android="https://play.google.com/store/apps/details?id=com.happproxy",
@@ -139,6 +147,11 @@ _STORE: dict[str, AppStoreLinks] = {
         android="https://play.google.com/store/apps/details?id=com.v2ray.ang",
         web="https://github.com/2dust/v2rayNG/releases",
     ),
+    "v2raytun": AppStoreLinks(
+        android="https://play.google.com/store/apps/details?id=com.v2raytun.android",
+        ios="https://apps.apple.com/app/v2raytun/id6476628951",
+        web="https://v2raytun.com",
+    ),
     "koala-clash": AppStoreLinks(
         web="https://github.com/coolcoala/koala-clash/releases",
     ),
@@ -166,6 +179,7 @@ SUBSCRIPTION_OPEN_APPS: dict[str, SubscriptionOpenApp] = {
     "flclashx": _app("flclashx", "FLClashX", _flclashx_deeplink),
     "clashmeta": _app("clashmeta", "Clash Meta", _clashmeta_deeplink),
     "v2rayng": _app("v2rayng", "v2rayNG", _v2rayng_deeplink),
+    "v2raytun": _app("v2raytun", "v2RayTun", _v2raytun_deeplink),
     "koala-clash": _app("koala-clash", "Koala Clash", _koala_clash_deeplink),
     "prizrak-box": _app("prizrak-box", "Prizrak Box", _prizrak_box_deeplink),
 }
@@ -177,3 +191,10 @@ def get_subscription_open_app(client_slug: str) -> SubscriptionOpenApp | None:
 
 def list_subscription_open_app_slugs() -> list[str]:
     return sorted(SUBSCRIPTION_OPEN_APPS.keys())
+
+
+def list_subscription_open_apps() -> list[SubscriptionOpenApp]:
+    return sorted(
+        SUBSCRIPTION_OPEN_APPS.values(),
+        key=lambda a: (a.display_name.lower(), a.slug),
+    )
