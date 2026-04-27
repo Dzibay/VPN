@@ -28,14 +28,14 @@ const userTitle = computed(() => {
 })
 
 function gridColor() {
-  return 'rgba(139, 92, 246, 0.12)'
+  return 'rgba(88, 214, 141, 0.12)'
 }
 
 function tickColor() {
   return typeof window !== 'undefined' &&
     window.matchMedia('(prefers-color-scheme: dark)').matches
-    ? 'rgba(230, 220, 245, 0.55)'
-    : 'rgba(90, 80, 112, 0.45)'
+    ? 'rgba(200, 228, 210, 0.55)'
+    : 'rgba(45, 85, 65, 0.45)'
 }
 
 function serverLabel(row) {
@@ -85,12 +85,12 @@ function drawChart() {
         {
           label: 'К клиенту (down), МиБ',
           data: rows.map((r) => mib(r.down_bytes)),
-          backgroundColor: 'rgba(59, 130, 246, 0.78)',
+          backgroundColor: 'rgba(88, 214, 141, 0.78)',
         },
         {
           label: 'От клиента (up), МиБ',
           data: rows.map((r) => mib(r.up_bytes)),
-          backgroundColor: 'rgba(34, 197, 94, 0.78)',
+          backgroundColor: 'rgba(69, 179, 157, 0.78)',
         },
       ],
     },
@@ -107,7 +107,7 @@ function drawChart() {
           },
         },
         tooltip: {
-          backgroundColor: 'rgba(26, 18, 38, 0.92)',
+          backgroundColor: 'rgba(4, 12, 9, 0.94)',
           titleFont: { family: 'var(--sans)', size: 12 },
           bodyFont: { family: 'var(--mono)', size: 12 },
         },
@@ -465,8 +465,8 @@ onBeforeUnmount(() => {
   opacity: 0.85;
 }
 .pill--active {
-  background: rgba(139, 92, 246, 0.12);
-  border-color: rgba(139, 92, 246, 0.35);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
 }
 .row-actions {
   text-align: right;

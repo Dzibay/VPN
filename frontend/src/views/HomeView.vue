@@ -7,10 +7,10 @@ import { RouterLink } from 'vue-router'
     <section class="hero" aria-labelledby="hero-title">
       <div class="hero-bg" aria-hidden="true" />
       <div class="hero-inner">
-        <h1 id="hero-title">VPN, подписка и личный кабинет</h1>
+        <h1 id="hero-title">Подорожник VPN</h1>
         <p class="lead">
-          Оформите доступ, следите за сроком подписки и получайте рабочие ключи в
-          одном спокойном интерфейсе — без перегруза деталями.
+          Подписка, ключи и личный кабинет в одном спокойном интерфейсе — без
+          лишнего шума, с акцентом на приватность и стабильное соединение.
         </p>
         <div class="cta-row">
           <RouterLink class="cta primary" to="/register">Создать аккаунт</RouterLink>
@@ -46,6 +46,7 @@ import { RouterLink } from 'vue-router'
   background: var(--bg-gradient);
 }
 
+/* Дополнительный слой поверх глобального --bg-gradient: зелень + фиолет */
 .hero-bg {
   position: absolute;
   inset: 0;
@@ -53,40 +54,50 @@ import { RouterLink } from 'vue-router'
   height: 100%;
   background:
     radial-gradient(
-      ellipse 90% 70% at 20% 18%,
-      rgba(139, 92, 246, 0.38),
+      ellipse 95% 72% at 15% 12%,
+      rgba(139, 92, 246, 0.34),
       transparent 58%
     ),
     radial-gradient(
-      ellipse 75% 55% at 88% 28%,
-      rgba(124, 58, 237, 0.24),
+      ellipse 85% 58% at 92% 18%,
+      rgba(88, 214, 141, 0.26),
       transparent 52%
     ),
     radial-gradient(
-      ellipse 100% 65% at 50% 100%,
-      rgba(139, 92, 246, 0.14),
-      transparent 50%
+      ellipse 70% 50% at 55% 85%,
+      rgba(124, 58, 237, 0.16),
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse 55% 44% at 72% 48%,
+      rgba(45, 179, 157, 0.14),
+      transparent 48%
     );
   pointer-events: none;
 }
 
-@media (prefers-color-scheme: dark) {
+@media (prefers-color-scheme: light) {
   .hero-bg {
     background:
       radial-gradient(
-        ellipse 90% 70% at 25% 15%,
-        rgba(167, 139, 250, 0.3),
+        ellipse 95% 75% at 12% 10%,
+        rgba(139, 92, 246, 0.12),
         transparent 58%
       ),
       radial-gradient(
-        ellipse 75% 55% at 90% 25%,
-        rgba(139, 92, 246, 0.2),
+        ellipse 88% 60% at 90% 20%,
+        rgba(88, 214, 141, 0.16),
         transparent 52%
       ),
       radial-gradient(
-        ellipse 100% 65% at 50% 100%,
-        rgba(167, 139, 250, 0.12),
+        ellipse 80% 55% at 50% 95%,
+        rgba(99, 102, 234, 0.08),
         transparent 50%
+      ),
+      radial-gradient(
+        ellipse 50% 40% at 70% 45%,
+        rgba(45, 179, 157, 0.1),
+        transparent 45%
       );
   }
 }

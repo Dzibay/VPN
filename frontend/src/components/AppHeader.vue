@@ -51,8 +51,15 @@ router.afterEach(refreshSessions)
     aria-label="Шапка сайта"
   >
     <RouterLink class="brand" to="/">
-      <span class="brand-mark" aria-hidden="true" />
-      <span class="brand-text">VPN</span>
+      <img
+        class="brand-logo"
+        src="/icons/podorozhnik-logo.png"
+        width="40"
+        height="40"
+        alt=""
+        decoding="async"
+      />
+      <span class="brand-text">Подорожник VPN</span>
     </RouterLink>
 
     <span class="spacer" aria-hidden="true" />
@@ -154,16 +161,15 @@ router.afterEach(refreshSessions)
   letter-spacing: -0.02em;
 }
 
-.brand-mark {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 10px;
-  background: linear-gradient(
-    135deg,
-    var(--accent) 0%,
-    var(--accent-hover) 100%
-  );
-  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.35);
+.brand-logo {
+  display: block;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  object-fit: contain;
+  box-shadow: 0 1px 3px
+    color-mix(in srgb, var(--accent) 16%, transparent);
+  flex-shrink: 0;
 }
 
 .group-admin {
@@ -173,7 +179,7 @@ router.afterEach(refreshSessions)
   gap: 0.25rem;
   padding: 0.15rem 0.15rem 0.15rem 0.35rem;
   border-radius: 12px;
-  background: rgba(139, 92, 246, 0.1);
+  background: var(--accent-soft);
   border: 1px solid var(--accent-border);
 }
 

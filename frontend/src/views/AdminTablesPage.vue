@@ -2203,7 +2203,7 @@ watch(formIsCascadeRuEntry, (v) => {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(26, 18, 38, 0.55);
+  background: rgba(4, 12, 9, 0.55);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   display: flex;

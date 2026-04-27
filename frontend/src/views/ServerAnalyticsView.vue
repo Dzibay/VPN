@@ -192,14 +192,14 @@ function fmtLoad(v) {
 }
 
 function gridColor() {
-  return 'rgba(139, 92, 246, 0.12)'
+  return 'rgba(88, 214, 141, 0.12)'
 }
 
 function tickColor() {
   return typeof window !== 'undefined' &&
     window.matchMedia('(prefers-color-scheme: dark)').matches
-    ? 'rgba(230, 220, 245, 0.55)'
-    : 'rgba(90, 80, 112, 0.45)'
+    ? 'rgba(200, 228, 210, 0.55)'
+    : 'rgba(45, 85, 65, 0.45)'
 }
 
 function chartTooltipLabel(unit, decimals) {
@@ -288,7 +288,7 @@ function drawTrafficUserChart() {
         {
           label: 'Исходящий к клиенту (down), МиБ',
           data: users.map((u) => mib(u.down_bytes)),
-          backgroundColor: 'rgba(59, 130, 246, 0.78)',
+          backgroundColor: 'rgba(88, 214, 141, 0.78)',
         },
         {
           label: 'От клиента (up), МиБ',
@@ -310,7 +310,7 @@ function drawTrafficUserChart() {
           },
         },
         tooltip: {
-          backgroundColor: 'rgba(26, 18, 38, 0.92)',
+          backgroundColor: 'rgba(4, 12, 9, 0.94)',
           titleFont: { family: 'var(--sans)', size: 12 },
           bodyFont: { family: 'var(--mono)', size: 12 },
         },
@@ -496,7 +496,7 @@ function drawCharts() {
         },
       },
       tooltip: {
-        backgroundColor: 'rgba(26, 18, 38, 0.92)',
+        backgroundColor: 'rgba(4, 12, 9, 0.94)',
         titleFont: { family: 'var(--sans)', size: 12 },
         bodyFont: { family: 'var(--mono)', size: 12 },
         padding: 12,
@@ -523,11 +523,11 @@ function drawCharts() {
     mem: 'rgb(236, 72, 153)',
     disk: 'rgb(245, 158, 11)',
     rx: 'rgb(34, 197, 94)',
-    tx: 'rgb(59, 130, 246)',
+    tx: 'rgb(45, 179, 157)',
     tcp: 'rgb(168, 85, 247)',
     load: 'rgb(239, 68, 68)',
     bottleneck: 'rgb(220, 38, 38)',
-    netu: 'rgba(59, 130, 246, 0.65)',
+    netu: 'rgba(45, 179, 157, 0.65)',
     loadu: 'rgba(245, 158, 11, 0.7)',
   }
 
@@ -712,7 +712,7 @@ function drawCharts() {
               data: tx,
               borderColor: palette.tx,
               backgroundColor: (c) =>
-                lineGradient(c, 'rgba(59, 130, 246, 0.15)', 'rgba(59, 130, 246, 0)'),
+                lineGradient(c, 'rgba(45, 179, 157, 0.18)', 'rgba(45, 179, 157, 0)'),
               fill: true,
               tension: 0.35,
               spanGaps: true,
@@ -1332,7 +1332,7 @@ onBeforeUnmount(() => {
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
   color: var(--on-accent);
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.35);
+  box-shadow: 0 4px 14px var(--accent-glow);
   align-self: flex-end;
 }
 .btn-refresh:hover:not(:disabled) {

@@ -21,8 +21,11 @@ deploy/.env
 # Distribution / packaging
 build/
 dist/
+dist-ssr/
 *.egg-info/
 *.egg
+
+node_modules/
 
 # Testing / coverage
 .pytest_cache/
@@ -38,7 +41,8 @@ htmlcov/
 
 # IDE / editor
 .idea/
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 *.swp
 *.swo
 

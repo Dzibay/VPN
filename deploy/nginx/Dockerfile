@@ -1,5 +1,8 @@
 # Сборка Vue (Vite) + Nginx: статика и reverse proxy к API
+# SITE_ADDRESS — домен из deploy/.env (как у Caddy); Vite собирает canonical, sitemap, og:*.
 FROM node:22-alpine AS frontend-build
+ARG SITE_ADDRESS
+ENV SITE_ADDRESS=$SITE_ADDRESS
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
