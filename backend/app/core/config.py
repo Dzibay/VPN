@@ -189,6 +189,37 @@ class Settings(BaseSettings):
             "Должен быть ≥ proxy_read_timeout nginx и согласован с фронтом (~120 с)."
         ),
     )
+    xray_traffic_collect_schedule_enabled: bool = Field(
+        default=True,
+        description=(
+            "Фоновый планировщик API: периодически ставит в RQ батч-сбор трафика Xray "
+            "(SSH statsquery) по всем активным provision_ready узлам."
+        ),
+    )
+    xray_traffic_collect_interval_seconds: int = Field(
+        default=300,
+        ge=60,
+        le=86400,
+        description="Интервал между попытками поставить батч-сбор в очередь (секунды).",
+    )
+    xray_traffic_collect_initial_delay_seconds: int = Field(
+        default=45,
+        ge=0,
+        le=3600,
+        description="Задержка перед первым тиком планировщика после старта API.",
+    )
+    xray_traffic_collect_stagger_seconds: float = Field(
+        default=2.0,
+        ge=0.0,
+        le=60.0,
+        description="Пауза между опросом узлов внутри одной батч-задачи RQ (снижает пики SSH).",
+    )
+    xray_traffic_batch_job_timeout_seconds: int = Field(
+        default=7200,
+        ge=300,
+        le=86400,
+        description="Таймаут RQ для батч-задачи сбора трафика по всем серверам.",
+    )
 
     prometheus_base_url: str = Field(
         default="",

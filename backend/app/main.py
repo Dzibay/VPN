@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -10,13 +12,28 @@ from app.core.logging_config import setup_logging
 from app.core.openapi import attach_openapi
 from app.middleware.request_context import RequestContextMiddleware
 
+log = logging.getLogger("app.main")
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     from app.database.schema import ensure_schema
 
     ensure_schema()
-    yield
+    sched_task: asyncio.Task[None] | None = None
+    if settings.xray_traffic_collect_schedule_enabled:
+        from app.services.xray_traffic_scheduler import periodic_xray_traffic_collect_loop
+
+        sched_task = asyncio.create_task(periodic_xray_traffic_collect_loop())
+    try:
+        yield
+    finally:
+        if sched_task is not None:
+            sched_task.cancel()
+            try:
+                await sched_task
+            except asyncio.CancelledError:
+                pass
 
 
 def create_app() -> FastAPI:

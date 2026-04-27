@@ -66,6 +66,12 @@ class UserTrafficCollectEnqueueResponse(BaseModel):
     job_id: str = Field(description="RQ job id — опрос GET .../collect-jobs/{job_id}")
 
 
+class UserTrafficCollectAllEnqueueResponse(BaseModel):
+    job_id: str = Field(
+        description="RQ job id батч-сбора по активным provision_ready узлам",
+    )
+
+
 class UserTrafficCollectPollResponse(BaseModel):
     server_id: int
     job_id: str

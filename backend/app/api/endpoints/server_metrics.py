@@ -27,10 +27,12 @@ from app.schemas.server_metrics import (
 from app.schemas.server_traffic import (
     ServerUserTrafficBundle,
     UserTrafficCollectDetail,
+    UserTrafficCollectAllEnqueueResponse,
     UserTrafficCollectEnqueueResponse,
     UserTrafficCollectPollResponse,
 )
 from app.services.xray_stats_collect import load_user_traffic_bundle_rows
+from app.services.xray_traffic_scheduler import enqueue_xray_traffic_collect_batch_admin
 from app.services.bottleneck_metrics import enrich_bottleneck_metrics
 from app.services.prometheus_node import (
     fetch_analytics_axis_hints,
@@ -42,6 +44,27 @@ from app.services.prometheus_node import (
 log = logging.getLogger("app.server_metrics")
 
 router = APIRouter(prefix="/servers", tags=["admin"])
+
+
+@router.post(
+    "/user-traffic/collect-all",
+    response_model=UserTrafficCollectAllEnqueueResponse,
+    status_code=202,
+    dependencies=[Depends(require_admin)],
+    summary=(
+        "Поставить в очередь RQ батч-сбор трафика Xray: все активные provision_ready узлы"
+    ),
+)
+async def enqueue_user_traffic_collect_all() -> UserTrafficCollectAllEnqueueResponse:
+    try:
+        job_id = await run_in_threadpool(enqueue_xray_traffic_collect_batch_admin)
+    except RedisError as e:
+        log.exception("Redis/RQ недоступен (батч-сбор трафика)")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Очередь недоступна: {e}",
+        ) from e
+    return UserTrafficCollectAllEnqueueResponse(job_id=job_id)
 
 
 @router.get(

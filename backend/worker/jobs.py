@@ -10,6 +10,7 @@ import logging
 import os
 import shlex
 import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -381,6 +382,54 @@ def sync_xray_clients_all_servers() -> None:
             log.exception("sync_xray_clients_all: server_id=%s", sid)
     if errors:
         raise RuntimeError("; ".join(errors[:24]))
+
+
+def collect_xray_user_traffic_all_servers() -> dict[str, Any]:
+    """
+    RQ: последовательный сбор трафика Xray по всем активным provision_ready узлам.
+    Результат компактный — без полного дампа по каждому серверу (хранится в RQ).
+    """
+    log.info("collect_xray_user_traffic_all_servers: старт батча")
+    db: Session = SessionLocal()
+    try:
+        stmt = (
+            select(Server.id)
+            .where(
+                Server.provision_ready.is_(True),
+                Server.is_active.is_(True),
+            )
+            .order_by(Server.id.asc())
+        )
+        ids = list(db.scalars(stmt).all())
+    finally:
+        db.close()
+
+    stagger = float(settings.xray_traffic_collect_stagger_seconds)
+    errors: list[dict[str, int | str]] = []
+    ok_n = 0
+    for i, sid in enumerate(ids):
+        if i > 0 and stagger > 0:
+            time.sleep(stagger)
+        one = collect_xray_user_traffic(int(sid))
+        if one.get("ok"):
+            ok_n += 1
+        else:
+            err_txt = (one.get("error") or "unknown")[:800]
+            errors.append({"server_id": int(sid), "error": err_txt})
+
+    failed_n = len(ids) - ok_n
+    log.info(
+        "collect_xray_user_traffic_all_servers: готово узлов=%s ok=%s failed=%s",
+        len(ids),
+        ok_n,
+        failed_n,
+    )
+    return {
+        "servers_total": len(ids),
+        "ok": ok_n,
+        "failed": failed_n,
+        "errors_sample": errors[:40],
+    }
 
 
 def collect_xray_user_traffic(server_id: int) -> dict[str, Any]:
