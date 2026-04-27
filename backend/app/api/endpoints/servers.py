@@ -29,7 +29,11 @@ from app.schemas.servers import (
 )
 from app.services.server_health_check import build_server_health_read, run_tcp_probes
 from app.services.server_load_sync import sync_all_servers_load_from_prometheus
-from app.services.user_provision import enqueue_sync_xray_clients_all_servers
+from app.services.user_provision import (
+    enqueue_sync_xray_clients_all_servers,
+    ensure_sync_xray_clients_all_servers_enqueued,
+    ensure_sync_xray_clients_to_server_enqueued,
+)
 
 log = logging.getLogger("app.servers")
 
@@ -119,12 +123,7 @@ def _try_enqueue_sync_xray_on_exit_for_cascade(
         if (settings.provision_command or "").strip():
             continue
         try:
-            q = get_install_queue()
-            q.enqueue(
-                "worker.jobs.sync_xray_clients_to_server",
-                eid,
-                job_timeout=max(settings.provision_subprocess_timeout, 300),
-            )
+            ensure_sync_xray_clients_to_server_enqueued(eid)
         except RedisError as e:
             log.warning("cascade: не поставлена в очередь sync Xray на exit id=%s: %s", eid, e)
 
@@ -290,18 +289,14 @@ async def create_server(body: ServerCreate, session: SessionDep) -> Server:
 async def enqueue_sync_xray_clients_all() -> XrayClientsSyncResultRead:
     _provision_command_blocks_split_install()
     try:
-        q = get_install_queue()
-        job = q.enqueue(
-            "worker.jobs.sync_xray_clients_all_servers",
-            job_timeout=max(settings.provision_job_timeout, 600),
-        )
+        job_id = await run_in_threadpool(ensure_sync_xray_clients_all_servers_enqueued)
     except RedisError as e:
         log.exception("Redis/RQ недоступен (sync Xray)")
         raise HTTPException(
             status_code=503,
             detail=f"Очередь недоступна: {e}",
         ) from e
-    return XrayClientsSyncResultRead(job_id=job.id)
+    return XrayClientsSyncResultRead(job_id=job_id)
 
 
 @router.post(
@@ -324,19 +319,18 @@ async def enqueue_sync_xray_clients_one(
             detail="Узел не готов (provision_ready=false); сначала установите ПО",
         )
     try:
-        q = get_install_queue()
-        job = q.enqueue(
-            "worker.jobs.sync_xray_clients_to_server",
-            server_id,
-            job_timeout=max(settings.provision_subprocess_timeout, 300),
-        )
+
+        def _run() -> str:
+            return ensure_sync_xray_clients_to_server_enqueued(server_id)
+
+        job_id = await run_in_threadpool(_run)
     except RedisError as e:
         log.exception("Redis/RQ недоступен (sync Xray)")
         raise HTTPException(
             status_code=503,
             detail=f"Очередь недоступна: {e}",
         ) from e
-    return XrayClientsSyncOneResultRead(server_id=server_id, job_id=job.id)
+    return XrayClientsSyncOneResultRead(server_id=server_id, job_id=job_id)
 
 
 @router.post(

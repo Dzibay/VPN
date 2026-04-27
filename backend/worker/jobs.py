@@ -366,7 +366,12 @@ def sync_xray_clients_to_server(server_id: int) -> None:
 
 
 def sync_xray_clients_all_servers() -> None:
-    """Обновить inbound на всех узлах с provision_ready."""
+    """
+    Обновить inbound на всех узлах с provision_ready.
+
+    При очень большом числе пользователей узкое место — выборка всех UUID в память
+    и размер конфига на узле; коалесцинг задач в очереди см. user_provision.
+    """
     db = SessionLocal()
     try:
         stmt = select(Server.id).where(Server.provision_ready.is_(True))
