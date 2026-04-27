@@ -8,6 +8,21 @@ class UsersCountResponse(BaseModel):
     users_count: int = Field(ge=0, description="Число записей в таблице users")
 
 
+class ExtendActiveSubscriptionsBody(BaseModel):
+    days: int = Field(
+        ge=1,
+        le=3650,
+        description="Сколько календарных дней прибавить к subscription_until",
+    )
+
+
+class ExtendActiveSubscriptionsResponse(BaseModel):
+    updated_count: int = Field(
+        ge=0,
+        description="Число обновлённых пользователей (только с конечной активной подпиской)",
+    )
+
+
 class UserCreate(BaseModel):
     telegram_id: int | None = Field(
         default=None,

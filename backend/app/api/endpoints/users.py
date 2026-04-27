@@ -1,7 +1,8 @@
 import logging
+from datetime import date
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import ReadonlySessionDep, SessionDep, require_admin
@@ -10,7 +11,14 @@ from app.models.server import Server
 from app.models.user import User
 from app.models.user_server_traffic import UserServerTraffic
 from app.schemas.server_traffic import UserTrafficByServersBundle, UserTrafficPerServerRow
-from app.schemas.users import UserCreate, UserRead, UsersCountResponse, UserUpdate
+from app.schemas.users import (
+    ExtendActiveSubscriptionsBody,
+    ExtendActiveSubscriptionsResponse,
+    UserCreate,
+    UserRead,
+    UsersCountResponse,
+    UserUpdate,
+)
 from app.services.user_provision import (
     enqueue_sync_xray_clients_all_servers,
     new_subscription_token,
@@ -74,6 +82,35 @@ async def create_user(
         ) from e
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return user
+
+
+@router.post(
+    "/extend-active-subscriptions",
+    response_model=ExtendActiveSubscriptionsResponse,
+    summary=(
+        "Продлить подписку: прибавить дни всем с активной конечной подпиской "
+        "(subscription_until задан и ≥ сегодня; бессрочные записи не меняются)"
+    ),
+)
+async def extend_active_subscriptions(
+    body: ExtendActiveSubscriptionsBody,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+) -> ExtendActiveSubscriptionsResponse:
+    days = body.days
+    stmt = (
+        update(User)
+        .where(
+            User.subscription_until.isnot(None),
+            User.subscription_until >= date.today(),
+        )
+        .values(subscription_until=User.subscription_until + days)
+    )
+    result = session.execute(stmt)
+    n = int(result.rowcount or 0)
+    if n:
+        background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
+    return ExtendActiveSubscriptionsResponse(updated_count=n)
 
 
 @router.get(

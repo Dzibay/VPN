@@ -22,7 +22,10 @@ from app.core.auth_env import (
 from app.core.config import settings
 from app.core.passwords import hash_password, verify_password
 from app.database.operations import table_insert
-from app.domain.subscription import user_has_active_subscription
+from app.domain.subscription import (
+    subscription_until_after_registration,
+    user_has_active_subscription,
+)
 from app.domain.subscription_open_apps import list_subscription_open_apps, store_platform_tags
 from app.models.user import User
 from app.schemas.account import (
@@ -156,7 +159,7 @@ async def register(
         password_hash=pwd_hash,
         telegram_id=None,
         telegram_properties=None,
-        subscription_until=None,
+        subscription_until=subscription_until_after_registration(),
         token=new_subscription_token(),
         vless_uuid=new_vless_uuid(),
     )
@@ -209,7 +212,7 @@ async def telegram_auth(
             password_hash=None,
             telegram_id=tid,
             telegram_properties=profile,
-            subscription_until=None,
+            subscription_until=subscription_until_after_registration(),
             token=new_subscription_token(),
             vless_uuid=new_vless_uuid(),
         )

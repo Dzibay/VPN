@@ -40,6 +40,11 @@ const editingUserTgUsername = ref('')
 const usersSyncLoading = ref(false)
 const usersSyncError = ref(null)
 const usersSyncOk = ref(null)
+/** Массовое продление подписок (только активные с конечной датой) */
+const extendDays = ref('7')
+const extendLoading = ref(false)
+const extendError = ref(null)
+const extendOk = ref(null)
 /** @type {import('vue').Ref<number | null>} */
 const deletingUserId = ref(null)
 
@@ -456,6 +461,35 @@ async function syncXrayClientsAllServers() {
     usersSyncError.value = e.message || String(e)
   } finally {
     usersSyncLoading.value = false
+  }
+}
+
+async function extendActiveSubscriptionsBulk() {
+  const n = Number.parseInt(String(extendDays.value ?? '').trim(), 10)
+  if (Number.isNaN(n) || n < 1 || n > 3650) {
+    extendError.value = 'Укажите число дней от 1 до 3650'
+    extendOk.value = null
+    return
+  }
+  extendLoading.value = true
+  extendError.value = null
+  extendOk.value = null
+  usersSyncOk.value = null
+  try {
+    const res = await fetchJson('/api/users/extend-active-subscriptions', {
+      method: 'POST',
+      body: JSON.stringify({ days: n }),
+    })
+    const c = res.updated_count ?? 0
+    extendOk.value =
+      c === 0
+        ? 'Никто не обновлён (нет пользователей с активной конечной подпиской).'
+        : `Подписка продлена на ${n} дн. для ${c} пользователей. Синхронизация Xray поставлена в очередь.`
+    await loadUsers()
+  } catch (e) {
+    extendError.value = e.message || String(e)
+  } finally {
+    extendLoading.value = false
   }
 }
 
@@ -951,6 +985,32 @@ watch(formIsCascadeRuEntry, (v) => {
                 : 'Синхронизировать Xray на узлах'
             }}
           </button>
+          <div
+            v-if="section === 'users'"
+            class="extend-active-wrap"
+            title="Учитываются только пользователи с заданной датой подписки ≥ сегодня; бессрочные (без даты) не меняются"
+          >
+            <label class="extend-active-label">
+              <span class="extend-active-label-text">+ дней активным</span>
+              <input
+                v-model="extendDays"
+                class="extend-active-input"
+                type="number"
+                min="1"
+                max="3650"
+                step="1"
+                :disabled="extendLoading || usersLoading"
+              />
+            </label>
+            <button
+              type="button"
+              class="btn-secondary"
+              :disabled="extendLoading || usersLoading"
+              @click="extendActiveSubscriptionsBulk"
+            >
+              {{ extendLoading ? 'Продление…' : 'Продлить всем активным' }}
+            </button>
+          </div>
           <button
             v-if="section === 'servers'"
             type="button"
@@ -986,6 +1046,12 @@ watch(formIsCascadeRuEntry, (v) => {
       </p>
       <p v-if="usersSyncError" class="provision-banner">
         {{ usersSyncError }}
+      </p>
+      <p v-if="extendOk" class="provision-banner provision-banner--ok">
+        {{ extendOk }}
+      </p>
+      <p v-if="extendError" class="provision-banner">
+        {{ extendError }}
       </p>
       <div v-if="!usersLoading && usersError" class="card err">
         {{ usersError }}
@@ -1857,6 +1923,35 @@ watch(formIsCascadeRuEntry, (v) => {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
+}
+
+.extend-active-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.extend-active-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.extend-active-label-text {
+  white-space: nowrap;
+}
+
+.extend-active-input {
+  width: 4.25rem;
+  padding: 0.35rem 0.45rem;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  color: var(--text-h);
+  font-variant-numeric: tabular-nums;
 }
 
 .section-heading {
