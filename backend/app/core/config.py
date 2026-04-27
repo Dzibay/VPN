@@ -72,6 +72,13 @@ class Settings(BaseSettings):
             "(вызывает только бэкенд бота, не Telegram-клиент). Пусто — эндпоинт отвечает 503."
         ),
     )
+    subscription_public_base_url: str = Field(
+        default="",
+        description=(
+            "Публичный HTTPS-Origin для ссылок на подписку и happ:// (напр. в /sub/{token}/open/happ), "
+            "напр. https://api.vpn.example.com (без слэша в конце). Пусто — Origin из входящего запроса."
+        ),
+    )
 
     redis_url: str = Field(
         default="redis://127.0.0.1:6379/0",
