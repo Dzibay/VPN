@@ -55,6 +55,7 @@ _AUTH_ME_OPENAPI_EXAMPLES: dict = {
                 "username": "ivan_dev",
                 "first_name": "Ivan",
                 "last_name": "Petrov",
+                "topic_id": 2,
             },
             "subscription_until": "2026-12-31",
             "subscription_active": True,

@@ -25,6 +25,7 @@ class TelegramAuthBody(BaseModel):
                     "username": "ivan_dev",
                     "first_name": "Иван",
                     "last_name": "Петров",
+                    "topic_id": 2,
                 }
             ]
         },
@@ -52,6 +53,12 @@ class TelegramAuthBody(BaseModel):
         max_length=255,
         description="Фамилия; в users.telegram_properties.last_name.",
     )
+    topic_id: int | None = Field(
+        default=None,
+        ge=1,
+        le=9223372036854775807,
+        description="Id топика; в users.telegram_properties.topic_id.",
+    )
 
 
 def merge_telegram_auth_profile(
@@ -59,9 +66,9 @@ def merge_telegram_auth_profile(
     existing: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
     """Собирает telegram_properties из полей запроса; пустые строки отбрасываются."""
-    profile_keys = ("username", "first_name", "last_name")
+    string_keys = ("username", "first_name", "last_name")
     out: dict[str, Any] = dict(existing) if existing else {}
-    for key in profile_keys:
+    for key in string_keys:
         if key not in body.model_fields_set:
             continue
         val = getattr(body, key)
@@ -73,12 +80,18 @@ def merge_telegram_auth_profile(
                 out[key] = s
             else:
                 out.pop(key, None)
+    if "topic_id" in body.model_fields_set:
+        tid = body.topic_id
+        if tid is None:
+            out.pop("topic_id", None)
+        else:
+            out["topic_id"] = int(tid)
     return out if out else None
 
 
 def telegram_auth_has_profile_fields(body: "TelegramAuthBody") -> bool:
     return bool(
-        {"username", "first_name", "last_name"} & set(body.model_fields_set),
+        {"username", "first_name", "last_name", "topic_id"} & set(body.model_fields_set),
     )
 
 
@@ -101,7 +114,7 @@ class AccountMeResponse(BaseModel):
     telegram_properties: dict[str, Any] | None = Field(
         default=None,
         description=(
-            "Словарь из `username`, `first_name`, `last_name` (и др.) "
+            "Словарь из `username`, `first_name`, `last_name`, `topic_id` (и др.) "
             "из `/api/auth/telegram`; для `admin` — `null`."
         ),
     )
