@@ -55,3 +55,26 @@ export function pickStoreRefsAuto(links) {
     links.ios,
   )
 }
+
+/** Только телефоны с каталогами App Store / Google Play (не ПК, не планшеты как отдельный кейс). */
+export function mobileIosOrAndroidPlatform() {
+  if (typeof navigator === 'undefined') return null
+  const u = navigator.userAgent || ''
+  if (/android/i.test(u)) return 'android'
+  if (/iPhone|iPad|iPod/i.test(u)) return 'ios'
+  return null
+}
+
+/**
+ * Прямая ссылка для установки: магазин (download), иначе сайт (site).
+ * @param {Record<string, { site?: string | null, download?: string | null }> | null | undefined} links
+ * @param {'android' | 'ios'} platform
+ */
+export function storeInstallHref(links, platform) {
+  const refs = forcedStoreRefs(links, platform)
+  if (!refs) return null
+  const d = refs.download && String(refs.download).trim()
+  if (d) return d
+  const s = refs.site && String(refs.site).trim()
+  return s || null
+}
