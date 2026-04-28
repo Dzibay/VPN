@@ -23,10 +23,7 @@ from app.api.deps import ReadonlySessionDep
 from app.core.config import settings
 from app.database.operations import table_select_one
 from app.domain.subscription import user_has_active_subscription
-from app.domain.subscription_public_base import (
-    prefer_https_subscription_public_base,
-    subscription_public_base_from_setting,
-)
+from app.domain.subscription_public_base import subscription_public_base_from_setting
 from app.domain.subscription_open_apps import (
     AppStoreLinks,
     get_subscription_open_app,
@@ -103,7 +100,8 @@ def _resolve_public_base(request: Request, configured_base: str) -> str:
     configured = subscription_public_base_from_setting(configured_base)
     if configured:
         return configured
-    return prefer_https_subscription_public_base(_infer_public_origin_from_request(request))
+    # Происхождение из Host + X-Forwarded-Proto (прокси должен пробрасывать протокол, см. deploy/nginx).
+    return _infer_public_origin_from_request(request)
 
 
 def _resolve_spa_base(request: Request) -> str:
