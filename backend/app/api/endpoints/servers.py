@@ -536,8 +536,14 @@ async def patch_server(
     data = body.model_dump(exclude_unset=True)
     if not data:
         return server
-    if data.get("reality_private_key"):
-        server.reality_public_key = None
+    # Сбрасывать pbk только при смене приватного ключа. Иначе «Сохранить» в админке
+    # с тем же private (поле заполнено из БД) обнуляло public → узел пропадал из /sub/…
+    priv_in = data.get("reality_private_key")
+    if priv_in:
+        new_priv = str(priv_in).strip()
+        old_priv = (server.reality_private_key or "").strip()
+        if new_priv != old_priv:
+            server.reality_public_key = None
     cascade_touched = False
     old_cnext: int | None = None
     if "is_cascade_ru_entry" in data or "cascade_next_server_id" in data:
