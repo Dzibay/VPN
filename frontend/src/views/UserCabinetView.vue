@@ -51,6 +51,10 @@ function formatDate(iso) {
 /** После редиректа с бэка (?unknown_client=1) показываем подсказку и чистим URL. */
 const unknownClientHint = ref(false)
 
+const subscriptionCopied = ref(false)
+/** @type {ReturnType<typeof setTimeout> | null} */
+let subscriptionCopiedTimer = null
+
 /** Платформа для `?platform=` на /sub/…/open/… (кнопки магазина). */
 const storePlatform = ref(
   typeof window !== 'undefined' ? detectStorePlatform() : 'windows',
@@ -79,6 +83,27 @@ const filteredOpenClients = computed(() => {
     return p.includes(plat)
   })
 })
+
+const subscriptionUrl = computed(() => {
+  const t = me.value?.subscription_token
+  return t ? subscriptionPublicUrl(String(t)) : ''
+})
+
+async function copySubscriptionUrl() {
+  const url = subscriptionUrl.value
+  if (!url) return
+  try {
+    await navigator.clipboard.writeText(url)
+    subscriptionCopied.value = true
+    if (subscriptionCopiedTimer) clearTimeout(subscriptionCopiedTimer)
+    subscriptionCopiedTimer = setTimeout(() => {
+      subscriptionCopied.value = false
+      subscriptionCopiedTimer = null
+    }, 2000)
+  } catch {
+    /* ignore */
+  }
+}
 
 onMounted(() => {
   const q = route.query.unknown_client
@@ -151,10 +176,6 @@ onMounted(() => {
             <dt>Контакт</dt>
             <dd>—</dd>
           </div>
-          <div class="row">
-            <dt>ID</dt>
-            <dd>{{ me.id }}</dd>
-          </div>
         </dl>
       </div>
 
@@ -181,9 +202,23 @@ onMounted(() => {
             <dd>{{ formatDate(me.subscription_until) }}</dd>
           </div>
         </dl>
+        <button
+          type="button"
+          class="copy-sub-btn"
+          :disabled="!subscriptionUrl"
+          @click="copySubscriptionUrl"
+        >
+          {{ subscriptionCopied ? 'Скопировано' : 'Скопировать ссылку подписки' }}
+        </button>
+        <p class="hint hint-below-copy">
+          Используйте в VPN-клиенте как subscription URL (если поддерживается).
+        </p>
       </div>
 
-      <div v-if="me.role === 'user'" class="card card-pad">
+      <div
+        v-if="me.role === 'user' && me.subscription_open_clients?.length"
+        class="card card-pad card-apps"
+      >
         <div
           v-if="unknownClientHint"
           class="banner-warn"
@@ -191,67 +226,55 @@ onMounted(() => {
         >
           Такого клиента в ссылке нет — выберите приложение ниже.
         </div>
-        <h2 class="block-title">Ссылка подписки</h2>
-        <p class="hint">
-          Используйте в VPN-клиенте как subscription URL (если поддерживается).
-        </p>
-        <a
-          class="sub-link"
-          :href="subscriptionPublicUrl(me.subscription_token)"
-          target="_blank"
-          rel="noopener"
-        >{{ subscriptionPublicUrl(me.subscription_token) }}</a>
-        <template v-if="me.subscription_open_clients?.length">
-          <h3 class="clients-title">Подключить в приложении</h3>
-          <div class="platform-block">
-            <div
-              class="platform-chips"
-              role="radiogroup"
-              aria-label="Платформа для ссылок приложения (сайт и скачивание)"
-            >
-              <button
-                v-for="p in PLATFORM_OPTIONS"
-                :key="p.value"
-                type="button"
-                class="platform-chip"
-                :class="{ 'platform-chip--active': storePlatform === p.value }"
-                role="radio"
-                :aria-checked="storePlatform === p.value"
-                @click="setStorePlatform(p.value)"
-              >
-                {{ p.label }}
-              </button>
-            </div>
-          </div>
-          <p
-            v-if="!filteredOpenClients.length"
-            class="hint clients-empty"
-          >
-            Для этой платформы нет клиентов с готовой ссылкой установки — выберите другую ОС выше.
-          </p>
+        <h2 class="block-title">Подключить в приложении</h2>
+        <div class="platform-block">
           <div
-            v-else
-            class="client-btns"
+            class="platform-chips"
+            role="radiogroup"
+            aria-label="Платформа для ссылок приложения (сайт и скачивание)"
           >
-            <template
-              v-for="c in filteredOpenClients"
-              :key="c.client_code"
+            <button
+              v-for="p in PLATFORM_OPTIONS"
+              :key="p.value"
+              type="button"
+              class="platform-chip"
+              :class="{ 'platform-chip--active': storePlatform === p.value }"
+              role="radio"
+              :aria-checked="storePlatform === p.value"
+              @click="setStorePlatform(p.value)"
             >
-              <a
-                v-if="me.subscription_active"
-                class="client-btn"
-                :href="openClientHref(c.client_code)"
-                target="_blank"
-                rel="noopener"
-              >{{ c.display_name }}</a>
-              <span
-                v-else
-                class="client-btn client-btn--off"
-                title="Продлите подписку"
-              >{{ c.display_name }}</span>
-            </template>
+              {{ p.label }}
+            </button>
           </div>
-        </template>
+        </div>
+        <p
+          v-if="!filteredOpenClients.length"
+          class="hint clients-empty"
+        >
+          Для этой платформы нет клиентов с готовой ссылкой установки — выберите другую ОС выше.
+        </p>
+        <div
+          v-else
+          class="client-btns"
+        >
+          <template
+            v-for="c in filteredOpenClients"
+            :key="c.client_code"
+          >
+            <a
+              v-if="me.subscription_active"
+              class="client-btn"
+              :href="openClientHref(c.client_code)"
+              target="_blank"
+              rel="noopener"
+            >{{ c.display_name }}</a>
+            <span
+              v-else
+              class="client-btn client-btn--off"
+              title="Продлите подписку"
+            >{{ c.display_name }}</span>
+          </template>
+        </div>
       </div>
     </div>
   </div>
@@ -382,11 +405,63 @@ dd {
   line-height: 1.45;
 }
 
+.hint-below-copy {
+  margin: 0.6rem 0 0;
+}
+
 .sub-link {
   font-size: 0.85rem;
   word-break: break-all;
   color: var(--accent);
   font-weight: 500;
+}
+
+.copy-sub-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 1rem 0 0;
+  padding: 0.5rem 1rem;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--on-accent);
+  background: color-mix(in srgb, var(--accent) 78%, #050a08 22%);
+  border: 1px solid color-mix(in srgb, var(--accent-border) 75%, #020403 25%);
+  transition:
+    filter 0.15s ease,
+    background 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.copy-sub-btn:hover:not(:disabled) {
+  filter: brightness(1.04);
+  background: color-mix(in srgb, var(--accent-hover) 80%, #050a08 20%);
+}
+
+.copy-sub-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.copy-sub-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+@media (prefers-color-scheme: light) {
+  .copy-sub-btn {
+    background: var(--accent);
+    border-color: var(--accent-border);
+  }
+
+  .copy-sub-btn:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
 }
 
 .banner-warn {
@@ -400,10 +475,17 @@ dd {
   border: 1px solid rgba(225, 29, 72, 0.35);
 }
 
-.clients-title {
-  font-size: 0.98rem;
-  margin: 1.15rem 0 0;
-  color: var(--text-h);
+.card-apps .platform-block {
+  margin-top: 0.75rem;
+  padding-top: 0;
+  border-top: none;
+}
+
+.card-apps .client-btns,
+.card-apps .clients-empty {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--nav-border);
 }
 
 .clients-hint {
@@ -414,7 +496,6 @@ dd {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-top: 0.65rem;
 }
 
 .client-btn {
