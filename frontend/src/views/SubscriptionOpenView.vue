@@ -2,10 +2,6 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { fetchJson } from '../api/client.js'
-import {
-  mobileIosOrAndroidPlatform,
-  storeInstallHref,
-} from '../util/subscriptionOpenStores.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,8 +11,6 @@ const loading = ref(true)
 const postDeeplinkWait = ref(false)
 /** Только если вкладка ушла в фон после deeplink — считаем, что приложение откликнулось; иначе не показываем «успех». */
 const openedOk = ref(false)
-/** store_links из последнего ответа open/data с deeplink — для редиректа в магазин на телефоне после неудачи deeplink. */
-const deeplinkFallbackStoreLinks = ref(null)
 const token = computed(() => String(route.params.token ?? ''))
 const client = computed(() => String(route.params.client ?? ''))
 
@@ -113,15 +107,6 @@ function scheduleOpenFallback() {
     if (document.visibilityState !== 'visible') return
     postDeeplinkWait.value = false
     teardownOpenSignals()
-    const mob = mobileIosOrAndroidPlatform()
-    const links = deeplinkFallbackStoreLinks.value
-    if (mob && links) {
-      const href = storeInstallHref(links, mob)
-      if (href) {
-        window.location.replace(href)
-        return
-      }
-    }
     goToApps()
   }, OPEN_FALLBACK_MS)
 }
@@ -130,7 +115,6 @@ async function load() {
   loading.value = true
   postDeeplinkWait.value = false
   openedOk.value = false
-  deeplinkFallbackStoreLinks.value = null
   clearOpenTimer()
   teardownOpenSignals()
 
@@ -149,7 +133,6 @@ async function load() {
     }
 
     if (data.state === 'ok' && data.deeplink) {
-      deeplinkFallbackStoreLinks.value = data.store_links ?? null
       if (typeof data.title === 'string') document.title = data.title
       loading.value = false
       postDeeplinkWait.value = true
