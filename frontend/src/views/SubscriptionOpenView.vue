@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { fetchJson } from '../api/client.js'
+import { getMobileStoreRedirectUrl } from '../util/subscriptionOpenStores.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,6 +14,9 @@ const postDeeplinkWait = ref(false)
 const openedOk = ref(false)
 const token = computed(() => String(route.params.token ?? ''))
 const client = computed(() => String(route.params.client ?? ''))
+
+/** Сохраняем с ответа /data при state=ok — для редиректа в магазин, если диплинк не сработал. */
+const openPageStoreLinks = ref(null)
 
 const platformFromQuery = computed(() => {
   const p = route.query.platform
@@ -107,6 +111,18 @@ function scheduleOpenFallback() {
     if (document.visibilityState !== 'visible') return
     postDeeplinkWait.value = false
     teardownOpenSignals()
+    const storeUrl = getMobileStoreRedirectUrl(
+      openPageStoreLinks.value,
+      platformFromQuery.value,
+    )
+    if (storeUrl) {
+      try {
+        window.location.replace(storeUrl)
+      } catch {
+        goToApps()
+      }
+      return
+    }
     goToApps()
   }, OPEN_FALLBACK_MS)
 }
@@ -115,6 +131,7 @@ async function load() {
   loading.value = true
   postDeeplinkWait.value = false
   openedOk.value = false
+  openPageStoreLinks.value = null
   clearOpenTimer()
   teardownOpenSignals()
 
@@ -133,6 +150,7 @@ async function load() {
     }
 
     if (data.state === 'ok' && data.deeplink) {
+      openPageStoreLinks.value = data.store_links ?? null
       if (typeof data.title === 'string') document.title = data.title
       loading.value = false
       postDeeplinkWait.value = true

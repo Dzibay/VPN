@@ -55,3 +55,38 @@ export function pickStoreRefsAuto(links) {
     links.ios,
   )
 }
+
+/**
+ * Телефон/планшет с Google Play или App Store (Android или iOS).
+ * @returns {boolean}
+ */
+export function isMobileAppStoreDevice() {
+  if (typeof navigator === 'undefined') return false
+  const u = navigator.userAgent || ''
+  return /android/i.test(u) || /iPhone|iPad|iPod/i.test(u)
+}
+
+/**
+ * URL страницы магазина или прямой загрузки для текущего мобильного устройства
+ * (та же логика, что выбор ссылок на /apps/:client). Для десктопа — null.
+ *
+ * @param {Record<string, { site?: string | null, download?: string | null }> | null | undefined} links
+ * @param {string | null | undefined} platformFromQuery — как ?platform= на open-странице
+ * @returns {string | null}
+ */
+export function getMobileStoreRedirectUrl(links, platformFromQuery) {
+  if (!links || typeof links !== 'object') return null
+  if (!isMobileAppStoreDevice()) return null
+  const fp =
+    platformFromQuery &&
+    typeof platformFromQuery === 'string' &&
+    ['windows', 'android', 'ios', 'macos', 'linux'].includes(
+      platformFromQuery.toLowerCase(),
+    )
+      ? platformFromQuery.toLowerCase()
+      : null
+  const R = fp ? forcedStoreRefs(links, fp) : pickStoreRefsAuto(links)
+  if (!R) return null
+  const url = R.site || R.download
+  return typeof url === 'string' && url ? url : null
+}
