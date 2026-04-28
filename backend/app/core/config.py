@@ -76,8 +76,10 @@ class Settings(BaseSettings):
     subscription_public_base_url: str = Field(
         default="",
         description=(
-            "Публичный HTTPS-Origin для ссылок на подписку и happ:// (напр. в /sub/{token}/open/happ), "
-            "напр. https://api.vpn.example.com (без слэша в конце). Пусто — Origin из входящего запроса."
+            "Публичный HTTPS-Origin для ссылок на подписку и happ:// (напр. /sub/{token}/open/happ), "
+            "напр. https://api.vpn.example.com (без слэша в конце). Рекомендуется всегда указывать "
+            "с https:// для продакшена. Пусто — собирается из Host и X-Forwarded-Proto входящего запроса "
+            "(чтобы не получать http:// за nginx в Docker см. переменную uvicorn FORWARDED_ALLOW_IPS)."
         ),
     )
     public_cabinet_url: str = Field(

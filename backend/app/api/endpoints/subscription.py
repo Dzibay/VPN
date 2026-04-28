@@ -72,11 +72,33 @@ def _cabinet_redirect_url(*, extra_query: dict[str, str] | None = None) -> str:
     return path
 
 
+def _infer_public_origin_from_request(request: Request) -> str:
+    """Публичный origin, когда SUBSCRIPTION_PUBLIC_BASE_URL не задан.
+
+    Uvicorn по умолчанию доверяет только 127.0.0.1 для подстановки X-Forwarded-* в scope;
+    за nginx в Docker подключение часто идёт не с loopback — scheme остаётся http, хотя у
+    клиента HTTPS. Явно читаем заголовки, которые прокси уже выставил к бэкенду.
+    """
+
+    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
+    if forwarded_proto not in ("http", "https"):
+        forwarded_proto = request.url.scheme
+
+    forwarded_host = (request.headers.get("x-forwarded-host") or "").split(",")[0].strip()
+    host = forwarded_host or (request.headers.get("host") or "").split(",")[0].strip()
+    if host:
+        netloc = host
+    else:
+        netloc = request.url.netloc
+
+    return f"{forwarded_proto}://{netloc}".rstrip("/")
+
+
 def _resolve_public_base(request: Request, configured_base: str) -> str:
     raw = (configured_base or "").strip().rstrip("/")
     if raw:
         return raw
-    return str(request.base_url).rstrip("/")
+    return _infer_public_origin_from_request(request)
 
 
 async def _subscription_payload_for_token(
