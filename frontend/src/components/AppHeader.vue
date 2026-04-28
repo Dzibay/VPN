@@ -119,6 +119,9 @@ router.afterEach(refreshSessions)
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   box-shadow: var(--shadow-sm);
+  /* Запросы по ширине шапки (viewport), не по user-bar — иначе цикл из‑за скрытой «Регистрация». */
+  container-type: inline-size;
+  container-name: shell;
 }
 
 /* На главной иначе видна «линия» между шапкой и героем с градиентом. */
@@ -143,10 +146,47 @@ router.afterEach(refreshSessions)
 
 .user-bar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-end;
   gap: 0.35rem;
+  min-width: 0;
+}
+
+/* Узкая шапка (телефон): только «Вход»; ширина контейнера не зависит от содержимого user-bar. */
+@container shell (max-width: 560px) {
+  .nav-accent {
+    display: none;
+  }
+
+  .toolbar {
+    gap: 0.45rem 0.55rem;
+  }
+
+  .brand {
+    gap: 0.35rem;
+  }
+
+  .brand-text {
+    font-size: 0.98rem;
+  }
+
+  .nav-link {
+    padding: 0.35rem 0.55rem;
+    font-size: 0.85rem;
+  }
+
+  .nav-btn {
+    padding: 0.35rem 0.55rem;
+    font-size: 0.82rem;
+  }
+}
+
+@media (max-width: 560px) {
+  .shell {
+    padding: 0.5rem 0.75rem;
+    gap: 0.45rem 0.55rem;
+  }
 }
 
 .brand {
