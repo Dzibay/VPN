@@ -4,7 +4,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   detectStorePlatform,
   fetchJson,
-  subscriptionOpenClientUrl,
+  subscriptionOpenPath,
   subscriptionPublicUrl,
 } from '../api/client.js'
 
@@ -64,12 +64,11 @@ function setStorePlatform(p) {
   storePlatform.value = p
 }
 
-function openClientHref(clientCode) {
-  return subscriptionOpenClientUrl(
-    String(me.value?.subscription_token ?? ''),
-    clientCode,
-    storePlatform.value,
-  )
+/** Локальный путь /sub/…/open/… — открываем в этом же окне через RouterLink. */
+function openClientTo(clientCode) {
+  const t = me.value?.subscription_token
+  if (!t) return '/cabinet'
+  return subscriptionOpenPath(String(t), clientCode, storePlatform.value)
 }
 
 /** Клиенты с учётом выбранной платформы (store_platforms пустой — показываем всегда). */
@@ -261,13 +260,11 @@ onMounted(() => {
             v-for="c in filteredOpenClients"
             :key="c.client_code"
           >
-            <a
+            <RouterLink
               v-if="me.subscription_active"
               class="client-btn"
-              :href="openClientHref(c.client_code)"
-              target="_blank"
-              rel="noopener"
-            >{{ c.display_name }}</a>
+              :to="openClientTo(c.client_code)"
+            >{{ c.display_name }}</RouterLink>
             <span
               v-else
               class="client-btn client-btn--off"

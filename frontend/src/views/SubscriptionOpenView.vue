@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { fetchJson } from '../api/client.js'
 
 const route = useRoute()
@@ -175,6 +175,14 @@ onBeforeUnmount(() => {
 <template>
   <div class="sub-open">
     <div class="sub-open-wrap">
+      <RouterLink
+        class="app-dl-back sub-open-back"
+        to="/cabinet"
+      ><span
+        class="app-dl-back-arrow"
+        aria-hidden="true"
+      >←</span> Личный кабинет</RouterLink>
+
       <div class="sub-open-card">
         <div class="sub-open-brand">
           <img
@@ -243,10 +251,46 @@ onBeforeUnmount(() => {
 .sub-open-wrap {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 1.5rem 1rem 2.5rem;
   box-sizing: border-box;
+  gap: 0.75rem;
+}
+
+/* Как на ClientAppDownloadView: ссылка в кабинет; ширина под карточку sub-open (22rem). */
+.app-dl-back.sub-open-back {
+  max-width: 22rem;
+}
+
+.app-dl-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  width: 100%;
+  max-width: 26rem;
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.app-dl-back:hover {
+  color: var(--accent);
+}
+
+.app-dl-back-arrow {
+  font-size: 1em;
+  line-height: 1;
 }
 
 .sub-open-card {
