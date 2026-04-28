@@ -22,6 +22,7 @@ from app.api.deps import ReadonlySessionDep
 from app.core.config import settings
 from app.database.operations import table_select_one
 from app.domain.subscription import user_has_active_subscription
+from app.domain.subscription_public_base import prefer_https_subscription_public_base
 from app.domain.subscription_open_apps import (
     AppStoreLinks,
     SubscriptionOpenApp,
@@ -97,8 +98,10 @@ def _infer_public_origin_from_request(request: Request) -> str:
 def _resolve_public_base(request: Request, configured_base: str) -> str:
     raw = (configured_base or "").strip().rstrip("/")
     if raw:
-        return raw
-    return _infer_public_origin_from_request(request)
+        base = raw
+    else:
+        base = _infer_public_origin_from_request(request)
+    return prefer_https_subscription_public_base(base)
 
 
 async def _subscription_payload_for_token(
