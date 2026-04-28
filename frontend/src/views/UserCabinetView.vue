@@ -12,6 +12,8 @@ const PLATFORM_OPTIONS = [
   { value: 'windows', label: 'Windows' },
   { value: 'android', label: 'Android' },
   { value: 'ios', label: 'iOS' },
+  { value: 'macos', label: 'macOS' },
+  { value: 'linux', label: 'Linux' },
 ]
 
 const router = useRouter()
@@ -205,7 +207,7 @@ onMounted(() => {
             <div
               class="platform-chips"
               role="radiogroup"
-              aria-label="Платформа магазина или сайта"
+              aria-label="Платформа для ссылок приложения (сайт и скачивание)"
             >
               <button
                 v-for="p in PLATFORM_OPTIONS"

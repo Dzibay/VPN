@@ -13,8 +13,10 @@
 
 Имя профиля — SUBSCRIPTION_IMPORT_DISPLAY_NAME.
 
-Скачивание: AppStoreLinks — android, ios, windows (ПК / релизы / сайт установки).
-Поле web оставлено для обратной совместимости в скриптах страницы /open/{client}.
+Ссылки для страницы open: см. `_stores` / `_platform_ref`. Строка (URL) = только сайт/магазин;
+кортеж ``(site, download)`` = отдельно страница и прямое скачивание файла.
+
+
 """
 
 from __future__ import annotations
@@ -22,36 +24,112 @@ from __future__ import annotations
 import base64
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TypeAlias
 from urllib.parse import quote
 
 # Параметр name/fragment для отображаемого имени подписки
 SUBSCRIPTION_IMPORT_DISPLAY_NAME = "Подорожник VPN"
 
+# Одна платформа для _stores: строка → только сайт (без отдельного файла и без кнопки «Скачать»);
+# кортеж (site, download) → страница + прямое скачивание артефакта (две кнопки ниже страницы open).
+PlatformLinkInput: TypeAlias = str | tuple[str | None, str | None]
+
+
+@dataclass(frozen=True)
+class StorePlatformRefs:
+    """Обязательна логика на фронте open: есть site — показывается «Перейти на сайт»; есть download — «Скачать»."""
+
+    site: str | None = None
+    download: str | None = None
+
+    def any(self) -> bool:
+        return bool(self.site or self.download)
+
 
 @dataclass(frozen=True)
 class AppStoreLinks:
-    """Ссылки «Скачать»: android, ios, windows (ПК). web — устар., не использовать в новых записях."""
+    """Ссылки по ОС: см. ``StorePlatformRefs``."""
 
-    windows: str | None = None
-    android: str | None = None
-    ios: str | None = None
-    web: str | None = None
+    windows: StorePlatformRefs | None = None
+    android: StorePlatformRefs | None = None
+    ios: StorePlatformRefs | None = None
+    macos: StorePlatformRefs | None = None
+    linux: StorePlatformRefs | None = None
 
     def any(self) -> bool:
-        return bool(self.windows or self.android or self.ios or self.web)
+        for ref in (
+            self.windows,
+            self.android,
+            self.ios,
+            self.macos,
+            self.linux,
+        ):
+            if ref is not None and ref.any():
+                return True
+        return False
+
+    def to_public_json_dict(self) -> dict[str, dict[str, str | None]]:
+        """Структура для JSON на странице /sub/.../open/{client}."""
+        out: dict[str, dict[str, str | None]] = {}
+        for key in ("windows", "android", "ios", "macos", "linux"):
+            ref = getattr(self, key)
+            if isinstance(ref, StorePlatformRefs) and ref.any():
+                out[key] = {"site": ref.site, "download": ref.download}
+        return out
+
+
+def _platform_ref(raw: PlatformLinkInput | None) -> StorePlatformRefs | None:
+    """Строка — только сайт магазина/страницы. Кортеж — (site, download); можно None в одном из полей."""
+
+    if raw is None:
+        return None
+    if isinstance(raw, tuple):
+        a, b = raw[0], raw[1]
+        site = (a or "").strip() or None
+        download = (b or "").strip() or None
+        if not site and not download:
+            return None
+        return StorePlatformRefs(site=site, download=download)
+    s = raw.strip()
+    if not s:
+        return None
+    return StorePlatformRefs(site=s, download=None)
+
+
+def _stores(
+    *,
+    windows: PlatformLinkInput | None = None,
+    android: PlatformLinkInput | None = None,
+    ios: PlatformLinkInput | None = None,
+    macos: PlatformLinkInput | None = None,
+    linux: PlatformLinkInput | None = None,
+) -> AppStoreLinks:
+    """Собрать ``AppStoreLinks`` из строк (только сайт) или пар ``(site, download)``. См. ``PlatformLinkInput``."""
+
+    return AppStoreLinks(
+        windows=_platform_ref(windows),
+        android=_platform_ref(android),
+        ios=_platform_ref(ios),
+        macos=_platform_ref(macos),
+        linux=_platform_ref(linux),
+    )
 
 
 def store_platform_tags(links: AppStoreLinks) -> list[str]:
-    """Теги для фильтра в ЛК: windows | android | ios. Пусто — клиент показывается для любой платформы."""
+    """Теги для фильтра в ЛК: windows | android | ios | macos | linux. Пусто — клиент для любой платформы."""
     if not links.any():
         return []
     tags: list[str] = []
-    if links.android:
+    if links.android is not None and links.android.any():
         tags.append("android")
-    if links.ios:
+    if links.ios is not None and links.ios.any():
         tags.append("ios")
-    if links.windows or links.web:
+    if links.windows is not None and links.windows.any():
         tags.append("windows")
+    if links.macos is not None and links.macos.any():
+        tags.append("macos")
+    if links.linux is not None and links.linux.any():
+        tags.append("linux")
     return tags
 
 
@@ -128,39 +206,89 @@ _prizrak_box_deeplink = _deeplink_query_url("prizrak-box://install-config?url=")
 
 
 _STORE: dict[str, AppStoreLinks] = {
-    "happ": AppStoreLinks(
-        android="https://play.google.com/store/apps/details?id=com.happproxy",
-        ios="https://apps.apple.com/app/happ-proxy-utility/id6504287215",
-        windows="https://www.happ.su/main/ru",
+    "happ": _stores(
+        android=(
+            "https://play.google.com/store/apps/details?id=com.happproxy",
+            "https://github.com/Happ-proxy/happ-android/releases/latest/download/Happ.apk",
+        ),
+        ios="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215",
+        windows=(
+            "https://github.com/Happ-proxy/happ-desktop/releases",
+            "https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe",
+        ),
+        macos="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215",
+        linux="https://www.happ.su/main/ru",
     ),
-    "stash": AppStoreLinks(
-        ios="https://apps.apple.com/app/stash-rule-based-proxy/id1596063349"
+    "stash": _stores(ios="https://apps.apple.com/us/app/stash-rule-based-proxy/id1596063349"),
+    "shadowrocket": _stores(ios="https://apps.apple.com/ru/app/shadowrocket/id932747118"),
+    "streisand": _stores(ios="https://apps.apple.com/ru/app/streisand/id6450534064"),
+    "flclashx": _stores(
+        android=(
+            "https://github.com/pluralplay/FlClashX/releases",
+            "https://github.com/pluralplay/FlClashX/releases/latest/download/FlClashX-android-universal.apk",
+        ),
+        windows=(
+            "https://github.com/pluralplay/FlClashX/releases",
+            "https://github.com/pluralplay/FlClashX/releases/latest/download/FlClashX-windows-amd64-setup.exe",
+        ),
+        macos=(
+            "https://github.com/pluralplay/FlClashX/releases",
+            "https://github.com/pluralplay/FlClashX/releases/latest/download/FlClashX-macos-arm64.dmg",
+        ),
+        linux=(
+            "https://github.com/pluralplay/FlClashX/releases",
+            "https://github.com/pluralplay/FlClashX/releases/latest/download/FlClashX-linux-amd64.deb",
+        ),
     ),
-    "shadowrocket": AppStoreLinks(
-        ios="https://apps.apple.com/app/shadowrocket/id932747118"
+    "clashmeta": _stores(
+        android=(
+            "https://f-droid.org/packages/com.github.metacubex.clash.meta/",
+            "https://github.com/MetaCubeX/ClashMetaForAndroid/releases/download/v2.11.20/cmfa-2.11.20-meta-universal-release.apk",
+        ),
+        windows="https://github.com/MetaCubeX/Clash.Meta/releases",
+        macos="https://github.com/MetaCubeX/Clash.Meta/releases",
+        linux="https://github.com/MetaCubeX/Clash.Meta/releases",
     ),
-    "streisand": AppStoreLinks(
-        ios="https://apps.apple.com/app/streisand/id6450534064"
+    "v2rayng": _stores(
+        android=(
+            "https://github.com/2dust/v2rayNG/releases",
+            "https://github.com/2dust/v2rayNG/releases/download/1.10.31/v2rayNG_1.10.31_universal.apk",
+        ),
     ),
-    "flclashx": AppStoreLinks(
-        android="https://github.com/pluralplay/FlClashX/releases"
-    ),
-    "clashmeta": AppStoreLinks(
-        android="https://github.com/MetaCubeX/ClashMetaForAndroid/releases"
-    ),
-    "v2rayng": AppStoreLinks(
-        android="https://play.google.com/store/apps/details?id=com.v2ray.ang"
-    ),
-    "v2raytun": AppStoreLinks(
+    "v2raytun": _stores(
         android="https://play.google.com/store/apps/details?id=com.v2raytun.android",
         ios="https://apps.apple.com/app/v2raytun/id6476628951",
         windows="https://v2raytun.com",
+        macos="https://v2raytun.com",
+        linux="https://v2raytun.com",
     ),
-    "koala-clash": AppStoreLinks(
-        windows="https://github.com/coolcoala/koala-clash/releases",
+    "koala-clash": _stores(
+        windows=(
+            "https://github.com/coolcoala/clash-verge-rev-lite/releases",
+            "https://github.com/coolcoala/clash-verge-rev-lite/releases/latest/download/Koala.Clash_x64-setup.exe",
+        ),
+        macos=(
+            "https://github.com/coolcoala/clash-verge-rev-lite/releases",
+            "https://github.com/coolcoala/clash-verge-rev-lite/releases/latest/download/Koala.Clash_aarch64.dmg",
+        ),
+        linux=(
+            "https://github.com/coolcoala/clash-verge-rev-lite/releases",
+            "https://github.com/coolcoala/clash-verge-rev-lite/releases/latest/download/Koala.Clash_amd64.deb",
+        ),
     ),
-    "prizrak-box": AppStoreLinks(
-        windows="https://github.com/legiz-ru/Prizrak-Box/releases",
+    "prizrak-box": _stores(
+        windows=(
+            "https://github.com/legiz-ru/Prizrak-Box/releases",
+            "https://github.com/legiz-ru/Prizrak-Box/releases/latest/download/windows-amd64.msi",
+        ),
+        macos=(
+            "https://github.com/legiz-ru/Prizrak-Box/releases",
+            "https://github.com/legiz-ru/Prizrak-Box/releases/latest/download/macos-arm64-dmg.zip",
+        ),
+        linux=(
+            "https://github.com/legiz-ru/Prizrak-Box/releases",
+            "https://github.com/legiz-ru/Prizrak-Box/releases/latest/download/linux-amd64.deb",
+        ),
     ),
 }
 

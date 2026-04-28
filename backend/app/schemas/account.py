@@ -14,7 +14,7 @@ class SubscriptionOpenClientItem(BaseModel):
     store_platforms: list[str] = Field(
         default_factory=list,
         description=(
-            "Платформы, для которых задана ссылка «Скачать»: windows, android, ios. "
+            "Платформы, где заданы ссылки: windows, android, ios, macos, linux (сайт обязателен в данных; файл — опционально). "
             "Пустой список — показывать при любой выбранной платформе (только deeplink)."
         ),
     )
@@ -50,7 +50,7 @@ class TelegramSubscriptionOpenClientsResponse(BaseModel):
     )
     open_path_template: str = Field(
         default="/sub/{subscription_token}/open/{client_code}",
-        description="Относительный путь; опционально ?platform=windows|android|ios для HTML-страницы «Скачать».",
+        description="Относительный путь; опционально ?platform=windows|android|ios|macos|linux для «Скачать».",
     )
 
 

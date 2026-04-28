@@ -51,7 +51,7 @@ _SUBSCRIPTION_TOKEN_PATH = Path(
 
 _OPEN_APPS_DOC = ", ".join(list_subscription_open_app_codes())
 
-_STORE_PLATFORM_KEYS = frozenset({"windows", "android", "ios"})
+_STORE_PLATFORM_KEYS = frozenset({"windows", "android", "ios", "macos", "linux"})
 
 
 def _normalize_store_platform(raw: str | None) -> str | None:
@@ -143,7 +143,6 @@ def _client_landing_page(
         deeplink,
         open_label,
         store_links=app.store_links,
-        client_display_name=app.display_name,
         store_platform=store_platform,
     )
     return HTMLResponse(content=content)
@@ -242,8 +241,11 @@ body{margin:0;min-height:100dvh;background:var(--bg-gradient);color:var(--text);
   animation:sub-spin 0.75s linear infinite;
 }
 @keyframes sub-spin{to{transform:rotate(360deg)}}
-.actions{display:flex;flex-direction:column;gap:0.6rem;}
-@media (min-width:420px){.actions{flex-direction:row;flex-wrap:wrap;}}
+.actions{display:flex;flex-direction:column;gap:0.65rem;width:100%;align-items:stretch;}
+.actions-row{display:flex;flex-direction:row;gap:0.6rem;width:100%;flex-wrap:nowrap;}
+.actions-row .btn-secondary{flex:1;min-width:0;}
+.actions-row--single .btn-secondary{flex:1;max-width:100%;}
+.btn-primary--block{width:100%;flex:0 0 auto;box-sizing:border-box;}
 .btn-primary{
   display:inline-flex;align-items:center;justify-content:center;gap:0.35rem;
   flex:1;min-width:10rem;padding:0.6rem 1.1rem;border-radius:var(--radius-lg);border:none;
@@ -295,7 +297,6 @@ def _open_app_page(
     deeplink: str | None,
     button_text: str,
     store_links: AppStoreLinks | None = None,
-    client_display_name: str | None = None,
     store_platform: str | None = None,
 ) -> str:
     if not deeplink:
@@ -314,58 +315,55 @@ def _open_app_page(
     js_u = json.dumps(deeplink)
     sl = store_links or AppStoreLinks()
     has_store = sl.any()
-    js_l = json.dumps(
-        {
-            "windows": sl.windows,
-            "android": sl.android,
-            "ios": sl.ios,
-            "web": sl.web,
-        }
-        if has_store
-        else None,
-    )
-    dl_name = (client_display_name or "клиент").strip()
+    js_l = json.dumps(sl.to_public_json_dict() if has_store else None)
     open_l = html.escape(button_text)
-    dl_l = html.escape(f"Скачать {dl_name}")
+    site_bt = html.escape("Перейти на сайт")
+    download_bt = html.escape("Скачать")
     forced_js = "null" if not store_platform else json.dumps(store_platform)
     hint = (
-        "Если приложение не открылось, нажмите «Открыть». "
-        + (
-            "«Скачать» — страница магазина или сайта для выбранной платформы (из адреса или по устройству)."
-            if has_store
-            else "Установите клиент вручную, если ещё не стоит."
-        )
+        "Если приложение не открылось, но установлено - нажмите «Открыть». "
     )
     script = (
         "<script>(function(){"
         "var d=" + js_u + ",L=" + js_l + ";"
         "var FORCED_PLATFORM=" + forced_js + ";"
-        "function storeHrefForPlatform(l,p){"
-        "if(!l||!p)return null;"
-        "if(p===\"android\")return l.android||null;"
-        "if(p===\"ios\")return l.ios||null;"
-        "if(p===\"windows\")return l.windows||l.web||null;"
+        "function has(R){return R&&(R.site||R.download);}"
+        "function refFor(l,k){var R=l&&l[k];return has(R)?R:null;}"
+        "function firstAvailableRef(){for(var i=0;i<arguments.length;i++)"
+        "{var x=arguments[i];if(has(x))return x;}return null;}"
+        "function forcedRefs(l,p){if(!l||!p)return null;"
+        "var R=refFor(l,p);if(has(R))return R;"
+        "if(p===\"macos\")return firstAvailableRef(l.macos,l.windows,l.linux);"
+        "if(p===\"linux\")return firstAvailableRef(l.linux,l.windows,l.macos);"
         "return null;}"
-        "function pick(l){"
-        "if(!l)return null;"
-        "if(FORCED_PLATFORM){"
-        "var fh=storeHrefForPlatform(l,FORCED_PLATFORM);"
-        "if(fh)return fh;}"
+        "function pickRefsAuto(l){if(!l)return null;"
         "var u=navigator.userAgent||\"\";"
-        "if(/android/i.test(u)&&l.android)return l.android;"
-        "if((/iPhone|iPad|iPod/i.test(u))&&l.ios)return l.ios;"
-        "if((/Win64|Windows NT|Win32|Windows Phone/i).test(u)){"
-        "if(l.windows)return l.windows;if(l.web)return l.web;}"
-        "if((/Macintosh|Mac OS X|Linux|X11/).test(u)&&!(/iPhone|iPad|iPod/i.test(u))){"
-        "if(l.windows)return l.windows;if(l.web)return l.web;}"
-        "if(l.windows)return l.windows;if(l.web)return l.web;if(l.android)return l.android;if(l.ios)return l.ios;"
-        "return null;}"
-        "var s=pick(L);"
+        "if(/android/i.test(u))return refFor(l,\"android\");"
+        "if(/iPhone|iPad|iPod/i.test(u))return refFor(l,\"ios\");"
+        "if(/Win64|Windows NT|Win32|Windows Phone/i.test(u))return refFor(l,\"windows\");"
+        "if(/Macintosh|Mac OS X/i.test(u)&&!/iPhone|iPad|iPod/i.test(u))"
+        "{return firstAvailableRef(l.macos,l.windows,l.linux);}"
+        "if(/Linux|X11/i.test(u)&&!/Android/i.test(u))"
+        "{return firstAvailableRef(l.linux,l.windows);}"
+        "return firstAvailableRef(l.windows,l.macos,l.linux,l.android,l.ios);}"
+        "var R=FORCED_PLATFORM?forcedRefs(L,FORCED_PLATFORM):pickRefsAuto(L);"
         "var loader=document.getElementById(\"sub-loader\");"
-        "var btnDl=document.getElementById(\"btn-dl\");"
+        "var bs=document.getElementById(\"btn-site\");"
+        "var bd=document.getElementById(\"btn-download\");"
+        "var storeRow=document.getElementById(\"actions-store-row\");"
+        "function applyStore(R){if(!bs||!bd)return;"
+        "if(storeRow)storeRow.classList.remove(\"actions-row--single\");"
+        "if(!R||!has(R)){bs.style.display=\"none\";bd.style.display=\"none\";"
+        "if(storeRow)storeRow.style.display=\"none\";return;}"
+        "if(storeRow)storeRow.style.display=\"\";"
+        "var s=R.site,x=R.download;"
+        "if(x){bd.href=x;bd.style.display=\"\";bd.textContent=\"Скачать\";}else{bd.style.display=\"none\";}"
+        "if(s){bs.href=s;bs.style.display=\"\";bs.textContent=\"Перейти на сайт\";}else{bs.style.display=\"none\";}"
+        "var nVis=(x?1:0)+(s?1:0);if(storeRow&&nVis<=1)storeRow.classList.add(\"actions-row--single\");"
+        "}"
         "function hideLoader(){if(loader)loader.classList.add(\"loader--hidden\");}"
         "function onLeave(){hideLoader();}"
-        "if(btnDl){if(s){btnDl.href=s;}else{btnDl.style.display=\"none\";}}"
+        "applyStore(R);"
         "window.addEventListener(\"blur\",onLeave,{passive:true});"
         "document.addEventListener(\"visibilitychange\",function(){"
         "if(document.hidden)onLeave();},{passive:true});"
@@ -380,13 +378,16 @@ def _open_app_page(
         "onerror=\"this.style.display='none'\"/><span>Подорожник VPN</span></div>"
         + f"<h1>{html.escape(title)}</h1>"
         + "<p class=\"open-lead\">Один раз пробуем открыть приложение, если оно уже установлено. "
-        "Установка — только по кнопке «Скачать».</p>"
+        "Если приложение не установлено - нажмите кнопку Скачать или перейдите на сайт приложения</p>"
         + "<div class=\"loader\" id=\"sub-loader\" aria-live=\"polite\">"
         + "<div class=\"spinner\" role=\"status\" aria-label=\"Загрузка\"></div>"
         + "<p class=\"loader-text\">Подключаем…</p></div>"
         + "<div class=\"actions\">"
-        + f"<a class=\"btn-primary\" id=\"btn-open\" href={js_u}>{open_l}</a>"
-        + f"<a class=\"btn-secondary\" id=\"btn-dl\" href=\"#\">{dl_l}</a>"
+        + f"<a class=\"btn-primary btn-primary--block\" id=\"btn-open\" href={js_u}>{open_l}</a>"
+        + "<div class=\"actions-row\" id=\"actions-store-row\">"
+        + f"<a class=\"btn-secondary\" id=\"btn-download\" href=\"#\">{download_bt}</a>"
+        + f"<a class=\"btn-secondary\" id=\"btn-site\" href=\"#\">{site_bt}</a>"
+        + "</div>"
         + "</div>"
         + f"<p class=\"open-hint\">{html.escape(hint)}</p>"
         + "</div></div>"
@@ -410,7 +411,7 @@ async def subscription_open_in_app(
     ),
     platform: str | None = Query(
         None,
-        description="Платформа для кнопки «Скачать»: windows | android | ios (иначе — по User-Agent).",
+        description="Платформа для ссылок «Перейти на сайт» / опционально «Скачать»: windows | android | ios | macos | linux (иначе — UA).",
     ),
 ) -> HTMLResponse:
     app = get_subscription_open_app(client)

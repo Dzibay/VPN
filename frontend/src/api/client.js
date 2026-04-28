@@ -100,13 +100,18 @@ export function subscriptionPublicUrl(token) {
   return `/sub/${token}`
 }
 
-/** @typedef {'windows'|'android'|'ios'} StorePlatform */
+/** @typedef {'windows'|'android'|'ios'|'macos'|'linux'} StorePlatform */
 
-const STORE_PLATFORM_SET = new Set(['windows', 'android', 'ios'])
+const STORE_PLATFORM_SET = new Set([
+  'windows',
+  'android',
+  'ios',
+  'macos',
+  'linux',
+])
 
 /**
- * Платформа для ссылок «Скачать» (как на бэке в pick() для store links).
- * Для Mac/Linux и неизвестных UA — windows (часто там же релиз под ПК).
+ * Платформа для ссылок «Скачать» (как на бэке pick() для store links).
  * @returns {StorePlatform}
  */
 export function detectStorePlatform() {
@@ -115,6 +120,8 @@ export function detectStorePlatform() {
   if (/android/i.test(u)) return 'android'
   if (/iPhone|iPad|iPod/i.test(u)) return 'ios'
   if (/Win64|Windows NT|Win32|Windows Phone/i.test(u)) return 'windows'
+  if (/Macintosh|Mac OS X/i.test(u) && !/iPhone|iPad|iPod/i.test(u)) return 'macos'
+  if (/Linux|X11/i.test(u)) return 'linux'
   return 'windows'
 }
 
@@ -122,7 +129,7 @@ export function detectStorePlatform() {
  * Страница открытия клиента (тот же базовый хост, что и подписка).
  * @param {string} token
  * @param {string} clientCode — client_code из API (сегмент пути /sub/.../open/…).
- * @param {StorePlatform | null | undefined} [platform] — query `platform` для кнопки «Скачать»; без параметра — только User-Agent на странице.
+ * @param {StorePlatform | null | undefined} [platform] — query `platform` для «Скачать» / «Перейти на сайт» на странице open; без параметра — по User-Agent.
  */
 export function subscriptionOpenClientUrl(token, clientCode, platform) {
   const base =

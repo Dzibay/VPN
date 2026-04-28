@@ -68,7 +68,7 @@ _AUTH_ME_OPENAPI_EXAMPLES: dict = {
                 {
                     "client_code": "happ",
                     "display_name": "Happ",
-                    "store_platforms": ["android", "ios", "windows"],
+                    "store_platforms": ["android", "ios", "windows", "macos", "linux"],
                 },
             ],
         },
