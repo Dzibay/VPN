@@ -20,15 +20,19 @@ async def lifespan(_app: FastAPI):
     from app.database.schema import ensure_schema
 
     ensure_schema()
-    sched_task: asyncio.Task[None] | None = None
+    bg_tasks: list[asyncio.Task[None]] = []
     if settings.xray_traffic_collect_schedule_enabled:
         from app.services.xray_traffic_scheduler import periodic_xray_traffic_collect_loop
 
-        sched_task = asyncio.create_task(periodic_xray_traffic_collect_loop())
+        bg_tasks.append(asyncio.create_task(periodic_xray_traffic_collect_loop()))
+    if settings.subscription_daily_xray_clients_sync_enabled:
+        from app.services.subscription_daily_xray_sync import subscription_daily_xray_sync_loop
+
+        bg_tasks.append(asyncio.create_task(subscription_daily_xray_sync_loop()))
     try:
         yield
     finally:
-        if sched_task is not None:
+        for sched_task in bg_tasks:
             sched_task.cancel()
             try:
                 await sched_task

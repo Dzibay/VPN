@@ -231,6 +231,25 @@ class Settings(BaseSettings):
         le=86400,
         description="Таймаут RQ для батч-задачи сбора трафика по всем серверам.",
     )
+    subscription_daily_xray_clients_sync_enabled: bool = Field(
+        default=True,
+        description=(
+            "Планировщик API: раз в сутки (локальное время процесса) ставить в очередь RQ "
+            "полную синхронизацию списка клиентов Xray на всех узлах (активные подписки из БД)."
+        ),
+    )
+    subscription_daily_xray_clients_sync_hour_local: int = Field(
+        default=0,
+        ge=0,
+        le=23,
+        description="Час локального времени процесса API для ежедневного sync Xray.",
+    )
+    subscription_daily_xray_clients_sync_minute_local: int = Field(
+        default=5,
+        ge=0,
+        le=59,
+        description="Минута локального времени процесса API.",
+    )
 
     prometheus_base_url: str = Field(
         default="",
