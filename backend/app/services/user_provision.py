@@ -17,7 +17,8 @@ log = logging.getLogger("app.user_provision")
 
 _SUBSCRIPTION_TOKEN_BYTES = 24
 
-RQ_JOB_ID_SYNC_XRAY_ALL = "vpn:sync_xray_clients:all"
+# RQ разрешает только [A-Za-z0-9_-]; двоеточия в id запрещены (rq.job.validate_job_id).
+RQ_JOB_ID_SYNC_XRAY_ALL = "vpn_sync_xray_clients_all"
 
 _ACTIVE_XRAY_SYNC_STATUSES: frozenset[JobStatus] = frozenset(
     {
@@ -48,7 +49,7 @@ def new_vless_uuid() -> str:
 
 
 def _rq_job_id_sync_xray_server(server_id: int) -> str:
-    return f"vpn:sync_xray_clients:server:{int(server_id)}"
+    return f"vpn_sync_xray_clients_server_{int(server_id)}"
 
 
 def _coalesce_enqueue(
