@@ -129,6 +129,13 @@ export default defineConfig(({ mode }) => {
         '/sub': {
           target: API_TARGET,
           changeOrigin: true,
+          /** Страница открытия клиента — Vue; остальное /sub/* — API. */
+          bypass(req) {
+            if (req.method !== 'GET') return
+            const path = (req.url || '').split('?')[0] || ''
+            if (path.endsWith('/data')) return
+            if (/^\/sub\/[^/]+\/open\/[^/]+$/.test(path)) return '/index.html'
+          },
         },
         '/swagger': {
           target: API_TARGET,

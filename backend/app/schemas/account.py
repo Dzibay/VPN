@@ -44,7 +44,7 @@ class TelegramSubscriptionOpenClientsResponse(BaseModel):
         default=None,
         description=(
             "SUBSCRIPTION_PUBLIC_BASE_URL из конфигурации (HTTPS origin без хвостового «/»). "
-            "Полная ссылка: {public_base_url}/sub/{subscription_token}/open/{client_code} — "
+            "Полная ссылка (302 на SPA): {public_base_url}/sub/{subscription_token}/open/{client_code} — "
             "если null, подставьте origin API или задайте переменную в .env ."
         ),
     )

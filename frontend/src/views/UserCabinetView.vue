@@ -51,7 +51,7 @@ function formatDate(iso) {
 /** После редиректа с бэка (?unknown_client=1) показываем подсказку и чистим URL. */
 const unknownClientHint = ref(false)
 
-/** Платформа для параметра `?platform=` на /sub/.../open/{client} (кнопка «Скачать» на той странице). */
+/** Платформа для `?platform=` на /sub/…/open/… (кнопки магазина). */
 const storePlatform = ref(
   typeof window !== 'undefined' ? detectStorePlatform() : 'windows',
 )

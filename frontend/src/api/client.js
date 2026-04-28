@@ -35,6 +35,17 @@ export function apiUrl(path) {
   return base ? `${base}${p}` : p
 }
 
+/**
+ * Публичный URL сайта (SPA). Для ссылок в ЛК, которые должны открывать Vue, а не только API.
+ * Приоритет: VITE_PUBLIC_SITE_URL → window.location.origin.
+ */
+export function sitePublicUrl() {
+  const base = import.meta.env.VITE_PUBLIC_SITE_URL?.replace(/\/$/, '') ?? ''
+  if (base) return base
+  if (typeof window !== 'undefined') return window.location.origin
+  return ''
+}
+
 export async function fetchJson(path, options = {}) {
   const headers = {
     Accept: 'application/json',
@@ -126,26 +137,48 @@ export function detectStorePlatform() {
 }
 
 /**
- * Страница открытия клиента (тот же базовый хост, что и подписка).
- * @param {string} token
- * @param {string} clientCode — client_code из API (сегмент пути /sub/.../open/…).
- * @param {StorePlatform | null | undefined} [platform] — query `platform` для «Скачать» / «Перейти на сайт» на странице open; без параметра — по User-Agent.
+ * Путь страницы «открыть в клиенте»: /sub/{token}/open/{client} (данные: …/data).
  */
-export function subscriptionOpenClientUrl(token, clientCode, platform) {
-  const base =
-    import.meta.env.VITE_SUBSCRIPTION_BASE_URL?.replace(/\/$/, '') ?? ''
+export function subscriptionOpenPath(token, clientCode, platform) {
   const t = encodeURIComponent(token)
   const s = encodeURIComponent(clientCode)
-  let path
-  if (base) {
-    path = `${base}/sub/${t}/open/${s}`
-  } else if (typeof window !== 'undefined') {
-    path = `${window.location.origin}/sub/${t}/open/${s}`
-  } else {
-    path = `/sub/${t}/open/${s}`
-  }
+  let path = `/sub/${t}/open/${s}`
   if (platform && STORE_PLATFORM_SET.has(platform)) {
     path += `?platform=${encodeURIComponent(platform)}`
   }
   return path
+}
+
+/**
+ * Путь страницы скачивания клиента /apps/{clientCode}
+ * @param {string} clientCode
+ * @param {Record<string, string | undefined | null>} [query]
+ */
+export function clientAppDownloadPath(clientCode, query) {
+  const s = encodeURIComponent(clientCode)
+  let path = `/apps/${s}`
+  if (query && typeof query === 'object') {
+    const pairs = []
+    for (const [k, v] of Object.entries(query)) {
+      if (v != null && v !== '') {
+        pairs.push(
+          `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`,
+        )
+      }
+    }
+    if (pairs.length) path += `?${pairs.join('&')}`
+  }
+  return path
+}
+
+/**
+ * Ссылка для пользователя. Если задан VITE_PUBLIC_SITE_URL — он; иначе тот же хост, что и у подписки (как subscriptionPublicUrl).
+ */
+export function subscriptionOpenClientUrl(token, clientCode, platform) {
+  const site =
+    sitePublicUrl() ||
+    import.meta.env.VITE_SUBSCRIPTION_BASE_URL?.replace(/\/$/, '') ||
+    (typeof window !== 'undefined' ? window.location.origin : '')
+  const rel = subscriptionOpenPath(token, clientCode, platform)
+  return site ? `${site}${rel}` : rel
 }

@@ -90,6 +90,13 @@ class Settings(BaseSettings):
             "Иначе полный URL (https://vpn.example.com/cabinet) или путь (/cabinet)."
         ),
     )
+    subscription_open_spa_base_url: str = Field(
+        default="",
+        description=(
+            "Origin сайта с Vue, если он не совпадает с API: редирект GET /sub/{token}/open/{client} "
+            "ведёт на {этот_origin}/sub/{token}/open/{client} . Пусто — как subscription_public_base_url / Host."
+        ),
+    )
 
     redis_url: str = Field(
         default="redis://127.0.0.1:6379/0",

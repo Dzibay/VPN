@@ -1,5 +1,5 @@
 """
-Диплинки для открытия подписки во внешних клиентах (GET /sub/{token}/open/{client});
+Диплинки для открытия подписки во внешних клиентах (GET /sub/{token}/open/{client}/data; UI: открытие — /sub/…/open/…, скачивание — /apps/{code}, см. GET /api/public/client-apps/{code});
 список клиентов для ЛК — GET /api/auth/me (subscription_open_clients).
 
 - happ: сырая ссылка в path — happ://add/https://…/sub/{token}
