@@ -68,20 +68,20 @@ function drawChart() {
   const b = bundle.value
   if (!b?.servers?.length) return
   const rows = [...b.servers].sort((a, b) => b.total_bytes - a.total_bytes)
-  const mb = (x) => x / (1000 * 1000)
+  const mib = (x) => x / (1024 * 1024)
   chartInstance = new Chart(el, {
     type: 'bar',
     data: {
       labels: rows.map((r) => serverLabel(r)),
       datasets: [
         {
-          label: 'К клиенту (down), МБ',
-          data: rows.map((r) => mb(r.down_bytes)),
+          label: 'К клиенту (down), МиБ',
+          data: rows.map((r) => mib(r.down_bytes)),
           backgroundColor: 'rgba(88, 214, 141, 0.78)',
         },
         {
-          label: 'От клиента (up), МБ',
-          data: rows.map((r) => mb(r.up_bytes)),
+          label: 'От клиента (up), МиБ',
+          data: rows.map((r) => mib(r.up_bytes)),
           backgroundColor: 'rgba(69, 179, 157, 0.78)',
         },
       ],
@@ -112,7 +112,7 @@ function drawChart() {
           grid: { color: gridColor(), drawBorder: false },
           title: {
             display: true,
-            text: 'МБ',
+            text: 'МиБ',
             color: tickColor(),
             font: { size: 11, weight: '600' },
           },
@@ -203,7 +203,7 @@ onBeforeUnmount(() => {
       <div class="chart-panel glass">
         <div class="chart-head">
           <h3 class="chart-title">Распределение по узлам</h3>
-          <span class="chart-unit">МБ</span>
+          <span class="chart-unit">МиБ</span>
         </div>
         <p class="chart-hint">
           Данные из накопленных счётчиков в БД (после сбора
