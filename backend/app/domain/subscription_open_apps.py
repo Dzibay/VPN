@@ -4,12 +4,12 @@
 
 - happ: сырая ссылка в path — happ://add/https://…/sub/{token}
 - Stash, Clash Meta, v2rayNG (url), flclashx, koala-clash, prizrak-box: в query
-  передаётся url=… (строка URL целиком, при необходимости percent-encoded)
+  передаётся url=… (сырая строка HTTPS URL без percent-encoding)
 - Shadowrocket: shadowrocket://add/sub://<base64(UTF-8 ссылки)>?remark=…
   (3x-ui / community, иначе импорт не срабатывает; не путать с urlencoding в path)
 - v2rayNG: по UrlSchemeActivity читается только query url и fragment (имя), не name=
 - Streisand: панели (напр. 3x-ui) — streisand://install-subscription?url=…
-- v2raytun: docs.v2raytun.com — v2raytun://import/{subscription} (URL в path, percent-encoded)
+- v2raytun: v2raytun://import/{subscription} (сырая ссылка в path)
 
 Имя профиля — SUBSCRIPTION_IMPORT_DISPLAY_NAME.
 
@@ -83,7 +83,7 @@ def _happ_deeplink(subscription_https_url: str) -> str:
 
 def _stash_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
-    return f"stash://install-config?url={_q(u)}"
+    return f"stash://install-config?url={u}"
 
 
 def _shadowrocket_deeplink(subscription_https_url: str) -> str:
@@ -95,39 +95,39 @@ def _shadowrocket_deeplink(subscription_https_url: str) -> str:
 
 def _streisand_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
-    return f"streisand://install-subscription?url={_q(u)}"
+    return f"streisand://install-subscription?url={u}"
 
 
 def _flclashx_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
-    return f"flclashx://install-config?url={_q(u)}"
+    return f"flclashx://install-config?url={u}"
 
 
 def _clashmeta_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
     n = SUBSCRIPTION_IMPORT_DISPLAY_NAME
-    return f"clashmeta://install-config?url={_q(u)}&name={_q(n)}"
+    return f"clashmeta://install-config?url={u}&name={_q(n)}"
 
 
 def _v2rayng_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
     n = SUBSCRIPTION_IMPORT_DISPLAY_NAME
-    return f"v2rayng://install-sub?url={_q(u)}#{_q(n)}"
+    return f"v2rayng://install-sub?url={u}#{_q(n)}"
 
 
 def _v2raytun_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
-    return f"v2raytun://import/{_q(u)}"
+    return f"v2raytun://import/{u}"
 
 
 def _koala_clash_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
-    return f"koala-clash://install-config?url={_q(u)}"
+    return f"koala-clash://install-config?url={u}"
 
 
 def _prizrak_box_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
-    return f"prizrak-box://install-config?url={_q(u)}"
+    return f"prizrak-box://install-config?url={u}"
 
 
 _STORE: dict[str, AppStoreLinks] = {
