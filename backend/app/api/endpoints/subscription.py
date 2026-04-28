@@ -4,6 +4,11 @@
 Перед выдачей списка узлов обновляется servers.load_percent из Prometheus, затем
 узлы сортируются по возрастанию нагрузки (как и раньше).
 
+Ответы ``GET/HEAD /sub/{token}`` и ``GET /sub/{token}/json`` содержат заголовок
+``Subscription-Userinfo`` (де-факто формат Clash/Stash/Happ/v2rayNG: upload, download,
+total, expire). См. ``app.domain.subscription_userinfo`` и список клиентов в
+``subscription_open_apps``.
+
 - GET /sub/{subscription_token}/open/{client} — 302 на ту же страницу на origin SPA (если API и сайт разъехались).
 - GET /sub/{subscription_token}/open/{client}/data — JSON для попытки диплинка (Vue /sub/…/open/…); скачивание — /apps/{client}.
 - Неизвестный client → 302 в кабинет.
@@ -24,6 +29,8 @@ from app.core.config import settings
 from app.database.operations import table_select_one
 from app.domain.subscription import user_has_active_subscription
 from app.domain.subscription_public_base import subscription_public_base_from_setting
+from app.domain.subscription_userinfo import build_subscription_userinfo_header_value
+from app.domain.user_traffic import user_traffic_totals
 from app.domain.subscription_open_apps import (
     AppStoreLinks,
     get_subscription_open_app,
@@ -148,22 +155,36 @@ def _open_redirect_would_loop(request: Request, redirect_url: str) -> bool:
 
 async def _subscription_payload_for_token(
     subscription_token: str, session: ReadonlySessionDep
-) -> SubscriptionPayload:
+) -> tuple[SubscriptionPayload, User]:
     user = table_select_one(session, User, filters={"token": subscription_token})
     if user is None:
         raise HTTPException(status_code=404, detail="Неизвестный токен")
 
     if not user_has_active_subscription(user):
-        return SubscriptionPayload(
-            valid_until=user.subscription_until,
-            subscription_active=False,
-            servers=[],
-            vless_uris=[],
-            subscription_base64="",
+        return (
+            SubscriptionPayload(
+                valid_until=user.subscription_until,
+                subscription_active=False,
+                servers=[],
+                vless_uris=[],
+                subscription_base64="",
+            ),
+            user,
         )
 
     rows = await run_in_threadpool(subscription_servers_after_prometheus_sync)
-    return build_subscription_payload(user, rows)
+    return build_subscription_payload(user, rows), user
+
+
+def _subscription_userinfo_headers(session: ReadonlySessionDep, user: User) -> dict[str, str]:
+    up_b, down_b, _ = user_traffic_totals(session, int(user.id))
+    value = build_subscription_userinfo_header_value(
+        valid_until=user.subscription_until,
+        upload=up_b,
+        download=down_b,
+        total=0,
+    )
+    return {"Subscription-Userinfo": value}
 
 
 def _build_open_page_data(
@@ -305,6 +326,22 @@ async def subscription_open_in_app(
     return RedirectResponse(url=url, status_code=302)
 
 
+@router.head(
+    "/sub/{subscription_token}",
+    summary="Метаданные подписки без тела (Stash и др.: HEAD + Subscription-Userinfo)",
+    response_class=Response,
+)
+async def subscription_head_by_token(
+    session: ReadonlySessionDep,
+    subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
+) -> Response:
+    user = table_select_one(session, User, filters={"token": subscription_token})
+    if user is None:
+        raise HTTPException(status_code=404, detail="Неизвестный токен")
+    headers = _subscription_userinfo_headers(session, user)
+    return Response(content="", media_type="text/plain; charset=utf-8", headers=headers)
+
+
 @router.get(
     "/sub/{subscription_token}",
     summary="Подписка: text/plain, одна строка Base64 (v2rayNG, Nekoray и др.)",
@@ -314,10 +351,12 @@ async def subscription_base64_by_token(
     session: ReadonlySessionDep,
     subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
 ) -> Response:
-    payload = await _subscription_payload_for_token(subscription_token, session)
+    payload, user = await _subscription_payload_for_token(subscription_token, session)
+    headers = _subscription_userinfo_headers(session, user)
     return Response(
         content=payload.subscription_base64,
         media_type="text/plain; charset=utf-8",
+        headers=headers,
     )
 
 
@@ -327,7 +366,11 @@ async def subscription_base64_by_token(
     summary="Подписка (JSON): узлы, vless:// и поле subscription_base64",
 )
 async def subscription_json_by_token(
+    response: Response,
     session: ReadonlySessionDep,
     subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
 ) -> SubscriptionPayload:
-    return await _subscription_payload_for_token(subscription_token, session)
+    payload, user = await _subscription_payload_for_token(subscription_token, session)
+    for key, val in _subscription_userinfo_headers(session, user).items():
+        response.headers[key] = val
+    return payload

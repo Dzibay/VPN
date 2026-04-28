@@ -2,9 +2,8 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
 
 from app.api.deps import (
     BearerPrincipal,
@@ -27,8 +26,8 @@ from app.domain.subscription import (
     subscription_until_after_registration,
     user_has_active_subscription,
 )
+from app.domain.user_traffic import user_traffic_totals
 from app.models.user import User
-from app.models.user_server_traffic import UserServerTraffic
 from app.schemas.account import (
     AccountLoginBody,
     AccountMeResponse,
@@ -46,19 +45,6 @@ from app.services.user_provision import (
 )
 
 log = logging.getLogger("app.auth")
-
-
-def _user_traffic_totals(session: Session, user_id: int) -> tuple[int, int, int]:
-    stmt = (
-        select(
-            func.coalesce(func.sum(UserServerTraffic.up_bytes), 0),
-            func.coalesce(func.sum(UserServerTraffic.down_bytes), 0),
-        ).where(UserServerTraffic.user_id == user_id)
-    )
-    row = session.execute(stmt).one()
-    up_b = int(row[0])
-    down_b = int(row[1])
-    return up_b, down_b, up_b + down_b
 
 
 # Примеры ответа GET /api/auth/me в OpenAPI (ключи с null в JSON стандарте часто не показывают).
@@ -298,7 +284,7 @@ async def me(
             status_code=500,
             detail="У записи нет ни email, ни telegram_id",
         )
-    up_b, down_b, total_b = _user_traffic_totals(session, user.id)
+    up_b, down_b, total_b = user_traffic_totals(session, user.id)
     return AccountMeResponse(
         role="user",
         id=user.id,

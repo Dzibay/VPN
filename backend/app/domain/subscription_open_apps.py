@@ -2,6 +2,10 @@
 Диплинки для открытия подписки во внешних клиентах (GET /sub/{token}/open/{client}/data; UI: открытие — /sub/…/open/…, скачивание — /apps/{code}, см. GET /api/public/client-apps/{code});
 список клиентов для ЛК — GET /api/auth/me (subscription_open_clients).
 
+Метаданные срока и трафика при запросе URL подписки: заголовок ``Subscription-Userinfo``
+на ``GET/HEAD /sub/{token}`` (см. ``app.domain.subscription_userinfo`` и документацию Happ,
+Stash Wiki, Clash Verge Rev; v2rayNG — issues по subscription-userinfo).
+
 - happ: сырая ссылка в path — happ://add/https://…/sub/{token}
 - Stash, Clash Meta, v2rayNG (url), flclashx, koala-clash, prizrak-box: в query
   передаётся url=… (сырая строка HTTPS URL без percent-encoding)
