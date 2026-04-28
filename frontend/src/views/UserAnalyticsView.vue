@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import Chart from 'chart.js/auto'
 import { fetchJson } from '../api/client.js'
+import { formatTrafficBytes as formatBytes } from '../utils/formatTraffic.js'
 
 const route = useRoute()
 
@@ -53,15 +54,6 @@ function formatDate(d) {
   }
 }
 
-function formatBytes(n) {
-  const x = Number(n)
-  if (!Number.isFinite(x) || x < 0) return '—'
-  if (x < 1024) return `${x} Б`
-  if (x < 1024 * 1024) return `${(x / 1024).toFixed(1)} КиБ`
-  if (x < 1024 * 1024 * 1024) return `${(x / (1024 * 1024)).toFixed(2)} МиБ`
-  return `${(x / (1024 * 1024 * 1024)).toFixed(2)} ГиБ`
-}
-
 function destroyChart() {
   if (chartInstance) {
     chartInstance.destroy()
@@ -76,20 +68,20 @@ function drawChart() {
   const b = bundle.value
   if (!b?.servers?.length) return
   const rows = [...b.servers].sort((a, b) => b.total_bytes - a.total_bytes)
-  const mib = (x) => x / (1024 * 1024)
+  const mb = (x) => x / (1000 * 1000)
   chartInstance = new Chart(el, {
     type: 'bar',
     data: {
       labels: rows.map((r) => serverLabel(r)),
       datasets: [
         {
-          label: 'К клиенту (down), МиБ',
-          data: rows.map((r) => mib(r.down_bytes)),
+          label: 'К клиенту (down), МБ',
+          data: rows.map((r) => mb(r.down_bytes)),
           backgroundColor: 'rgba(88, 214, 141, 0.78)',
         },
         {
-          label: 'От клиента (up), МиБ',
-          data: rows.map((r) => mib(r.up_bytes)),
+          label: 'От клиента (up), МБ',
+          data: rows.map((r) => mb(r.up_bytes)),
           backgroundColor: 'rgba(69, 179, 157, 0.78)',
         },
       ],
@@ -120,7 +112,7 @@ function drawChart() {
           grid: { color: gridColor(), drawBorder: false },
           title: {
             display: true,
-            text: 'МиБ',
+            text: 'МБ',
             color: tickColor(),
             font: { size: 11, weight: '600' },
           },
@@ -211,7 +203,7 @@ onBeforeUnmount(() => {
       <div class="chart-panel glass">
         <div class="chart-head">
           <h3 class="chart-title">Распределение по узлам</h3>
-          <span class="chart-unit">МиБ</span>
+          <span class="chart-unit">МБ</span>
         </div>
         <p class="chart-hint">
           Данные из накопленных счётчиков в БД (после сбора

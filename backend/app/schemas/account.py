@@ -187,3 +187,21 @@ class AccountMeResponse(BaseModel):
         default_factory=list,
         description="Клиенты VPN для кнопок подключения в ЛК; у admin — пустой список.",
     )
+    traffic_up_bytes: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Сумма исходящего трафика по всем узлам, в байтах (не битах); "
+            "те же единицы, что в Xray statsquery и user_server_traffic.up_bytes."
+        ),
+    )
+    traffic_down_bytes: int = Field(
+        default=0,
+        ge=0,
+        description="Сумма входящего трафика по всем узлам, в байтах (user_server_traffic.down_bytes).",
+    )
+    traffic_total_bytes: int = Field(
+        default=0,
+        ge=0,
+        description="Итого в байтах: traffic_up_bytes + traffic_down_bytes.",
+    )

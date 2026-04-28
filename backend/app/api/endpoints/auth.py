@@ -2,8 +2,9 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from app.api.deps import (
     BearerPrincipal,
@@ -27,6 +28,7 @@ from app.domain.subscription import (
     user_has_active_subscription,
 )
 from app.models.user import User
+from app.models.user_server_traffic import UserServerTraffic
 from app.schemas.account import (
     AccountLoginBody,
     AccountMeResponse,
@@ -44,6 +46,20 @@ from app.services.user_provision import (
 )
 
 log = logging.getLogger("app.auth")
+
+
+def _user_traffic_totals(session: Session, user_id: int) -> tuple[int, int, int]:
+    stmt = (
+        select(
+            func.coalesce(func.sum(UserServerTraffic.up_bytes), 0),
+            func.coalesce(func.sum(UserServerTraffic.down_bytes), 0),
+        ).where(UserServerTraffic.user_id == user_id)
+    )
+    row = session.execute(stmt).one()
+    up_b = int(row[0])
+    down_b = int(row[1])
+    return up_b, down_b, up_b + down_b
+
 
 # Примеры ответа GET /api/auth/me в OpenAPI (ключи с null в JSON стандарте часто не показывают).
 _AUTH_ME_OPENAPI_EXAMPLES: dict = {
@@ -71,6 +87,9 @@ _AUTH_ME_OPENAPI_EXAMPLES: dict = {
                     "store_platforms": ["android", "ios", "windows", "macos", "linux"],
                 },
             ],
+            "traffic_up_bytes": 1073741824,
+            "traffic_down_bytes": 5368709120,
+            "traffic_total_bytes": 6442450944,
         },
     },
     "user_telegram_only": {
@@ -265,6 +284,9 @@ async def me(
             subscription_active=False,
             subscription_token="",
             subscription_open_clients=[],
+            traffic_up_bytes=0,
+            traffic_down_bytes=0,
+            traffic_total_bytes=0,
         )
     if principal.user_id is None:
         raise HTTPException(status_code=401, detail="Недействительный токен")
@@ -276,6 +298,7 @@ async def me(
             status_code=500,
             detail="У записи нет ни email, ни telegram_id",
         )
+    up_b, down_b, total_b = _user_traffic_totals(session, user.id)
     return AccountMeResponse(
         role="user",
         id=user.id,
@@ -286,4 +309,7 @@ async def me(
         subscription_active=user_has_active_subscription(user),
         subscription_token=user.token,
         subscription_open_clients=build_subscription_open_client_items(),
+        traffic_up_bytes=up_b,
+        traffic_down_bytes=down_b,
+        traffic_total_bytes=total_b,
     )

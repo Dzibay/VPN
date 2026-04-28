@@ -7,6 +7,14 @@ import {
   subscriptionOpenPath,
   subscriptionPublicUrl,
 } from '../api/client.js'
+import AppTooltip from '../components/AppTooltip.vue'
+import { formatTrafficBytes } from '../utils/formatTraffic.js'
+
+/** Подсказки к строкам исх./вх. в блоке трафика */
+const TRAFFIC_HINT_UP =
+  'Данные, которые ваше устройство отправило через VPN (upload).'
+const TRAFFIC_HINT_DOWN =
+  'Данные, которые ваше устройство получило через VPN (download).'
 
 const PLATFORM_OPTIONS = [
   { value: 'windows', label: 'Windows' },
@@ -200,6 +208,27 @@ onMounted(() => {
             <dt>Действует до</dt>
             <dd>{{ formatDate(me.subscription_until) }}</dd>
           </div>
+          <div class="row">
+            <dt>Потреблённый трафик</dt>
+            <dd class="mono traffic-value">
+              <span class="traffic-total">{{
+                formatTrafficBytes(me.traffic_total_bytes ?? 0)
+              }}</span>
+              <span class="traffic-paren" aria-hidden="true">(</span>
+              <AppTooltip :text="TRAFFIC_HINT_UP">
+                <span class="traffic-detail">исх.&nbsp;{{
+                  formatTrafficBytes(me.traffic_up_bytes ?? 0)
+                }}</span>
+              </AppTooltip>
+              <span class="traffic-paren" aria-hidden="true">,&nbsp;</span>
+              <AppTooltip :text="TRAFFIC_HINT_DOWN">
+                <span class="traffic-detail">вх.&nbsp;{{
+                  formatTrafficBytes(me.traffic_down_bytes ?? 0)
+                }}</span>
+              </AppTooltip>
+              <span class="traffic-paren" aria-hidden="true">)</span>
+            </dd>
+          </div>
         </dl>
         <button
           type="button"
@@ -373,6 +402,34 @@ dd {
   margin: 0;
   color: var(--text-h);
   word-break: break-word;
+}
+
+.mono {
+  font-variant-numeric: tabular-nums;
+}
+
+.traffic-value {
+  line-height: 1.45;
+}
+
+.traffic-total {
+  color: var(--text-h);
+  font-weight: 600;
+  font-size: 1.05em;
+}
+
+.traffic-paren {
+  color: color-mix(in srgb, var(--muted) 55%, transparent);
+  font-weight: 400;
+  font-size: 0.78em;
+  vertical-align: baseline;
+}
+
+.traffic-detail {
+  color: color-mix(in srgb, var(--muted) 72%, var(--text) 28%);
+  font-weight: 400;
+  font-size: 0.78em;
+  cursor: help;
 }
 
 .pill {
