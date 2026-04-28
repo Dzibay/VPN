@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.deps import require_telegram_bot_api_secret
 from app.core.config import settings
-from app.domain.subscription_public_base import prefer_https_subscription_public_base
+from app.domain.subscription_public_base import subscription_public_base_from_setting
 from app.schemas.account import (
     TelegramSubscriptionOpenClientsResponse,
     build_subscription_open_client_items,
@@ -20,8 +20,7 @@ router = APIRouter(prefix="/telegram", tags=["public"])
     summary="Список VPN-клиентов для кнопок «Подключить» (тот же источник, что /api/auth/me; секрет бота)",
 )
 async def subscription_open_clients() -> TelegramSubscriptionOpenClientsResponse:
-    raw = (settings.subscription_public_base_url or "").strip().rstrip("/")
-    base = prefer_https_subscription_public_base(raw) if raw else ""
+    base = subscription_public_base_from_setting(settings.subscription_public_base_url)
     return TelegramSubscriptionOpenClientsResponse(
         clients=build_subscription_open_client_items(),
         public_base_url=base or None,

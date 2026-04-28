@@ -68,6 +68,15 @@ def _sub_url_trim(subscription_https_url: str) -> str:
     return subscription_https_url.strip()
 
 
+def _deeplink_query_url(prefix: str) -> Callable[[str], str]:
+    """prefix заканчивается на «…?url=»; subscription URL подставляется без percent-encoding."""
+
+    def build(subscription_https_url: str) -> str:
+        return prefix + _sub_url_trim(subscription_https_url)
+
+    return build
+
+
 def _q(s: str) -> str:
     return quote(s, safe="")
 
@@ -81,9 +90,7 @@ def _happ_deeplink(subscription_https_url: str) -> str:
     return "happ://add/" + u.lstrip("/")
 
 
-def _stash_deeplink(subscription_https_url: str) -> str:
-    u = _sub_url_trim(subscription_https_url)
-    return f"stash://install-config?url={u}"
+_stash_deeplink = _deeplink_query_url("stash://install-config?url=")
 
 
 def _shadowrocket_deeplink(subscription_https_url: str) -> str:
@@ -93,14 +100,9 @@ def _shadowrocket_deeplink(subscription_https_url: str) -> str:
     return f"shadowrocket://add/sub://{b64}?remark={_q(name)}"
 
 
-def _streisand_deeplink(subscription_https_url: str) -> str:
-    u = _sub_url_trim(subscription_https_url)
-    return f"streisand://install-subscription?url={u}"
+_streisand_deeplink = _deeplink_query_url("streisand://install-subscription?url=")
 
-
-def _flclashx_deeplink(subscription_https_url: str) -> str:
-    u = _sub_url_trim(subscription_https_url)
-    return f"flclashx://install-config?url={u}"
+_flclashx_deeplink = _deeplink_query_url("flclashx://install-config?url=")
 
 
 def _clashmeta_deeplink(subscription_https_url: str) -> str:
@@ -120,14 +122,9 @@ def _v2raytun_deeplink(subscription_https_url: str) -> str:
     return f"v2raytun://import/{u}"
 
 
-def _koala_clash_deeplink(subscription_https_url: str) -> str:
-    u = _sub_url_trim(subscription_https_url)
-    return f"koala-clash://install-config?url={u}"
+_koala_clash_deeplink = _deeplink_query_url("koala-clash://install-config?url=")
 
-
-def _prizrak_box_deeplink(subscription_https_url: str) -> str:
-    u = _sub_url_trim(subscription_https_url)
-    return f"prizrak-box://install-config?url={u}"
+_prizrak_box_deeplink = _deeplink_query_url("prizrak-box://install-config?url=")
 
 
 _STORE: dict[str, AppStoreLinks] = {

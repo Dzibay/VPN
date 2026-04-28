@@ -6,7 +6,7 @@ import ipaddress
 from urllib.parse import urlparse
 
 
-def host_should_keep_http_for_subscription(hostname: str | None) -> bool:
+def _host_should_keep_http(hostname: str | None) -> bool:
     """Локальная / приватная среда — http допустим; публичный хост — для подписки ожидаем https."""
 
     if not hostname:
@@ -32,6 +32,13 @@ def prefer_https_subscription_public_base(base: str) -> str:
     if not s.lower().startswith("http://"):
         return s
     parsed = urlparse(s)
-    if host_should_keep_http_for_subscription(parsed.hostname):
+    if _host_should_keep_http(parsed.hostname):
         return s
     return "https://" + s[7:]
+
+
+def subscription_public_base_from_setting(configured: str) -> str:
+    """SUBSCRIPTION_PUBLIC_BASE_URL из .env: strip + http→https; пусто — пустая строка."""
+
+    s = (configured or "").strip().rstrip("/")
+    return prefer_https_subscription_public_base(s) if s else ""
