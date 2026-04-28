@@ -13,7 +13,12 @@ __all__ = ["RedisError", "get_install_queue", "get_redis"]
 
 @lru_cache
 def get_redis() -> Redis:
-    return Redis.from_url(settings.redis_url)
+    return Redis.from_url(
+        settings.redis_url,
+        socket_connect_timeout=10,
+        socket_timeout=60,
+        health_check_interval=30,
+    )
 
 
 def get_install_queue() -> Queue:

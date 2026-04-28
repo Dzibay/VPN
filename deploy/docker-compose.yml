@@ -45,6 +45,12 @@ services:
       context: ..
       dockerfile: backend/Dockerfile
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
     env_file:
       - .env
     environment:
@@ -72,6 +78,9 @@ services:
       dockerfile: backend/Dockerfile
     restart: unless-stopped
     command: ["python", "-m", "worker.run"]
+    # Нет HTTP на 8000 — наследованный из образа healthcheck через curl всегда бы был failed.
+    healthcheck:
+      disable: true
     env_file:
       - .env
     environment:
@@ -121,7 +130,8 @@ services:
         SITE_ADDRESS: ${SITE_ADDRESS:?SITE_ADDRESS is required (e.g. vpn.example.com)}
     restart: unless-stopped
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     networks: [internal]
 
   caddy:

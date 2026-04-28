@@ -12,6 +12,8 @@ import logging
 from redis.exceptions import RedisError
 
 from app.core.config import settings
+from starlette.concurrency import run_in_threadpool
+
 from app.core.queue import get_install_queue, get_redis
 
 log = logging.getLogger("app.xray_traffic_scheduler")
@@ -79,7 +81,7 @@ async def periodic_xray_traffic_collect_loop() -> None:
     try:
         await asyncio.sleep(initial)
         while True:
-            try_enqueue_periodic_xray_traffic_batch()
+            await run_in_threadpool(try_enqueue_periodic_xray_traffic_batch)
             await asyncio.sleep(interval)
     except asyncio.CancelledError:
         log.info("xray traffic scheduler: остановлен")
