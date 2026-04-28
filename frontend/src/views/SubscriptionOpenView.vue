@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { fetchJson } from '../api/client.js'
 import {
-  invokeCustomSchemeDeeplink,
   mobileIosOrAndroidPlatform,
   storeInstallHref,
 } from '../util/subscriptionOpenStores.js'
@@ -155,7 +154,11 @@ async function load() {
       loading.value = false
       postDeeplinkWait.value = true
       registerOpenSuccessSignals()
-      invokeCustomSchemeDeeplink(String(data.deeplink))
+      try {
+        window.location.replace(String(data.deeplink))
+      } catch {
+        /* ignore */
+      }
       scheduleOpenFallback()
       return
     }
