@@ -305,9 +305,10 @@ onMounted(() => {
 .mono-num {
   font-variant-numeric: tabular-nums;
 }
+/* Одна строка по ширине контента; на узком экране таблица скроллится в AdminTableWrap */
 .tg-cell {
-  word-break: break-word;
-  max-width: 14rem;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 .muted {
   color: var(--muted);
