@@ -78,6 +78,63 @@ def _user_rows_with_traffic(session: Session) -> list[tuple[User, int]]:
     return list(session.execute(stmt).all())
 
 
+def _calendar_date(d_raw: date | datetime) -> date | None:
+    if isinstance(d_raw, datetime):
+        return d_raw.date()
+    if isinstance(d_raw, date):
+        return d_raw
+    return None
+
+
+def user_traffic_cumulative_by_day_rows(
+    session: Session,
+    user_id: int,
+) -> list[UserTrafficByDayRow]:
+    """
+    По каждому календарному дню, где есть хотя бы один снимок по пользователю:
+    сумма (up+down) последних строк на узел с traffic_date <= этого дня.
+    """
+    stmt = (
+        select(
+            UserServerTraffic.server_id,
+            UserServerTraffic.traffic_date,
+            UserServerTraffic.up_bytes + UserServerTraffic.down_bytes,
+        )
+        .where(UserServerTraffic.user_id == user_id)
+        .order_by(UserServerTraffic.server_id.asc(), UserServerTraffic.traffic_date.asc())
+    )
+    rows_raw = session.execute(stmt).all()
+    by_server: dict[int, list[tuple[date, int]]] = {}
+    day_markers: set[date] = set()
+    for sid_raw, td_raw, total_raw in rows_raw:
+        cal = _calendar_date(td_raw)
+        if cal is None:
+            continue
+        sid = int(sid_raw)
+        tot = int(total_raw or 0)
+        if tot < 0:
+            tot = 0
+        by_server.setdefault(sid, []).append((cal, tot))
+        day_markers.add(cal)
+    if not day_markers:
+        return []
+    servers = sorted(by_server.keys())
+    indices = {sid: 0 for sid in servers}
+    current = {sid: 0 for sid in servers}
+    out: list[UserTrafficByDayRow] = []
+    for d in sorted(day_markers):
+        for sid in servers:
+            series = by_server[sid]
+            i = indices[sid]
+            while i < len(series) and series[i][0] <= d:
+                current[sid] = series[i][1]
+                i += 1
+            indices[sid] = i
+        cumulative = sum(current.values())
+        out.append(UserTrafficByDayRow(traffic_date=d, cumulative_bytes=cumulative))
+    return out
+
+
 @router.get(
     "/count",
     response_model=UsersCountResponse,
@@ -325,8 +382,8 @@ async def user_traffic_by_server(
     response_model=list[UserTrafficByDayRow],
     dependencies=[Depends(require_admin)],
     summary=(
-        "Прирост трафика по календарным дням UTC: сумма по узлам "
-        "max(0, total_day − total_prev) между соседними строками user_server_traffic"
+        "Накопительный трафик по календарным дням UTC: сумма по узлам последних "
+        "снимков user_server_traffic с traffic_date ≤ этого дня"
     ),
 )
 async def user_traffic_by_day(
@@ -336,42 +393,7 @@ async def user_traffic_by_day(
     user = session.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
-    total_expr = UserServerTraffic.up_bytes + UserServerTraffic.down_bytes
-    lag_prev = func.lag(total_expr).over(
-        partition_by=UserServerTraffic.server_id,
-        order_by=UserServerTraffic.traffic_date,
-    )
-    delta_expr = func.greatest(
-        0,
-        total_expr - func.coalesce(lag_prev, total_expr),
-    )
-    inner = (
-        select(UserServerTraffic.traffic_date, delta_expr.label("delta"))
-        .where(UserServerTraffic.user_id == user_id)
-        .subquery()
-    )
-    stmt = (
-        select(inner.c.traffic_date, func.sum(inner.c.delta).label("consumed"))
-        .group_by(inner.c.traffic_date)
-        .order_by(inner.c.traffic_date.asc())
-    )
-    rows = session.execute(stmt).all()
-    out: list[UserTrafficByDayRow] = []
-    for d_raw, cons_raw in rows:
-        try:
-            n = int(cons_raw or 0)
-        except (TypeError, ValueError):
-            n = 0
-        if n < 0:
-            n = 0
-        if isinstance(d_raw, datetime):
-            td = d_raw.date()
-        elif isinstance(d_raw, date):
-            td = d_raw
-        else:
-            continue
-        out.append(UserTrafficByDayRow(traffic_date=td, consumed_bytes=n))
-    return out
+    return user_traffic_cumulative_by_day_rows(session, user_id)
 
 
 @router.delete(

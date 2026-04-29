@@ -113,10 +113,13 @@ class UserTrafficByServersBundle(BaseModel):
 
 
 class UserTrafficByDayRow(BaseModel):
-    """Прирост суммарного up+down по календарному дню UTC между последовательными строками user_server_traffic по каждому узлу."""
+    """Накопительная сумма up+down по всем узлам на конец календарного дня UTC."""
 
     traffic_date: date
-    consumed_bytes: int = Field(
+    cumulative_bytes: int = Field(
         ge=0,
-        description="Байт за день (сумма приращений по узлам)",
+        description=(
+            "Сумма накопленных счётчиков Xray по узлам: для каждого узла берётся последний "
+            "снимок с traffic_date ≤ этого дня, затем сумма по узлам"
+        ),
     )

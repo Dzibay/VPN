@@ -17,7 +17,7 @@ const loading = ref(false)
 const error = ref(null)
 /** @type {import('vue').Ref<object | null>} */
 const bundle = ref(null)
-/** @type {import('vue').Ref<Array<{ traffic_date: string; consumed_bytes: number }>>} */
+/** @type {import('vue').Ref<Array<{ traffic_date: string; cumulative_bytes: number }>>} */
 const trafficByDay = ref([])
 const trafficByDayError = ref(null)
 
@@ -57,11 +57,11 @@ const trafficDayLabels = computed(() =>
 
 const trafficDayDatasets = computed(() => {
   const mib = trafficByDay.value.map(
-    (r) => Number(r.consumed_bytes || 0) / MIB,
+    (r) => Number(r.cumulative_bytes ?? r.consumed_bytes ?? 0) / MIB,
   )
   return [
     {
-      label: 'Потреблено за день',
+      label: 'Накопленно (включая этот день)',
       data: mib,
       rgb: rgbTupleFromVar('--accent', '#58d68d'),
     },
@@ -83,8 +83,10 @@ function trafficDayTooltipTitle(i) {
 function trafficDayTooltipLabel(ctx) {
   const i = ctx.dataIndex
   const row = trafficByDay.value[i]
-  const b = row ? Number(row.consumed_bytes || 0) : 0
-  return `Потреблено: ${formatBytes(b)}`
+  const b = row
+    ? Number(row.cumulative_bytes ?? row.consumed_bytes ?? 0)
+    : 0
+  return `Накопленно: ${formatBytes(b)}`
 }
 
 function gridColor() {
@@ -268,12 +270,12 @@ onBeforeUnmount(() => {
       aria-label="Потребление трафика пользователя по календарным дням UTC"
       :error="trafficByDayError"
       :has-data="trafficByDay.length > 0"
-      title="Трафик по дням"
+      title="Накопительный трафик по дням"
       unit-label="UTC · МиБ"
-      hint="Прирост суммарного up+down между последовательными строками user_server_traffic на каждом узле (после сбора statsquery)."
+      hint="На каждую дату снимков в БД: сумма по узлам последних накопленных значений up+down с traffic_date не позже этого дня (UTC)."
       :labels="trafficDayLabels"
       :datasets="trafficDayDatasets"
-      y-title="МиБ за день"
+      y-title="МиБ накопленно"
       :format-y-tick="trafficDayFormatYTick"
       :get-tooltip-title="trafficDayTooltipTitle"
       :get-tooltip-label="trafficDayTooltipLabel"
