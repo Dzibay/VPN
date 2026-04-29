@@ -35,6 +35,8 @@ const editingUserId = ref(null)
 
 const formTelegramId = ref('')
 const formSubUntil = ref('')
+/** client | manager | admin — при редактировании пользователя */
+const formAccountRole = ref('client')
 /** @username при редактировании (только отображение) */
 const editingUserTgUsername = ref('')
 
@@ -307,6 +309,7 @@ function openModal() {
   if (section.value === 'users') {
     formTelegramId.value = ''
     formSubUntil.value = ''
+    formAccountRole.value = 'client'
     editingUserTgUsername.value = ''
   } else {
     formName.value = ''
@@ -385,7 +388,17 @@ function openEditUser(u) {
     su != null && String(su).trim()
       ? String(su).slice(0, 10)
       : ''
+  formAccountRole.value =
+    u.account_role === 'manager' || u.account_role === 'admin'
+      ? u.account_role
+      : 'client'
   modalOpen.value = true
+}
+
+function accountRoleLabel(role) {
+  if (role === 'admin') return 'Админ'
+  if (role === 'manager') return 'Менеджер'
+  return 'Клиент'
 }
 
 function subscriptionDateOrNull(dateStr) {
@@ -427,6 +440,7 @@ async function submitSaveUser() {
         method: 'PATCH',
         body: JSON.stringify({
           subscription_until: subscriptionDateOrNull(formSubUntil.value),
+          account_role: formAccountRole.value,
         }),
       })
     } else {
@@ -1075,6 +1089,7 @@ watch(formIsCascadeRuEntry, (v) => {
             <tr>
               <th>ID</th>
               <th>Email</th>
+              <th>Роль</th>
               <th>Telegram</th>
               <th>Подписка до</th>
               <th>Ссылка подписки</th>
@@ -1086,6 +1101,11 @@ watch(formIsCascadeRuEntry, (v) => {
             <tr v-for="u in users" :key="u.id">
               <td>{{ u.id }}</td>
               <td>{{ u.email ?? '—' }}</td>
+              <td>
+                <span class="role-pill" :title="u.account_role || 'client'">{{
+                  accountRoleLabel(u.account_role || 'client')
+                }}</span>
+              </td>
               <td>
                 <template v-if="u.telegram_id != null">
                   {{ u.telegram_id
@@ -1528,6 +1548,20 @@ watch(formIsCascadeRuEntry, (v) => {
                   @{{ editingUserTgUsername }}</span>
               </p>
             </div>
+            <label class="field" v-if="editingUserId != null">
+              <span>Роль доступа</span>
+              <select
+                v-model="formAccountRole"
+                class="field-select"
+                aria-label="Роль пользователя"
+              >
+                <option value="client">Клиент (VPN)</option>
+                <option value="manager">Менеджер (реферальные токены)</option>
+                <option value="admin">Администратор</option>
+              </select>
+              <span class="field-hint"
+                >Администратору нужен пароль (вход по email). Менеджер — только раздел рефералов.</span>
+            </label>
             <label class="field">
               <span>Подписка до (необязательно)</span>
               <input v-model="formSubUntil" type="date" />
@@ -2039,6 +2073,18 @@ watch(formIsCascadeRuEntry, (v) => {
   font-size: 0.72rem;
   letter-spacing: 0.06em;
 }
+.role-pill {
+  display: inline-block;
+  padding: 0.12rem 0.45rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  background: var(--surface);
+  border: 1px solid var(--card-border);
+  color: var(--text-h);
+}
 .mono {
   font-family: var(--mono);
   font-size: 0.8rem;
@@ -2441,6 +2487,33 @@ watch(formIsCascadeRuEntry, (v) => {
   outline: none;
   border-color: var(--accent);
   box-shadow: var(--focus-ring);
+}
+
+.field-select {
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+  color: var(--text-h);
+  font: inherit;
+  font-weight: 400;
+  cursor: pointer;
+  max-width: 100%;
+}
+
+.field-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.field-hint {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--muted);
+  line-height: 1.35;
 }
 
 .input-with-at {
