@@ -110,3 +110,13 @@ class UserTrafficByServersBundle(BaseModel):
     servers: list[UserTrafficPerServerRow] = Field(default_factory=list)
     total_up_bytes: int = Field(ge=0)
     total_down_bytes: int = Field(ge=0)
+
+
+class UserTrafficByDayRow(BaseModel):
+    """Прирост суммарного up+down по календарному дню UTC между последовательными строками user_server_traffic по каждому узлу."""
+
+    traffic_date: date
+    consumed_bytes: int = Field(
+        ge=0,
+        description="Байт за день (сумма приращений по узлам)",
+    )

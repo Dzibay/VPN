@@ -2,10 +2,14 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import Chart from 'chart.js/auto'
+import AdminLineChartPanel from '../components/AdminLineChartPanel.vue'
 import AdminPageHeader from '../components/AdminPageHeader.vue'
 import AdminPageShell from '../components/AdminPageShell.vue'
 import { fetchJson } from '../api/client.js'
+import { rgbTupleFromVar } from '../utils/adminChartTheme.js'
 import { formatTrafficBytes as formatBytes } from '../utils/formatTraffic.js'
+
+const MIB = 1024 * 1024
 
 const route = useRoute()
 
@@ -13,6 +17,9 @@ const loading = ref(false)
 const error = ref(null)
 /** @type {import('vue').Ref<object | null>} */
 const bundle = ref(null)
+/** @type {import('vue').Ref<Array<{ traffic_date: string; consumed_bytes: number }>>} */
+const trafficByDay = ref([])
+const trafficByDayError = ref(null)
 
 /** @type {Chart | null} */
 let chartInstance = null
@@ -29,6 +36,56 @@ const userTitle = computed(() => {
   const tg = b.telegram_id && String(b.telegram_id).trim()
   return tg ? tg : `id ${b.user_id}`
 })
+
+function formatDayShortUtc(iso) {
+  if (iso == null || iso === '') return '—'
+  const s = String(iso).slice(0, 10)
+  try {
+    return new Date(s + 'T12:00:00Z').toLocaleDateString('ru-RU', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })
+  } catch {
+    return s
+  }
+}
+
+const trafficDayLabels = computed(() =>
+  trafficByDay.value.map((r) => formatDayShortUtc(r.traffic_date)),
+)
+
+const trafficDayDatasets = computed(() => {
+  const mib = trafficByDay.value.map(
+    (r) => Number(r.consumed_bytes || 0) / MIB,
+  )
+  return [
+    {
+      label: 'Потреблено за день',
+      data: mib,
+      rgb: rgbTupleFromVar('--accent', '#58d68d'),
+    },
+  ]
+})
+
+function trafficDayFormatYTick(mib) {
+  const n = Number(mib)
+  if (!Number.isFinite(n) || n <= 0) return '0'
+  if (n >= 1024) return `${(n / 1024).toFixed(n >= 10240 ? 0 : 1)} ГиБ`
+  return `${n < 1 ? n.toFixed(2) : n.toFixed(1)} МиБ`
+}
+
+function trafficDayTooltipTitle(i) {
+  const iso = trafficByDay.value[i]?.traffic_date
+  return iso ? formatDayShortUtc(iso) : ''
+}
+
+function trafficDayTooltipLabel(ctx) {
+  const i = ctx.dataIndex
+  const row = trafficByDay.value[i]
+  const b = row ? Number(row.consumed_bytes || 0) : 0
+  return `Потреблено: ${formatBytes(b)}`
+}
 
 function gridColor() {
   return 'rgba(88, 214, 141, 0.12)'
@@ -135,18 +192,37 @@ async function load() {
   if (userId.value == null) {
     error.value = 'Некорректный id пользователя'
     bundle.value = null
+    trafficByDay.value = []
+    trafficByDayError.value = null
     return
   }
   loading.value = true
   error.value = null
   bundle.value = null
+  trafficByDay.value = []
+  trafficByDayError.value = null
   try {
-    bundle.value = await fetchJson(
-      `/api/users/${userId.value}/traffic-by-server`,
-    )
-  } catch (e) {
-    error.value = e.message || String(e)
-    bundle.value = null
+    const uid = userId.value
+    const [r1, r2] = await Promise.allSettled([
+      fetchJson(`/api/users/${uid}/traffic-by-server`),
+      fetchJson(`/api/users/${uid}/traffic-by-day`),
+    ])
+    if (r1.status === 'fulfilled') {
+      bundle.value = r1.value
+    } else {
+      bundle.value = null
+      error.value =
+        r1.reason?.message ||
+        String(r1.reason ?? 'Ошибка загрузки сводки по узлам')
+    }
+    if (r2.status === 'fulfilled') {
+      trafficByDay.value = Array.isArray(r2.value) ? r2.value : []
+    } else {
+      trafficByDay.value = []
+      trafficByDayError.value =
+        r2.reason?.message ||
+        String(r2.reason ?? 'Ошибка загрузки трафика по дням')
+    }
   } finally {
     loading.value = false
   }
@@ -186,6 +262,22 @@ onBeforeUnmount(() => {
 
     <p v-if="error" class="banner-err">{{ error }}</p>
     <p v-if="loading" class="loading-line">Загрузка…</p>
+
+    <AdminLineChartPanel
+      v-if="userId != null && !loading"
+      aria-label="Потребление трафика пользователя по календарным дням UTC"
+      :error="trafficByDayError"
+      :has-data="trafficByDay.length > 0"
+      title="Трафик по дням"
+      unit-label="UTC · МиБ"
+      hint="Прирост суммарного up+down между последовательными строками user_server_traffic на каждом узле (после сбора statsquery)."
+      :labels="trafficDayLabels"
+      :datasets="trafficDayDatasets"
+      y-title="МиБ за день"
+      :format-y-tick="trafficDayFormatYTick"
+      :get-tooltip-title="trafficDayTooltipTitle"
+      :get-tooltip-label="trafficDayTooltipLabel"
+    />
 
     <template v-if="!loading && bundle">
       <div class="meta-strip glass">

@@ -20,7 +20,12 @@ from app.database.operations import table_insert
 from app.domain.user_traffic import user_server_traffic_latest_subquery
 from app.models.server import Server
 from app.models.user import User
-from app.schemas.server_traffic import UserTrafficByServersBundle, UserTrafficPerServerRow
+from app.models.user_server_traffic import UserServerTraffic
+from app.schemas.server_traffic import (
+    UserTrafficByDayRow,
+    UserTrafficByServersBundle,
+    UserTrafficPerServerRow,
+)
 from app.schemas.users import (
     ExtendActiveSubscriptionsBody,
     ExtendActiveSubscriptionsResponse,
@@ -313,6 +318,60 @@ async def user_traffic_by_server(
         total_up_bytes=total_up,
         total_down_bytes=total_down,
     )
+
+
+@router.get(
+    "/{user_id}/traffic-by-day",
+    response_model=list[UserTrafficByDayRow],
+    dependencies=[Depends(require_admin)],
+    summary=(
+        "Прирост трафика по календарным дням UTC: сумма по узлам "
+        "max(0, total_day − total_prev) между соседними строками user_server_traffic"
+    ),
+)
+async def user_traffic_by_day(
+    user_id: int,
+    session: ReadonlySessionDep,
+) -> list[UserTrafficByDayRow]:
+    user = session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    total_expr = UserServerTraffic.up_bytes + UserServerTraffic.down_bytes
+    lag_prev = func.lag(total_expr).over(
+        partition_by=UserServerTraffic.server_id,
+        order_by=UserServerTraffic.traffic_date,
+    )
+    delta_expr = func.greatest(
+        0,
+        total_expr - func.coalesce(lag_prev, total_expr),
+    )
+    inner = (
+        select(UserServerTraffic.traffic_date, delta_expr.label("delta"))
+        .where(UserServerTraffic.user_id == user_id)
+        .subquery()
+    )
+    stmt = (
+        select(inner.c.traffic_date, func.sum(inner.c.delta).label("consumed"))
+        .group_by(inner.c.traffic_date)
+        .order_by(inner.c.traffic_date.asc())
+    )
+    rows = session.execute(stmt).all()
+    out: list[UserTrafficByDayRow] = []
+    for d_raw, cons_raw in rows:
+        try:
+            n = int(cons_raw or 0)
+        except (TypeError, ValueError):
+            n = 0
+        if n < 0:
+            n = 0
+        if isinstance(d_raw, datetime):
+            td = d_raw.date()
+        elif isinstance(d_raw, date):
+            td = d_raw
+        else:
+            continue
+        out.append(UserTrafficByDayRow(traffic_date=td, consumed_bytes=n))
+    return out
 
 
 @router.delete(

@@ -1,0 +1,342 @@
+<script setup>
+/**
+ * Стеклянная панель с линейным Chart.js — общий вид с страницей регистраций по дням.
+ */
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import Chart from 'chart.js/auto'
+import { adminChartTheme, rgba } from '../utils/adminChartTheme.js'
+
+/** @typedef {{ label: string; data: number[]; rgb: [number, number, number]; filled?: boolean; borderWidth?: number }} LineSeries */
+
+const props = defineProps({
+  ariaLabel: { type: String, required: true },
+  loading: { type: Boolean, default: false },
+  /** Если задано — показывается вместо графика */
+  error: { type: String, default: null },
+  /** Есть ли хотя бы одна точка для отрисовки */
+  hasData: { type: Boolean, required: true },
+  title: { type: String, default: '' },
+  unitLabel: { type: String, default: '' },
+  hint: { type: String, default: '' },
+  labels: { type: Array, default: () => [] },
+  /** @type {import('vue').PropType<LineSeries[]>} */
+  datasets: { type: Array, default: () => [] },
+  yTitle: { type: String, default: '' },
+  yGrace: { type: String, default: '8%' },
+  /** Подсказка: заголовок по индексу точки */
+  getTooltipTitle: { type: Function, default: null },
+  /** Подсказка: строка для серии */
+  getTooltipLabel: { type: Function, default: null },
+  /** Подписи делений оси Y */
+  formatYTick: { type: Function, default: null },
+})
+
+const canvasEl = ref(null)
+
+/** @type {Chart | null} */
+let chartInstance = null
+
+function destroyChart() {
+  if (chartInstance) {
+    chartInstance.destroy()
+    chartInstance = null
+  }
+}
+
+function drawChart() {
+  const el = canvasEl.value
+  if (
+    !el ||
+    props.loading ||
+    props.error ||
+    !props.hasData ||
+    props.labels.length === 0 ||
+    !props.datasets?.length
+  ) {
+    destroyChart()
+    return
+  }
+  for (const ds of props.datasets) {
+    if (!Array.isArray(ds.data) || ds.data.length !== props.labels.length) {
+      destroyChart()
+      return
+    }
+  }
+
+  destroyChart()
+  const theme = adminChartTheme()
+  const surfaceBg = theme.surfaceBg
+  const n = props.labels.length
+
+  const chartDatasets = props.datasets.map((ds, idx) => {
+    const rgb = ds.rgb
+    const filled = ds.filled !== false
+    const bw = ds.borderWidth ?? (idx === 0 ? 2.75 : 2.25)
+    return {
+      label: ds.label,
+      data: ds.data,
+      borderColor: rgba(rgb, idx === 0 ? 0.95 : 0.94),
+      borderWidth: bw,
+      tension: 0.35,
+      cubicInterpolationMode: 'monotone',
+      fill: filled,
+      backgroundColor: filled
+        ? (c) => {
+            const chart = c.chart
+            const { ctx: cctx, chartArea } = chart
+            if (!chartArea) return rgba(rgb, 0.1)
+            const g = cctx.createLinearGradient(
+              0,
+              chartArea.top,
+              0,
+              chartArea.bottom,
+            )
+            const topA = idx === 0 ? 0.28 : 0.2
+            const midA = idx === 0 ? 0.07 : 0.06
+            g.addColorStop(0, rgba(rgb, topA))
+            g.addColorStop(idx === 0 ? 0.55 : 0.65, rgba(rgb, midA))
+            g.addColorStop(1, rgba(rgb, 0))
+            return g
+          }
+        : undefined,
+      pointRadius: n > 100 ? 0 : n > 48 ? 2 : idx === 0 ? 3.5 : 3,
+      pointHoverRadius: 6,
+      pointBorderWidth: 2,
+      pointBackgroundColor: surfaceBg,
+      pointBorderColor: rgba(rgb, idx === 0 ? 0.9 : 0.88),
+      pointHoverBorderColor: rgba(rgb, 1),
+      pointHoverBackgroundColor: rgba(rgb, idx === 0 ? 0.25 : 0.2),
+    }
+  })
+
+  chartInstance = new Chart(el, {
+    type: 'line',
+    data: {
+      labels: [...props.labels],
+      datasets: chartDatasets,
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      animation: {
+        duration: 680,
+        easing: 'easeOutQuart',
+      },
+      elements: {
+        line: {
+          borderJoinStyle: 'round',
+          borderCapStyle: 'round',
+        },
+      },
+      plugins: {
+        legend: {
+          position: 'top',
+          align: 'start',
+          labels: {
+            color: theme.muted,
+            font: { family: 'var(--sans)', size: 12, weight: '600' },
+            padding: 14,
+            usePointStyle: true,
+            pointStyle: 'circle',
+          },
+        },
+        tooltip: {
+          backgroundColor: theme.tooltipBg,
+          titleColor: theme.textH,
+          bodyColor: theme.textH,
+          borderColor: theme.accentBorder,
+          borderWidth: 1,
+          padding: 12,
+          cornerRadius: 12,
+          displayColors: true,
+          boxPadding: 6,
+          titleFont: { family: 'var(--sans)', size: 13, weight: '700' },
+          bodyFont: { family: 'var(--mono)', size: 12 },
+          callbacks: {
+            title(items) {
+              const i = items[0]?.dataIndex
+              if (i == null) return ''
+              if (props.getTooltipTitle) return props.getTooltipTitle(i) ?? ''
+              return props.labels[i] ?? ''
+            },
+            label(ctx) {
+              if (props.getTooltipLabel) {
+                const out = props.getTooltipLabel(ctx)
+                return out ?? ''
+              }
+              const raw = ctx.parsed.y
+              const v =
+                props.formatYTick != null
+                  ? props.formatYTick(raw)
+                  : Number(raw).toLocaleString('ru-RU')
+              return `${ctx.dataset.label}: ${v}`
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: theme.muted,
+            maxRotation: 40,
+            minRotation: 0,
+            autoSkip: true,
+            maxTicksLimit: 22,
+            font: { family: 'var(--sans)', size: 11 },
+          },
+          grid: {
+            color: theme.grid,
+            drawBorder: false,
+            tickLength: 0,
+          },
+        },
+        y: {
+          beginAtZero: true,
+          grace: props.yGrace,
+          ticks: {
+            color: theme.muted,
+            font: { family: 'var(--mono)', size: 11 },
+            padding: 8,
+            callback(v) {
+              return props.formatYTick != null
+                ? props.formatYTick(Number(v))
+                : Number(v).toLocaleString('ru-RU')
+            },
+          },
+          grid: {
+            color: theme.grid,
+            drawBorder: false,
+          },
+          title: {
+            display: Boolean(props.yTitle),
+            text: props.yTitle,
+            color: theme.muted,
+            font: { family: 'var(--sans)', size: 11, weight: '600' },
+            padding: { bottom: 4, top: 0 },
+          },
+        },
+      },
+    },
+  })
+}
+
+watch(
+  () => [
+    props.loading,
+    props.error,
+    props.hasData,
+    props.labels,
+    props.datasets,
+    props.yTitle,
+    props.yGrace,
+  ],
+  async () => {
+    await nextTick()
+    drawChart()
+  },
+  { deep: true },
+)
+
+onBeforeUnmount(() => {
+  destroyChart()
+})
+
+defineExpose({ drawChart, destroyChart })
+</script>
+
+<template>
+  <div class="admin-line-chart-panel glass">
+    <div v-if="title || unitLabel" class="chart-head">
+      <h3 v-if="title" class="chart-title">{{ title }}</h3>
+      <span v-if="unitLabel" class="chart-unit">{{ unitLabel }}</span>
+    </div>
+    <p v-if="hint" class="chart-hint">{{ hint }}</p>
+
+    <p v-if="error" class="banner-err">{{ error }}</p>
+    <p v-else-if="loading" class="loading-line">Загрузка…</p>
+    <template v-else-if="!hasData">
+      <slot name="empty">
+        <p class="empty-hint">Нет данных для графика.</p>
+      </slot>
+    </template>
+    <div v-else class="chart-wrap chart-wrap-tall">
+      <canvas ref="canvasEl" :aria-label="ariaLabel" />
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.admin-line-chart-panel {
+  padding: 1rem 1.15rem 1.15rem;
+  margin-bottom: 1rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.chart-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.chart-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  font-family: var(--heading);
+  color: var(--text-h);
+}
+
+.chart-unit {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.chart-hint {
+  margin: 0 0 0.85rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.5;
+  max-width: 52rem;
+}
+
+.chart-wrap {
+  position: relative;
+  min-height: 220px;
+}
+
+.chart-wrap-tall {
+  min-height: min(58vh, 440px);
+}
+
+.banner-err {
+  padding: 0.85rem 1.1rem;
+  border-radius: 14px;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.loading-line {
+  color: var(--muted);
+  font-size: 0.92rem;
+  margin: 0;
+}
+
+.empty-hint {
+  padding: 0.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin: 0;
+}
+</style>

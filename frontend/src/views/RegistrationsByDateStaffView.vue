@@ -1,9 +1,10 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import Chart from 'chart.js/auto'
+import AdminLineChartPanel from '../components/AdminLineChartPanel.vue'
 import AdminPageHeader from '../components/AdminPageHeader.vue'
 import AdminPageShell from '../components/AdminPageShell.vue'
+import { rgbTupleFromVar } from '../utils/adminChartTheme.js'
 import { isAdminRole } from '../auth/permissions.js'
 import { getSessionRole } from '../auth/session.js'
 import { fetchJson } from '../api/client.js'
@@ -15,10 +16,6 @@ const loading = ref(false)
 const error = ref(null)
 
 const isFullAdmin = computed(() => isAdminRole(getSessionRole()))
-
-/** @type {Chart | null} */
-let chartInstance = null
-const chartCanvas = ref(null)
 
 const undatedCount = computed(() => {
   const row = rows.value.find(
@@ -84,78 +81,51 @@ function pluralRuDays(n) {
   return 'дней'
 }
 
-/** RGB из computed color или #RRGGBB */
-function rgbTupleFromCssColor(css) {
-  const m = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(css.trim())
-  if (m) return [Number(m[1]), Number(m[2]), Number(m[3])]
-  const hx = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(css.trim())
-  if (hx) {
-    return [
-      parseInt(hx[1], 16),
-      parseInt(hx[2], 16),
-      parseInt(hx[3], 16),
-    ]
-  }
-  return [88, 214, 141]
-}
-
-/** Цвет из CSS-переменной у :root (через временный элемент) */
-function rgbTupleFromVar(name, fallbackHex) {
-  if (typeof document === 'undefined') {
-    return rgbTupleFromCssColor(fallbackHex)
-  }
-  const probe = document.createElement('span')
-  probe.style.cssText =
-    'position:absolute;left:-9999px;top:0;color:var(' + name + ',' + fallbackHex + ')'
-  document.body.appendChild(probe)
-  const rgb = rgbTupleFromCssColor(getComputedStyle(probe).color)
-  probe.remove()
-  return rgb
-}
-
-function rootToken(name, fallback) {
-  if (typeof document === 'undefined') return fallback
-  const v = getComputedStyle(document.documentElement)
-    .getPropertyValue(name)
-    .trim()
-  return v || fallback
-}
-
-function rgba(rgb, a) {
-  return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${a})`
-}
-
 function fmtRu(n) {
   return Number(n).toLocaleString('ru-RU')
 }
 
-function gridColor() {
-  return rootToken('--accent-chart-grid', 'rgba(88, 214, 141, 0.12)')
-}
+const registrationChartLabels = computed(() =>
+  chartPoints.value.map((p) => formatDayShort(p.iso)),
+)
 
-function tickColor() {
-  return rootToken('--text-h', '#e8f4ec')
-}
-
-function mutedTickColor() {
-  return rootToken('--muted', '#6d8578')
-}
-
-function chartTheme() {
-  const accent = rgbTupleFromVar('--accent', '#58d68d')
-  /** Оранжевая линия трафика (контраст к зелёным регистрациям) */
+const registrationChartDatasets = computed(() => {
+  const pts = chartPoints.value
+  const accentRgb = rgbTupleFromVar('--accent', '#58d68d')
   const trafficOrange = [251, 146, 60]
-  const cardBorder = rootToken('--accent-border', 'rgba(88, 214, 141, 0.42)')
-  const surface = rootToken('--card-bg', 'rgba(12, 16, 14, 0.94)')
-  return {
-    accent,
-    trafficOrange,
-    accentBorder: cardBorder,
-    tooltipBg: surface,
-    textH: tickColor(),
-    muted: mutedTickColor(),
-    grid: gridColor(),
+  return [
+    {
+      label: 'Всего пользователей · накопительно',
+      data: pts.map((p) => p.totalUsers),
+      rgb: accentRgb,
+    },
+    {
+      label: 'С трафиком · накопительно',
+      data: pts.map((p) => p.totalTraffic),
+      rgb: trafficOrange,
+    },
+  ]
+})
+
+function registrationTooltipTitle(i) {
+  const iso = chartPoints.value[i]?.iso
+  return iso ? formatDayShort(iso) : ''
+}
+
+function registrationTooltipLabel(ctx) {
+  const i = ctx.dataIndex
+  const p = chartPoints.value[i]
+  if (!p) return ''
+  const und = undatedCount.value
+  const undT = undatedTrafficCount.value
+  if (ctx.datasetIndex === 0) {
+    return und > 0
+      ? `Пользователей (${fmtRu(p.cumDatedUsers)}+${fmtRu(und)})`
+      : `Пользователей (${fmtRu(p.cumDatedUsers)})`
   }
+  return undT > 0
+    ? `С трафиком (${fmtRu(p.cumDatedTraffic)}+${fmtRu(undT)})`
+    : `С трафиком (${fmtRu(p.cumDatedTraffic)})`
 }
 
 function formatDayShort(iso) {
@@ -171,201 +141,8 @@ function formatDayShort(iso) {
   }
 }
 
-function destroyChart() {
-  if (chartInstance) {
-    chartInstance.destroy()
-    chartInstance = null
-  }
-}
-
-function drawChart() {
-  const el = chartCanvas.value
-  if (!el || loading.value || error.value || chartPoints.value.length === 0) {
-    destroyChart()
-    return
-  }
-  destroyChart()
-  const pts = chartPoints.value
-  const undated = undatedCount.value
-  const undatedTraffic = undatedTrafficCount.value
-  const theme = chartTheme()
-  const surfaceBg = rootToken('--surface', '#0c100e')
-  const n = pts.length
-
-  chartInstance = new Chart(el, {
-    type: 'line',
-    data: {
-      labels: pts.map((p) => formatDayShort(p.iso)),
-      datasets: [
-        {
-          label: 'Всего пользователей · накопительно',
-          data: pts.map((p) => p.totalUsers),
-          borderColor: rgba(theme.accent, 0.95),
-          borderWidth: 2.75,
-          tension: 0.35,
-          cubicInterpolationMode: 'monotone',
-          fill: true,
-          backgroundColor: (c) => {
-            const chart = c.chart
-            const { ctx: cctx, chartArea } = chart
-            if (!chartArea) return rgba(theme.accent, 0.12)
-            const g = cctx.createLinearGradient(
-              0,
-              chartArea.top,
-              0,
-              chartArea.bottom,
-            )
-            g.addColorStop(0, rgba(theme.accent, 0.28))
-            g.addColorStop(0.55, rgba(theme.accent, 0.07))
-            g.addColorStop(1, rgba(theme.accent, 0))
-            return g
-          },
-          pointRadius: n > 100 ? 0 : n > 48 ? 2 : 3.5,
-          pointHoverRadius: 6,
-          pointBorderWidth: 2,
-          pointBackgroundColor: surfaceBg,
-          pointBorderColor: rgba(theme.accent, 0.9),
-          pointHoverBorderColor: rgba(theme.accent, 1),
-          pointHoverBackgroundColor: rgba(theme.accent, 0.25),
-        },
-        {
-          label: 'С трафиком · накопительно',
-          data: pts.map((p) => p.totalTraffic),
-          borderColor: rgba(theme.trafficOrange, 0.94),
-          borderWidth: 2.25,
-          tension: 0.35,
-          cubicInterpolationMode: 'monotone',
-          fill: true,
-          backgroundColor: (c) => {
-            const chart = c.chart
-            const { ctx: cctx, chartArea } = chart
-            if (!chartArea) return rgba(theme.trafficOrange, 0.06)
-            const g = cctx.createLinearGradient(
-              0,
-              chartArea.top,
-              0,
-              chartArea.bottom,
-            )
-            g.addColorStop(0, rgba(theme.trafficOrange, 0.2))
-            g.addColorStop(0.65, rgba(theme.trafficOrange, 0.06))
-            g.addColorStop(1, rgba(theme.trafficOrange, 0))
-            return g
-          },
-          pointRadius: n > 100 ? 0 : n > 48 ? 2 : 3,
-          pointHoverRadius: 6,
-          pointBorderWidth: 2,
-          pointBackgroundColor: surfaceBg,
-          pointBorderColor: rgba(theme.trafficOrange, 0.88),
-          pointHoverBorderColor: rgba(theme.trafficOrange, 1),
-          pointHoverBackgroundColor: rgba(theme.trafficOrange, 0.2),
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      animation: {
-        duration: 680,
-        easing: 'easeOutQuart',
-      },
-      elements: {
-        line: {
-          borderJoinStyle: 'round',
-          borderCapStyle: 'round',
-        },
-      },
-      plugins: {
-        legend: {
-          position: 'top',
-          align: 'start',
-          labels: {
-            color: theme.muted,
-            font: { family: 'var(--sans)', size: 12, weight: '600' },
-            padding: 14,
-            usePointStyle: true,
-            pointStyle: 'circle',
-          },
-        },
-        tooltip: {
-          backgroundColor: theme.tooltipBg,
-          titleColor: theme.textH,
-          bodyColor: theme.textH,
-          borderColor: theme.accentBorder,
-          borderWidth: 1,
-          padding: 12,
-          cornerRadius: 12,
-          displayColors: true,
-          boxPadding: 6,
-          titleFont: { family: 'var(--sans)', size: 13, weight: '700' },
-          bodyFont: { family: 'var(--mono)', size: 12 },
-          callbacks: {
-            title(items) {
-              const i = items[0]?.dataIndex
-              if (i == null) return ''
-              const iso = pts[i]?.iso
-              return iso ? formatDayShort(iso) : ''
-            },
-            label(ctx) {
-              const i = ctx.dataIndex
-              const p = pts[i]
-              if (!p) return ''
-              if (ctx.datasetIndex === 0) {
-                return undated > 0
-                  ? `Пользователей (${fmtRu(p.cumDatedUsers)}+${fmtRu(undated)})`
-                  : `Пользователей (${fmtRu(p.cumDatedUsers)})`
-              }
-              return undatedTraffic > 0
-                ? `С трафиком (${fmtRu(p.cumDatedTraffic)}+${fmtRu(undatedTraffic)})`
-                : `С трафиком (${fmtRu(p.cumDatedTraffic)})`
-            },
-          },
-        },
-      },
-      scales: {
-        x: {
-          ticks: {
-            color: theme.muted,
-            maxRotation: 40,
-            minRotation: 0,
-            autoSkip: true,
-            maxTicksLimit: 22,
-            font: { family: 'var(--sans)', size: 11 },
-          },
-          grid: {
-            color: theme.grid,
-            drawBorder: false,
-            tickLength: 0,
-          },
-        },
-        y: {
-          beginAtZero: true,
-          grace: '8%',
-          ticks: {
-            color: theme.muted,
-            font: { family: 'var(--mono)', size: 11 },
-            padding: 8,
-          },
-          grid: {
-            color: theme.grid,
-            drawBorder: false,
-          },
-          title: {
-            display: true,
-            text: 'Пользователей (накопительно)',
-            color: theme.muted,
-            font: { family: 'var(--sans)', size: 11, weight: '600' },
-            padding: { bottom: 4, top: 0 },
-          },
-        },
-      },
-    },
-  })
-}
-
 async function load() {
   loading.value = true
-  destroyChart()
   error.value = null
   try {
     rows.value = await fetchJson('/api/users/registrations-by-date')
@@ -376,15 +153,10 @@ async function load() {
     loading.value = false
   }
   await nextTick()
-  drawChart()
 }
 
 onMounted(() => {
   void load()
-})
-
-onBeforeUnmount(() => {
-  destroyChart()
 })
 </script>
 
@@ -531,10 +303,18 @@ onBeforeUnmount(() => {
       </dl>
     </section>
 
-    <div class="chart-panel glass">
-      <p v-if="error" class="banner-err">{{ error }}</p>
-      <p v-else-if="loading" class="loading-line">Загрузка…</p>
-      <template v-else>
+    <AdminLineChartPanel
+      aria-label="Накопление числа пользователей и пользователей с трафиком по датам регистрации UTC"
+      :loading="loading"
+      :error="error"
+      :has-data="chartPoints.length > 0"
+      y-title="Пользователей (накопительно)"
+      :labels="registrationChartLabels"
+      :datasets="registrationChartDatasets"
+      :get-tooltip-title="registrationTooltipTitle"
+      :get-tooltip-label="registrationTooltipLabel"
+    >
+      <template #empty>
         <p
           v-if="chartPoints.length === 0 && undatedCount > 0"
           class="empty-hint"
@@ -545,17 +325,9 @@ onBeforeUnmount(() => {
           . Добавить их к точкам по дням нельзя — появится график после появления
           записей с датой.
         </p>
-        <p v-else-if="chartPoints.length === 0" class="empty-hint">
-          Нет данных для графика.
-        </p>
-        <div v-else class="chart-wrap chart-wrap-tall">
-          <canvas
-            ref="chartCanvas"
-            aria-label="Накопление числа пользователей и пользователей с трафиком по датам регистрации UTC"
-          />
-        </div>
+        <p v-else class="empty-hint">Нет данных для графика.</p>
       </template>
-    </div>
+    </AdminLineChartPanel>
   </AdminPageShell>
 </template>
 
@@ -668,39 +440,6 @@ onBeforeUnmount(() => {
   font-size: 0.76rem;
   line-height: 1.4;
   color: var(--muted);
-}
-
-.chart-panel {
-  padding: 1rem 1.15rem 1.15rem;
-  margin-bottom: 1rem;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--card-border);
-  box-shadow: var(--shadow-sm);
-}
-
-.chart-wrap {
-  position: relative;
-  min-height: 220px;
-}
-
-.chart-wrap-tall {
-  min-height: min(58vh, 440px);
-}
-
-.banner-err {
-  padding: 0.85rem 1.1rem;
-  border-radius: 14px;
-  background: var(--danger-soft);
-  border: 1px solid var(--danger);
-  color: var(--danger);
-  font-size: 0.9rem;
-  margin: 0;
-}
-
-.loading-line {
-  color: var(--muted);
-  font-size: 0.92rem;
-  margin: 0;
 }
 
 .empty-hint {
