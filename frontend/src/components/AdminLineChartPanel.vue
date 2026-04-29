@@ -235,7 +235,7 @@ watch(
     await nextTick()
     drawChart()
   },
-  { deep: true },
+  { deep: true, immediate: true, flush: 'post' },
 )
 
 onBeforeUnmount(() => {
