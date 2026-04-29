@@ -41,6 +41,8 @@ const formTelegramId = ref('')
 const formSubUntil = ref('')
 /** client | manager | admin — при редактировании пользователя */
 const formAccountRole = ref('client')
+/** Дата регистрации в форме ДД.ММ.ГГГГ (календарный день UTC); пусто — сбросить в БД */
+const formRegisteredAt = ref('')
 /** @username при редактировании (только отображение) */
 const editingUserTgUsername = ref('')
 
@@ -314,6 +316,7 @@ function openModal() {
     formTelegramId.value = ''
     formSubUntil.value = ''
     formAccountRole.value = 'client'
+    formRegisteredAt.value = ''
     editingUserTgUsername.value = ''
   } else {
     formName.value = ''
@@ -390,20 +393,80 @@ function openEditUser(u) {
   const su = u.subscription_until
   formSubUntil.value =
     su != null && String(su).trim()
-      ? String(su).slice(0, 10)
+      ? isoYyyyMmDdToRuDmy(String(su).slice(0, 10))
       : ''
   formAccountRole.value =
     u.account_role === 'manager' || u.account_role === 'admin'
       ? u.account_role
       : 'client'
+  formRegisteredAt.value = utcIsoToRuDmy(u.registered_at)
   modalOpen.value = true
 }
 
-function subscriptionDateOrNull(dateStr) {
-  if (!dateStr || !String(dateStr).trim()) return null
-  const s = String(dateStr).trim()
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null
-  return s
+/** YYYY-MM-DD → ДД.ММ.ГГГГ для показа в форме */
+function isoYyyyMmDdToRuDmy(iso) {
+  const s = String(iso ?? '').trim().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return ''
+  const [y, m, d] = s.split('-').map(Number)
+  if (!y || !m || !d) return ''
+  return `${String(d).padStart(2, '0')}.${String(m).padStart(2, '0')}.${y}`
+}
+
+/** Момент UTC (ISO) → календарный день UTC как ДД.ММ.ГГГГ */
+function utcIsoToRuDmy(iso) {
+  if (iso == null || iso === '') return ''
+  const t = Date.parse(String(iso))
+  if (Number.isNaN(t)) return ''
+  const d = new Date(t)
+  const day = String(d.getUTCDate()).padStart(2, '0')
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const y = d.getUTCFullYear()
+  return `${day}.${month}.${y}`
+}
+
+/**
+ * Пустая строка → null.
+ * ДД.ММ.ГГГГ или ГГГГ-ММ-ДД → YYYY-MM-DD для API; неверная дата → null.
+ */
+function dateFormToIsoOrNull(raw) {
+  const s = String(raw ?? '').trim()
+  if (!s) return null
+  const ru = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(s)
+  if (ru) {
+    const d = Number(ru[1])
+    const m = Number(ru[2])
+    const y = Number(ru[3])
+    if (m < 1 || m > 12 || d < 1 || d > 31 || y < 1 || y > 9999) return null
+    const dt = new Date(Date.UTC(y, m - 1, d))
+    if (
+      dt.getUTCFullYear() !== y ||
+      dt.getUTCMonth() !== m - 1 ||
+      dt.getUTCDate() !== d
+    ) {
+      return null
+    }
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [y, m, d] = s.split('-').map(Number)
+    const dt = new Date(Date.UTC(y, m - 1, d))
+    if (
+      dt.getUTCFullYear() !== y ||
+      dt.getUTCMonth() !== m - 1 ||
+      dt.getUTCDate() !== d
+    ) {
+      return null
+    }
+    return s
+  }
+  return null
+}
+
+/** null — очистить registered_at; иначе ISO UTC полночь выбранного календарного дня */
+function registrationDateTimeUtcOrNull(raw) {
+  const d = dateFormToIsoOrNull(raw)
+  if (d === null) return null
+  return `${d}T00:00:00.000Z`
 }
 
 /** Числовой Telegram user id (Bot API); пусто → null */
@@ -433,12 +496,28 @@ async function submitSaveUser() {
   creating.value = true
   createError.value = null
   try {
+    const subRaw = String(formSubUntil.value ?? '').trim()
+    const subIso = subRaw === '' ? null : dateFormToIsoOrNull(formSubUntil.value)
+    if (subRaw !== '' && subIso === null) {
+      createError.value = 'Подписка до: укажите дату как ДД.ММ.ГГГГ'
+      return
+    }
+    const regRaw = String(formRegisteredAt.value ?? '').trim()
+    const regIso =
+      regRaw === '' ? null : dateFormToIsoOrNull(formRegisteredAt.value)
+    if (editingUserId.value != null && regRaw !== '' && regIso === null) {
+      createError.value =
+        'Дата регистрации: укажите дату как ДД.ММ.ГГГГ или очистите поле'
+      return
+    }
+
     if (editingUserId.value != null) {
       await fetchJson(`/api/users/${editingUserId.value}`, {
         method: 'PATCH',
         body: JSON.stringify({
-          subscription_until: subscriptionDateOrNull(formSubUntil.value),
+          subscription_until: subIso,
           account_role: formAccountRole.value,
+          registered_at: registrationDateTimeUtcOrNull(formRegisteredAt.value),
         }),
       })
     } else {
@@ -446,7 +525,7 @@ async function submitSaveUser() {
         method: 'POST',
         body: JSON.stringify({
           telegram_id: normalizeTelegramId(formTelegramId.value),
-          subscription_until: subscriptionDateOrNull(formSubUntil.value),
+          subscription_until: subIso,
         }),
       })
     }
@@ -988,6 +1067,13 @@ watch(formIsCascadeRuEntry, (v) => {
           :to="{ path: '/admin/users/analytics' }"
         >
           Клиенты
+        </RouterLink>
+        <RouterLink
+          class="tab"
+          :class="{ 'tab-active': route.name === 'admin-users-registrations-by-date' }"
+          :to="{ path: '/admin/users/registrations-by-date' }"
+        >
+          Регистрации по дням
         </RouterLink>
         <RouterLink
           class="tab"
@@ -1583,9 +1669,37 @@ watch(formIsCascadeRuEntry, (v) => {
               <span class="field-hint"
                 >Администратору нужен пароль (вход по email). Менеджер — только раздел рефералов.</span>
             </label>
+            <label v-if="editingUserId != null" class="field">
+              <span>Дата регистрации (UTC)</span>
+              <input
+                v-model="formRegisteredAt"
+                type="text"
+                class="field-date-ru"
+                inputmode="numeric"
+                maxlength="10"
+                placeholder="ДД.ММ.ГГГГ"
+                autocomplete="off"
+                autocapitalize="none"
+                spellcheck="false"
+              />
+              <span class="field-hint"
+                >Календарный день в UTC, формат день.месяц.год. Пустое поле —
+                сбросить дату (как у старых импортов).</span>
+            </label>
             <label class="field">
               <span>Подписка до (необязательно)</span>
-              <input v-model="formSubUntil" type="date" />
+              <input
+                v-model="formSubUntil"
+                type="text"
+                class="field-date-ru"
+                inputmode="numeric"
+                maxlength="10"
+                placeholder="ДД.ММ.ГГГГ"
+                autocomplete="off"
+                autocapitalize="none"
+                spellcheck="false"
+              />
+              <span class="field-hint">Формат: день.месяц.год</span>
             </label>
             <p v-if="createError" class="form-err">{{ createError }}</p>
             <div
@@ -2404,6 +2518,12 @@ watch(formIsCascadeRuEntry, (v) => {
   outline: none;
   border-color: var(--accent);
   box-shadow: var(--focus-ring);
+}
+
+.field-date-ru {
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0.02em;
 }
 
 .field-select {

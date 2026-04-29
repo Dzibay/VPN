@@ -8,6 +8,7 @@ import { getAccessToken, getSessionRole, isAdminJwtRequired } from '../auth/sess
 import AdminTablesPage from '../views/AdminTablesPage.vue'
 import ReferralFunnelView from '../views/ReferralFunnelView.vue'
 import ReferralTokensAdminPage from '../views/ReferralTokensAdminPage.vue'
+import RegistrationsByDateStaffView from '../views/RegistrationsByDateStaffView.vue'
 import HomeView from '../views/HomeView.vue'
 import ServerAnalyticsView from '../views/ServerAnalyticsView.vue'
 import UserAnalyticsView from '../views/UserAnalyticsView.vue'
@@ -47,6 +48,11 @@ const routes = [
     path: '/admin/users/analytics',
     name: 'admin-users-staff-analytics',
     component: UsersAnalyticsStaffView,
+  },
+  {
+    path: '/admin/users/registrations-by-date',
+    name: 'admin-users-registrations-by-date',
+    component: RegistrationsByDateStaffView,
   },
   {
     path: '/admin/users/:userId/analytics',
@@ -122,7 +128,13 @@ router.beforeEach(async (to, _from, next) => {
       const isReferralsRoute = to.name === 'admin-referrals'
       const isUsersAnalyticsStaff = to.name === 'admin-users-staff-analytics'
       const isMarketingFunnel = to.name === 'admin-funnel'
-      if (isReferralsRoute || isUsersAnalyticsStaff || isMarketingFunnel) {
+      const isRegistrationsByDate = to.name === 'admin-users-registrations-by-date'
+      if (
+        isReferralsRoute ||
+        isUsersAnalyticsStaff ||
+        isMarketingFunnel ||
+        isRegistrationsByDate
+      ) {
         if (!canAccessReferralsAdmin(role)) {
           return next({ path: '/cabinet' })
         }

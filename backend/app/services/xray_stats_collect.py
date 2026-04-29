@@ -11,7 +11,7 @@ import re
 import shlex
 import subprocess
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import and_, or_, select
@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.models.server import Server
 from app.models.user import User
 from app.models.user_server_traffic import UserServerTraffic
+from app.domain.user_traffic import user_server_traffic_latest_subquery
 from app.schemas.server_traffic import (
     ServerUserTrafficBundle,
     ServerUserTrafficRow,
@@ -116,6 +117,55 @@ def parse_statsquery_json(text: str) -> dict[int, dict[str, int]]:
         else:
             merged[uid]["down"] = val
     return merged
+
+
+def _traffic_day_utc() -> date:
+    """Календарный день для привязки строк в БД (UTC)."""
+    return datetime.now(timezone.utc).date()
+
+
+def _latest_prior_day_row(
+    session: Session,
+    uid: int,
+    server_id: int,
+    day: date,
+) -> UserServerTraffic | None:
+    stmt = (
+        select(UserServerTraffic)
+        .where(
+            UserServerTraffic.user_id == uid,
+            UserServerTraffic.server_id == server_id,
+            UserServerTraffic.traffic_date < day,
+        )
+        .order_by(UserServerTraffic.traffic_date.desc())
+        .limit(1)
+    )
+    return session.scalars(stmt).first()
+
+
+def _get_or_create_day_row(
+    session: Session,
+    uid: int,
+    server: Server,
+    day: date,
+) -> UserServerTraffic | None:
+    existing = session.get(UserServerTraffic, (uid, server.id, day))
+    if existing is not None:
+        return existing
+    if session.get(User, uid) is None:
+        return None
+    prev = _latest_prior_day_row(session, uid, server.id, day)
+    row = UserServerTraffic(
+        user_id=uid,
+        server_id=server.id,
+        traffic_date=day,
+        up_bytes=int(prev.up_bytes) if prev else 0,
+        down_bytes=int(prev.down_bytes) if prev else 0,
+        raw_up=int(prev.raw_up) if prev else 0,
+        raw_down=int(prev.raw_down) if prev else 0,
+    )
+    session.add(row)
+    return row
 
 
 def _collect_base_detail(server: Server) -> UserTrafficCollectDetail:
@@ -344,23 +394,13 @@ def collect_xray_traffic_for_server(
                 server.id,
             )
 
+    day = _traffic_day_utc()
     for uid, vals in raw_by_user.items():
         raw_up = int(vals.get("up") or 0)
         raw_down = int(vals.get("down") or 0)
-        row = session.get(UserServerTraffic, (uid, server.id))
+        row = _get_or_create_day_row(session, uid, server, day)
         if row is None:
-            user = session.get(User, uid)
-            if user is None:
-                continue
-            row = UserServerTraffic(
-                user_id=uid,
-                server_id=server.id,
-                up_bytes=0,
-                down_bytes=0,
-                raw_up=0,
-                raw_down=0,
-            )
-            session.add(row)
+            continue
         row.up_bytes, row.raw_up = _merge_axis(row.up_bytes, row.raw_up, raw_up)
         row.down_bytes, row.raw_down = _merge_axis(
             row.down_bytes,
@@ -392,6 +432,7 @@ def load_user_traffic_bundle_rows(
     Пользователи с активной подпиской или уже имеющие строку трафика на этом узле;
     LEFT JOIN — нули, если сбора ещё не было (иначе INNER давал пустой график).
     """
+    ut_latest = user_server_traffic_latest_subquery().alias("ut_latest")
     has_traffic_here = (
         select(1)
         .select_from(UserServerTraffic)
@@ -402,13 +443,13 @@ def load_user_traffic_bundle_rows(
         .correlate(User)
     ).exists()
     stmt = (
-        select(User, UserServerTraffic)
+        select(User, ut_latest.c.up_bytes, ut_latest.c.down_bytes)
         .select_from(User)
         .outerjoin(
-            UserServerTraffic,
+            ut_latest,
             and_(
-                User.id == UserServerTraffic.user_id,
-                UserServerTraffic.server_id == server_id,
+                User.id == ut_latest.c.user_id,
+                ut_latest.c.server_id == server_id,
             ),
         )
         .where(
@@ -422,9 +463,9 @@ def load_user_traffic_bundle_rows(
     )
     rows = session.execute(stmt).all()
     out: list[ServerUserTrafficRow] = []
-    for user, ut in rows:
-        up_b = int(ut.up_bytes or 0) if ut is not None else 0
-        down_b = int(ut.down_bytes or 0) if ut is not None else 0
+    for user, up_raw, down_raw in rows:
+        up_b = int(up_raw or 0)
+        down_b = int(down_raw or 0)
         out.append(
             ServerUserTrafficRow(
                 user_id=user.id,

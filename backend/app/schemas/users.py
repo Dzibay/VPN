@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -6,6 +6,22 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class UsersCountResponse(BaseModel):
     users_count: int = Field(ge=0, description="Число записей в таблице users")
+
+
+class UserRegistrationByDateRow(BaseModel):
+    """Число пользователей с датой регистрации (календарный день UTC)."""
+
+    registration_date: date | None = Field(
+        description="Дата из registered_at в UTC; null — записи без даты регистрации",
+    )
+    users_count: int = Field(ge=0)
+    users_with_traffic_count: int = Field(
+        ge=0,
+        description=(
+            "Сколько из них имеют ненулевой суммарный трафик (up+down по последнему "
+            "снимку на каждый узел, таблица user_server_traffic)"
+        ),
+    )
 
 
 class ExtendActiveSubscriptionsBody(BaseModel):
@@ -132,6 +148,46 @@ class UserUpdate(BaseModel):
         default=None,
         description="Назначение роли в БД (admin — полный доступ, manager — только рефералы)",
     )
+    registered_at: datetime | None = Field(
+        default=None,
+        description="Момент регистрации (UTC); null — сбросить дату",
+    )
+
+    @field_validator("registered_at", mode="before")
+    @classmethod
+    def coerce_registered_at(cls, v: object) -> datetime | None:
+        if v is None:
+            return None
+        if isinstance(v, datetime):
+            if v.tzinfo is None:
+                return v.replace(tzinfo=timezone.utc)
+            return v.astimezone(timezone.utc)
+        if isinstance(v, date) and not isinstance(v, datetime):
+            return datetime(v.year, v.month, v.day, tzinfo=timezone.utc)
+        if isinstance(v, str):
+            s = v.strip()
+            if not s:
+                return None
+            if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+                head = s[:10]
+                try:
+                    d_only = date.fromisoformat(head)
+                except ValueError as e:
+                    raise ValueError("registered_at: неверная дата") from e
+                if len(s) == 10:
+                    return datetime(
+                        d_only.year,
+                        d_only.month,
+                        d_only.day,
+                        tzinfo=timezone.utc,
+                    )
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc)
+        raise ValueError(
+            "registered_at: ожидается дата или дата-время в формате ISO (UTC)",
+        )
 
     @field_validator("subscription_until", mode="before")
     @classmethod

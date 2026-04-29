@@ -34,6 +34,7 @@ async function submit() {
         typeof r === 'string' &&
         (r.startsWith('/admin/referrals') ||
           r.startsWith('/admin/funnel') ||
+          r.startsWith('/admin/users/registrations-by-date') ||
           r.startsWith('/admin/users/analytics') ||
           r.startsWith('/admin/users-analytics'))
       router.replace(rOk ? r : '/admin/referrals')

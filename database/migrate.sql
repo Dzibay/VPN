@@ -88,3 +88,13 @@ ALTER TABLE users ADD CONSTRAINT users_account_role_check CHECK (
 -- Дата и время регистрации (создания записи); для записей до миграции — NULL
 ALTER TABLE users ADD COLUMN IF NOT EXISTS registered_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_users_registered_at ON users (registered_at DESC NULLS LAST);
+
+-- user_server_traffic: дневные строки (UTC), исторический ряд для графиков + актуальные суммы через последнюю дату
+ALTER TABLE user_server_traffic ADD COLUMN IF NOT EXISTS traffic_date DATE;
+UPDATE user_server_traffic
+SET traffic_date = (CURRENT_TIMESTAMP AT TIME ZONE 'utc')::date
+WHERE traffic_date IS NULL;
+ALTER TABLE user_server_traffic ALTER COLUMN traffic_date SET NOT NULL;
+ALTER TABLE user_server_traffic DROP CONSTRAINT IF EXISTS user_server_traffic_pkey;
+ALTER TABLE user_server_traffic ADD PRIMARY KEY (user_id, server_id, traffic_date);
+CREATE INDEX IF NOT EXISTS idx_user_server_traffic_user_day ON user_server_traffic (user_id, traffic_date DESC);

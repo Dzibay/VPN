@@ -1,23 +1,25 @@
 import logging
-from datetime import date
-from typing import Annotated, Literal, cast
+from datetime import date, datetime
+from typing import Annotated, Literal, cast as type_cast
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import and_, case, cast, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.types import Date
 
 from app.api.deps import (
     ReadonlySessionDep,
     SessionDep,
     StaffUserListMode,
     require_admin,
+    require_referrals_staff,
     require_staff_user_list_access,
 )
 from app.database.operations import table_insert
+from app.domain.user_traffic import user_server_traffic_latest_subquery
 from app.models.server import Server
 from app.models.user import User
-from app.models.user_server_traffic import UserServerTraffic
 from app.schemas.server_traffic import UserTrafficByServersBundle, UserTrafficPerServerRow
 from app.schemas.users import (
     ExtendActiveSubscriptionsBody,
@@ -25,6 +27,7 @@ from app.schemas.users import (
     UserCreate,
     UserListItem,
     UserRead,
+    UserRegistrationByDateRow,
     UsersCountResponse,
     UserUpdate,
 )
@@ -50,15 +53,16 @@ def _normalize_account_role(raw: str | None) -> str:
 
 
 def _user_rows_with_traffic(session: Session) -> list[tuple[User, int]]:
+    latest = user_server_traffic_latest_subquery()
     traffic_agg = (
         select(
-            UserServerTraffic.user_id.label("uid"),
+            latest.c.user_id.label("uid"),
             func.coalesce(
-                func.sum(UserServerTraffic.up_bytes + UserServerTraffic.down_bytes),
+                func.sum(latest.c.up_bytes + latest.c.down_bytes),
                 0,
             ).label("total_bytes"),
         )
-        .group_by(UserServerTraffic.user_id)
+        .group_by(latest.c.user_id)
         .subquery()
     )
     stmt = (
@@ -103,7 +107,7 @@ async def list_users(
         if total < 0:
             total = 0
         role = _normalize_account_role(user.account_role)
-        role_lit = cast(Literal["client", "manager", "admin"], role)
+        role_lit = type_cast(Literal["client", "manager", "admin"], role)
         out.append(
             UserListItem(
                 id=user.id,
@@ -117,6 +121,75 @@ async def list_users(
                 referral_link_id=user.referral_link_id,
                 token=(user.token if show_secrets else None),
                 vless_uuid=(user.vless_uuid if show_secrets else None),
+            ),
+        )
+    return out
+
+
+@router.get(
+    "/registrations-by-date",
+    response_model=list[UserRegistrationByDateRow],
+    dependencies=[Depends(require_referrals_staff)],
+    summary="Число пользователей по датам регистрации (календарный день UTC)",
+)
+async def users_registrations_by_date(
+    session: ReadonlySessionDep,
+) -> list[UserRegistrationByDateRow]:
+    latest = user_server_traffic_latest_subquery()
+    traffic_totals = (
+        select(
+            latest.c.user_id.label("uid"),
+            func.coalesce(
+                func.sum(latest.c.up_bytes + latest.c.down_bytes),
+                0,
+            ).label("total_bytes"),
+        )
+        .group_by(latest.c.user_id)
+        .subquery()
+    )
+    day_expr = cast(func.timezone("UTC", User.registered_at), Date)
+    with_traffic_expr = func.sum(
+        case(
+            (func.coalesce(traffic_totals.c.total_bytes, 0) > 0, 1),
+            else_=0,
+        ),
+    ).label("with_traffic_cnt")
+    stmt = (
+        select(
+            day_expr.label("registration_date"),
+            func.count().label("cnt"),
+            with_traffic_expr,
+        )
+        .select_from(User)
+        .outerjoin(traffic_totals, User.id == traffic_totals.c.uid)
+        .group_by(day_expr)
+        .order_by(day_expr.desc().nulls_last())
+    )
+    rows = session.execute(stmt).all()
+    out: list[UserRegistrationByDateRow] = []
+    for rd_raw, cnt, wt_raw in rows:
+        try:
+            n = int(cnt or 0)
+        except (TypeError, ValueError):
+            n = 0
+        try:
+            wt = int(wt_raw or 0)
+        except (TypeError, ValueError):
+            wt = 0
+        wt = max(0, min(wt, n))
+        if rd_raw is None:
+            rd = None
+        elif isinstance(rd_raw, datetime):
+            rd = rd_raw.date()
+        elif isinstance(rd_raw, date):
+            rd = rd_raw
+        else:
+            rd = None
+        out.append(
+            UserRegistrationByDateRow(
+                registration_date=rd,
+                users_count=max(0, n),
+                users_with_traffic_count=wt,
             ),
         )
     return out
@@ -196,13 +269,15 @@ async def user_traffic_by_server(
     user = session.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
+    latest = user_server_traffic_latest_subquery().alias("ut_latest")
     stmt = (
-        select(Server, UserServerTraffic)
+        select(Server, latest.c.up_bytes, latest.c.down_bytes)
+        .select_from(Server)
         .outerjoin(
-            UserServerTraffic,
+            latest,
             and_(
-                UserServerTraffic.server_id == Server.id,
-                UserServerTraffic.user_id == user_id,
+                latest.c.server_id == Server.id,
+                latest.c.user_id == user_id,
             ),
         )
         .order_by(Server.id.asc())
@@ -211,9 +286,9 @@ async def user_traffic_by_server(
     out: list[UserTrafficPerServerRow] = []
     total_up = 0
     total_down = 0
-    for server, ut in rows:
-        up = int(ut.up_bytes or 0) if ut is not None else 0
-        down = int(ut.down_bytes or 0) if ut is not None else 0
+    for server, up_raw, down_raw in rows:
+        up = int(up_raw or 0)
+        down = int(down_raw or 0)
         total_up += up
         total_down += down
         out.append(

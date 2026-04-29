@@ -940,6 +940,13 @@ onBeforeUnmount(() => {
         </RouterLink>
         <RouterLink
           class="tab"
+          :class="{ 'tab-active': route.name === 'admin-users-registrations-by-date' }"
+          :to="{ path: '/admin/users/registrations-by-date' }"
+        >
+          Регистрации по дням
+        </RouterLink>
+        <RouterLink
+          class="tab"
           :class="{ 'tab-active': route.name === 'admin-analytics' }"
           :to="{ path: '/admin/analytics' }"
         >

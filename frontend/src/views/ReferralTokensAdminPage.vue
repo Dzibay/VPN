@@ -308,6 +308,13 @@ onMounted(() => {
           </RouterLink>
           <RouterLink
             class="tab"
+            :class="{ 'tab-active': route.name === 'admin-users-registrations-by-date' }"
+            :to="{ path: '/admin/users/registrations-by-date' }"
+          >
+            Регистрации по дням
+          </RouterLink>
+          <RouterLink
+            class="tab"
             :class="{ 'tab-active': route.name === 'admin-analytics' }"
             :to="{ path: '/admin/analytics' }"
           >
@@ -331,6 +338,13 @@ onMounted(() => {
             :to="{ path: '/admin/users/analytics' }"
           >
             Клиенты
+          </RouterLink>
+          <RouterLink
+            class="tab"
+            :class="{ 'tab-active': route.name === 'admin-users-registrations-by-date' }"
+            :to="{ path: '/admin/users/registrations-by-date' }"
+          >
+            Регистрации по дням
           </RouterLink>
           <RouterLink
             class="tab"

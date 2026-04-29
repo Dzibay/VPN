@@ -8,9 +8,9 @@ from sqlalchemy import func, select
 
 from app.api.deps import ReadonlySessionDep, SessionDep, require_referrals_staff
 from app.core.config import settings
+from app.domain.user_traffic import user_server_traffic_latest_subquery
 from app.models.referral_link import ReferralLink
 from app.models.user import User
-from app.models.user_server_traffic import UserServerTraffic
 from app.schemas.referral_links import (
     ReferralFunnelSummary,
     ReferralLinkCreate,
@@ -61,6 +61,26 @@ async def referral_funnel_summary(
             return 0
         return max(0, n)
 
+    latest = user_server_traffic_latest_subquery()
+    per_user_traffic = (
+        select(
+            latest.c.user_id.label("uid"),
+            func.coalesce(
+                func.sum(latest.c.up_bytes + latest.c.down_bytes),
+                0,
+            ).label("tot"),
+        )
+        .group_by(latest.c.user_id)
+        .having(
+            func.coalesce(
+                func.sum(latest.c.up_bytes + latest.c.down_bytes),
+                0,
+            )
+            > 0,
+        )
+        .subquery()
+    )
+
     if referral_link_id is not None:
         row = session.scalars(
             select(ReferralLink).where(ReferralLink.id == referral_link_id).limit(1),
@@ -68,21 +88,12 @@ async def referral_funnel_summary(
         if row is None:
             raise HTTPException(status_code=404, detail="Реферальная ссылка не найдена")
         registrations_total_raw = row.registrations_count
-        traffic_agg = (
-            select(UserServerTraffic.user_id.label("uid"))
-            .join(User, User.id == UserServerTraffic.user_id)
-            .where(User.referral_link_id == referral_link_id)
-            .group_by(UserServerTraffic.user_id)
-            .having(
-                func.coalesce(
-                    func.sum(UserServerTraffic.up_bytes + UserServerTraffic.down_bytes),
-                    0,
-                )
-                > 0,
-            )
-            .subquery()
+        users_with_traffic_raw = session.scalar(
+            select(func.count())
+            .select_from(per_user_traffic)
+            .join(User, User.id == per_user_traffic.c.uid)
+            .where(User.referral_link_id == referral_link_id),
         )
-        users_with_traffic_raw = session.scalar(select(func.count()).select_from(traffic_agg))
         return ReferralFunnelSummary(
             clicks_total=_nz(row.clicks_count),
             registrations_total=_nz(registrations_total_raw),
@@ -90,19 +101,7 @@ async def referral_funnel_summary(
         )
 
     registrations_total_raw = session.scalar(select(func.count()).select_from(User))
-    traffic_agg = (
-        select(UserServerTraffic.user_id.label("uid"))
-        .group_by(UserServerTraffic.user_id)
-        .having(
-            func.coalesce(
-                func.sum(UserServerTraffic.up_bytes + UserServerTraffic.down_bytes),
-                0,
-            )
-            > 0,
-        )
-        .subquery()
-    )
-    users_with_traffic_raw = session.scalar(select(func.count()).select_from(traffic_agg))
+    users_with_traffic_raw = session.scalar(select(func.count()).select_from(per_user_traffic))
 
     return ReferralFunnelSummary(
         clicks_total=None,

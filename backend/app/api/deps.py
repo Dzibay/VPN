@@ -54,7 +54,8 @@ def require_roles(
     Фабрика зависимостей FastAPI: JWT обязателен (если включён jwt_gate_active),
     роль из токена должна входить в allowed_roles.
     - admin — полный доступ к админ-API и страницам /admin (кроме только рефералов).
-    - manager — API реферальных ссылок, GET /users (сводка без токенов), UI /admin/referrals, /admin/users-analytics.
+    - manager — API реферальных ссылок, GET /users (сводка без токенов), UI /admin/referrals,
+      /admin/users/analytics, /admin/users/registrations-by-date, /admin/funnel.
     - user — клиентский JWT (для эндпоинтов, где явно разрешён просмотр своих данных).
     """
     allowed = frozenset(allowed_roles)
