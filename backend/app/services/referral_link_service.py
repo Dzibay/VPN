@@ -155,8 +155,11 @@ def referral_site_register_url(settings: object, token: str) -> str | None:
 
 
 def referral_telegram_deep_link(settings: object, token: str) -> str | None:
-    """https://t.me/{bot}?start=token при заданном telegram_bot_username в конфиге."""
-    bot = (getattr(settings, "telegram_bot_username", None) or "").strip().lstrip("@")
+    """{bot_url}?start=token из REFERRAL_TELEGRAM_BOT_BASE_URL или https://t.me/{REFERRAL_TELEGRAM_BOT_USERNAME}."""
+    base = (getattr(settings, "referral_telegram_bot_base_url", None) or "").strip().rstrip("/")
+    if base:
+        return f"{base}?start={quote(token, safe='')}"
+    bot = (getattr(settings, "referral_telegram_bot_username", None) or "").strip().lstrip("@")
     if not bot:
         return None
     return f"https://t.me/{bot}?start={quote(token, safe='')}"

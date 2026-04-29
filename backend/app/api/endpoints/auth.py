@@ -231,6 +231,13 @@ async def telegram_auth(
                     detail="Не удалось создать или найти пользователя по telegram_id",
                 ) from e
         else:
+            if body.referral_token:
+                rstmt = select(ReferralLink).where(ReferralLink.token == body.referral_token).limit(1)
+                rlink = session.scalars(rstmt).first()
+                if rlink is not None:
+                    user.referral_link_id = rlink.id
+                    increment_referral_counter(session, rlink.id, "registrations")
+                    session.flush()
             background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     elif telegram_auth_has_profile_fields(body):
         user.telegram_properties = merge_telegram_auth_profile(

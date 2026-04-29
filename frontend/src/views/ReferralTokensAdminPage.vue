@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import AdminPageHeader from '../components/AdminPageHeader.vue'
 import AdminPageShell from '../components/AdminPageShell.vue'
@@ -168,7 +168,21 @@ function fallbackSiteEntry(token) {
 }
 
 function fallbackTelegramDeep(token) {
-  const bot = (import.meta.env.VITE_TELEGRAM_BOT_USERNAME || '')
+  const baseUrl = String(
+    import.meta.env.VITE_REFERRAL_TELEGRAM_BOT_BASE_URL ||
+      import.meta.env.VITE_TELEGRAM_BOT_URL ||
+      '',
+  )
+    .trim()
+    .replace(/\/$/, '')
+  if (baseUrl) {
+    return `${baseUrl}?start=${encodeURIComponent(token)}`
+  }
+  const bot = String(
+    import.meta.env.VITE_REFERRAL_TELEGRAM_BOT_USERNAME ||
+      import.meta.env.VITE_TELEGRAM_BOT_USERNAME ||
+      '',
+  )
     .trim()
     .replace(/^@/, '')
   if (!bot) return ''
@@ -186,6 +200,16 @@ function telegramUrlForRow(r) {
 const copyHint = ref(null)
 /** id строки во время DELETE */
 const deletingId = ref(null)
+/** id строки с временной подсветкой после перехода из других разделов */
+const highlightRowId = ref(null)
+
+function referralHighlightFromRoute() {
+  const raw = route.query.highlight
+  const s = raw == null ? '' : Array.isArray(raw) ? raw[0] : raw
+  if (s === '') return null
+  const n = Number(s)
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : null
+}
 async function copyUrl(url) {
   if (!url) return
   try {
@@ -218,6 +242,29 @@ async function removeReferral(r) {
     deletingId.value = null
   }
 }
+
+watch(
+  () =>
+    `${loading.value}:${
+      route.query.highlight ?? ''
+    }:${rows.value.map((r) => r.id).join(',')}`,
+  async () => {
+    if (loading.value) return
+    const hid = referralHighlightFromRoute()
+    highlightRowId.value = null
+    if (hid == null) return
+    if (!rows.value.some((r) => r.id === hid)) return
+    await nextTick()
+    const el = document.getElementById(`ref-${hid}`)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    highlightRowId.value = hid
+    window.setTimeout(() => {
+      if (highlightRowId.value === hid) highlightRowId.value = null
+    }, 3400)
+  },
+  { flush: 'post' },
+)
 
 onMounted(() => {
   void load()
@@ -333,7 +380,12 @@ onMounted(() => {
           <tr v-else-if="rows.length === 0">
             <td colspan="11" class="muted">Пока нет записей</td>
           </tr>
-          <tr v-for="r in rows" :key="r.id">
+          <tr
+            v-for="r in rows"
+            :key="r.id"
+            :id="'ref-' + r.id"
+            :class="{ 'ref-row-highlight': highlightRowId === r.id }"
+          >
             <td>{{ r.id }}</td>
             <td class="mono-cell">{{ r.token }}</td>
             <td>
@@ -556,6 +608,21 @@ onMounted(() => {
 }
 .data-table tbody tr:last-child td {
   border-bottom: none;
+}
+
+.data-table tbody tr.ref-row-highlight td {
+  animation: refRowHighlight 3.2s ease-out forwards;
+}
+@keyframes refRowHighlight {
+  0% {
+    background-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  35% {
+    background-color: color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
 }
 .muted {
   color: var(--muted);

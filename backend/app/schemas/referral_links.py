@@ -21,7 +21,7 @@ class ReferralLinkRead(BaseModel):
 
 
 class ReferralLinkOut(ReferralLinkRead):
-    """Ответ админ-API: те же поля + готовые ссылки (если заданы REFERRAL_SITE_BASE_URL / TELEGRAM_BOT_USERNAME)."""
+    """Ответ админ-API: те же поля + готовые ссылки (REFERRAL_SITE_BASE_URL, REFERRAL_TELEGRAM_BOT_*)."""
 
     site_entry_url: str | None = Field(
         default=None,
@@ -29,7 +29,7 @@ class ReferralLinkOut(ReferralLinkRead):
     )
     telegram_deep_link: str | None = Field(
         default=None,
-        description="Открытие бота в Telegram с параметром start",
+        description="Ссылка вида {URL бота}?start={token} (REFERRAL_TELEGRAM_BOT_BASE_URL или REFERRAL_TELEGRAM_BOT_USERNAME)",
     )
 
 

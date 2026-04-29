@@ -91,6 +91,7 @@ class TelegramAuthBody(BaseModel):
                     "first_name": "Иван",
                     "last_name": "Петров",
                     "topic_id": 2,
+                    "referral_token": "abc123ref",
                 }
             ]
         },
@@ -124,6 +125,24 @@ class TelegramAuthBody(BaseModel):
         le=9223372036854775807,
         description="Id топика; в users.telegram_properties.topic_id.",
     )
+    referral_token: str | None = Field(
+        default=None,
+        max_length=64,
+        description=(
+            "Реферальный токен (как ?ref= на сайте или deep link бота); "
+            "учитывается только при первой регистрации пользователя по telegram_id."
+        ),
+    )
+
+    @field_validator("referral_token", mode="before")
+    @classmethod
+    def strip_telegram_referral_token(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            return s or None
+        return v
 
 
 class TelegramProfilePatchBody(BaseModel):
