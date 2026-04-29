@@ -1,9 +1,15 @@
 """Эндпоинты для бэкенда Telegram-бота (секрет X-Telegram-Bot-Secret)."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy import select
 
-from app.api.deps import SessionDep, require_telegram_bot_api_secret
+from app.api.deps import (
+    ReadonlySessionDep,
+    SessionDep,
+    require_telegram_bot_api_secret,
+)
 from app.core.config import settings
 from app.domain.subscription_public_base import subscription_public_base_from_setting
 from app.models.user import User
@@ -15,6 +21,7 @@ from app.schemas.account import (
     build_subscription_open_client_items,
     merge_telegram_auth_profile,
 )
+from app.schemas.users import UserRead
 
 router = APIRouter(prefix="/telegram", tags=["public"])
 
@@ -31,6 +38,46 @@ async def subscription_open_clients() -> TelegramSubscriptionOpenClientsResponse
         clients=build_subscription_open_client_items(),
         public_base_url=base or None,
     )
+
+
+@router.get(
+    "/users/{topic_id}",
+    response_model=UserRead,
+    dependencies=[Depends(require_telegram_bot_api_secret)],
+    summary=(
+        "Пользователь по topic_id в users.telegram_properties.topic_id "
+        "(не путать с PATCH /api/telegram/users/{telegram_id}, там id Telegram; секрет бота)"
+    ),
+)
+async def get_user_by_topic_id(
+    topic_id: Annotated[
+        int,
+        Path(
+            ge=1,
+            le=9223372036854775807,
+            description="Значение telegram_properties.topic_id (топик форума и т.п.)",
+        ),
+    ],
+    session: ReadonlySessionDep,
+) -> User:
+    stmt = (
+        select(User)
+        .where(User.telegram_properties.contains({"topic_id": topic_id}))
+        .order_by(User.id.asc())
+        .limit(2)
+    )
+    rows = list(session.scalars(stmt).all())
+    if not rows:
+        raise HTTPException(
+            status_code=404,
+            detail="Пользователь с таким topic_id в telegram_properties не найден",
+        )
+    if len(rows) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail="Найдено несколько пользователей с таким topic_id; уточните данные в БД",
+        )
+    return rows[0]
 
 
 @router.patch(
