@@ -85,8 +85,10 @@ def require_telegram_bot_api_secret(
     x_telegram_bot_secret: Annotated[str | None, Header()] = None,
 ) -> None:
     """
-    Тот же секрет, что и для POST /api/auth/telegram и GET /api/telegram/subscription-open-clients
-    (заголовок X-Telegram-Bot-Secret). TELEGRAM_BOT_API_SECRET в env; пусто — 503.
+    Тот же секрет, что и для POST /api/auth/telegram,
+    PATCH /api/telegram/users/{telegram_id} и
+    GET /api/telegram/subscription-open-clients (заголовок X-Telegram-Bot-Secret).
+    TELEGRAM_BOT_API_SECRET в env; пусто — 503.
     """
     settings = get_settings()
     expected = (settings.telegram_bot_api_secret or "").strip()

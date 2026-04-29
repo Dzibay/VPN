@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     telegram_bot_api_secret: str = Field(
         default="",
         description=(
-            "Секрет для POST /api/auth/telegram и GET /api/telegram/subscription-open-clients: "
+            "Секрет для POST /api/auth/telegram, PATCH /api/telegram/users/{telegram_id} и GET /api/telegram/subscription-open-clients: "
             "заголовок X-Telegram-Bot-Secret (вызывает только бэкенд бота, не Telegram-клиент). "
             "Пусто — эндпоинты отвечают 503."
         ),

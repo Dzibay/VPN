@@ -111,6 +111,41 @@ class TelegramAuthBody(BaseModel):
     )
 
 
+class TelegramProfilePatchBody(BaseModel):
+    """Часть профиля Telegram для PATCH (без telegram_id в теле — id в пути)."""
+
+    username: str | None = Field(
+        default=None,
+        max_length=255,
+        description=(
+            "Ник в Telegram (без @); сохраняется в users.telegram_properties.username."
+        ),
+    )
+    first_name: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Имя; в users.telegram_properties.first_name.",
+    )
+    last_name: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Фамилия; в users.telegram_properties.last_name.",
+    )
+    topic_id: int | None = Field(
+        default=None,
+        ge=1,
+        le=9223372036854775807,
+        description="Id топика; в users.telegram_properties.topic_id.",
+    )
+
+
+class TelegramUserPropertiesUpdateResponse(BaseModel):
+    """Ответ после изменения users.telegram_properties через бота."""
+
+    telegram_id: int
+    telegram_properties: dict[str, Any] | None
+
+
 def merge_telegram_auth_profile(
     body: "TelegramAuthBody",
     existing: dict[str, Any] | None,
