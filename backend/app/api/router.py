@@ -1,6 +1,18 @@
 from fastapi import APIRouter
 
-from app.api.endpoints import auth, client_app_public, health, prometheus_sd, referral_links, referral_public, server_metrics, servers, status, telegram, users
+from app.api.endpoints import (
+    auth,
+    client_app_public,
+    health,
+    prometheus_sd,
+    referral_links,
+    referral_public,
+    server_metrics,
+    servers,
+    status,
+    telegram,
+    users,
+)
 
 api_router = APIRouter()
 api_router.include_router(health.router)

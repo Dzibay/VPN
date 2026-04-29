@@ -2,7 +2,7 @@ import secrets
 from dataclasses import dataclass
 from typing import Annotated, Literal
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, HTTPException, Header
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
@@ -54,7 +54,7 @@ def require_roles(
     Фабрика зависимостей FastAPI: JWT обязателен (если включён jwt_gate_active),
     роль из токена должна входить в allowed_roles.
     - admin — полный доступ к админ-API и страницам /admin (кроме только рефералов).
-    - manager — только API реферальных ссылок и UI /admin/referrals.
+    - manager — API реферальных ссылок, GET /users (сводка без токенов), UI /admin/referrals, /admin/users-analytics.
     - user — клиентский JWT (для эндпоинтов, где явно разрешён просмотр своих данных).
     """
     allowed = frozenset(allowed_roles)
@@ -88,6 +88,39 @@ def require_roles(
 # Частые комбинации (удобный импорт Depends(require_admin) и т.д.)
 require_admin = require_roles("admin")
 require_referrals_staff = require_roles("admin", "manager")
+
+StaffUserListMode = Literal["open", "admin", "manager"]
+
+
+def require_staff_user_list_access(
+    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_jwt)] = None,
+) -> StaffUserListMode:
+    """
+    GET /api/users: при выключенном JWT-гейте — полные поля как у админа;
+    при включённом — только admin или manager (у manager в ответе обнуляются token и vless_uuid).
+    """
+    settings = get_settings()
+    if not jwt_gate_active(settings):
+        return "open"
+    token = _token_strict(creds)
+    if not token:
+        raise HTTPException(
+            status_code=401,
+            detail="Требуется вход",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    claims = decode_access_token(token, settings)
+    if claims is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Недействительный или просроченный токен",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if claims.role == "admin":
+        return "admin"
+    if claims.role == "manager":
+        return "manager"
+    raise HTTPException(status_code=403, detail="Недостаточно прав")
 
 
 def get_bearer_principal_dep(

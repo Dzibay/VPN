@@ -1,0 +1,246 @@
+<script setup>
+import { computed, onMounted, ref } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
+import AdminPageHeader from '../components/AdminPageHeader.vue'
+import AdminPageShell from '../components/AdminPageShell.vue'
+import AdminTableWrap from '../components/AdminTableWrap.vue'
+import UserRolePill from '../components/UserRolePill.vue'
+import { isAdminRole } from '../auth/permissions.js'
+import { getSessionRole } from '../auth/session.js'
+import { fetchJson } from '../api/client.js'
+import { formatTrafficBytes } from '../utils/formatTraffic.js'
+
+const route = useRoute()
+
+const rows = ref([])
+const loading = ref(false)
+const error = ref(null)
+
+const isFullAdmin = computed(() => isAdminRole(getSessionRole()))
+
+const statsLine = computed(() => {
+  if (loading.value) return 'Загрузка…'
+  if (error.value) return 'Ошибка загрузки'
+  return `${rows.value.length} пользователей`
+})
+
+function formatDate(d) {
+  if (d == null || d === '') return '—'
+  try {
+    return new Date(d).toLocaleDateString('ru-RU')
+  } catch {
+    return String(d)
+  }
+}
+
+function telegramCell(u) {
+  if (u.telegram_id != null) {
+    const un = u.telegram_properties?.username
+    return un ? `${u.telegram_id} @${un}` : String(u.telegram_id)
+  }
+  if (u.telegram_properties?.username) {
+    return `@${u.telegram_properties.username}`
+  }
+  return '—'
+}
+
+async function load() {
+  loading.value = true
+  error.value = null
+  try {
+    rows.value = await fetchJson('/api/users')
+  } catch (e) {
+    error.value = e.message || String(e)
+    rows.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => {
+  void load()
+})
+</script>
+
+<template>
+  <AdminPageShell>
+    <AdminPageHeader
+      title="Аналитика пользователей"
+      :tabs-aria-label="isFullAdmin ? 'Разделы админки' : 'Раздел менеджера'"
+    >
+      <template #back>
+        <RouterLink v-if="isFullAdmin" class="back" to="/admin/users">
+          ← Управление данными
+        </RouterLink>
+        <RouterLink v-else class="back" to="/cabinet">← Личный кабинет</RouterLink>
+      </template>
+      <template #tabs>
+        <template v-if="isFullAdmin">
+          <RouterLink
+            class="tab"
+            :class="{ 'tab-active': route.name === 'admin-users' }"
+            :to="{ path: '/admin/users' }"
+          >
+            Пользователи
+          </RouterLink>
+          <RouterLink
+            class="tab"
+            :class="{ 'tab-active': route.name === 'admin-servers' }"
+            :to="{ path: '/admin/servers' }"
+          >
+            Серверы
+          </RouterLink>
+          <RouterLink
+            class="tab"
+            :class="{ 'tab-active': route.name === 'admin-users-staff-analytics' }"
+            :to="{ path: '/admin/users/analytics' }"
+          >
+            Клиенты
+          </RouterLink>
+          <RouterLink
+            class="tab"
+            :class="{ 'tab-active': route.name === 'admin-analytics' }"
+            :to="{ path: '/admin/analytics' }"
+          >
+            Нагрузка
+          </RouterLink>
+          <RouterLink class="tab" :to="{ path: '/admin/referrals' }">
+            Реферальные токены
+          </RouterLink>
+        </template>
+        <template v-else>
+          <RouterLink
+            class="tab tab-active"
+            :to="{ path: '/admin/users/analytics' }"
+          >
+            Клиенты
+          </RouterLink>
+          <RouterLink class="tab" :to="{ path: '/admin/referrals' }">
+            Реферальные токены
+          </RouterLink>
+        </template>
+      </template>
+      <div class="head-row">
+        <h2 class="section-heading">Сводка по учётным записям и трафику</h2>
+        <div class="head-actions">
+          <button
+            type="button"
+            class="btn-secondary"
+            :disabled="loading"
+            @click="load"
+          >
+            {{ loading ? 'Обновление…' : 'Обновить' }}
+          </button>
+        </div>
+      </div>
+    </AdminPageHeader>
+
+    <section class="stats" aria-live="polite">
+      <p class="stats-value">{{ statsLine }}</p>
+    </section>
+
+    <AdminTableWrap aria-label="Таблица аналитики пользователей">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Роль</th>
+            <th>Telegram</th>
+            <th>Подписка до</th>
+            <th class="num">Трафик (всего)</th>
+            <th class="num">ID реф. ссылки</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-if="loading">
+            <td colspan="6" class="muted">Загрузка…</td>
+          </tr>
+          <tr v-else-if="error">
+            <td colspan="6" class="error-cell">{{ error }}</td>
+          </tr>
+          <tr v-else-if="rows.length === 0">
+            <td colspan="6" class="muted">Нет пользователей</td>
+          </tr>
+          <tr v-for="u in rows" :key="u.id">
+            <td>{{ u.email ?? '—' }}</td>
+            <td>
+              <UserRolePill :role="u.account_role" />
+            </td>
+            <td class="tg-cell">{{ telegramCell(u) }}</td>
+            <td>{{ formatDate(u.subscription_until) }}</td>
+            <td class="num mono-num">{{ formatTrafficBytes(u.total_traffic_bytes) }}</td>
+            <td class="num">{{ u.referral_link_id ?? '—' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </AdminTableWrap>
+  </AdminPageShell>
+</template>
+
+<style scoped>
+.head-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+}
+
+.section-heading {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.stats {
+  margin-bottom: 1rem;
+}
+.stats-value {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+.table th,
+.table td {
+  padding: 0.55rem 0.65rem;
+  text-align: left;
+  border-bottom: 1px solid var(--nav-border);
+  vertical-align: top;
+}
+.table th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.table .num {
+  text-align: right;
+  white-space: nowrap;
+}
+.mono-num {
+  font-variant-numeric: tabular-nums;
+}
+.tg-cell {
+  word-break: break-word;
+  max-width: 14rem;
+}
+.muted {
+  color: var(--muted);
+}
+.error-cell {
+  color: var(--danger, #c62828);
+}
+</style>

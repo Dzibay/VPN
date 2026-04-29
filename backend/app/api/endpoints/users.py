@@ -1,11 +1,19 @@
 import logging
 from datetime import date
+from typing import Annotated, Literal, cast
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import and_, func, select, update
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
-from app.api.deps import ReadonlySessionDep, SessionDep, require_admin
+from app.api.deps import (
+    ReadonlySessionDep,
+    SessionDep,
+    StaffUserListMode,
+    require_admin,
+    require_staff_user_list_access,
+)
 from app.database.operations import table_insert
 from app.models.server import Server
 from app.models.user import User
@@ -15,6 +23,7 @@ from app.schemas.users import (
     ExtendActiveSubscriptionsBody,
     ExtendActiveSubscriptionsResponse,
     UserCreate,
+    UserListItem,
     UserRead,
     UsersCountResponse,
     UserUpdate,
@@ -30,13 +39,40 @@ log = logging.getLogger("app.users")
 router = APIRouter(
     prefix="/users",
     tags=["admin"],
-    dependencies=[Depends(require_admin)],
 )
+
+
+def _normalize_account_role(raw: str | None) -> str:
+    r = (raw or "client").strip()
+    if r in ("client", "manager", "admin"):
+        return r
+    return "client"
+
+
+def _user_rows_with_traffic(session: Session) -> list[tuple[User, int]]:
+    traffic_agg = (
+        select(
+            UserServerTraffic.user_id.label("uid"),
+            func.coalesce(
+                func.sum(UserServerTraffic.up_bytes + UserServerTraffic.down_bytes),
+                0,
+            ).label("total_bytes"),
+        )
+        .group_by(UserServerTraffic.user_id)
+        .subquery()
+    )
+    stmt = (
+        select(User, func.coalesce(traffic_agg.c.total_bytes, 0).label("total_traffic"))
+        .outerjoin(traffic_agg, User.id == traffic_agg.c.uid)
+        .order_by(User.id.desc())
+    )
+    return list(session.execute(stmt).all())
 
 
 @router.get(
     "/count",
     response_model=UsersCountResponse,
+    dependencies=[Depends(require_admin)],
     summary="Количество пользователей в БД",
 )
 async def users_count(session: ReadonlySessionDep) -> UsersCountResponse:
@@ -46,18 +82,50 @@ async def users_count(session: ReadonlySessionDep) -> UsersCountResponse:
 
 @router.get(
     "",
-    response_model=list[UserRead],
-    summary="Список пользователей",
+    response_model=list[UserListItem],
+    summary=(
+        "Список пользователей для таблиц админа и менеджера: трафик и реферал; "
+        "токен подписки и vless — только у админа (или при выключенном JWT-гейте)"
+    ),
 )
-async def list_users(session: ReadonlySessionDep) -> list[User]:
-    stmt = select(User).order_by(User.id.desc())
-    return list(session.scalars(stmt).all())
+async def list_users(
+    session: ReadonlySessionDep,
+    list_mode: Annotated[StaffUserListMode, Depends(require_staff_user_list_access)],
+) -> list[UserListItem]:
+    show_secrets = list_mode in ("open", "admin")
+    rows = _user_rows_with_traffic(session)
+    out: list[UserListItem] = []
+    for user, total_raw in rows:
+        try:
+            total = int(total_raw or 0)
+        except (TypeError, ValueError):
+            total = 0
+        if total < 0:
+            total = 0
+        role = _normalize_account_role(user.account_role)
+        role_lit = cast(Literal["client", "manager", "admin"], role)
+        out.append(
+            UserListItem(
+                id=user.id,
+                email=user.email,
+                account_role=role_lit,
+                telegram_id=user.telegram_id,
+                telegram_properties=user.telegram_properties,
+                subscription_until=user.subscription_until,
+                total_traffic_bytes=total,
+                referral_link_id=user.referral_link_id,
+                token=(user.token if show_secrets else None),
+                vless_uuid=(user.vless_uuid if show_secrets else None),
+            ),
+        )
+    return out
 
 
 @router.post(
     "",
     response_model=UserRead,
     status_code=201,
+    dependencies=[Depends(require_admin)],
     summary="Создать пользователя (токен подписки генерируется на сервере)",
 )
 async def create_user(
@@ -87,6 +155,7 @@ async def create_user(
 @router.post(
     "/extend-active-subscriptions",
     response_model=ExtendActiveSubscriptionsResponse,
+    dependencies=[Depends(require_admin)],
     summary=(
         "Продлить подписку: прибавить дни всем с активной конечной подпиской "
         "(subscription_until задан и ≥ сегодня; бессрочные записи не меняются)"
@@ -116,6 +185,7 @@ async def extend_active_subscriptions(
 @router.get(
     "/{user_id}/traffic-by-server",
     response_model=UserTrafficByServersBundle,
+    dependencies=[Depends(require_admin)],
     summary="Трафик пользователя по всем узлам (из БД, накопленный Xray)",
 )
 async def user_traffic_by_server(
@@ -172,6 +242,7 @@ async def user_traffic_by_server(
 @router.delete(
     "/{user_id}",
     status_code=204,
+    dependencies=[Depends(require_admin)],
     summary="Удалить пользователя; на узлах — синхронизация inbound без этого UUID",
 )
 async def delete_user(
@@ -189,6 +260,7 @@ async def delete_user(
 @router.patch(
     "/{user_id}",
     response_model=UserRead,
+    dependencies=[Depends(require_admin)],
     summary="Обновить пользователя (подписка); после сохранения — синхронизация Xray на узлах",
 )
 async def patch_user(

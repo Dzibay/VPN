@@ -74,6 +74,35 @@ class UserRead(BaseModel):
     vless_uuid: str = Field(description="UUID клиента VLESS (общий для всех узлов в подписке)")
 
 
+class UserListItem(BaseModel):
+    """Список пользователей для таблиц админки и менеджера (GET /users)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    telegram_id: int | None
+    telegram_properties: dict[str, Any] | None = None
+    email: str | None = None
+    account_role: Literal["client", "manager", "admin"] = Field(
+        default="client",
+        description="client — клиент; manager — рефералы; admin — полный администратор",
+    )
+    subscription_until: date | None
+    total_traffic_bytes: int = Field(
+        ge=0,
+        description="Сумма up+down по всем узлам (user_server_traffic)",
+    )
+    referral_link_id: int | None = None
+    token: str | None = Field(
+        default=None,
+        description="Токен подписки; у менеджера всегда null",
+    )
+    vless_uuid: str | None = Field(
+        default=None,
+        description="UUID VLESS; у менеджера всегда null",
+    )
+
+
 class UserUpdate(BaseModel):
     """Частичное обновление пользователя (админка)."""
 

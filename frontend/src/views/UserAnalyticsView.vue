@@ -2,6 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import Chart from 'chart.js/auto'
+import AdminPageHeader from '../components/AdminPageHeader.vue'
+import AdminPageShell from '../components/AdminPageShell.vue'
 import { fetchJson } from '../api/client.js'
 import { formatTrafficBytes as formatBytes } from '../utils/formatTraffic.js'
 
@@ -169,16 +171,18 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="page">
-    <header class="head">
-      <RouterLink class="back" to="/admin?tab=users">← Пользователи</RouterLink>
-      <h1 class="page-title">Трафик по серверам</h1>
+  <AdminPageShell>
+    <AdminPageHeader
+      title="Трафик по серверам"
+      back-to="/admin/users"
+      back-label="← Пользователи"
+    >
       <p v-if="bundle" class="sub">
         Пользователь <strong>{{ userTitle }}</strong>
         <span class="sub-sep">·</span>
         подписка до {{ formatDate(bundle.subscription_until) }}
       </p>
-    </header>
+    </AdminPageHeader>
 
     <p v-if="error" class="banner-err">{{ error }}</p>
     <p v-if="loading" class="loading-line">Загрузка…</p>
@@ -269,37 +273,10 @@ onBeforeUnmount(() => {
         </table>
       </div>
     </template>
-  </div>
+  </AdminPageShell>
 </template>
 
 <style scoped>
-.page {
-  padding: 1.35rem 1.5rem 3rem;
-  max-width: 1180px;
-  margin: 0 auto;
-}
-.head {
-  margin-bottom: 1.35rem;
-}
-.back {
-  display: inline-block;
-  margin-bottom: 0.5rem;
-  color: var(--accent);
-  text-decoration: none;
-  font-weight: 600;
-  font-size: 0.9rem;
-}
-.back:hover {
-  text-decoration: underline;
-}
-.page-title {
-  margin: 0 0 0.4rem;
-  font-size: 1.85rem;
-  font-weight: 800;
-  font-family: var(--heading);
-  letter-spacing: -0.03em;
-  color: var(--text-h);
-}
 .sub {
   margin: 0.35rem 0 0;
   font-size: 0.9rem;

@@ -4,21 +4,15 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   clearSession,
   getAccessToken,
-  getSessionRole,
 } from '../auth/session.js'
 
 const router = useRouter()
 const route = useRoute()
 
 const hasToken = ref(false)
-const isAdmin = ref(false)
-const isManager = ref(false)
 
 function refreshSessions() {
   hasToken.value = Boolean(getAccessToken())
-  const role = getSessionRole()
-  isAdmin.value = role === 'admin'
-  isManager.value = role === 'manager'
 }
 
 const showGuestAuthLinks = computed(
@@ -80,50 +74,6 @@ router.afterEach(refreshSessions)
             Выйти
           </button>
         </template>
-      </nav>
-
-      <nav
-        v-if="hasToken && (isAdmin || isManager)"
-        class="group-admin"
-        aria-label="Администрирование"
-      >
-        <span class="admin-label">{{
-          isAdmin ? 'Админка' : 'Рефералы'
-        }}</span>
-        <template v-if="isAdmin">
-          <RouterLink
-            class="nav-link"
-            :class="{
-              'router-link-active':
-                route.name === 'admin-data' || route.name === 'admin-user-analytics',
-            }"
-            to="/admin"
-          >
-            Данные
-          </RouterLink>
-          <RouterLink
-            class="nav-link"
-            :class="{ 'router-link-active': route.name === 'admin-analytics' }"
-            to="/admin/analytics"
-          >
-            Аналитика
-          </RouterLink>
-          <RouterLink
-            class="nav-link"
-            :class="{ 'router-link-active': route.name === 'admin-referrals' }"
-            to="/admin/referrals"
-          >
-            Рефералы
-          </RouterLink>
-        </template>
-        <RouterLink
-          v-else
-          class="nav-link"
-          :class="{ 'router-link-active': route.name === 'admin-referrals' }"
-          to="/admin/referrals"
-        >
-          Токены
-        </RouterLink>
       </nav>
     </div>
   </header>
@@ -232,26 +182,6 @@ router.afterEach(refreshSessions)
   box-shadow: 0 1px 3px
     color-mix(in srgb, var(--accent) 16%, transparent);
   flex-shrink: 0;
-}
-
-.group-admin {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.15rem 0.15rem 0.15rem 0.35rem;
-  border-radius: 12px;
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-border);
-}
-
-.admin-label {
-  font-size: 0.68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  padding: 0 0.35rem 0 0.5rem;
 }
 
 .nav-link {

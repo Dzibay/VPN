@@ -2,6 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import Chart from 'chart.js/auto'
+import AdminPageHeader from '../components/AdminPageHeader.vue'
+import AdminPageShell from '../components/AdminPageShell.vue'
 import { fetchJson } from '../api/client.js'
 
 const route = useRoute()
@@ -907,11 +909,51 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="page">
-    <header class="head">
-      <RouterLink class="back" to="/admin?tab=servers">← Серверы</RouterLink>
-      <h1 class="page-title">Аналитика нагрузки</h1>
-    </header>
+  <AdminPageShell>
+    <AdminPageHeader
+      title="Аналитика нагрузки"
+      back-to="/"
+      back-label="← На главную"
+      tabs-aria-label="Разделы админки"
+    >
+      <template #tabs>
+        <RouterLink
+          class="tab"
+          :class="{ 'tab-active': route.name === 'admin-users' }"
+          :to="{ path: '/admin/users' }"
+        >
+          Пользователи
+        </RouterLink>
+        <RouterLink
+          class="tab"
+          :class="{ 'tab-active': route.name === 'admin-servers' }"
+          :to="{ path: '/admin/servers' }"
+        >
+          Серверы
+        </RouterLink>
+        <RouterLink
+          class="tab"
+          :class="{ 'tab-active': route.name === 'admin-users-staff-analytics' }"
+          :to="{ path: '/admin/users/analytics' }"
+        >
+          Клиенты
+        </RouterLink>
+        <RouterLink
+          class="tab"
+          :class="{ 'tab-active': route.name === 'admin-analytics' }"
+          :to="{ path: '/admin/analytics' }"
+        >
+          Нагрузка
+        </RouterLink>
+        <RouterLink
+          class="tab"
+          :class="{ 'tab-active': route.name === 'admin-referrals' }"
+          :to="{ path: '/admin/referrals' }"
+        >
+          Реферальные токены
+        </RouterLink>
+      </template>
+    </AdminPageHeader>
 
     <div class="toolbar glass">
       <label class="field-inline">
@@ -1221,47 +1263,10 @@ onBeforeUnmount(() => {
     </div>
 
     <p v-if="loading" class="loading-line">Загрузка…</p>
-  </div>
+  </AdminPageShell>
 </template>
 
 <style scoped>
-.page {
-  padding: 1.35rem 1.5rem 3rem;
-  max-width: 1180px;
-  margin: 0 auto;
-}
-.head {
-  margin-bottom: 1.35rem;
-}
-.back {
-  display: inline-block;
-  margin-bottom: 0.5rem;
-  color: var(--accent);
-  text-decoration: none;
-  font-weight: 600;
-  font-size: 0.9rem;
-}
-.back:hover {
-  text-decoration: underline;
-}
-.page-title {
-  margin: 0 0 0.4rem;
-  font-size: 1.85rem;
-  font-weight: 800;
-  font-family: var(--heading);
-  letter-spacing: -0.03em;
-  color: var(--text-h);
-}
-.sub {
-  margin: 0;
-  font-size: 0.88rem;
-  color: var(--muted);
-  line-height: 1.55;
-  max-width: 54rem;
-}
-.sub a {
-  color: var(--accent);
-}
 .inline {
   font-family: var(--mono);
   font-size: 0.82em;

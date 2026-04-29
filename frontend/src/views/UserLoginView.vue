@@ -27,12 +27,15 @@ async function submit() {
     const r = route.query.redirect
     if (data.role === 'admin') {
       router.replace(
-        typeof r === 'string' && r.startsWith('/admin') ? r : '/admin',
+        typeof r === 'string' && r.startsWith('/admin') ? r : '/admin/users',
       )
     } else if (data.role === 'manager') {
-      router.replace(
-        typeof r === 'string' && r.startsWith('/admin/referrals') ? r : '/admin/referrals',
-      )
+      const rOk =
+        typeof r === 'string' &&
+        (r.startsWith('/admin/referrals') ||
+          r.startsWith('/admin/users/analytics') ||
+          r.startsWith('/admin/users-analytics'))
+      router.replace(rOk ? r : '/admin/referrals')
     } else {
       router.replace(typeof r === 'string' && r ? r : '/cabinet')
     }

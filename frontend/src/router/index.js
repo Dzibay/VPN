@@ -10,6 +10,7 @@ import ReferralTokensAdminPage from '../views/ReferralTokensAdminPage.vue'
 import HomeView from '../views/HomeView.vue'
 import ServerAnalyticsView from '../views/ServerAnalyticsView.vue'
 import UserAnalyticsView from '../views/UserAnalyticsView.vue'
+import UsersAnalyticsStaffView from '../views/UsersAnalyticsStaffView.vue'
 import UserCabinetView from '../views/UserCabinetView.vue'
 import UserLoginView from '../views/UserLoginView.vue'
 import UserRegisterView from '../views/UserRegisterView.vue'
@@ -37,9 +38,9 @@ const routes = [
     component: ReferralTokensAdminPage,
   },
   {
-    path: '/admin',
-    name: 'admin-data',
-    component: AdminTablesPage,
+    path: '/admin/users/analytics',
+    name: 'admin-users-staff-analytics',
+    component: UsersAnalyticsStaffView,
   },
   {
     path: '/admin/users/:userId/analytics',
@@ -47,9 +48,27 @@ const routes = [
     component: UserAnalyticsView,
   },
   {
+    path: '/admin/users',
+    name: 'admin-users',
+    component: AdminTablesPage,
+  },
+  {
+    path: '/admin/servers',
+    name: 'admin-servers',
+    component: AdminTablesPage,
+  },
+  {
     path: '/admin/analytics',
     name: 'admin-analytics',
     component: ServerAnalyticsView,
+  },
+  { path: '/admin/users-analytics', redirect: '/admin/users/analytics' },
+  {
+    path: '/admin',
+    redirect: (to) =>
+      to.query.tab === 'servers'
+        ? { path: '/admin/servers' }
+        : { path: '/admin/users' },
   },
 ]
 
@@ -75,7 +94,7 @@ router.beforeEach(async (to, _from, next) => {
 
   if ((to.name === 'login' || to.name === 'register') && token) {
     if (isAdminRole(role)) {
-      return next({ path: '/admin' })
+      return next({ path: '/admin/users' })
     }
     if (role === 'manager') {
       return next({ path: '/admin/referrals' })
@@ -95,7 +114,8 @@ router.beforeEach(async (to, _from, next) => {
         })
       }
       const isReferralsRoute = to.name === 'admin-referrals'
-      if (isReferralsRoute) {
+      const isUsersAnalyticsStaff = to.name === 'admin-users-staff-analytics'
+      if (isReferralsRoute || isUsersAnalyticsStaff) {
         if (!canAccessReferralsAdmin(role)) {
           return next({ path: '/cabinet' })
         }

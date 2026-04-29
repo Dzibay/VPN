@@ -7,14 +7,17 @@ import {
   ref,
   watch,
 } from 'vue'
+import AdminPageHeader from '../components/AdminPageHeader.vue'
+import AdminPageShell from '../components/AdminPageShell.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
+import UserRolePill from '../components/UserRolePill.vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { fetchJson, subscriptionPublicUrl } from '../api/client.js'
 
 const route = useRoute()
 
 const section = computed(() =>
-  route.query.tab === 'servers' ? 'servers' : 'users',
+  route.name === 'admin-servers' ? 'servers' : 'users',
 )
 
 const users = ref([])
@@ -393,12 +396,6 @@ function openEditUser(u) {
       ? u.account_role
       : 'client'
   modalOpen.value = true
-}
-
-function accountRoleLabel(role) {
-  if (role === 'admin') return 'Админ'
-  if (role === 'manager') return 'Менеджер'
-  return 'Клиент'
 }
 
 function subscriptionDateOrNull(dateStr) {
@@ -896,11 +893,6 @@ const sectionTitle = computed(() =>
   section.value === 'users' ? 'Пользователи' : 'Серверы',
 )
 
-const sectionSub = computed(() =>
-  section.value === 'users'
-    ? 'У каждого пользователя свой VLESS UUID в подписке; на узлах в inbound перечислены UUID активных подписок. После изменений — «Синхронизировать Xray».'
-    : 'Провижининг по SSH: Xray, Prometheus (node_exporter), справедливая очередь uplink (CAKE/fq_codel), полный прогон, обновление и очистка. Нужны Redis и воркер RQ. Каскад: внешний exit можно добавить отдельно, затем вход (РФ) и привязка в «Правка» — конфиг Xray на узлах пока не меняется.',
-)
 
 const userModalTitle = computed(() =>
   editingUserId.value != null ? 'Редактировать пользователя' : 'Новый пользователь',
@@ -914,13 +906,16 @@ const addButtonLabel = computed(() =>
   section.value === 'users' ? 'Новый пользователь' : 'Новый сервер',
 )
 
-const statsTitle = computed(() =>
-  section.value === 'users' ? 'Пользователей в базе' : 'Серверов в базе',
-)
-
-const statsValue = computed(() =>
-  section.value === 'users' ? usersCount.value : serversCount.value,
-)
+const statsLine = computed(() => {
+  if (loading.value) return 'Загрузка…'
+  if (error.value) return 'Ошибка загрузки'
+  if (section.value === 'users') {
+    const n = usersCount.value
+    return n != null ? `${n} пользователей` : '— пользователей'
+  }
+  const n = serversCount.value
+  return n != null ? `${n} серверов` : '— серверов'
+})
 
 /** id внешнего, на которые ссылаются входы (РФ) */
 const cascadeReferencedExitIds = computed(() => {
@@ -964,29 +959,50 @@ watch(formIsCascadeRuEntry, (v) => {
 </script>
 
 <template>
-  <div class="page">
-    <header class="head">
-      <RouterLink class="back" to="/">← На главную</RouterLink>
-      <h1 class="page-title">Управление данными</h1>
-      <nav class="admin-tabs" aria-label="Таблицы">
+  <AdminPageShell>
+    <AdminPageHeader
+      title="Управление данными"
+      back-to="/"
+      back-label="← На главную"
+      tabs-aria-label="Таблицы"
+    >
+      <template #tabs>
         <RouterLink
           class="tab"
-          :class="{ 'tab-active': section === 'users' }"
-          :to="{ path: '/admin' }"
+          :class="{ 'tab-active': route.name === 'admin-users' }"
+          :to="{ path: '/admin/users' }"
         >
           Пользователи
         </RouterLink>
         <RouterLink
           class="tab"
-          :class="{ 'tab-active': section === 'servers' }"
-          :to="{ path: '/admin', query: { tab: 'servers' } }"
+          :class="{ 'tab-active': route.name === 'admin-servers' }"
+          :to="{ path: '/admin/servers' }"
         >
           Серверы
         </RouterLink>
-        <RouterLink class="tab" :to="{ path: '/admin/referrals' }">
+        <RouterLink
+          class="tab"
+          :class="{ 'tab-active': route.name === 'admin-users-staff-analytics' }"
+          :to="{ path: '/admin/users/analytics' }"
+        >
+          Клиенты
+        </RouterLink>
+        <RouterLink
+          class="tab"
+          :class="{ 'tab-active': route.name === 'admin-analytics' }"
+          :to="{ path: '/admin/analytics' }"
+        >
+          Нагрузка
+        </RouterLink>
+        <RouterLink
+          class="tab"
+          :class="{ 'tab-active': route.name === 'admin-referrals' }"
+          :to="{ path: '/admin/referrals' }"
+        >
           Реферальные токены
         </RouterLink>
-      </nav>
+      </template>
       <div class="head-row">
         <h2 class="section-heading">{{ sectionTitle }}</h2>
         <div class="head-actions">
@@ -1045,16 +1061,16 @@ watch(formIsCascadeRuEntry, (v) => {
           </button>
         </div>
       </div>
-      <p class="sub">{{ sectionSub }}</p>
-    </header>
+    </AdminPageHeader>
 
     <section class="stats" aria-live="polite">
-      <h3 class="stats-title">{{ statsTitle }}</h3>
-      <p v-if="loading" class="stats-value muted">Загрузка…</p>
-      <p v-else-if="error" class="stats-value error" :title="error">
-        Не удалось загрузить
+      <p
+        class="stats-value"
+        :class="{ error: !loading && error }"
+        :title="error || undefined"
+      >
+        {{ statsLine }}
       </p>
-      <p v-else class="stats-value">{{ statsValue }}</p>
     </section>
 
     <!-- Пользователи -->
@@ -1102,9 +1118,7 @@ watch(formIsCascadeRuEntry, (v) => {
               <td>{{ u.id }}</td>
               <td>{{ u.email ?? '—' }}</td>
               <td>
-                <span class="role-pill" :title="u.account_role || 'client'">{{
-                  accountRoleLabel(u.account_role || 'client')
-                }}</span>
+                <UserRolePill :role="u.account_role" />
               </td>
               <td>
                 <template v-if="u.telegram_id != null">
@@ -1122,15 +1136,11 @@ watch(formIsCascadeRuEntry, (v) => {
               </td>
               <td>{{ formatDate(u.subscription_until) }}</td>
               <td class="link-cell">
-                <a
-                  class="sub-link"
-                  :href="subscriptionPublicUrl(u.token)"
-                  target="_blank"
-                  rel="noopener"
-                >{{ subscriptionPublicUrl(u.token) }}</a>
                 <button
                   type="button"
                   class="btn-secondary btn-tiny"
+                  :disabled="!u.token"
+                  aria-label="Копировать ссылку подписки в буфер обмена"
                   @click="copyText(subscriptionPublicUrl(u.token))"
                 >
                   Копировать
@@ -1877,77 +1887,10 @@ watch(formIsCascadeRuEntry, (v) => {
         </div>
       </div>
     </Teleport>
-  </div>
+  </AdminPageShell>
 </template>
 
 <style scoped>
-.page {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 1rem 1rem 2.5rem;
-}
-.head {
-  margin-bottom: 1rem;
-}
-.back {
-  display: inline-block;
-  margin-bottom: 0.5rem;
-  color: var(--muted);
-  text-decoration: none;
-  font-weight: 600;
-  transition: color 0.2s ease;
-}
-
-.back:hover {
-  color: var(--accent);
-}
-
-.page-title {
-  font-size: 1.65rem;
-  margin: 0 0 0.65rem;
-  letter-spacing: -0.02em;
-  color: var(--text-h);
-}
-
-.admin-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-bottom: 0.85rem;
-}
-
-.tab {
-  padding: 0.4rem 0.85rem;
-  border-radius: 999px;
-  font-size: 0.82rem;
-  font-weight: 600;
-  text-decoration: none;
-  color: var(--muted);
-  border: 1px solid var(--card-border);
-  background: var(--surface);
-  transition:
-    color 0.2s ease,
-    border-color 0.2s ease,
-    background 0.2s ease;
-}
-
-.tab:hover {
-  color: var(--accent);
-  border-color: var(--accent-border);
-}
-
-.tab-active {
-  color: var(--on-accent);
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.tab-active:hover {
-  color: var(--on-accent);
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-}
-
 .head-row {
   display: flex;
   flex-wrap: wrap;
@@ -2005,37 +1948,14 @@ watch(formIsCascadeRuEntry, (v) => {
   font-size: 0.9rem;
 }
 .stats {
-  margin: 0 0 1rem;
-  max-width: 240px;
-  padding: 0.9rem 1.1rem;
-  border-radius: 14px;
-  border: 1px solid var(--card-border);
-  background: var(--card-bg);
-  box-shadow: var(--shadow-sm);
-}
-.stats-title {
-  margin: 0 0 0.35rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
+  margin-bottom: 1rem;
 }
 .stats-value {
   margin: 0;
-  font-size: 1.75rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-h);
-}
-.stats-value.muted {
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-size: 0.92rem;
   color: var(--muted);
 }
 .stats-value.error {
-  font-size: 0.85rem;
-  font-weight: 600;
   color: var(--danger);
 }
 .card {
@@ -2072,18 +1992,6 @@ watch(formIsCascadeRuEntry, (v) => {
   text-transform: uppercase;
   font-size: 0.72rem;
   letter-spacing: 0.06em;
-}
-.role-pill {
-  display: inline-block;
-  padding: 0.12rem 0.45rem;
-  border-radius: 6px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: none;
-  letter-spacing: 0.02em;
-  background: var(--surface);
-  border: 1px solid var(--card-border);
-  color: var(--text-h);
 }
 .mono {
   font-family: var(--mono);
@@ -2303,28 +2211,15 @@ watch(formIsCascadeRuEntry, (v) => {
   line-height: 1.45;
 }
 
-.mono .btn-secondary,
-.link-cell .btn-secondary {
+.mono .btn-secondary {
   margin-top: 0.45rem;
   margin-right: 0.35rem;
 }
 .link-cell {
   font-size: 0.78rem;
 }
-.sub-link {
-  display: inline-block;
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--accent);
-  font-weight: 600;
-  vertical-align: middle;
-  transition: color 0.2s ease;
-}
-
-.sub-link:hover {
-  color: var(--accent-hover);
+.link-cell .btn-secondary {
+  margin-right: 0.35rem;
 }
 
 .user-analytics-link {

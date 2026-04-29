@@ -137,7 +137,7 @@ onMounted(() => {
         <h2 class="block-title">Администратор</h2>
         <p class="hint">
           Управление серверами и пользователями — в разделе ниже в шапке или
-          <RouterLink class="sub-link" to="/admin">перейти к данным</RouterLink>.
+          <RouterLink class="sub-link" to="/admin/users">перейти к данным</RouterLink>.
         </p>
         <dl class="dl">
           <div class="row">

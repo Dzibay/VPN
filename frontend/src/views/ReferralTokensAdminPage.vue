@@ -1,12 +1,15 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
+import AdminPageHeader from '../components/AdminPageHeader.vue'
+import AdminPageShell from '../components/AdminPageShell.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
 import RowActionsDropdown from '../components/RowActionsDropdown.vue'
 import { isAdminRole } from '../auth/permissions.js'
 import { getSessionRole } from '../auth/session.js'
 import { fetchJson, sitePublicUrl } from '../api/client.js'
 
+const route = useRoute()
 const rows = ref([])
 const loading = ref(false)
 const error = ref(null)
@@ -222,22 +225,64 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="page">
-    <header class="head">
-      <RouterLink v-if="isFullAdmin" class="back" to="/admin">
-        ← Управление данными
-      </RouterLink>
-      <RouterLink v-else class="back" to="/cabinet">← Личный кабинет</RouterLink>
-      <h1 class="page-title">Реферальные токены</h1>
-      <nav v-if="isFullAdmin" class="admin-tabs" aria-label="Разделы админки">
-        <RouterLink class="tab" :to="{ path: '/admin' }">Пользователи</RouterLink>
-        <RouterLink class="tab" :to="{ path: '/admin', query: { tab: 'servers' } }">
-          Серверы
+  <AdminPageShell>
+    <AdminPageHeader
+      title="Реферальные токены"
+      :tabs-aria-label="isFullAdmin ? 'Разделы админки' : 'Раздел менеджера'"
+    >
+      <template #back>
+        <RouterLink v-if="isFullAdmin" class="back" to="/admin/users">
+          ← Управление данными
         </RouterLink>
-        <RouterLink class="tab tab-active" :to="{ path: '/admin/referrals' }">
-          Реферальные токены
-        </RouterLink>
-      </nav>
+        <RouterLink v-else class="back" to="/cabinet">← Личный кабинет</RouterLink>
+      </template>
+      <template #tabs>
+        <template v-if="isFullAdmin">
+          <RouterLink
+            class="tab"
+            :class="{ 'tab-active': route.name === 'admin-users' }"
+            :to="{ path: '/admin/users' }"
+          >
+            Пользователи
+          </RouterLink>
+          <RouterLink
+            class="tab"
+            :class="{ 'tab-active': route.name === 'admin-servers' }"
+            :to="{ path: '/admin/servers' }"
+          >
+            Серверы
+          </RouterLink>
+          <RouterLink
+            class="tab"
+            :class="{ 'tab-active': route.name === 'admin-users-staff-analytics' }"
+            :to="{ path: '/admin/users/analytics' }"
+          >
+            Клиенты
+          </RouterLink>
+          <RouterLink
+            class="tab"
+            :class="{ 'tab-active': route.name === 'admin-analytics' }"
+            :to="{ path: '/admin/analytics' }"
+          >
+            Нагрузка
+          </RouterLink>
+          <RouterLink class="tab tab-active" :to="{ path: '/admin/referrals' }">
+            Реферальные токены
+          </RouterLink>
+        </template>
+        <template v-else>
+          <RouterLink
+            class="tab"
+            :class="{ 'tab-active': route.name === 'admin-users-staff-analytics' }"
+            :to="{ path: '/admin/users/analytics' }"
+          >
+            Клиенты
+          </RouterLink>
+          <RouterLink class="tab tab-active" :to="{ path: '/admin/referrals' }">
+            Реферальные токены
+          </RouterLink>
+        </template>
+      </template>
       <div class="head-row">
         <h2 class="section-heading">Конверсия по токенам</h2>
         <div class="head-actions">
@@ -254,7 +299,7 @@ onMounted(() => {
           </button>
         </div>
       </div>
-    </header>
+    </AdminPageHeader>
 
     <section class="stats" aria-live="polite">
       <p class="stats-value">{{ statsLine }}</p>
@@ -443,67 +488,10 @@ onMounted(() => {
         </div>
       </div>
     </Teleport>
-  </div>
+  </AdminPageShell>
 </template>
 
 <style scoped>
-.page {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 1rem 1rem 2.5rem;
-}
-.head {
-  margin-bottom: 1rem;
-}
-.back {
-  display: inline-block;
-  margin-bottom: 0.5rem;
-  color: var(--muted);
-  text-decoration: none;
-  font-weight: 600;
-  transition: color 0.2s ease;
-}
-.back:hover {
-  color: var(--accent);
-}
-.page-title {
-  font-size: 1.65rem;
-  margin: 0 0 0.65rem;
-  letter-spacing: -0.02em;
-  color: var(--text-h);
-}
-.admin-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-bottom: 0.85rem;
-}
-.tab {
-  padding: 0.4rem 0.85rem;
-  border-radius: 999px;
-  font-size: 0.82rem;
-  font-weight: 600;
-  text-decoration: none;
-  color: var(--muted);
-  border: 1px solid var(--card-border);
-  background: var(--surface);
-  transition:
-    color 0.2s ease,
-    border-color 0.2s ease,
-    background 0.2s ease;
-}
-.tab:hover {
-  color: var(--accent);
-  border-color: var(--accent-border);
-}
-.tab-active {
-  color: var(--on-accent);
-  background: var(--accent);
-  border-color: var(--accent);
-}
-.tab-active:hover {
-  color: var(--on-accent);
-}
 .head-row {
   display: flex;
   flex-wrap: wrap;
