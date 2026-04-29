@@ -279,10 +279,8 @@ onMounted(async () => {
               {{
                 hasLinkFilter
                   ? 'регистрации → пользователи с трафиком'
-                  : 'доля с трафиком относительно шага выше'
+                  : 'доля с трафиком'
               }}
-              <span v-if="!hasLinkFilter" class="connector-hint"> (вся база)</span>
-              <span v-else class="connector-hint"> (эта реф. ссылка)</span>
             </span>
           </div>
 
