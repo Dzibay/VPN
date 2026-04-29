@@ -7,6 +7,7 @@ import {
   ref,
   watch,
 } from 'vue'
+import AdminTableWrap from '../components/AdminTableWrap.vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { fetchJson, subscriptionPublicUrl } from '../api/client.js'
 
@@ -968,6 +969,9 @@ watch(formIsCascadeRuEntry, (v) => {
         >
           Серверы
         </RouterLink>
+        <RouterLink class="tab" :to="{ path: '/admin/referrals' }">
+          Реферальные токены
+        </RouterLink>
       </nav>
       <div class="head-row">
         <h2 class="section-heading">{{ sectionTitle }}</h2>
@@ -1065,7 +1069,7 @@ watch(formIsCascadeRuEntry, (v) => {
       >
         Пока нет пользователей. Создайте первого.
       </div>
-      <div v-else-if="!usersLoading" class="table-wrap">
+      <AdminTableWrap v-else-if="!usersLoading" aria-label="Таблица пользователей">
         <table class="table">
           <thead>
             <tr>
@@ -1132,7 +1136,7 @@ watch(formIsCascadeRuEntry, (v) => {
             </tr>
           </tbody>
         </table>
-      </div>
+      </AdminTableWrap>
     </template>
 
     <!-- Серверы -->
@@ -1243,7 +1247,7 @@ watch(formIsCascadeRuEntry, (v) => {
             </li>
           </ul>
         </div>
-        <div class="table-wrap">
+        <AdminTableWrap aria-label="Таблица серверов">
         <table class="table">
           <thead>
             <tr>
@@ -1306,7 +1310,7 @@ watch(formIsCascadeRuEntry, (v) => {
             </tr>
           </tbody>
         </table>
-        </div>
+        </AdminTableWrap>
       </div>
     </template>
 
@@ -2014,13 +2018,6 @@ watch(formIsCascadeRuEntry, (v) => {
 }
 .card.muted {
   color: var(--muted);
-}
-.table-wrap {
-  overflow-x: auto;
-  border-radius: 14px;
-  border: 1px solid var(--card-border);
-  background: var(--card-bg);
-  box-shadow: var(--shadow-sm);
 }
 .table {
   width: 100%;

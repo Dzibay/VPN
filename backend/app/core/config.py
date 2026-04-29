@@ -99,6 +99,19 @@ class Settings(BaseSettings):
             "ведёт на {этот_origin}/sub/{token}/open/{client} . Пусто — как subscription_public_base_url / Host."
         ),
     )
+    referral_site_base_url: str = Field(
+        default="",
+        description=(
+            "Публичный origin SPA для реферальных ссылок на сайт (https://vpn.example.com без слэша). "
+            "Используется в админке и в ответах API: {base}/?ref={token} (главная страница). Пусто — ссылки только на фронте по VITE_PUBLIC_SITE_URL."
+        ),
+    )
+    telegram_bot_username: str = Field(
+        default="",
+        description=(
+            "Username основного Telegram-бота без @ — для ссылок вида https://t.me/{user}?start={token} в админке и API. Пусто — колонка «Telegram» собирается на фронте из VITE_TELEGRAM_BOT_USERNAME."
+        ),
+    )
 
     redis_url: str = Field(
         default="redis://127.0.0.1:6379/0",

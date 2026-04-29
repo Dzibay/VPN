@@ -1,7 +1,7 @@
 from datetime import date
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class SubscriptionOpenClientItem(BaseModel):
@@ -57,6 +57,21 @@ class TelegramSubscriptionOpenClientsResponse(BaseModel):
 class AccountRegisterBody(BaseModel):
     email: EmailStr = Field(max_length=320)
     password: str = Field(min_length=8, max_length=72, description="До 72 байт (ограничение bcrypt)")
+    referral_token: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Реферальный токен из ?ref= на сайте (session/localStorage до регистрации)",
+    )
+
+    @field_validator("referral_token", mode="before")
+    @classmethod
+    def strip_referral_token(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            return s or None
+        return v
 
 
 class AccountLoginBody(BaseModel):

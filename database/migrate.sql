@@ -42,3 +42,37 @@ ALTER TABLE servers ADD COLUMN IF NOT EXISTS cascade_egress_client_uuid TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_servers_cascade_egress_uuid
     ON servers (cascade_egress_client_uuid)
     WHERE cascade_egress_client_uuid IS NOT NULL;
+
+-- Реферальные токены (конверсия: клики / регистрации / оплаты); полная ссылка собирается из origin + token
+-- owner_kind: произвольная метка (github, bot1, campaign, …); зарезервировано «user» — тогда нужен owner_user_id
+CREATE TABLE IF NOT EXISTS referral_links (
+    id BIGSERIAL PRIMARY KEY,
+    token TEXT NOT NULL,
+    owner_kind TEXT NOT NULL,
+    owner_user_id BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    clicks_count BIGINT NOT NULL DEFAULT 0 CHECK (clicks_count >= 0),
+    registrations_count BIGINT NOT NULL DEFAULT 0 CHECK (registrations_count >= 0),
+    payments_count BIGINT NOT NULL DEFAULT 0 CHECK (payments_count >= 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT referral_links_token_key UNIQUE (token),
+    CONSTRAINT referral_links_owner_consistency CHECK (
+        (owner_kind = 'user' AND owner_user_id IS NOT NULL)
+        OR (owner_kind <> 'user' AND owner_user_id IS NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_referral_links_owner_user_id ON referral_links (owner_user_id)
+    WHERE owner_user_id IS NOT NULL;
+
+-- Уже развёрнутые БД со старым CHECK(owner_kind IN ('user','campaign')): снять перечень и оставить только согласованность с user
+ALTER TABLE referral_links DROP CONSTRAINT IF EXISTS referral_links_owner_kind_check;
+ALTER TABLE referral_links DROP CONSTRAINT IF EXISTS referral_links_owner_consistency;
+ALTER TABLE referral_links ADD CONSTRAINT referral_links_owner_consistency CHECK (
+    (owner_kind = 'user' AND owner_user_id IS NOT NULL)
+    OR (owner_kind <> 'user' AND owner_user_id IS NULL)
+);
+
+-- Привязка пользователя к реферальной ссылке с сайта (после регистрации по ?ref=)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_link_id BIGINT REFERENCES referral_links (id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_users_referral_link_id ON users (referral_link_id)
+    WHERE referral_link_id IS NOT NULL;

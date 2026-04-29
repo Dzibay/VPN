@@ -2,7 +2,7 @@ from datetime import date
 
 from typing import Any
 
-from sqlalchemy import BigInteger, Date, Index, Text, text
+from sqlalchemy import BigInteger, Date, ForeignKey, Index, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,5 +29,10 @@ class User(Base):
     email: Mapped[str | None] = mapped_column(Text, nullable=True)
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     subscription_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    referral_link_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("referral_links.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     token: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     vless_uuid: Mapped[str] = mapped_column(Text, unique=True, nullable=False)

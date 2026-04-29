@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { getAccessToken, getSessionRole, isAdminJwtRequired } from '../auth/session.js'
 import AdminTablesPage from '../views/AdminTablesPage.vue'
+import ReferralTokensAdminPage from '../views/ReferralTokensAdminPage.vue'
 import HomeView from '../views/HomeView.vue'
 import ServerAnalyticsView from '../views/ServerAnalyticsView.vue'
 import UserAnalyticsView from '../views/UserAnalyticsView.vue'
@@ -24,6 +25,11 @@ const routes = [
     path: '/sub/:token/open/:client',
     name: 'subscription-open',
     component: SubscriptionOpenView,
+  },
+  {
+    path: '/admin/referrals',
+    name: 'admin-referrals',
+    component: ReferralTokensAdminPage,
   },
   {
     path: '/admin',

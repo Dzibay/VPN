@@ -27,6 +27,7 @@ from app.domain.subscription import (
     user_has_active_subscription,
 )
 from app.domain.user_traffic import user_traffic_totals
+from app.models.referral_link import ReferralLink
 from app.models.user import User
 from app.schemas.account import (
     AccountLoginBody,
@@ -38,6 +39,7 @@ from app.schemas.account import (
     telegram_auth_has_profile_fields,
 )
 from app.schemas.auth import TokenResponse
+from app.services.referral_link_service import increment_referral_counter
 from app.services.user_provision import (
     enqueue_sync_xray_clients_all_servers,
     new_subscription_token,
@@ -175,6 +177,15 @@ async def register(
             status_code=409,
             detail="Пользователь с таким email уже зарегистрирован",
         ) from e
+
+    if body.referral_token:
+        rstmt = select(ReferralLink).where(ReferralLink.token == body.referral_token).limit(1)
+        rlink = session.scalars(rstmt).first()
+        if rlink is not None:
+            user.referral_link_id = rlink.id
+            increment_referral_counter(session, rlink.id, "registrations")
+            session.flush()
+
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     try:
         token = create_access_token(settings, role="user", user_id=user.id)

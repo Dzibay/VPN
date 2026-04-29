@@ -1,5 +1,6 @@
+from app.models.referral_link import ReferralLink
 from app.models.server import Server
 from app.models.user import User
 from app.models.user_server_traffic import UserServerTraffic
 
-__all__ = ["Server", "User", "UserServerTraffic"]
+__all__ = ["ReferralLink", "Server", "User", "UserServerTraffic"]

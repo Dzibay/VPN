@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { fetchJson } from '../api/client.js'
+import { clearPendingReferralToken, peekPendingReferralToken } from '../referral/refCapture.js'
 import { setSession } from '../auth/session.js'
 
 const router = useRouter()
@@ -15,13 +16,17 @@ async function submit() {
   submitting.value = true
   error.value = null
   try {
+    const referral_token = peekPendingReferralToken()
+    const body = {
+      email: email.value.trim(),
+      password: password.value,
+    }
+    if (referral_token) body.referral_token = referral_token
     const data = await fetchJson('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({
-        email: email.value.trim(),
-        password: password.value,
-      }),
+      body: JSON.stringify(body),
     })
+    clearPendingReferralToken()
     setSession(data.access_token, data.role)
     router.replace('/cabinet')
   } catch (e) {
