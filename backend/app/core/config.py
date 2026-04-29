@@ -53,17 +53,9 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(
         default="",
         description=(
-            "Единый секрет HS256 для JWT (портал и админ-API). "
-            "Пусто — выводится из ADMIN_EMAIL+ADMIN_PASSWORD или небезопасный ключ в DEBUG."
+            "Секрет HS256 для JWT (портал и админ-API). "
+            "Пусто — в режиме DEBUG используется небезопасный локальный ключ; в продакшене задайте явно."
         ),
-    )
-    admin_email: str = Field(
-        default="",
-        description="Email администратора (вход через POST /api/auth/login вместе с ADMIN_PASSWORD).",
-    )
-    admin_password: str = Field(
-        default="",
-        description="Пароль администратора. Вместе с admin_email защищает админ-эндпоинты.",
     )
     telegram_bot_api_secret: str = Field(
         default="",

@@ -1,5 +1,5 @@
 import logging
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
@@ -13,12 +13,7 @@ from app.api.deps import (
     require_telegram_bot_api_secret,
 )
 from app.core.access_token import create_access_token
-from app.core.auth_env import (
-    admin_email_normalized,
-    admin_password_configured,
-    normalize_email,
-    password_matches_admin,
-)
+from app.core.auth_env import normalize_email
 from app.core.config import settings
 from app.core.passwords import hash_password, verify_password
 from app.database.operations import table_insert
@@ -47,6 +42,16 @@ from app.services.user_provision import (
 )
 
 log = logging.getLogger("app.auth")
+
+
+def _jwt_role_for_user(user: User) -> Literal["user", "manager", "admin"]:
+    """JWT-роль по users.account_role (client → user)."""
+    ar = getattr(user, "account_role", None) or "client"
+    if ar == "admin":
+        return "admin"
+    if ar == "manager":
+        return "manager"
+    return "user"
 
 
 # Примеры ответа GET /api/auth/me в OpenAPI (ключи с null в JSON стандарте часто не показывают).
@@ -96,7 +101,7 @@ _AUTH_ME_OPENAPI_EXAMPLES: dict = {
         },
     },
     "admin": {
-        "summary": "Админ (ADMIN_EMAIL / ADMIN_PASSWORD)",
+        "summary": "Админ (users.account_role = admin)",
         "description": (
             "id, telegram_id, telegram_properties, subscription_until в ответе — null; "
             "subscription_token — пустая строка. Эти поля в примере опущены (см. схему)."
@@ -117,28 +122,24 @@ router = APIRouter(prefix="/auth")
     "/login",
     response_model=TokenResponse,
     tags=["public"],
-    summary="Вход (администратор из env или пользователь из БД)",
+    summary="Вход по email и паролю (учётная запись в БД)",
 )
 async def login(body: AccountLoginBody, session: ReadonlySessionDep) -> TokenResponse:
     email = normalize_email(str(body.email))
-    if admin_password_configured(settings) and email == admin_email_normalized(settings):
-        if not password_matches_admin(settings, body.password):
-            raise HTTPException(status_code=401, detail="Неверный email или пароль")
-        try:
-            token = create_access_token(settings, role="admin")
-        except ValueError as e:
-            raise HTTPException(status_code=503, detail=str(e)) from e
-        return TokenResponse(access_token=token, role="admin")
-
     stmt = select(User).where(User.email == email).limit(1)
     user = session.scalars(stmt).first()
-    if user is None or not verify_password(body.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Неверный email или пароль")
-    try:
-        token = create_access_token(settings, role="user", user_id=user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=503, detail=str(e)) from e
-    return TokenResponse(access_token=token, role="user")
+
+    if user is not None:
+        if not user.password_hash or not verify_password(body.password, user.password_hash):
+            raise HTTPException(status_code=401, detail="Неверный email или пароль")
+        jwt_role = _jwt_role_for_user(user)
+        try:
+            token = create_access_token(settings, role=jwt_role, user_id=user.id)
+        except ValueError as e:
+            raise HTTPException(status_code=503, detail=str(e)) from e
+        return TokenResponse(access_token=token, role=jwt_role)
+
+    raise HTTPException(status_code=401, detail="Неверный email или пароль")
 
 
 @router.post(
@@ -154,11 +155,6 @@ async def register(
     background_tasks: BackgroundTasks,
 ) -> TokenResponse:
     email = normalize_email(str(body.email))
-    if admin_password_configured(settings) and email == admin_email_normalized(settings):
-        raise HTTPException(
-            status_code=409,
-            detail="Этот email зарезервирован для администратора",
-        )
     pwd_hash = hash_password(body.password)
     user = User(
         email=email,
@@ -244,17 +240,18 @@ async def telegram_auth(
         session.flush()
 
     try:
-        token = create_access_token(settings, role="user", user_id=user.id)
+        jwt_role = _jwt_role_for_user(user)
+        token = create_access_token(settings, role=jwt_role, user_id=user.id)
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
-    return TokenResponse(access_token=token, role="user")
+    return TokenResponse(access_token=token, role=jwt_role)
 
 
 @router.get(
     "/me",
     response_model=AccountMeResponse,
     tags=["user"],
-    summary="Профиль по Bearer JWT: пользователь из БД или админ из env",
+    summary="Профиль по Bearer JWT (учётная запись в БД)",
     responses={
         200: {
             "description": "Профиль",
@@ -271,19 +268,27 @@ async def me(
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
 ) -> AccountMeResponse:
     if principal.role == "admin":
+        if principal.user_id is None:
+            raise HTTPException(status_code=401, detail="Недействительный токен")
+        user = session.get(User, principal.user_id)
+        if user is None:
+            raise HTTPException(status_code=401, detail="Пользователь не найден")
+        if user.account_role != "admin":
+            raise HTTPException(status_code=401, detail="Недействительный токен")
+        up_b, down_b, total_b = user_traffic_totals(session, user.id)
         return AccountMeResponse(
             role="admin",
-            id=None,
-            email=admin_email_normalized(settings),
-            telegram_id=None,
-            telegram_properties=None,
-            subscription_until=None,
-            subscription_active=False,
-            subscription_token="",
-            subscription_open_clients=[],
-            traffic_up_bytes=0,
-            traffic_down_bytes=0,
-            traffic_total_bytes=0,
+            id=user.id,
+            email=user.email,
+            telegram_id=user.telegram_id,
+            telegram_properties=user.telegram_properties,
+            subscription_until=user.subscription_until,
+            subscription_active=user_has_active_subscription(user),
+            subscription_token=user.token,
+            subscription_open_clients=build_subscription_open_client_items(),
+            traffic_up_bytes=up_b,
+            traffic_down_bytes=down_b,
+            traffic_total_bytes=total_b,
         )
     if principal.user_id is None:
         raise HTTPException(status_code=401, detail="Недействительный токен")
@@ -296,8 +301,9 @@ async def me(
             detail="У записи нет ни email, ни telegram_id",
         )
     up_b, down_b, total_b = user_traffic_totals(session, user.id)
+    api_role = "manager" if principal.role == "manager" else "user"
     return AccountMeResponse(
-        role="user",
+        role=api_role,
         id=user.id,
         email=user.email,
         telegram_id=user.telegram_id,

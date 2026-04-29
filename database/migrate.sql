@@ -76,3 +76,11 @@ ALTER TABLE referral_links ADD CONSTRAINT referral_links_owner_consistency CHECK
 ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_link_id BIGINT REFERENCES referral_links (id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_users_referral_link_id ON users (referral_link_id)
     WHERE referral_link_id IS NOT NULL;
+
+-- Учётные роли: client | manager | admin (не делать промежуточный CHECK только на client/manager —
+-- при уже назначенном admin повторный прогон migrate.sql падал бы на ADD CONSTRAINT).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS account_role TEXT NOT NULL DEFAULT 'client';
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_account_role_check;
+ALTER TABLE users ADD CONSTRAINT users_account_role_check CHECK (
+    account_role IN ('client', 'manager', 'admin')
+);

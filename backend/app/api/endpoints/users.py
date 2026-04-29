@@ -203,6 +203,12 @@ async def patch_user(
     data = body.model_dump(exclude_unset=True)
     if not data:
         return user
+    new_role = data.get("account_role")
+    if new_role == "admin" and not user.password_hash:
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя назначить роль admin без пароля у пользователя",
+        )
     for key, value in data.items():
         setattr(user, key, value)
     session.flush()

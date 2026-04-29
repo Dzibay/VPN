@@ -186,7 +186,7 @@ onMounted(() => {
         </dl>
       </div>
 
-      <div v-if="me.role === 'user'" class="card card-pad">
+      <div v-if="me.role === 'user' || me.role === 'manager'" class="card card-pad">
         <h2 class="block-title">Подписка</h2>
         <dl class="dl">
           <div class="row">
@@ -244,7 +244,10 @@ onMounted(() => {
       </div>
 
       <div
-        v-if="me.role === 'user' && me.subscription_open_clients?.length"
+        v-if="
+          (me.role === 'user' || me.role === 'manager') &&
+          me.subscription_open_clients?.length
+        "
         class="card card-pad card-apps"
       >
         <div

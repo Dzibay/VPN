@@ -29,6 +29,10 @@ async function submit() {
       router.replace(
         typeof r === 'string' && r.startsWith('/admin') ? r : '/admin',
       )
+    } else if (data.role === 'manager') {
+      router.replace(
+        typeof r === 'string' && r.startsWith('/admin/referrals') ? r : '/admin/referrals',
+      )
     } else {
       router.replace(typeof r === 'string' && r ? r : '/cabinet')
     }

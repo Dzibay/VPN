@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -63,6 +63,10 @@ class UserRead(BaseModel):
     telegram_id: int | None
     telegram_properties: dict[str, Any] | None = None
     email: str | None = None
+    account_role: Literal["client", "manager", "admin"] = Field(
+        default="client",
+        description="client — клиент; manager — рефералы; admin — полный администратор",
+    )
     subscription_until: date | None
     token: str = Field(
         description="Токен для URL /sub/{token} (Base64) и /sub/{token}/json",
@@ -86,6 +90,10 @@ class UserUpdate(BaseModel):
     telegram_properties: dict[str, Any] | None = Field(
         default=None,
         description="JSON-поля Telegram; null — очистить",
+    )
+    account_role: Literal["client", "manager", "admin"] | None = Field(
+        default=None,
+        description="Назначение роли в БД (admin — полный доступ, manager — только рефералы)",
     )
 
     @field_validator("subscription_until", mode="before")

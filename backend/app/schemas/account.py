@@ -198,7 +198,7 @@ def telegram_auth_has_profile_fields(body: "TelegramAuthBody") -> bool:
 class AccountMeResponse(BaseModel):
     """Схема ответа GET /api/auth/me; в Swagger смотрите примеры у этой операции."""
 
-    role: str = Field(description="`user` | `admin`")
+    role: str = Field(description="`user` | `admin` | `manager`")
     id: int | None = Field(
         default=None,
         description="Внутренний id в БД; у admin всегда null.",

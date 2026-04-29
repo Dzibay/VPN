@@ -1,4 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import {
+  canAccessReferralsAdmin,
+  defaultPathAfterLogin,
+  isAdminRole,
+} from '../auth/permissions.js'
 import { getAccessToken, getSessionRole, isAdminJwtRequired } from '../auth/session.js'
 import AdminTablesPage from '../views/AdminTablesPage.vue'
 import ReferralTokensAdminPage from '../views/ReferralTokensAdminPage.vue'
@@ -69,8 +74,11 @@ router.beforeEach(async (to, _from, next) => {
   }
 
   if ((to.name === 'login' || to.name === 'register') && token) {
-    if (role === 'admin') {
+    if (isAdminRole(role)) {
       return next({ path: '/admin' })
+    }
+    if (role === 'manager') {
+      return next({ path: '/admin/referrals' })
     }
     return next({ path: '/cabinet' })
   }
@@ -86,8 +94,15 @@ router.beforeEach(async (to, _from, next) => {
           query: { redirect: to.fullPath },
         })
       }
-      if (role !== 'admin') {
-        return next({ path: '/cabinet' })
+      const isReferralsRoute = to.name === 'admin-referrals'
+      if (isReferralsRoute) {
+        if (!canAccessReferralsAdmin(role)) {
+          return next({ path: '/cabinet' })
+        }
+      } else if (!isAdminRole(role)) {
+        return next({
+          path: defaultPathAfterLogin(role),
+        })
       }
     }
   }

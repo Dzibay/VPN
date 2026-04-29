@@ -28,6 +28,12 @@ class User(Base):
     )
     email: Mapped[str | None] = mapped_column(Text, nullable=True)
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Учётная роль: client — клиент; manager — рефералы; admin — полный админ (JWT role совпадает с типом, кроме client→user).
+    account_role: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default=text("'client'"),
+    )
     subscription_until: Mapped[date | None] = mapped_column(Date, nullable=True)
     referral_link_id: Mapped[int | None] = mapped_column(
         BigInteger,

@@ -12,10 +12,13 @@ const route = useRoute()
 
 const hasToken = ref(false)
 const isAdmin = ref(false)
+const isManager = ref(false)
 
 function refreshSessions() {
   hasToken.value = Boolean(getAccessToken())
-  isAdmin.value = getSessionRole() === 'admin'
+  const role = getSessionRole()
+  isAdmin.value = role === 'admin'
+  isManager.value = role === 'manager'
 }
 
 const showGuestAuthLinks = computed(
@@ -80,27 +83,46 @@ router.afterEach(refreshSessions)
       </nav>
 
       <nav
-        v-if="hasToken && isAdmin"
+        v-if="hasToken && (isAdmin || isManager)"
         class="group-admin"
         aria-label="Администрирование"
       >
-        <span class="admin-label">Админка</span>
+        <span class="admin-label">{{
+          isAdmin ? 'Админка' : 'Рефералы'
+        }}</span>
+        <template v-if="isAdmin">
+          <RouterLink
+            class="nav-link"
+            :class="{
+              'router-link-active':
+                route.name === 'admin-data' || route.name === 'admin-user-analytics',
+            }"
+            to="/admin"
+          >
+            Данные
+          </RouterLink>
+          <RouterLink
+            class="nav-link"
+            :class="{ 'router-link-active': route.name === 'admin-analytics' }"
+            to="/admin/analytics"
+          >
+            Аналитика
+          </RouterLink>
+          <RouterLink
+            class="nav-link"
+            :class="{ 'router-link-active': route.name === 'admin-referrals' }"
+            to="/admin/referrals"
+          >
+            Рефералы
+          </RouterLink>
+        </template>
         <RouterLink
+          v-else
           class="nav-link"
-          :class="{
-            'router-link-active':
-              route.name === 'admin-data' || route.name === 'admin-user-analytics',
-          }"
-          to="/admin"
+          :class="{ 'router-link-active': route.name === 'admin-referrals' }"
+          to="/admin/referrals"
         >
-          Данные
-        </RouterLink>
-        <RouterLink
-          class="nav-link"
-          :class="{ 'router-link-active': route.name === 'admin-analytics' }"
-          to="/admin/analytics"
-        >
-          Аналитика
+          Токены
         </RouterLink>
       </nav>
     </div>

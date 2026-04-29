@@ -3,6 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
 import RowActionsDropdown from '../components/RowActionsDropdown.vue'
+import { isAdminRole } from '../auth/permissions.js'
+import { getSessionRole } from '../auth/session.js'
 import { fetchJson, sitePublicUrl } from '../api/client.js'
 
 const rows = ref([])
@@ -26,6 +28,8 @@ const statsLine = computed(() => {
   if (error.value) return 'Ошибка загрузки'
   return `${rows.value.length} записей`
 })
+
+const isFullAdmin = computed(() => isAdminRole(getSessionRole()))
 
 const modalTitle = computed(() =>
   editingId.value != null ? 'Редактировать токен' : 'Новый реферальный токен',
@@ -220,9 +224,12 @@ onMounted(() => {
 <template>
   <div class="page">
     <header class="head">
-      <RouterLink class="back" to="/admin">← Управление данными</RouterLink>
+      <RouterLink v-if="isFullAdmin" class="back" to="/admin">
+        ← Управление данными
+      </RouterLink>
+      <RouterLink v-else class="back" to="/cabinet">← Личный кабинет</RouterLink>
       <h1 class="page-title">Реферальные токены</h1>
-      <nav class="admin-tabs" aria-label="Разделы админки">
+      <nav v-if="isFullAdmin" class="admin-tabs" aria-label="Разделы админки">
         <RouterLink class="tab" :to="{ path: '/admin' }">Пользователи</RouterLink>
         <RouterLink class="tab" :to="{ path: '/admin', query: { tab: 'servers' } }">
           Серверы

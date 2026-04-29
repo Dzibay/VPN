@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Response
 from sqlalchemy import select
 
-from app.api.deps import ReadonlySessionDep, SessionDep, require_admin
+from app.api.deps import ReadonlySessionDep, SessionDep, require_referrals_staff
 from app.core.config import settings
 from app.models.referral_link import ReferralLink
 from app.schemas.referral_links import ReferralLinkCreate, ReferralLinkOut, ReferralLinkUpdate
@@ -17,7 +17,7 @@ log = logging.getLogger("app.referral_links")
 router = APIRouter(
     prefix="/referral-links",
     tags=["admin"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_referrals_staff)],
 )
 
 

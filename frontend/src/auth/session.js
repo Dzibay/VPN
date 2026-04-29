@@ -6,8 +6,7 @@ function publicApiUrl(path) {
   const p = path.startsWith('/') ? path : `/${path}`
   return base ? `${base}${p}` : p
 }
-
-/** Кэш: защищены ли админ-эндпоинты (проверка GET /api/users/count без Bearer → 401). */
+/** Кэш: нужен ли Bearer для админ-API (проба GET /api/users/count без заголовка → 401). */
 let adminJwtRequiredCache = null
 
 export function invalidateAdminJwtProbe() {
@@ -15,7 +14,7 @@ export function invalidateAdminJwtProbe() {
 }
 
 /**
- * Нужен ли JWT для доступа к /api/users и др. (заданы ADMIN_EMAIL + ADMIN_PASSWORD).
+ * Нужен ли Bearer JWT для админ-API (проба GET /api/users/count без заголовка → 401).
  */
 export async function isAdminJwtRequired() {
   if (adminJwtRequiredCache !== null) return adminJwtRequiredCache
@@ -41,13 +40,13 @@ export function getAccessToken() {
 export function getSessionRole() {
   if (typeof localStorage === 'undefined') return null
   const r = localStorage.getItem(ROLE_KEY)
-  if (r === 'admin' || r === 'user') return r
+  if (r === 'admin' || r === 'user' || r === 'manager') return r
   return null
 }
 
 export function setSession(token, role) {
   localStorage.setItem(TOKEN_KEY, token)
-  if (role === 'admin' || role === 'user') {
+  if (role === 'admin' || role === 'user' || role === 'manager') {
     localStorage.setItem(ROLE_KEY, role)
   }
   invalidateAdminJwtProbe()

@@ -7,7 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from app.api.security_bearer import bearer_jwt
-from app.core.access_token import AccessClaims, decode_access_token
+from app.core.access_token import AccessClaims, decode_access_token, jwt_signing_secret
 from app.core.config import get_settings
 from app.database.session import get_db, get_db_readonly
 
@@ -15,15 +15,24 @@ SessionDep = Annotated[Session, Depends(get_db)]
 ReadonlySessionDep = Annotated[Session, Depends(get_db_readonly)]
 
 
-def _admin_protection_enabled(settings) -> bool:
-    email = (settings.admin_email or "").strip()
-    pwd = (settings.admin_password or "").strip()
-    return bool(email and pwd)
+def jwt_gate_active(settings=None) -> bool:
+    """
+    Защита Bearer включена, если можно вычислить секрет подписи JWT
+    (JWT_SECRET задан, либо DEBUG с локальным ключом).
+    Пока секрет недоступен — зависимости «require_*» не требуют токена (режим как раньше).
+    """
+    if settings is None:
+        settings = get_settings()
+    try:
+        jwt_signing_secret(settings)
+        return True
+    except ValueError:
+        return False
 
 
 @dataclass(frozen=True)
 class BearerPrincipal:
-    role: Literal["admin", "user"]
+    role: Literal["admin", "user", "manager"]
     user_id: int | None
 
 
@@ -38,26 +47,47 @@ def _token_strict(creds: HTTPAuthorizationCredentials | None) -> str | None:
     return s or None
 
 
-def require_admin(
-    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_jwt)] = None,
-) -> None:
-    settings = get_settings()
-    if not _admin_protection_enabled(settings):
-        return
-    token = _token_strict(creds)
-    if not token:
-        raise HTTPException(
-            status_code=401,
-            detail="Требуется вход",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    claims = decode_access_token(token, settings)
-    if claims is None or claims.role != "admin":
-        raise HTTPException(
-            status_code=401,
-            detail="Недействительный или просроченный токен",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+def require_roles(
+    *allowed_roles: Literal["admin", "manager", "user"],
+):
+    """
+    Фабрика зависимостей FastAPI: JWT обязателен (если включён jwt_gate_active),
+    роль из токена должна входить в allowed_roles.
+    - admin — полный доступ к админ-API и страницам /admin (кроме только рефералов).
+    - manager — только API реферальных ссылок и UI /admin/referrals.
+    - user — клиентский JWT (для эндпоинтов, где явно разрешён просмотр своих данных).
+    """
+    allowed = frozenset(allowed_roles)
+
+    async def _dependency(
+        creds: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_jwt)] = None,
+    ) -> None:
+        settings = get_settings()
+        if not jwt_gate_active(settings):
+            return
+        token = _token_strict(creds)
+        if not token:
+            raise HTTPException(
+                status_code=401,
+                detail="Требуется вход",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        claims = decode_access_token(token, settings)
+        if claims is None:
+            raise HTTPException(
+                status_code=401,
+                detail="Недействительный или просроченный токен",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if claims.role not in allowed:
+            raise HTTPException(status_code=403, detail="Недостаточно прав")
+
+    return _dependency
+
+
+# Частые комбинации (удобный импорт Depends(require_admin) и т.д.)
+require_admin = require_roles("admin")
+require_referrals_staff = require_roles("admin", "manager")
 
 
 def get_bearer_principal_dep(

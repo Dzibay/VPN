@@ -8,10 +8,12 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT,
     password_hash TEXT,
     subscription_until DATE,
+    account_role TEXT NOT NULL DEFAULT 'client',
     token TEXT NOT NULL,
     vless_uuid TEXT NOT NULL,
     CONSTRAINT users_token_key UNIQUE (token),
-    CONSTRAINT users_vless_uuid_key UNIQUE (vless_uuid)
+    CONSTRAINT users_vless_uuid_key UNIQUE (vless_uuid),
+    CONSTRAINT users_account_role_check CHECK (account_role IN ('client', 'manager', 'admin'))
 );
 
 CREATE TABLE IF NOT EXISTS servers (
