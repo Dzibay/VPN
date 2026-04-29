@@ -1106,9 +1106,9 @@ watch(formIsCascadeRuEntry, (v) => {
             <tr>
               <th>ID</th>
               <th>Email</th>
-              <th>Регистрация</th>
-              <th>Роль</th>
               <th>Telegram</th>
+              <th>Роль</th>
+              <th>Регистрация</th>
               <th>Подписка до</th>
               <th>Подписка</th>
               <th class="num">Трафик</th>
@@ -1119,10 +1119,6 @@ watch(formIsCascadeRuEntry, (v) => {
             <tr v-for="u in users" :key="u.id">
               <td>{{ u.id }}</td>
               <td>{{ u.email ?? '—' }}</td>
-              <td>{{ formatDate(u.registered_at) }}</td>
-              <td>
-                <UserRolePill :role="u.account_role" />
-              </td>
               <td>
                 <template v-if="u.telegram_id != null">
                   {{ u.telegram_id
@@ -1137,6 +1133,10 @@ watch(formIsCascadeRuEntry, (v) => {
                 </template>
                 <template v-else>—</template>
               </td>
+              <td>
+                <UserRolePill :role="u.account_role" />
+              </td>
+              <td>{{ formatDate(u.registered_at) }}</td>
               <td>{{ formatDate(u.subscription_until) }}</td>
               <td class="link-cell">
                 <button

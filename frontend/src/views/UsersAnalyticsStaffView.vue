@@ -143,8 +143,8 @@ onMounted(() => {
         <thead>
           <tr>
             <th>Email</th>
-            <th>Регистрация</th>
             <th>Telegram</th>
+            <th>Регистрация</th>
             <th>Подписка до</th>
             <th class="num">Трафик (всего)</th>
             <th class="num">ID реф. ссылки</th>
@@ -162,8 +162,8 @@ onMounted(() => {
           </tr>
           <tr v-for="u in rows" :key="u.id">
             <td>{{ u.email ?? '—' }}</td>
-            <td>{{ formatDate(u.registered_at) }}</td>
             <td class="tg-cell">{{ telegramCell(u) }}</td>
+            <td>{{ formatDate(u.registered_at) }}</td>
             <td>{{ formatDate(u.subscription_until) }}</td>
             <td class="num mono-num">{{ formatTrafficBytes(u.total_traffic_bytes) }}</td>
             <td class="num ref-id-cell">
