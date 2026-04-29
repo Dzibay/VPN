@@ -84,3 +84,7 @@ ALTER TABLE users DROP CONSTRAINT IF EXISTS users_account_role_check;
 ALTER TABLE users ADD CONSTRAINT users_account_role_check CHECK (
     account_role IN ('client', 'manager', 'admin')
 );
+
+-- Дата и время регистрации (создания записи); для записей до миграции — NULL
+ALTER TABLE users ADD COLUMN IF NOT EXISTS registered_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_users_registered_at ON users (registered_at DESC NULLS LAST);

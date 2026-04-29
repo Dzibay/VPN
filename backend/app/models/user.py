@@ -1,12 +1,16 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
 from typing import Any
 
-from sqlalchemy import BigInteger, Date, ForeignKey, Index, Text, text
+from sqlalchemy import BigInteger, Date, DateTime, ForeignKey, Index, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class User(Base):
@@ -39,6 +43,12 @@ class User(Base):
         BigInteger,
         ForeignKey("referral_links.id", ondelete="SET NULL"),
         nullable=True,
+    )
+    #: Момент создания записи пользователя (регистрация / создание админом); для старых строк может быть null.
+    registered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=_utc_now,
     )
     token: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     vless_uuid: Mapped[str] = mapped_column(Text, unique=True, nullable=False)

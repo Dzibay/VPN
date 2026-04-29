@@ -13,6 +13,7 @@ import AdminTableWrap from '../components/AdminTableWrap.vue'
 import UserRolePill from '../components/UserRolePill.vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { fetchJson, subscriptionPublicUrl } from '../api/client.js'
+import { formatTrafficBytes } from '../utils/formatTraffic.js'
 
 const route = useRoute()
 
@@ -1105,11 +1106,12 @@ watch(formIsCascadeRuEntry, (v) => {
             <tr>
               <th>ID</th>
               <th>Email</th>
+              <th>Регистрация</th>
               <th>Роль</th>
               <th>Telegram</th>
               <th>Подписка до</th>
-              <th>Ссылка подписки</th>
-              <th>Аналитика</th>
+              <th>Подписка</th>
+              <th class="num">Трафик</th>
               <th />
             </tr>
           </thead>
@@ -1117,6 +1119,7 @@ watch(formIsCascadeRuEntry, (v) => {
             <tr v-for="u in users" :key="u.id">
               <td>{{ u.id }}</td>
               <td>{{ u.email ?? '—' }}</td>
+              <td>{{ formatDate(u.registered_at) }}</td>
               <td>
                 <UserRolePill :role="u.account_role" />
               </td>
@@ -1146,12 +1149,13 @@ watch(formIsCascadeRuEntry, (v) => {
                   Копировать
                 </button>
               </td>
-              <td>
+              <td class="num traffic-link-cell">
                 <RouterLink
                   class="user-analytics-link"
                   :to="`/admin/users/${u.id}/analytics`"
+                  title="Подробная аналитика по серверам"
                 >
-                  По серверам
+                  {{ formatTrafficBytes(u.total_traffic_bytes ?? 0) }}
                 </RouterLink>
               </td>
               <td class="row-actions">
@@ -2220,6 +2224,17 @@ watch(formIsCascadeRuEntry, (v) => {
 }
 .link-cell .btn-secondary {
   margin-right: 0.35rem;
+}
+
+.table th.num {
+  text-align: right;
+}
+.traffic-link-cell {
+  text-align: right;
+  vertical-align: middle;
+}
+.traffic-link-cell .user-analytics-link {
+  font-variant-numeric: tabular-nums;
 }
 
 .user-analytics-link {

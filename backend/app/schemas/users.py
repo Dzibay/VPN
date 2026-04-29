@@ -60,6 +60,10 @@ class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    registered_at: datetime | None = Field(
+        default=None,
+        description="Момент регистрации / создания записи (UTC); для старых записей может быть не задан",
+    )
     telegram_id: int | None
     telegram_properties: dict[str, Any] | None = None
     email: str | None = None
@@ -80,6 +84,10 @@ class UserListItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    registered_at: datetime | None = Field(
+        default=None,
+        description="Момент регистрации / создания записи (UTC)",
+    )
     telegram_id: int | None
     telegram_properties: dict[str, Any] | None = None
     email: str | None = None

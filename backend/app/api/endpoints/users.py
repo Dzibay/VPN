@@ -107,6 +107,7 @@ async def list_users(
         out.append(
             UserListItem(
                 id=user.id,
+                registered_at=user.registered_at,
                 email=user.email,
                 account_role=role_lit,
                 telegram_id=user.telegram_id,
