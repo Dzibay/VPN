@@ -20,6 +20,27 @@ class ReferralLinkRead(BaseModel):
     created_at: datetime
 
 
+class ReferralFunnelSummary(BaseModel):
+    """Воронка: без фильтра — пользователи БД и трафик; при выборе ссылки — клики по счётчику и дальше."""
+
+    registrations_total: int = Field(
+        ge=0,
+        description=(
+            "Без фильтра — число всех пользователей в БД; при referral_link_id — счётчик регистраций по этой ссылке"
+        ),
+    )
+    users_with_traffic: int = Field(
+        ge=0,
+        description=(
+            "Пользователей с ненулевым трафиком по узлам: вся БД или только с выбранным referral_link_id"
+        ),
+    )
+    clicks_total: int | None = Field(
+        default=None,
+        description="Только при referral_link_id: накопительный счётчик кликов по этой ссылке",
+    )
+
+
 class ReferralLinkOut(ReferralLinkRead):
     """Ответ админ-API: те же поля + готовые ссылки (REFERRAL_SITE_BASE_URL, REFERRAL_TELEGRAM_BOT_*)."""
 

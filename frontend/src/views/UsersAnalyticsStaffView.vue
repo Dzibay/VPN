@@ -103,18 +103,37 @@ onMounted(() => {
           >
             Нагрузка
           </RouterLink>
+          <RouterLink
+            class="tab"
+            :class="{ 'tab-active': route.name === 'admin-funnel' }"
+            :to="{ path: '/admin/funnel' }"
+          >
+            Воронка
+          </RouterLink>
           <RouterLink class="tab" :to="{ path: '/admin/referrals' }">
             Реферальные токены
           </RouterLink>
         </template>
         <template v-else>
           <RouterLink
-            class="tab tab-active"
+            class="tab"
+            :class="{ 'tab-active': route.name === 'admin-users-staff-analytics' }"
             :to="{ path: '/admin/users/analytics' }"
           >
             Клиенты
           </RouterLink>
-          <RouterLink class="tab" :to="{ path: '/admin/referrals' }">
+          <RouterLink
+            class="tab"
+            :class="{ 'tab-active': route.name === 'admin-funnel' }"
+            :to="{ path: '/admin/funnel' }"
+          >
+            Воронка
+          </RouterLink>
+          <RouterLink
+            class="tab"
+            :class="{ 'tab-active': route.name === 'admin-referrals' }"
+            :to="{ path: '/admin/referrals' }"
+          >
             Реферальные токены
           </RouterLink>
         </template>

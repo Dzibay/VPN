@@ -313,6 +313,13 @@ onMounted(() => {
           >
             Нагрузка
           </RouterLink>
+          <RouterLink
+            class="tab"
+            :class="{ 'tab-active': route.name === 'admin-funnel' }"
+            :to="{ path: '/admin/funnel' }"
+          >
+            Воронка
+          </RouterLink>
           <RouterLink class="tab tab-active" :to="{ path: '/admin/referrals' }">
             Реферальные токены
           </RouterLink>
@@ -324,6 +331,13 @@ onMounted(() => {
             :to="{ path: '/admin/users/analytics' }"
           >
             Клиенты
+          </RouterLink>
+          <RouterLink
+            class="tab"
+            :class="{ 'tab-active': route.name === 'admin-funnel' }"
+            :to="{ path: '/admin/funnel' }"
+          >
+            Воронка
           </RouterLink>
           <RouterLink class="tab tab-active" :to="{ path: '/admin/referrals' }">
             Реферальные токены

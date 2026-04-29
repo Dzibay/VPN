@@ -6,6 +6,7 @@ import {
 } from '../auth/permissions.js'
 import { getAccessToken, getSessionRole, isAdminJwtRequired } from '../auth/session.js'
 import AdminTablesPage from '../views/AdminTablesPage.vue'
+import ReferralFunnelView from '../views/ReferralFunnelView.vue'
 import ReferralTokensAdminPage from '../views/ReferralTokensAdminPage.vue'
 import HomeView from '../views/HomeView.vue'
 import ServerAnalyticsView from '../views/ServerAnalyticsView.vue'
@@ -36,6 +37,11 @@ const routes = [
     path: '/admin/referrals',
     name: 'admin-referrals',
     component: ReferralTokensAdminPage,
+  },
+  {
+    path: '/admin/funnel',
+    name: 'admin-funnel',
+    component: ReferralFunnelView,
   },
   {
     path: '/admin/users/analytics',
@@ -115,7 +121,8 @@ router.beforeEach(async (to, _from, next) => {
       }
       const isReferralsRoute = to.name === 'admin-referrals'
       const isUsersAnalyticsStaff = to.name === 'admin-users-staff-analytics'
-      if (isReferralsRoute || isUsersAnalyticsStaff) {
+      const isMarketingFunnel = to.name === 'admin-funnel'
+      if (isReferralsRoute || isUsersAnalyticsStaff || isMarketingFunnel) {
         if (!canAccessReferralsAdmin(role)) {
           return next({ path: '/cabinet' })
         }

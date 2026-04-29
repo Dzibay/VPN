@@ -998,6 +998,13 @@ watch(formIsCascadeRuEntry, (v) => {
         </RouterLink>
         <RouterLink
           class="tab"
+          :class="{ 'tab-active': route.name === 'admin-funnel' }"
+          :to="{ path: '/admin/funnel' }"
+        >
+          Воронка
+        </RouterLink>
+        <RouterLink
+          class="tab"
           :class="{ 'tab-active': route.name === 'admin-referrals' }"
           :to="{ path: '/admin/referrals' }"
         >
