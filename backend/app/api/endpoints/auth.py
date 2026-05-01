@@ -1,6 +1,8 @@
 import logging
 from typing import Annotated, Literal
 
+from urllib.parse import quote
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -14,7 +16,7 @@ from app.api.deps import (
 )
 from app.core.access_token import create_access_token
 from app.core.auth_env import normalize_email
-from app.core.config import settings
+from app.core.queue import get_redis
 from app.core.passwords import hash_password, verify_password
 from app.database.operations import table_insert
 from app.domain.subscription import (
@@ -29,12 +31,27 @@ from app.schemas.account import (
     AccountMeResponse,
     AccountRegisterBody,
     TelegramAuthBody,
+    TelegramSyncStartResponse,
+    TelegramWebLinkBody,
+    TelegramWebLinkResponse,
     build_subscription_open_client_items,
     merge_telegram_auth_profile,
     telegram_auth_has_profile_fields,
 )
 from app.schemas.auth import TokenResponse
-from app.services.referral_link_service import increment_referral_counter
+from app.services.merge_telegram_account import merge_drop_user_into_keep
+from app.services.referral_link_service import (
+    increment_referral_counter,
+    telegram_bot_public_page_url,
+)
+from app.services.telegram_sync_token import (
+    TelegramSyncRedisError,
+    delete_sync_token,
+    generate_sync_token_value,
+    get_sync_token_user_id,
+    store_sync_token,
+    sync_start_payload,
+)
 from app.services.user_provision import (
     enqueue_sync_xray_clients_all_servers,
     new_subscription_token,
@@ -257,6 +274,128 @@ async def telegram_auth(
     return TokenResponse(access_token=token, role=jwt_role)
 
 
+@router.post(
+    "/telegram/link",
+    response_model=TelegramWebLinkResponse,
+    tags=["public"],
+    dependencies=[Depends(require_telegram_bot_api_secret)],
+    summary=(
+        "Привязать Telegram к веб-аккаунту по одноразовому токену из ЛК "
+        "(заголовок X-Telegram-Bot-Secret; вызывает бэкенд бота)"
+    ),
+)
+async def telegram_link_web_account(
+    body: TelegramWebLinkBody,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+) -> TelegramWebLinkResponse:
+    redis_conn = get_redis()
+    key_part = body.link_token
+    try:
+        uid = get_sync_token_user_id(redis_conn, key_part)
+    except TelegramSyncRedisError:
+        raise HTTPException(status_code=503, detail="Redis недоступен") from None
+    if uid is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Неверный или истёкший токен привязки",
+        )
+
+    target = session.get(User, uid)
+    if target is None:
+        raise HTTPException(status_code=400, detail="Пользователь по токену не найден")
+    if target.telegram_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Этот аккаунт уже привязан к Telegram",
+        )
+
+    tid = body.telegram_id
+    auth_fragment = TelegramAuthBody(
+        telegram_id=tid,
+        username=body.username,
+        first_name=body.first_name,
+        last_name=body.last_name,
+        topic_id=body.topic_id,
+    )
+    profile = merge_telegram_auth_profile(auth_fragment, None)
+
+    stmt = select(User).where(User.telegram_id == tid).limit(1)
+    other = session.scalars(stmt).first()
+
+    merged = False
+    if other is not None and other.id != target.id:
+        if other.account_role not in ("client", "manager"):
+            raise HTTPException(
+                status_code=403,
+                detail="Учётная запись с этим Telegram имеет недопустимую роль для объединения",
+            )
+        if target.account_role not in ("client", "manager"):
+            raise HTTPException(
+                status_code=403,
+                detail="Целевой аккаунт не поддерживает объединение с дубликатом Telegram",
+            )
+        merge_drop_user_into_keep(session, target, other)
+        merged = True
+
+    target.telegram_id = tid
+    target.telegram_properties = profile
+    session.flush()
+
+    try:
+        delete_sync_token(redis_conn, key_part)
+    except TelegramSyncRedisError:
+        log.warning("telegram link: не удалось удалить одноразовый токен из Redis")
+
+    background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
+    return TelegramWebLinkResponse(
+        status="merged" if merged else "linked",
+        user_id=int(target.id),
+    )
+
+
+@router.post(
+    "/me/telegram-sync-start",
+    response_model=TelegramSyncStartResponse,
+    tags=["user"],
+    summary="Одноразовая ссылка t.me/...?start=link_* для привязки Telegram к текущему аккаунту",
+)
+async def telegram_sync_start(
+    session: ReadonlySessionDep,
+    principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
+) -> TelegramSyncStartResponse:
+    if principal.user_id is None:
+        raise HTTPException(status_code=401, detail="Нужна авторизация под пользователем")
+    user = session.get(User, principal.user_id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Пользователь не найден")
+    if user.telegram_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Telegram уже привязан к этому аккаунту",
+        )
+
+    base = telegram_bot_public_page_url(settings)
+    if not base:
+        raise HTTPException(
+            status_code=503,
+            detail="TELEGRAM_BOT_USERNAME не задан — ссылка на бота недоступна",
+        )
+
+    token_val = generate_sync_token_value()
+    try:
+        store_sync_token(get_redis(), token_val, int(user.id))
+    except TelegramSyncRedisError:
+        raise HTTPException(
+            status_code=503,
+            detail="Не удалось сохранить токен привязки (проверьте Redis)",
+        ) from None
+
+    payload = sync_start_payload(token_val)
+    deep = f"{base}?start={quote(payload, safe='')}"
+    return TelegramSyncStartResponse(telegram_deep_link=deep)
+
+
 @router.get(
     "/me",
     response_model=AccountMeResponse,
@@ -292,6 +431,7 @@ async def me(
             email=user.email,
             telegram_id=user.telegram_id,
             telegram_properties=user.telegram_properties,
+            telegram_bot_page_url=telegram_bot_public_page_url(settings),
             registered_at=user.registered_at,
             subscription_until=user.subscription_until,
             subscription_active=user_has_active_subscription(user),
@@ -319,6 +459,7 @@ async def me(
         email=user.email,
         telegram_id=user.telegram_id,
         telegram_properties=user.telegram_properties,
+        telegram_bot_page_url=telegram_bot_public_page_url(settings),
         registered_at=user.registered_at,
         subscription_until=user.subscription_until,
         subscription_active=user_has_active_subscription(user),

@@ -68,6 +68,39 @@ const referralsStaffVisible = computed(
 
 const referralClientUser = computed(() => me.value?.role === 'user')
 
+function telegramPropTrim(props, key) {
+  if (!props || typeof props !== 'object') return ''
+  const v = props[key]
+  return typeof v === 'string' && v.trim() !== '' ? v.trim() : ''
+}
+
+/** Есть ли в БД привязка / данные Telegram для блока профиля */
+const profileTelegramLinked = computed(() => {
+  const m = me.value
+  if (!m) return false
+  if (m.telegram_id != null) return true
+  const p = m.telegram_properties
+  return Boolean(
+    telegramPropTrim(p, 'username') ||
+      telegramPropTrim(p, 'first_name') ||
+      telegramPropTrim(p, 'last_name'),
+  )
+})
+
+const profileTelegramUsername = computed(() => {
+  const raw = telegramPropTrim(me.value?.telegram_properties, 'username')
+  if (!raw) return ''
+  return raw.startsWith('@') ? raw : `@${raw}`
+})
+
+const profileTelegramFullName = computed(() => {
+  const p = me.value?.telegram_properties
+  const fn = telegramPropTrim(p, 'first_name')
+  const ln = telegramPropTrim(p, 'last_name')
+  const parts = [fn, ln].filter(Boolean)
+  return parts.length ? parts.join(' ') : ''
+})
+
 /** @type {import('vue').Ref<null | Record<string, unknown>>} */
 const myReferralLink = ref(null)
 const myReferralLoading = ref(false)
@@ -194,6 +227,30 @@ async function load() {
     me.value = null
   } finally {
     loading.value = false
+  }
+}
+
+const telegramSyncBusy = ref(false)
+const telegramSyncError = ref(null)
+
+async function openTelegramSyncLink() {
+  telegramSyncBusy.value = true
+  telegramSyncError.value = null
+  try {
+    const data = await fetchJson('/api/auth/me/telegram-sync-start', {
+      method: 'POST',
+      body: '{}',
+    })
+    const url = data?.telegram_deep_link
+    if (typeof url === 'string' && url.trim()) {
+      window.open(url.trim(), '_blank', 'noopener,noreferrer')
+    } else {
+      telegramSyncError.value = 'Сервер не вернул ссылку на бота'
+    }
+  } catch (e) {
+    telegramSyncError.value = e.message || String(e)
+  } finally {
+    telegramSyncBusy.value = false
   }
 }
 
@@ -486,34 +543,42 @@ onMounted(() => {
                 <dt>Email</dt>
                 <dd>{{ me.email }}</dd>
               </div>
-              <div
-                v-if="me.telegram_id != null || me.telegram_properties?.username"
-                class="row"
-              >
+              <div class="row row--telegram">
                 <dt>Telegram</dt>
                 <dd>
-                  <template v-if="me.telegram_id != null">
-                    {{ me.telegram_id
-                    }}<span
-                      v-if="me.telegram_properties?.username"
-                      class="muted"
-                    > @{{ me.telegram_properties.username }}</span>
+                  <template v-if="profileTelegramLinked">
+                    <div v-if="me.telegram_id != null" class="mono">
+                      {{ me.telegram_id }}
+                    </div>
+                    <div v-if="profileTelegramUsername">
+                      {{ profileTelegramUsername }}
+                    </div>
+                    <div v-if="profileTelegramFullName">
+                      {{ profileTelegramFullName }}
+                    </div>
                   </template>
-                  <template
-                    v-else-if="me.telegram_properties?.username"
-                  >
-                    <span class="muted"
-                      >@{{ me.telegram_properties.username }}</span
+                  <template v-else>
+                    <p class="hint profile-tg-unlinked-hint">
+                      Нажмите кнопку — откроется бот с одноразовой ссылкой (около 15 минут).
+                      В Telegram нажмите Start; бот передаст данные на сайт для привязки аккаунта.
+                    </p>
+                    <p v-if="telegramSyncError" class="err profile-tg-sync-err">
+                      {{ telegramSyncError }}
+                    </p>
+                    <button
+                      type="button"
+                      class="copy-sub-btn profile-tg-open-btn"
+                      :disabled="telegramSyncBusy"
+                      @click="openTelegramSyncLink"
                     >
+                      {{
+                        telegramSyncBusy
+                          ? 'Готовим ссылку…'
+                          : 'Открыть Telegram-бота для привязки'
+                      }}
+                    </button>
                   </template>
                 </dd>
-              </div>
-              <div
-                v-if="!me.email && me.telegram_id == null && !me.telegram_properties?.username"
-                class="row"
-              >
-                <dt>Контакт</dt>
-                <dd>—</dd>
               </div>
               <div class="row">
                 <dt>Дата регистрации</dt>
@@ -953,6 +1018,26 @@ dd {
 .copy-sub-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.profile-tg-unlinked-hint {
+  margin-bottom: 0.65rem;
+}
+
+.profile-tg-sync-err {
+  margin: 0 0 0.5rem;
+  font-size: 0.88rem;
+}
+
+.profile-tg-open-btn {
+  margin-top: 0.35rem;
+  text-decoration: none;
+}
+
+.row--telegram dd {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
 .copy-sub-btn:focus-visible {

@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -214,6 +214,69 @@ def telegram_auth_has_profile_fields(body: "TelegramAuthBody") -> bool:
     )
 
 
+class TelegramSyncStartResponse(BaseModel):
+    """Ответ POST /api/auth/me/telegram-sync-start: ссылка с одноразовым токеном в ?start=."""
+
+    telegram_deep_link: str = Field(
+        description="Открыть в Telegram; параметр start вида link_<секрет> (до 64 символов, только A–Z, a–z, 0–9, _).",
+    )
+
+
+class TelegramWebLinkBody(BaseModel):
+    """Привязка веб-аккаунта к Telegram по одноразовому токену (вызывает бэкенд бота)."""
+
+    link_token: str = Field(
+        ...,
+        max_length=80,
+        description="То, что пришло в /start после пробела: link_<token> или только <token>.",
+    )
+    telegram_id: int = Field(
+        ge=1,
+        le=9223372036854775807,
+        description="Числовой id пользователя в Telegram (Bot API).",
+    )
+    username: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Ник без @ → users.telegram_properties.username",
+    )
+    first_name: str | None = Field(default=None, max_length=255)
+    last_name: str | None = Field(default=None, max_length=255)
+    topic_id: int | None = Field(
+        default=None,
+        ge=1,
+        le=9223372036854775807,
+    )
+
+    @field_validator("link_token", mode="before")
+    @classmethod
+    def strip_outer(cls, v: object) -> str:
+        if not isinstance(v, str):
+            raise TypeError("link_token должен быть строкой")
+        s = v.strip()
+        if not s:
+            raise ValueError("link_token не может быть пустым")
+        return s
+
+    @field_validator("link_token", mode="after")
+    @classmethod
+    def strip_link_prefix(cls, v: str) -> str:
+        low = v.lower()
+        if low.startswith("link_"):
+            inner = v[5:].strip()
+            if not inner:
+                raise ValueError("Пустой токен после префикса link_")
+            return inner
+        return v
+
+
+class TelegramWebLinkResponse(BaseModel):
+    status: Literal["linked", "merged"] = Field(
+        description="linked — только запись Telegram на целевой аккаунт; merged — удалён дубликат по telegram_id.",
+    )
+    user_id: int
+
+
 class AccountMeResponse(BaseModel):
     """Схема ответа GET /api/auth/me; в Swagger смотрите примеры у этой операции."""
 
@@ -235,6 +298,13 @@ class AccountMeResponse(BaseModel):
         description=(
             "Словарь из `username`, `first_name`, `last_name`, `topic_id` (и др.) "
             "из `/api/auth/telegram`; для `admin` — `null`."
+        ),
+    )
+    telegram_bot_page_url: str | None = Field(
+        default=None,
+        description=(
+            "Публичная ссылка на Telegram-бота (без deep-link); для кнопки в ЛК. "
+            "Из TELEGRAM_BOT_USERNAME → https://t.me/{username}; `null`, если не задано."
         ),
     )
     registered_at: datetime | None = Field(

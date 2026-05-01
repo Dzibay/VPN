@@ -42,7 +42,7 @@ class ReferralFunnelSummary(BaseModel):
 
 
 class ReferralLinkOut(ReferralLinkRead):
-    """Ответ админ-API: те же поля + готовые ссылки (REFERRAL_SITE_BASE_URL, REFERRAL_TELEGRAM_BOT_*)."""
+    """Ответ админ-API: те же поля + готовые ссылки (REFERRAL_SITE_BASE_URL, TELEGRAM_BOT_USERNAME)."""
 
     site_entry_url: str | None = Field(
         default=None,
@@ -50,7 +50,7 @@ class ReferralLinkOut(ReferralLinkRead):
     )
     telegram_deep_link: str | None = Field(
         default=None,
-        description="Ссылка вида {URL бота}?start={token} (REFERRAL_TELEGRAM_BOT_BASE_URL или REFERRAL_TELEGRAM_BOT_USERNAME)",
+        description="https://t.me/{TELEGRAM_BOT_USERNAME}?start={token}",
     )
 
 

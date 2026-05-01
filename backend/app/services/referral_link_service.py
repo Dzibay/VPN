@@ -214,15 +214,24 @@ def referral_site_register_url(settings: object, token: str) -> str | None:
     return f"{base}/?ref={quote(token, safe='')}"
 
 
+def _telegram_bot_username_clean(settings: object) -> str:
+    return (getattr(settings, "telegram_bot_username", None) or "").strip().lstrip("@")
+
+
 def referral_telegram_deep_link(settings: object, token: str) -> str | None:
-    """{bot_url}?start=token из REFERRAL_TELEGRAM_BOT_BASE_URL или https://t.me/{REFERRAL_TELEGRAM_BOT_USERNAME}."""
-    base = (getattr(settings, "referral_telegram_bot_base_url", None) or "").strip().rstrip("/")
-    if base:
-        return f"{base}?start={quote(token, safe='')}"
-    bot = (getattr(settings, "referral_telegram_bot_username", None) or "").strip().lstrip("@")
+    """https://t.me/{TELEGRAM_BOT_USERNAME}?start=token"""
+    bot = _telegram_bot_username_clean(settings)
     if not bot:
         return None
     return f"https://t.me/{bot}?start={quote(token, safe='')}"
+
+
+def telegram_bot_public_page_url(settings: object) -> str | None:
+    """https://t.me/{username} без deep-link (ЛК, привязка аккаунта)."""
+    bot = _telegram_bot_username_clean(settings)
+    if not bot:
+        return None
+    return f"https://t.me/{bot}"
 
 
 def referral_link_to_out(link: ReferralLink, settings: object):

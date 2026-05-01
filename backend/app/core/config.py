@@ -1,7 +1,7 @@
 from functools import lru_cache
 from urllib.parse import quote_plus
 
-from pydantic import AliasChoices, Field, computed_field
+from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -98,27 +98,11 @@ class Settings(BaseSettings):
             "Используется в админке и в ответах API: {base}/?ref={token} (главная страница). Пусто — ссылки только на фронте по VITE_PUBLIC_SITE_URL."
         ),
     )
-    referral_telegram_bot_base_url: str = Field(
+    telegram_bot_username: str = Field(
         default="",
         description=(
-            "Реферальная ссылка в Telegram: полный URL бота без query (https://t.me/MyBot). "
-            "Итог: {REFERRAL_TELEGRAM_BOT_BASE_URL}?start={token}. "
-            "Если пусто — из username. Допускается legacy env TELEGRAM_BOT_BASE_URL."
-        ),
-        validation_alias=AliasChoices(
-            "REFERRAL_TELEGRAM_BOT_BASE_URL",
-            "TELEGRAM_BOT_BASE_URL",
-        ),
-    )
-    referral_telegram_bot_username: str = Field(
-        default="",
-        description=(
-            "Username бота без @ для реферальных ссылок https://t.me/{username}?start={token} "
-            "(в .env: REFERRAL_TELEGRAM_BOT_USERNAME). Допускается legacy TELEGRAM_BOT_USERNAME."
-        ),
-        validation_alias=AliasChoices(
-            "REFERRAL_TELEGRAM_BOT_USERNAME",
-            "TELEGRAM_BOT_USERNAME",
+            "Username Telegram-бота без @ (env: TELEGRAM_BOT_USERNAME). "
+            "Ссылки: https://t.me/{username}, рефералы — …?start={token}, страница бота в ЛК."
         ),
     )
 

@@ -167,34 +167,12 @@ function fallbackSiteEntry(token) {
   return `${base}/?ref=${encodeURIComponent(token)}`
 }
 
-function fallbackTelegramDeep(token) {
-  const baseUrl = String(
-    import.meta.env.VITE_REFERRAL_TELEGRAM_BOT_BASE_URL ||
-      import.meta.env.VITE_TELEGRAM_BOT_URL ||
-      '',
-  )
-    .trim()
-    .replace(/\/$/, '')
-  if (baseUrl) {
-    return `${baseUrl}?start=${encodeURIComponent(token)}`
-  }
-  const bot = String(
-    import.meta.env.VITE_REFERRAL_TELEGRAM_BOT_USERNAME ||
-      import.meta.env.VITE_TELEGRAM_BOT_USERNAME ||
-      '',
-  )
-    .trim()
-    .replace(/^@/, '')
-  if (!bot) return ''
-  return `https://t.me/${bot}?start=${encodeURIComponent(token)}`
-}
-
 function siteUrlForRow(r) {
   return r.site_entry_url || fallbackSiteEntry(r.token)
 }
 
 function telegramUrlForRow(r) {
-  return r.telegram_deep_link || fallbackTelegramDeep(r.token)
+  return r.telegram_deep_link || ''
 }
 
 const copyHint = ref(null)
