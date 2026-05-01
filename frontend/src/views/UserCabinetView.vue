@@ -559,8 +559,10 @@ onMounted(() => {
                   </template>
                   <template v-else>
                     <p class="hint profile-tg-unlinked-hint">
-                      Нажмите кнопку — откроется бот с одноразовой ссылкой (около 15 минут).
-                      В Telegram нажмите Start; бот передаст данные на сайт для привязки аккаунта.
+                      У вас не привязан телеграмм. 
+                      Если Вы уже использовали нашего бота 
+                      или хотите использовать его для управления аккаунтом - 
+                      нажмите кнопку ниже и активируйте бота.
                     </p>
                     <p v-if="telegramSyncError" class="err profile-tg-sync-err">
                       {{ telegramSyncError }}
@@ -574,7 +576,7 @@ onMounted(() => {
                       {{
                         telegramSyncBusy
                           ? 'Готовим ссылку…'
-                          : 'Открыть Telegram-бота для привязки'
+                          : 'Привязать телеграм бота'
                       }}
                     </button>
                   </template>

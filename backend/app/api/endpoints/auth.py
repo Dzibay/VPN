@@ -16,6 +16,7 @@ from app.api.deps import (
 )
 from app.core.access_token import create_access_token
 from app.core.auth_env import normalize_email
+from app.core.config import settings
 from app.core.queue import get_redis
 from app.core.passwords import hash_password, verify_password
 from app.database.operations import table_insert
