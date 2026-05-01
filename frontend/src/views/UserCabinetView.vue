@@ -501,21 +501,12 @@ onMounted(() => {
               v-else
               class="client-btns"
             >
-              <template
+              <RouterLink
                 v-for="c in filteredOpenClients"
                 :key="c.client_code"
-              >
-                <RouterLink
-                  v-if="me.subscription_active"
-                  class="client-btn"
-                  :to="openClientTo(c.client_code)"
-                >{{ c.display_name }}</RouterLink>
-                <span
-                  v-else
-                  class="client-btn client-btn--off"
-                  title="Продлите подписку"
-                >{{ c.display_name }}</span>
-              </template>
+                class="client-btn"
+                :to="openClientTo(c.client_code)"
+              >{{ c.display_name }}</RouterLink>
             </div>
           </div>
         </div>
