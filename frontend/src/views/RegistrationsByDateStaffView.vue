@@ -117,7 +117,6 @@ const registrationChartDatasets = computed(() => {
       data: pts.map((p) => p.dayActive),
       rgb: activeSkyRgb,
       filled: false,
-      yAxisID: 'y1',
     },
   ]
 })
@@ -289,11 +288,11 @@ onMounted(() => {
         <div class="head-text">
           <h2 class="section-heading">Статистика по дням (UTC)</h2>
           <p class="section-sub">
-            Две левые кривые — накопление по дате регистрации: всего пользователей и
+            Две первые кривые — накопление по дате регистрации: всего пользователей и
             сколько из них с ненулевым трафиком
-            (<span class="mono-inline">user_server_traffic</span>). Синяя линия
-            (правая ось) — сколько пользователей в этот календарный день увеличили
-            суммарный накопленный трафик относительно предыдущего дня.
+            (<span class="mono-inline">user_server_traffic</span>). Синяя линия —
+            сколько пользователей в этот календарный день увеличили суммарный
+            накопленный трафик относительно предыдущего дня; все линии в одной шкале по оси Y.
           </p>
         </div>
         <div class="head-actions">
@@ -344,8 +343,7 @@ onMounted(() => {
       :loading="loading"
       :error="error"
       :has-data="chartPoints.length > 0"
-      y-title="Пользователей (накопительно)"
-      y-title-right="Активных за день"
+      y-title="Пользователей"
       :labels="registrationChartLabels"
       :datasets="registrationChartDatasets"
       :get-tooltip-title="registrationTooltipTitle"

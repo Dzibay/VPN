@@ -6,7 +6,7 @@ import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import Chart from 'chart.js/auto'
 import { adminChartTheme, rgba } from '../utils/adminChartTheme.js'
 
-/** @typedef {{ label: string; data: number[]; rgb: [number, number, number]; filled?: boolean; borderWidth?: number; yAxisID?: string }} LineSeries */
+/** @typedef {{ label: string; data: number[]; rgb: [number, number, number]; filled?: boolean; borderWidth?: number }} LineSeries */
 
 const props = defineProps({
   ariaLabel: { type: String, required: true },
@@ -22,8 +22,6 @@ const props = defineProps({
   /** @type {import('vue').PropType<LineSeries[]>} */
   datasets: { type: Array, default: () => [] },
   yTitle: { type: String, default: '' },
-  /** Правая ось Y (например для серий с yAxisID: 'y1') */
-  yTitleRight: { type: String, default: '' },
   yGrace: { type: String, default: '8%' },
   /** Подсказка: заголовок по индексу точки */
   getTooltipTitle: { type: Function, default: null },
@@ -69,17 +67,14 @@ function drawChart() {
   const theme = adminChartTheme()
   const surfaceBg = theme.surfaceBg
   const n = props.labels.length
-  const usesY1 = props.datasets.some((ds) => ds.yAxisID === 'y1')
 
   const chartDatasets = props.datasets.map((ds, idx) => {
     const rgb = ds.rgb
     const filled = ds.filled !== false
     const bw = ds.borderWidth ?? (idx === 0 ? 2.75 : 2.25)
-    const yAxisID = ds.yAxisID === 'y1' ? 'y1' : 'y'
     return {
       label: ds.label,
       data: ds.data,
-      yAxisID,
       borderColor: rgba(rgb, idx === 0 ? 0.95 : 0.94),
       borderWidth: bw,
       tension: 0.35,
@@ -199,7 +194,6 @@ function drawChart() {
           },
         },
         y: {
-          position: 'left',
           beginAtZero: true,
           grace: props.yGrace,
           ticks: {
@@ -224,37 +218,6 @@ function drawChart() {
             padding: { bottom: 4, top: 0 },
           },
         },
-        ...(usesY1
-          ? {
-              y1: {
-                type: 'linear',
-                display: true,
-                position: 'right',
-                beginAtZero: true,
-                grace: props.yGrace,
-                ticks: {
-                  color: theme.muted,
-                  font: { family: 'var(--mono)', size: 11 },
-                  padding: 8,
-                  callback(v) {
-                    return props.formatYTick != null
-                      ? props.formatYTick(Number(v))
-                      : Number(v).toLocaleString('ru-RU')
-                  },
-                },
-                grid: {
-                  drawOnChartArea: false,
-                },
-                title: {
-                  display: Boolean(props.yTitleRight),
-                  text: props.yTitleRight,
-                  color: theme.muted,
-                  font: { family: 'var(--sans)', size: 11, weight: '600' },
-                  padding: { bottom: 4, top: 0 },
-                },
-              },
-            }
-          : {}),
       },
     },
   })
@@ -268,7 +231,6 @@ watch(
     props.labels,
     props.datasets,
     props.yTitle,
-    props.yTitleRight,
     props.yGrace,
   ],
   async () => {
