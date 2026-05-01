@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import AdminPageHeader from '../components/AdminPageHeader.vue'
 import AdminPageShell from '../components/AdminPageShell.vue'
@@ -14,6 +14,17 @@ const route = useRoute()
 const rows = ref([])
 const loading = ref(false)
 const error = ref(null)
+
+/** id пользователя: подсветка строки после перехода из других разделов */
+const highlightUserId = ref(null)
+
+function clientHighlightFromRoute() {
+  const raw = route.query.highlight
+  const s = raw == null ? '' : Array.isArray(raw) ? raw[0] : raw
+  if (s === '') return null
+  const n = Number(s)
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : null
+}
 
 const isFullAdmin = computed(() => isAdminRole(getSessionRole()))
 
@@ -55,6 +66,29 @@ async function load() {
     loading.value = false
   }
 }
+
+watch(
+  () =>
+    `${loading.value}:${
+      route.query.highlight ?? ''
+    }:${rows.value.map((u) => u.id).join(',')}`,
+  async () => {
+    if (loading.value) return
+    const hid = clientHighlightFromRoute()
+    highlightUserId.value = null
+    if (hid == null) return
+    if (!rows.value.some((u) => u.id === hid)) return
+    await nextTick()
+    const el = document.getElementById(`client-${hid}`)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    highlightUserId.value = hid
+    window.setTimeout(() => {
+      if (highlightUserId.value === hid) highlightUserId.value = null
+    }, 3400)
+  },
+  { flush: 'post' },
+)
 
 onMounted(() => {
   void load()
@@ -193,7 +227,12 @@ onMounted(() => {
           <tr v-else-if="rows.length === 0">
             <td colspan="6" class="muted">Нет пользователей</td>
           </tr>
-          <tr v-for="u in rows" :key="u.id">
+          <tr
+            v-for="u in rows"
+            :id="'client-' + u.id"
+            :key="u.id"
+            :class="{ 'client-row-highlight': highlightUserId === u.id }"
+          >
             <td>{{ u.email ?? '—' }}</td>
             <td class="tg-cell">{{ telegramCell(u) }}</td>
             <td>{{ formatDate(u.registered_at) }}</td>
@@ -301,6 +340,20 @@ onMounted(() => {
 .ref-open-in-list:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+.table tbody tr.client-row-highlight td {
+  animation: clientRowHighlight 3.2s ease-out forwards;
+}
+@keyframes clientRowHighlight {
+  0% {
+    background-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  35% {
+    background-color: color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
 }
 .mono-num {
   font-variant-numeric: tabular-nums;

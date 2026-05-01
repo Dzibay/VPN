@@ -85,6 +85,14 @@ function fmtRu(n) {
   return Number(n).toLocaleString('ru-RU')
 }
 
+/** Дельта для подсказки: +7, −3, 0 */
+function fmtDeltaRu(n) {
+  const v = Number(n) || 0
+  if (v > 0) return `+${fmtRu(v)}`
+  if (v < 0) return fmtRu(v)
+  return '0'
+}
+
 const registrationChartLabels = computed(() =>
   chartPoints.value.map((p) => formatDayShort(p.iso)),
 )
@@ -114,18 +122,28 @@ function registrationTooltipTitle(i) {
 
 function registrationTooltipLabel(ctx) {
   const i = ctx.dataIndex
-  const p = chartPoints.value[i]
+  const pts = chartPoints.value
+  const p = pts[i]
   if (!p) return ''
   const und = undatedCount.value
   const undT = undatedTrafficCount.value
+  const prevUsers = i > 0 ? pts[i - 1].totalUsers : und
+  const prevTraffic = i > 0 ? pts[i - 1].totalTraffic : undT
+  const dUsers = p.totalUsers - prevUsers
+  const dTraffic = p.totalTraffic - prevTraffic
+
   if (ctx.datasetIndex === 0) {
-    return und > 0
-      ? `Пользователей (${fmtRu(p.cumDatedUsers)}+${fmtRu(und)})`
-      : `Пользователей (${fmtRu(p.cumDatedUsers)})`
+    return [
+      `Пользователи: ${fmtRu(p.totalUsers)}`,
+      `Без даты регистрации: ${fmtRu(und)}`,
+      `Прирост с предыдущего дня: ${fmtDeltaRu(dUsers)}`,
+    ]
   }
-  return undT > 0
-    ? `С трафиком (${fmtRu(p.cumDatedTraffic)}+${fmtRu(undT)})`
-    : `С трафиком (${fmtRu(p.cumDatedTraffic)})`
+  return [
+    `С трафиком: ${fmtRu(p.totalTraffic)}`,
+    `Без даты регистрации: ${fmtRu(undT)}`,
+    `Прирост с предыдущего дня: ${fmtDeltaRu(dTraffic)}`,
+  ]
 }
 
 function formatDayShort(iso) {

@@ -163,7 +163,9 @@ function drawChart() {
             label(ctx) {
               if (props.getTooltipLabel) {
                 const out = props.getTooltipLabel(ctx)
-                return out ?? ''
+                if (out == null) return ''
+                if (Array.isArray(out)) return out
+                return out
               }
               const raw = ctx.parsed.y
               const v =
