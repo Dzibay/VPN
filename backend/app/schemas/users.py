@@ -24,6 +24,34 @@ class UserRegistrationByDateRow(BaseModel):
     )
 
 
+class UserTrafficActiveByDayRow(BaseModel):
+    """Сколько учётных записей «активны» в этот день по росту накопленного трафика."""
+
+    traffic_date: date = Field(description="Календарный день UTC (поле traffic_date)")
+    active_users_count: int = Field(
+        ge=0,
+        description=(
+            "Пользователи, у которых сумма up+down по всем узлам (последний снимок на "
+            "узел с датой ≤ этот день) стала больше, чем на предыдущий календарный день "
+            "(включая появление первых снимков)"
+        ),
+    )
+
+
+class UsersDailyStatsResponse(BaseModel):
+    """Сводная дневная статистика: регистрации и активность по трафику (UTC)."""
+
+    registrations_by_date: list[UserRegistrationByDateRow] = Field(
+        description="Регистрации и доля с трафиком по дню registered_at (UTC)",
+    )
+    traffic_active_by_day: list[UserTrafficActiveByDayRow] = Field(
+        description=(
+            "Число пользователей с ростом накопленного трафика по календарным дням "
+            "из user_server_traffic"
+        ),
+    )
+
+
 class ExtendActiveSubscriptionsBody(BaseModel):
     days: int = Field(
         ge=1,

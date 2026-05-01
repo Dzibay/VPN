@@ -12,6 +12,8 @@ import { fetchJson } from '../api/client.js'
 const route = useRoute()
 /** @type {import('vue').Ref<Array<{ registration_date: string | null; users_count: number; users_with_traffic_count?: number }>>} */
 const rows = ref([])
+/** @type {import('vue').Ref<Array<{ traffic_date: string; active_users_count: number }>>} */
+const activeByDayRows = ref([])
 const loading = ref(false)
 const error = ref(null)
 
@@ -146,6 +148,47 @@ function registrationTooltipLabel(ctx) {
   ]
 }
 
+const activeChartPoints = computed(() =>
+  [...activeByDayRows.value]
+    .map((r) => ({
+      iso: String(r.traffic_date),
+      active_users_count: Number(r.active_users_count) || 0,
+    }))
+    .sort((a, b) => a.iso.localeCompare(b.iso)),
+)
+
+const activeSkyRgb = [56, 189, 248]
+
+const activeChartLabels = computed(() =>
+  activeChartPoints.value.map((p) => formatDayShort(p.iso)),
+)
+
+const activeChartDatasets = computed(() => [
+  {
+    label: 'Активные пользователи · по дням трафика',
+    data: activeChartPoints.value.map((p) => p.active_users_count),
+    rgb: activeSkyRgb,
+  },
+])
+
+function activeTooltipTitle(i) {
+  const iso = activeChartPoints.value[i]?.iso
+  return iso ? formatDayShort(iso) : ''
+}
+
+function activeTooltipLabel(ctx) {
+  const i = ctx.dataIndex
+  const pts = activeChartPoints.value
+  const p = pts[i]
+  if (!p) return ''
+  const prev = i > 0 ? pts[i - 1].active_users_count : 0
+  const d = p.active_users_count - prev
+  return [
+    `Активных: ${fmtRu(p.active_users_count)}`,
+    `К предыдущему дню: ${fmtDeltaRu(d)}`,
+  ]
+}
+
 function formatDayShort(iso) {
   if (iso == null || iso === '') return '—'
   try {
@@ -163,10 +206,17 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    rows.value = await fetchJson('/api/users/registrations-by-date')
+    const data = await fetchJson('/api/users/daily-stats')
+    rows.value = Array.isArray(data.registrations_by_date)
+      ? data.registrations_by_date
+      : []
+    activeByDayRows.value = Array.isArray(data.traffic_active_by_day)
+      ? data.traffic_active_by_day
+      : []
   } catch (e) {
     error.value = e.message || String(e)
     rows.value = []
+    activeByDayRows.value = []
   } finally {
     loading.value = false
   }
@@ -344,6 +394,26 @@ onMounted(() => {
           записей с датой.
         </p>
         <p v-else class="empty-hint">Нет данных для графика.</p>
+      </template>
+    </AdminLineChartPanel>
+
+    <AdminLineChartPanel
+      title="Активные пользователи по дням трафика"
+      aria-label="Число пользователей с ростом накопленного трафика по календарным дням UTC"
+      :loading="loading"
+      :error="error"
+      :has-data="activeChartPoints.length > 0"
+      y-title="Пользователей в день"
+      hint="По дням из user_server_traffic (UTC): учтены пользователи, у которых сумма up+down по всем узлам (последний снимок на узел с датой не позже этого дня) стала больше, чем на предыдущий календарный день — в том числе в первый день появления снимков."
+      :labels="activeChartLabels"
+      :datasets="activeChartDatasets"
+      :get-tooltip-title="activeTooltipTitle"
+      :get-tooltip-label="activeTooltipLabel"
+    >
+      <template #empty>
+        <p class="empty-hint">
+          Нет строк трафика в базе — график появится после сборов статистики.
+        </p>
       </template>
     </AdminLineChartPanel>
   </AdminPageShell>

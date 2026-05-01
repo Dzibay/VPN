@@ -1,5 +1,6 @@
 import logging
-from datetime import date, datetime
+from collections import defaultdict
+from datetime import date, datetime, timedelta
 from typing import Annotated, Literal, cast as type_cast
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -34,6 +35,8 @@ from app.schemas.users import (
     UserRead,
     UserRegistrationByDateRow,
     UsersCountResponse,
+    UsersDailyStatsResponse,
+    UserTrafficActiveByDayRow,
     UserUpdate,
 )
 from app.services.user_provision import (
@@ -188,15 +191,109 @@ async def list_users(
     return out
 
 
+def _traffic_active_users_by_day(session: Session) -> list[UserTrafficActiveByDayRow]:
+    """
+    По каждому календарному дню от минимального до максимального traffic_date в БД:
+    число пользователей, у кого суммарный «накопленный» трафик (как в графике по дням
+    для одного пользователя) в этот день строго больше, чем на предыдущий день.
+    """
+    stmt = (
+        select(
+            UserServerTraffic.user_id,
+            UserServerTraffic.server_id,
+            UserServerTraffic.traffic_date,
+            UserServerTraffic.up_bytes + UserServerTraffic.down_bytes,
+        )
+        .order_by(
+            UserServerTraffic.user_id.asc(),
+            UserServerTraffic.server_id.asc(),
+            UserServerTraffic.traffic_date.asc(),
+        )
+    )
+    raw = session.execute(stmt).all()
+    by_user: dict[int, dict[int, list[tuple[date, int]]]] = defaultdict(
+        lambda: defaultdict(list),
+    )
+    all_dates: set[date] = set()
+    for uid_raw, sid_raw, td_raw, tot_raw in raw:
+        cal = _calendar_date(td_raw)
+        if cal is None:
+            continue
+        tot = int(tot_raw or 0)
+        if tot < 0:
+            tot = 0
+        uid = int(uid_raw)
+        sid = int(sid_raw)
+        by_user[uid][sid].append((cal, tot))
+        all_dates.add(cal)
+    if not all_dates:
+        return []
+    min_d = min(all_dates)
+    max_d = max(all_dates)
+    day_list: list[date] = []
+    d = min_d
+    while d <= max_d:
+        day_list.append(d)
+        d += timedelta(days=1)
+
+    user_states: dict[int, dict[str, object]] = {}
+    for uid, servers in by_user.items():
+        for sid in servers:
+            servers[sid].sort(key=lambda x: x[0])
+        user_states[uid] = {
+            "idx": {sid: 0 for sid in servers},
+            "cur": {sid: 0 for sid in servers},
+            "prev_total": 0,
+        }
+
+    out: list[UserTrafficActiveByDayRow] = []
+    for cal_day in day_list:
+        active = 0
+        for uid, st in user_states.items():
+            servers = by_user[uid]
+            idx_map = st["idx"]
+            cur_map = st["cur"]
+            assert isinstance(idx_map, dict)
+            assert isinstance(cur_map, dict)
+            for sid, series in servers.items():
+                i = int(idx_map[sid])
+                while i < len(series) and series[i][0] <= cal_day:
+                    cur_map[sid] = series[i][1]
+                    i += 1
+                idx_map[sid] = i
+            total = int(sum(int(cur_map[sid]) for sid in servers))
+            prev_total = int(st["prev_total"])
+            if total > prev_total:
+                active += 1
+            st["prev_total"] = total
+        out.append(
+            UserTrafficActiveByDayRow(
+                traffic_date=cal_day,
+                active_users_count=active,
+            ),
+        )
+    return out
+
+
 @router.get(
-    "/registrations-by-date",
-    response_model=list[UserRegistrationByDateRow],
+    "/daily-stats",
+    response_model=UsersDailyStatsResponse,
     dependencies=[Depends(require_referrals_staff)],
-    summary="Число регистраций по календарным дням (UTC)",
+    summary=(
+        "Дневная статистика (UTC): регистрации по дням и число «активных» пользователей "
+        "по дням трафика"
+    ),
 )
-async def users_registrations_by_date(
-    session: ReadonlySessionDep,
-) -> list[UserRegistrationByDateRow]:
+async def users_daily_stats(session: ReadonlySessionDep) -> UsersDailyStatsResponse:
+    registrations = _registrations_by_date_rows(session)
+    traffic_active = _traffic_active_users_by_day(session)
+    return UsersDailyStatsResponse(
+        registrations_by_date=registrations,
+        traffic_active_by_day=traffic_active,
+    )
+
+
+def _registrations_by_date_rows(session: Session) -> list[UserRegistrationByDateRow]:
     latest = user_server_traffic_latest_subquery()
     traffic_totals = (
         select(
