@@ -12,7 +12,7 @@ router = APIRouter(tags=["admin"])
 @router.get(
     "/status",
     response_model=StatusResponse,
-    summary="Состояние сервера",
+    summary="Состояние сервиса и доступность базы данных",
     dependencies=[Depends(require_admin)],
 )
 async def server_status(session: ReadonlySessionDep) -> StatusResponse:

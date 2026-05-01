@@ -51,9 +51,7 @@ router = APIRouter(prefix="/servers", tags=["admin"])
     response_model=UserTrafficCollectAllEnqueueResponse,
     status_code=202,
     dependencies=[Depends(require_admin)],
-    summary=(
-        "Поставить в очередь RQ батч-сбор трафика Xray: все активные provision_ready узлы"
-    ),
+    summary="Постановка в очередь RQ пакетного сбора трафика Xray по всем узлам в состоянии provision_ready",
 )
 async def enqueue_user_traffic_collect_all() -> UserTrafficCollectAllEnqueueResponse:
     try:
@@ -71,13 +69,13 @@ async def enqueue_user_traffic_collect_all() -> UserTrafficCollectAllEnqueueResp
     "/{server_id}/metrics",
     response_model=ServerMetricsFromPrometheus,
     dependencies=[Depends(require_admin)],
-    summary="Метрики узла из Prometheus (node_exporter, query_range)",
+    summary="Временные ряды метрик узла из Prometheus (node_exporter)",
 )
 async def get_server_metrics_prometheus(
     server_id: int,
     session: ReadonlySessionDep,
-    hours: int = Query(24, ge=1, le=720, description="Глубина, часов"),
-    step: int = Query(60, ge=15, le=300, description="Шаг разрешения, сек"),
+    hours: int = Query(24, ge=1, le=720, description="Глубина выборки, часов"),
+    step: int = Query(60, ge=15, le=300, description="Интервал между точками ряда, с"),
 ) -> ServerMetricsFromPrometheus:
     server = session.get(Server, server_id)
     if server is None:
@@ -187,7 +185,7 @@ def _rq_poll_status(job: Job) -> str:
     response_model=UserTrafficCollectEnqueueResponse,
     status_code=202,
     dependencies=[Depends(require_admin)],
-    summary="Поставить в очередь RQ сбор трафика Xray по SSH (выполняет воркер, как провижининг)",
+    summary="Постановка в очередь RQ сбора трафика Xray по SSH для одного узла",
 )
 async def enqueue_user_traffic_collect(
     server_id: int,
@@ -216,7 +214,7 @@ async def enqueue_user_traffic_collect(
     "/{server_id}/user-traffic/collect-jobs/{job_id}",
     response_model=UserTrafficCollectPollResponse,
     dependencies=[Depends(require_admin)],
-    summary="Статус задачи сбора трафика (RQ) и результат после завершения",
+    summary="Состояние задачи RQ сбора трафика и результат после завершения",
 )
 async def poll_user_traffic_collect_job(
     server_id: int,
@@ -311,7 +309,7 @@ async def poll_user_traffic_collect_job(
     "/{server_id}/user-traffic",
     response_model=ServerUserTrafficBundle,
     dependencies=[Depends(require_admin)],
-    summary="Трафик по пользователям из БД (сбор с узла — POST …/user-traffic/collect, воркер RQ)",
+    summary="Трафик по пользователям на узле из базы данных",
 )
 async def get_server_user_traffic(
     server_id: int,
@@ -319,7 +317,7 @@ async def get_server_user_traffic(
     response: Response,
     collect: bool = Query(
         False,
-        description="Устарело: SSH не выполняется в API. Используйте POST …/user-traffic/collect",
+        description="Устаревший параметр; сбор выполняется только через POST …/user-traffic/collect",
     ),
 ) -> ServerUserTrafficBundle:
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"

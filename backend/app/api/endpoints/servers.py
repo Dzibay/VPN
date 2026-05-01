@@ -172,7 +172,7 @@ def _enqueue_software_job(
 @router.get(
     "/count",
     response_model=ServersCountResponse,
-    summary="Количество серверов в БД",
+    summary="Число записей серверов в базе данных",
 )
 async def servers_count(session: ReadonlySessionDep) -> ServersCountResponse:
     total = session.scalar(select(func.count()).select_from(Server))
@@ -182,7 +182,7 @@ async def servers_count(session: ReadonlySessionDep) -> ServersCountResponse:
 @router.get(
     "",
     response_model=list[ServerRead],
-    summary="Список серверов",
+    summary="Перечень серверов",
 )
 async def list_servers(session: ReadonlySessionDep) -> list[Server]:
     stmt = select(Server).order_by(Server.id.desc())
@@ -193,8 +193,7 @@ async def list_servers(session: ReadonlySessionDep) -> list[Server]:
     "/sync-load-from-prometheus",
     response_model=ServerLoadSyncResultRead,
     summary=(
-        "Записать в БД load_percent по Prometheus: среднее «узкое место» за окно "
-        "(как на графике аналитики)"
+        "Обновление поля load_percent по данным Prometheus (среднее за заданный интервал времени)"
     ),
 )
 async def sync_load_from_prometheus(
@@ -202,7 +201,7 @@ async def sync_load_from_prometheus(
         24,
         ge=1,
         le=168,
-        description="Окно в часах для усреднения (по умолчанию сутки)",
+        description="Длительность интервала усреднения, часов",
     ),
 ) -> ServerLoadSyncResultRead:
     def _run() -> ServerLoadSyncResultRead:
@@ -232,7 +231,7 @@ async def sync_load_from_prometheus(
     "",
     response_model=ServerRead,
     status_code=201,
-    summary="Добавить сервер",
+    summary="Создание записи сервера",
 )
 async def create_server(body: ServerCreate, session: SessionDep) -> Server:
     vless_uuid = body.vless_uuid or str(uuid_lib.uuid4())
@@ -284,7 +283,7 @@ async def create_server(body: ServerCreate, session: SessionDep) -> Server:
     "/sync-xray-clients",
     response_model=XrayClientsSyncResultRead,
     status_code=202,
-    summary="Синхронизировать список клиентов VLESS на всех готовых узлах (очередь RQ)",
+    summary="Постановка в очередь RQ синхронизации списка клиентов Xray на всех готовых узлах",
 )
 async def enqueue_sync_xray_clients_all() -> XrayClientsSyncResultRead:
     _provision_command_blocks_split_install()
@@ -303,7 +302,7 @@ async def enqueue_sync_xray_clients_all() -> XrayClientsSyncResultRead:
     "/{server_id}/sync-xray-clients",
     response_model=XrayClientsSyncOneResultRead,
     status_code=202,
-    summary="Синхронизировать список клиентов VLESS только на одном узле",
+    summary="Постановка в очередь RQ синхронизации списка клиентов Xray на одном узле",
 )
 async def enqueue_sync_xray_clients_one(
     server_id: int,
@@ -337,7 +336,7 @@ async def enqueue_sync_xray_clients_one(
     "/{server_id}/provision",
     response_model=ServerRead,
     status_code=202,
-    summary="Поставить в очередь установку ПО на узел (воркер RQ)",
+    summary="Постановка в очередь RQ полной установки ПО на узле",
 )
 async def enqueue_server_provision(
     server_id: int,
@@ -369,7 +368,7 @@ async def enqueue_server_provision(
     "/{server_id}/provision/reset",
     response_model=ServerRead,
     status_code=200,
-    summary="Сбросить застрявший статус очереди (queued/running) и отменить задачу RQ",
+    summary="Сброс статуса provision (queued или running) и отмена связанной задачи RQ",
 )
 async def reset_server_provision(
     server_id: int,
@@ -405,7 +404,7 @@ async def reset_server_provision(
     "/{server_id}/provision/reconcile",
     response_model=ServerRead,
     status_code=202,
-    summary="Проверить узел и донастроить ПО (xray, node_exporter) — повторный прогон скрипта",
+    summary="Повторный прогон сценария установки (Xray и node_exporter) без предварительного сброса готовности",
 )
 async def enqueue_server_reconcile(
     server_id: int,
@@ -436,7 +435,7 @@ async def enqueue_server_reconcile(
     "/{server_id}/provision/xray",
     response_model=ServerRead,
     status_code=202,
-    summary="Только Xray (VLESS+REALITY) на узле",
+    summary="Установка и настройка только Xray на узле",
 )
 async def enqueue_server_provision_xray(
     server_id: int,
@@ -458,7 +457,7 @@ async def enqueue_server_provision_xray(
     "/{server_id}/provision/prometheus",
     response_model=ServerRead,
     status_code=202,
-    summary="Только node_exporter (метрики Prometheus) на узле",
+    summary="Установка и настройка только node_exporter на узле",
 )
 async def enqueue_server_provision_prometheus(
     server_id: int,
@@ -480,7 +479,7 @@ async def enqueue_server_provision_prometheus(
     "/{server_id}/provision/fair-egress",
     response_model=ServerRead,
     status_code=202,
-    summary="Только справедливая очередь uplink (CAKE/fq_codel) на узле",
+    summary="Настройка справедливой очереди на uplink (CAKE или fq_codel)",
 )
 async def enqueue_server_provision_fair_egress(
     server_id: int,
@@ -502,7 +501,7 @@ async def enqueue_server_provision_fair_egress(
     "/{server_id}/provision/cleanup",
     response_model=ServerRead,
     status_code=202,
-    summary="Очистить узел (xray + node_exporter) и сбросить ключи/метрики в БД",
+    summary="Удаление Xray и node_exporter с узла и очистка связанных полей в базе данных",
 )
 async def enqueue_server_provision_cleanup(
     server_id: int,
@@ -523,7 +522,7 @@ async def enqueue_server_provision_cleanup(
 @router.patch(
     "/{server_id}",
     response_model=ServerRead,
-    summary="Обновить сервер (нагрузка, страна, имя, активность)",
+    summary="Частичное обновление параметров сервера",
 )
 async def patch_server(
     server_id: int,
@@ -578,7 +577,7 @@ async def patch_server(
 @router.get(
     "/{server_id}/ping",
     response_model=ServerPingRead,
-    summary="Проверка узла: TCP, БД, каскад, node_exporter (с API-сервера)",
+    summary="Проверка доступности узла: порт VPN, каскад при наличии, экспорт метрик",
 )
 async def ping_server_reachable(
     server_id: int,
@@ -587,7 +586,7 @@ async def ping_server_reachable(
         5.0,
         ge=0.5,
         le=15.0,
-        description="Таймаут TCP connect (VPN, exit, metrics), с",
+        description="Таймаут установки TCP-соединения, с",
     ),
 ) -> ServerPingRead:
     server = session.get(Server, server_id)
@@ -626,7 +625,7 @@ async def ping_server_reachable(
 @router.delete(
     "/{server_id}",
     status_code=204,
-    summary="Удалить сервер из БД; на оставшихся узлах — синхронизация inbound (очередь)",
+    summary="Удаление сервера из базы данных и синхронизация списка клиентов на оставшихся узлах",
 )
 async def delete_server(
     server_id: int,

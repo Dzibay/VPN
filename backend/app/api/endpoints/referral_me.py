@@ -35,7 +35,7 @@ def _client_site_user_id(principal: BearerPrincipal) -> int:
 @router.get(
     "",
     response_model=ReferralMeResponse,
-    summary="Текущая персональная реферальная ссылка",
+    summary="Персональная реферальная ссылка текущего пользователя",
 )
 async def get_my_referral_link(
     session: ReadonlySessionDep,
@@ -52,7 +52,7 @@ async def get_my_referral_link(
     "",
     response_model=ReferralMeResponse,
     status_code=201,
-    summary="Создать персональную реферальную ссылку (одну на аккаунт; токен генерирует сервер)",
+    summary="Создание персональной реферальной ссылки (не более одной на учётную запись)",
 )
 async def create_my_referral_link(
     session: SessionDep,

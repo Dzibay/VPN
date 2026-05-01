@@ -7,5 +7,5 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     role: Literal["admin", "user", "manager"] = Field(
-        description="JWT: admin — account_role=admin; manager — account_role=manager; user — клиент (client).",
+        description="Роль в JWT: admin и manager соответствуют account_role в БД; user — клиентская запись (account_role=client).",
     )

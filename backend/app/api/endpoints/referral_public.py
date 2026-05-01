@@ -12,7 +12,7 @@ router = APIRouter(prefix="/referral", tags=["public"])
 @router.post(
     "/track-click",
     status_code=204,
-    summary="Учесть переход по реферальной ссылке на сайте (инкремент кликов)",
+    summary="Регистрация перехода по реферальной ссылке на сайте (инкремент счётчика кликов)",
 )
 async def track_referral_click(
     body: ReferralTrackClickBody,

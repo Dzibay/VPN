@@ -30,7 +30,7 @@ router = APIRouter(prefix="/telegram", tags=["public"])
     "/subscription-open-clients",
     response_model=TelegramSubscriptionOpenClientsResponse,
     dependencies=[Depends(require_telegram_bot_api_secret)],
-    summary="Список VPN-клиентов для кнопок «Подключить» (тот же источник, что /api/auth/me; секрет бота)",
+    summary="Список VPN-клиентов для кнопок в интерфейсе бота (источник данных совпадает с GET /api/auth/me)",
 )
 async def subscription_open_clients() -> TelegramSubscriptionOpenClientsResponse:
     base = subscription_public_base_from_setting(settings.subscription_public_base_url)
@@ -44,10 +44,7 @@ async def subscription_open_clients() -> TelegramSubscriptionOpenClientsResponse
     "/users/{topic_id}",
     response_model=UserRead,
     dependencies=[Depends(require_telegram_bot_api_secret)],
-    summary=(
-        "Пользователь по topic_id в users.telegram_properties.topic_id "
-        "(не путать с PATCH /api/telegram/users/{telegram_id}, там id Telegram; секрет бота)"
-    ),
+    summary="Получение пользователя по значению topic_id в users.telegram_properties",
 )
 async def get_user_by_topic_id(
     topic_id: Annotated[
@@ -55,7 +52,7 @@ async def get_user_by_topic_id(
         Path(
             ge=1,
             le=9223372036854775807,
-            description="Значение telegram_properties.topic_id (топик форума и т.п.)",
+            description="Значение topic_id внутри объекта telegram_properties",
         ),
     ],
     session: ReadonlySessionDep,
@@ -84,9 +81,7 @@ async def get_user_by_topic_id(
     "/users/{telegram_id}",
     response_model=TelegramUserPropertiesUpdateResponse,
     dependencies=[Depends(require_telegram_bot_api_secret)],
-    summary=(
-        "Обновить telegram_properties пользователя (та же модель слияния, что POST /api/auth/telegram; секрет бота)"
-    ),
+    summary="Частичное обновление telegram_properties (правила слияния совпадают с POST /api/auth/telegram)",
 )
 async def patch_user_telegram_properties(
     telegram_id: int,

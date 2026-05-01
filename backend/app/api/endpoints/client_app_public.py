@@ -18,10 +18,10 @@ _APPS_DOC = ", ".join(list_subscription_open_app_codes())
 @router.get(
     "/public/client-apps/{client_code}",
     response_model=ClientAppPublicResponse,
-    summary="Клиент VPN: название и ссылки магазинов (для страницы /apps)",
+    summary="Публичные сведения о VPN-клиенте: наименование и ссылки на магазины приложений",
 )
 async def client_app_public(
-    client_code: str = Path(..., description=f"Код клиента. Доступно: {_APPS_DOC}"),
+    client_code: str = Path(..., description=f"Код клиента. Допустимые значения: {_APPS_DOC}"),
 ) -> ClientAppPublicResponse:
     app = get_subscription_open_app(client_code)
     if app is None:

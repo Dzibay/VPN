@@ -74,8 +74,8 @@ def _jwt_role_for_user(user: User) -> Literal["user", "manager", "admin"]:
 # Примеры ответа GET /api/auth/me в OpenAPI (ключи с null в JSON стандарте часто не показывают).
 _AUTH_ME_OPENAPI_EXAMPLES: dict = {
     "user_with_email": {
-        "summary": "Пользователь: email, Telegram, подписка",
-        "description": "Типичный случай после веб-регистрации с привязкой Telegram.",
+        "summary": "Клиентская учётная запись (email и Telegram)",
+        "description": "Типичный ответ после регистрации на сайте и привязки Telegram.",
         "value": {
             "role": "user",
             "id": 42,
@@ -104,7 +104,7 @@ _AUTH_ME_OPENAPI_EXAMPLES: dict = {
         },
     },
     "user_telegram_only": {
-        "summary": "Только Telegram: email/срок подписки часто null",
+        "summary": "Учётная запись только через Telegram",
         "value": {
             "role": "user",
             "id": 7,
@@ -119,11 +119,8 @@ _AUTH_ME_OPENAPI_EXAMPLES: dict = {
         },
     },
     "admin": {
-        "summary": "Админ (users.account_role = admin)",
-        "description": (
-            "id, telegram_id, telegram_properties, subscription_until в ответе — null; "
-            "subscription_token — пустая строка. Эти поля в примере опущены (см. схему)."
-        ),
+        "summary": "Администратор",
+        "description": "Часть полей отсутствует или равна null; полный перечень см. в схеме ответа.",
         "value": {
             "role": "admin",
             "email": "admin@example.com",
@@ -141,7 +138,7 @@ router = APIRouter(prefix="/auth")
     "/login",
     response_model=TokenResponse,
     tags=["public"],
-    summary="Вход по email и паролю (учётная запись в БД)",
+    summary="Аутентификация по email и паролю; ответ содержит JWT",
 )
 async def login(body: AccountLoginBody, session: ReadonlySessionDep) -> TokenResponse:
     email = normalize_email(str(body.email))
@@ -166,7 +163,7 @@ async def login(body: AccountLoginBody, session: ReadonlySessionDep) -> TokenRes
     response_model=TokenResponse,
     status_code=201,
     tags=["public"],
-    summary="Регистрация пользователя портала (email + пароль)",
+    summary="Регистрация по email и паролю; ответ содержит JWT",
 )
 async def register(
     body: AccountRegisterBody,
@@ -215,7 +212,7 @@ async def register(
     status_code=201,
     tags=["public"],
     dependencies=[Depends(require_telegram_bot_api_secret)],
-    summary="Вход и регистрация через Telegram (секрет X-Telegram-Bot-Secret; вызывает бэкенд бота)",
+    summary="Аутентификация и регистрация через Telegram (обязательный заголовок X-Telegram-Bot-Secret)",
 )
 async def telegram_auth(
     body: TelegramAuthBody,
@@ -279,10 +276,7 @@ async def telegram_auth(
     response_model=TelegramWebLinkResponse,
     tags=["public"],
     dependencies=[Depends(require_telegram_bot_api_secret)],
-    summary=(
-        "Привязать Telegram к веб-аккаунту по одноразовому токену из ЛК "
-        "(заголовок X-Telegram-Bot-Secret; вызывает бэкенд бота)"
-    ),
+    summary="Привязка Telegram к учётной записи по одноразовому токену из личного кабинета",
 )
 async def telegram_link_web_account(
     body: TelegramWebLinkBody,
@@ -358,7 +352,7 @@ async def telegram_link_web_account(
     "/me/telegram-sync-start",
     response_model=TelegramSyncStartResponse,
     tags=["user"],
-    summary="Одноразовая ссылка t.me/...?start=link_* для привязки Telegram к текущему аккаунту",
+    summary="Одноразовая deep link-ссылка на бота (t.me/…?start=…) для привязки Telegram",
 )
 async def telegram_sync_start(
     session: ReadonlySessionDep,
@@ -400,10 +394,10 @@ async def telegram_sync_start(
     "/me",
     response_model=AccountMeResponse,
     tags=["user"],
-    summary="Профиль по Bearer JWT (учётная запись в БД)",
+    summary="Профиль текущего пользователя по JWT",
     responses={
         200: {
-            "description": "Профиль",
+            "description": "Данные учётной записи",
             "content": {
                 "application/json": {
                     "examples": _AUTH_ME_OPENAPI_EXAMPLES,

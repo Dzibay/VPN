@@ -39,7 +39,7 @@ def _require_sd_bearer(
 @router.get(
     "/node-exporter",
     dependencies=[Depends(_require_sd_bearer)],
-    summary="Список целей node_exporter для Prometheus http_sd",
+    summary="HTTP service discovery Prometheus: цели scrape node_exporter",
 )
 async def prometheus_sd_node_exporter(session: ReadonlySessionDep) -> list[dict[str, Any]]:
     """

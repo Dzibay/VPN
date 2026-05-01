@@ -51,7 +51,7 @@ router = APIRouter(tags=["public"])
 _SUBSCRIPTION_TOKEN_OPENAPI_EXAMPLE = "R7k4mN9pQ2sT5vX8yZ1aB3cD6eF0gH2j"
 _SUBSCRIPTION_TOKEN_PATH = Path(
     ...,
-    description="Токен подписки (users.token), сегмент пути /sub/…/…",
+    description="Токен подписки (поле users.token) в пути /sub/{token}/…",
     examples=[_SUBSCRIPTION_TOKEN_OPENAPI_EXAMPLE],
 )
 
@@ -273,7 +273,7 @@ def _build_open_page_data(
 @router.get(
     "/sub/{subscription_token}/open/{client}/data",
     response_model=SubscriptionOpenPageData,
-    summary="Данные для SPA: открыть подписку в приложении (без HTML)",
+    summary="Данные для SPA-страницы открытия подписки во внешнем клиенте (JSON)",
 )
 async def subscription_open_page_data(
     request: Request,
@@ -281,11 +281,11 @@ async def subscription_open_page_data(
     subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
     client: str = Path(
         ...,
-        description=f"Идентификатор клиента. Доступно: {_OPEN_APPS_DOC}",
+        description=f"Идентификатор клиента. Допустимые значения: {_OPEN_APPS_DOC}",
     ),
     platform: str | None = Query(
         None,
-        description="Платформа для ссылок магазина: windows | android | ios | macos | linux (иначе — по UA на клиенте).",
+        description="Платформа для ссылок на магазины: windows, android, ios, macos, linux",
     ),
 ) -> SubscriptionOpenPageData:
     app = get_subscription_open_app(client)
@@ -303,7 +303,7 @@ async def subscription_open_page_data(
 
 @router.get(
     "/sub/{subscription_token}/open/{client}",
-    summary=f"Редирект на SPA открытия клиента (client: {_OPEN_APPS_DOC})",
+    summary=f"Перенаправление HTTP 302 на SPA-маршрут открытия клиента (допустимые client: {_OPEN_APPS_DOC})",
     response_class=RedirectResponse,
 )
 async def subscription_open_in_app(
@@ -311,11 +311,11 @@ async def subscription_open_in_app(
     subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
     client: str = Path(
         ...,
-        description=f"Идентификатор клиента. Доступно: {_OPEN_APPS_DOC}",
+        description=f"Идентификатор клиента. Допустимые значения: {_OPEN_APPS_DOC}",
     ),
     platform: str | None = Query(
         None,
-        description="Платформа для ссылок магазина: windows | android | ios | macos | linux.",
+        description="Платформа для ссылок на магазины приложений",
     ),
 ) -> RedirectResponse:
     app = get_subscription_open_app(client)
@@ -344,7 +344,7 @@ async def subscription_open_in_app(
 
 @router.head(
     "/sub/{subscription_token}",
-    summary="Метаданные подписки без тела (Happ/Stash: HEAD + subscription-userinfo и др.)",
+    summary="HEAD-запрос подписки: ответ без тела, только заголовки метаданных (совместимо с Happ и аналогами)",
     response_class=Response,
 )
 async def subscription_head_by_token(
@@ -361,7 +361,7 @@ async def subscription_head_by_token(
 
 @router.get(
     "/sub/{subscription_token}",
-    summary="Подписка: text/plain, одна строка Base64 (v2rayNG, Nekoray и др.)",
+    summary="Тело подписки: text/plain, одна строка в кодировке Base64",
     response_class=Response,
 )
 async def subscription_base64_by_token(
@@ -381,7 +381,7 @@ async def subscription_base64_by_token(
 @router.get(
     "/sub/{subscription_token}/json",
     response_model=SubscriptionPayload,
-    summary="Подписка (JSON): узлы, vless:// и поле subscription_base64",
+    summary="Подписка в формате JSON; метаданные дублируются в заголовках ответа",
 )
 async def subscription_json_by_token(
     request: Request,

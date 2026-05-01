@@ -31,7 +31,7 @@ router = APIRouter(
 @router.get(
     "",
     response_model=list[ReferralLinkOut],
-    summary="Список реферальных токенов",
+    summary="Перечень реферальных ссылок",
 )
 async def list_referral_links(session: ReadonlySessionDep) -> list[ReferralLinkOut]:
     stmt = select(ReferralLink).order_by(ReferralLink.id.desc())
@@ -42,7 +42,10 @@ async def list_referral_links(session: ReadonlySessionDep) -> list[ReferralLinkO
 @router.get(
     "/funnel",
     response_model=ReferralFunnelSummary,
-    summary="Воронка: пользователи и активность; при фильтре по ссылке — ещё и клики",
+    summary=(
+        "Сводные показатели воронки: пользователи и потребление трафика; "
+        "при указании referral_link_id — также счётчик кликов по ссылке"
+    ),
 )
 async def referral_funnel_summary(
     session: ReadonlySessionDep,
@@ -50,7 +53,7 @@ async def referral_funnel_summary(
         int | None,
         Query(
             ge=1,
-            description="Только эта реферальная ссылка; без параметра — все пользователи БД",
+            description="Идентификатор реферальной ссылки в базе; без параметра — агрегат по всем пользователям",
         ),
     ] = None,
 ) -> ReferralFunnelSummary:
@@ -114,7 +117,7 @@ async def referral_funnel_summary(
     "",
     response_model=ReferralLinkOut,
     status_code=201,
-    summary="Создать реферальный токен",
+    summary="Создание реферальной ссылки",
 )
 async def post_referral_link(
     body: ReferralLinkCreate,
@@ -141,12 +144,12 @@ async def post_referral_link(
 @router.patch(
     "/{link_id}",
     response_model=ReferralLinkOut,
-    summary="Изменить реферальный токен и источник",
+    summary="Частичное обновление реферальной ссылки",
 )
 async def patch_referral_link(
     body: ReferralLinkUpdate,
     session: SessionDep,
-    link_id: Annotated[int, Path(ge=1, description="id в таблице referral_links")],
+    link_id: Annotated[int, Path(ge=1, description="Первичный ключ referral_links.id")],
 ) -> ReferralLinkOut:
     try:
         row = update_referral_link(
@@ -172,11 +175,11 @@ async def patch_referral_link(
 @router.delete(
     "/{link_id}",
     status_code=204,
-    summary="Удалить реферальный токен",
+    summary="Удаление реферальной ссылки",
 )
 async def delete_referral_link(
     session: SessionDep,
-    link_id: Annotated[int, Path(ge=1, description="id в таблице referral_links")],
+    link_id: Annotated[int, Path(ge=1, description="Первичный ключ referral_links.id")],
 ) -> Response:
     stmt = select(ReferralLink).where(ReferralLink.id == link_id).limit(1)
     row = session.scalars(stmt).first()

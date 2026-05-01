@@ -139,7 +139,7 @@ def user_traffic_cumulative_by_day_rows(
     "/count",
     response_model=UsersCountResponse,
     dependencies=[Depends(require_admin)],
-    summary="Количество пользователей в БД",
+    summary="Число записей пользователей в базе данных",
 )
 async def users_count(session: ReadonlySessionDep) -> UsersCountResponse:
     total = session.scalar(select(func.count()).select_from(User))
@@ -150,8 +150,8 @@ async def users_count(session: ReadonlySessionDep) -> UsersCountResponse:
     "",
     response_model=list[UserListItem],
     summary=(
-        "Список пользователей для таблиц админа и менеджера: трафик и реферал; "
-        "токен подписки и vless — только у админа (или при выключенном JWT-гейте)"
+        "Список пользователей для административного и менеджерского интерфейса; "
+        "токен подписки и UUID VLESS возвращаются только при доступе администратора"
     ),
 )
 async def list_users(
@@ -192,7 +192,7 @@ async def list_users(
     "/registrations-by-date",
     response_model=list[UserRegistrationByDateRow],
     dependencies=[Depends(require_referrals_staff)],
-    summary="Число пользователей по датам регистрации (календарный день UTC)",
+    summary="Число регистраций по календарным дням (UTC)",
 )
 async def users_registrations_by_date(
     session: ReadonlySessionDep,
@@ -262,7 +262,7 @@ async def users_registrations_by_date(
     response_model=UserRead,
     status_code=201,
     dependencies=[Depends(require_admin)],
-    summary="Создать пользователя (токен подписки генерируется на сервере)",
+    summary="Создание пользователя; токен подписки и UUID генерируются на сервере",
 )
 async def create_user(
     body: UserCreate,
@@ -293,8 +293,8 @@ async def create_user(
     response_model=ExtendActiveSubscriptionsResponse,
     dependencies=[Depends(require_admin)],
     summary=(
-        "Продлить подписку: прибавить дни всем с активной конечной подпиской "
-        "(subscription_until задан и ≥ сегодня; бессрочные записи не меняются)"
+        "Продление подписки на указанное число календарных дней для всех записей "
+        "с активной конечной датой; пользователи без срока подписки не изменяются"
     ),
 )
 async def extend_active_subscriptions(
@@ -322,7 +322,7 @@ async def extend_active_subscriptions(
     "/{user_id}/traffic-by-server",
     response_model=UserTrafficByServersBundle,
     dependencies=[Depends(require_admin)],
-    summary="Трафик пользователя по всем узлам (из БД, накопленный Xray)",
+    summary="Трафик пользователя по узлам (данные из базы)",
 )
 async def user_traffic_by_server(
     user_id: int,
@@ -381,10 +381,7 @@ async def user_traffic_by_server(
     "/{user_id}/traffic-by-day",
     response_model=list[UserTrafficByDayRow],
     dependencies=[Depends(require_admin)],
-    summary=(
-        "Накопительный трафик по календарным дням UTC: сумма по узлам последних "
-        "снимков user_server_traffic с traffic_date ≤ этого дня"
-    ),
+    summary="Накопительный трафик по календарным дням (UTC)",
 )
 async def user_traffic_by_day(
     user_id: int,
@@ -400,7 +397,7 @@ async def user_traffic_by_day(
     "/{user_id}",
     status_code=204,
     dependencies=[Depends(require_admin)],
-    summary="Удалить пользователя; на узлах — синхронизация inbound без этого UUID",
+    summary="Удаление пользователя и синхронизация списка клиентов на узлах",
 )
 async def delete_user(
     user_id: int,
@@ -418,7 +415,7 @@ async def delete_user(
     "/{user_id}",
     response_model=UserRead,
     dependencies=[Depends(require_admin)],
-    summary="Обновить пользователя (подписка); после сохранения — синхронизация Xray на узлах",
+    summary="Частичное обновление пользователя и синхронизация Xray на узлах",
 )
 async def patch_user(
     user_id: int,
