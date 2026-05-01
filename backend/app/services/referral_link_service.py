@@ -32,6 +32,59 @@ def validate_token_shape(token: str) -> None:
         )
 
 
+def _referral_conflict_is_one_owner_per_user(e: IntegrityError) -> bool:
+    """Срабатывание UNIQUE-индекса uq_referral_links_one_user_owner (PostgreSQL)."""
+    diag = getattr(e.orig, "diag", None)
+    cn = getattr(diag, "constraint_name", None) if diag is not None else None
+    if cn == "uq_referral_links_one_user_owner":
+        return True
+    blob = f"{cn or ''}|{type(e.orig).__name__}|{str(e.orig)}"
+    return "uq_referral_links_one_user_owner" in blob
+
+
+def get_user_owned_referral_link(session: Session, user_id: int) -> ReferralLink | None:
+    """Строка с owner_kind=user и данным пользователем (не более одной — см. ограничение в API/БД)."""
+    return session.scalars(
+        select(ReferralLink)
+        .where(
+            ReferralLink.owner_kind == "user",
+            ReferralLink.owner_user_id == user_id,
+        )
+        .limit(1),
+    ).first()
+
+
+def create_user_owned_referral_link(
+    session: Session,
+    user_id: int,
+    *,
+    token: str | None,
+) -> ReferralLink:
+    """Личная ссылка: owner_kind=user, не более одной на аккаунт (см. миграцию uq_*)."""
+    if get_user_owned_referral_link(session, user_id) is not None:
+        raise ValueError("У вас уже создана персональная реферальная ссылка")
+    exists = session.scalar(select(User.id).where(User.id == user_id).limit(1))
+    if exists is None:
+        raise ValueError("Пользователь не найден")
+
+    raw = token.strip() if token else generate_referral_token()
+    validate_token_shape(raw)
+    row = ReferralLink(
+        token=raw,
+        owner_kind="user",
+        owner_user_id=user_id,
+    )
+    session.add(row)
+    try:
+        session.flush()
+    except IntegrityError as e:
+        session.rollback()
+        if _referral_conflict_is_one_owner_per_user(e):
+            raise ValueError("У вас уже создана персональная реферальная ссылка") from e
+        raise ValueError("Токен уже занят") from e
+    return row
+
+
 def create_referral_link(
     session: Session,
     *,
@@ -63,6 +116,10 @@ def create_referral_link(
         session.flush()
     except IntegrityError as e:
         session.rollback()
+        if _referral_conflict_is_one_owner_per_user(e):
+            raise ValueError(
+                "У этого пользователя уже есть персональная реферальная ссылка (не более одной)",
+            ) from e
         raise ValueError("Токен уже занят") from e
     return row
 
@@ -107,11 +164,12 @@ def update_referral_link(
         session.flush()
     except IntegrityError as e:
         session.rollback()
+        if _referral_conflict_is_one_owner_per_user(e):
+            raise ValueError(
+                "У этого пользователя уже есть персональная реферальная ссылка (не более одной)",
+            ) from e
         raise ValueError("Токен уже занят") from e
     return row
-
-
-CounterKind = Literal["clicks", "registrations", "payments"]
 
 
 def increment_referral_counter(

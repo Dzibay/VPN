@@ -89,6 +89,11 @@ ALTER TABLE users ADD CONSTRAINT users_account_role_check CHECK (
 ALTER TABLE users ADD COLUMN IF NOT EXISTS registered_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_users_registered_at ON users (registered_at DESC NULLS LAST);
 
+-- Не более одной строки referral_links с owner_kind = user на каждого владельца (личные ссылки)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_referral_links_one_user_owner
+ON referral_links (owner_user_id)
+WHERE owner_kind = 'user';
+
 -- user_server_traffic: дневные строки (UTC), исторический ряд для графиков + актуальные суммы через последнюю дату
 ALTER TABLE user_server_traffic ADD COLUMN IF NOT EXISTS traffic_date DATE;
 UPDATE user_server_traffic

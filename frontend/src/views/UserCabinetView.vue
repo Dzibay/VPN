@@ -4,6 +4,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   detectStorePlatform,
   fetchJson,
+  sitePublicUrl,
   subscriptionOpenPath,
   subscriptionPublicUrl,
 } from '../api/client.js'
@@ -63,6 +64,120 @@ const me = ref(null)
 
 const referralsStaffVisible = computed(
   () => me.value?.role === 'admin' || me.value?.role === 'manager',
+)
+
+const referralClientUser = computed(() => me.value?.role === 'user')
+
+/** @type {import('vue').Ref<null | Record<string, unknown>>} */
+const myReferralLink = ref(null)
+const myReferralLoading = ref(false)
+const myReferralError = ref(null)
+const referralCreateBusy = ref(false)
+const referralCopySite = ref(false)
+const referralCopyTg = ref(false)
+/** @type {ReturnType<typeof setTimeout> | null} */
+let referralCopySiteTimer = null
+/** @type {ReturnType<typeof setTimeout> | null} */
+let referralCopyTgTimer = null
+
+const effectiveReferralSiteUrl = computed(() => {
+  const L = myReferralLink.value
+  if (!L || typeof L !== 'object') return ''
+  const direct = L.site_entry_url
+  if (typeof direct === 'string' && direct.trim()) return direct.trim()
+  const t = L.token
+  if (typeof t !== 'string' || !t.trim()) return ''
+  const base = sitePublicUrl().replace(/\/$/, '')
+  if (!base) return ''
+  return `${base}/?ref=${encodeURIComponent(t.trim())}`
+})
+
+const effectiveReferralTelegramUrl = computed(() => {
+  const L = myReferralLink.value
+  if (!L || typeof L !== 'object') return ''
+  const direct = L.telegram_deep_link
+  if (typeof direct === 'string' && direct.trim()) return direct.trim()
+  return ''
+})
+
+async function loadMyReferral() {
+  if (me.value?.role !== 'user') {
+    myReferralLink.value = null
+    myReferralError.value = null
+    return
+  }
+  myReferralLoading.value = true
+  myReferralError.value = null
+  try {
+    const data = await fetchJson('/api/referral/me')
+    myReferralLink.value = data?.link ?? null
+  } catch (e) {
+    myReferralError.value = e.message || String(e)
+    myReferralLink.value = null
+  } finally {
+    myReferralLoading.value = false
+  }
+}
+
+async function createMyReferral() {
+  if (!referralClientUser.value || myReferralLink.value) return
+  referralCreateBusy.value = true
+  myReferralError.value = null
+  try {
+    const data = await fetchJson('/api/referral/me', {
+      method: 'POST',
+      body: '{}',
+    })
+    myReferralLink.value = data?.link ?? null
+  } catch (e) {
+    myReferralError.value = e.message || String(e)
+  } finally {
+    referralCreateBusy.value = false
+  }
+}
+
+async function copyReferralSite() {
+  const url = effectiveReferralSiteUrl.value
+  if (!url) return
+  try {
+    await navigator.clipboard.writeText(url)
+    referralCopySite.value = true
+    if (referralCopySiteTimer) clearTimeout(referralCopySiteTimer)
+    referralCopySiteTimer = setTimeout(() => {
+      referralCopySite.value = false
+      referralCopySiteTimer = null
+    }, 2000)
+  } catch {
+    /* ignore */
+  }
+}
+
+async function copyReferralTelegram() {
+  const url = effectiveReferralTelegramUrl.value
+  if (!url) return
+  try {
+    await navigator.clipboard.writeText(url)
+    referralCopyTg.value = true
+    if (referralCopyTgTimer) clearTimeout(referralCopyTgTimer)
+    referralCopyTgTimer = setTimeout(() => {
+      referralCopyTg.value = false
+      referralCopyTgTimer = null
+    }, 2000)
+  } catch {
+    /* ignore */
+  }
+}
+
+watch(
+  () => me.value?.role,
+  (role) => {
+    if (role === 'user') void loadMyReferral()
+    else {
+      myReferralLink.value = null
+      myReferralError.value = null
+      myReferralLoading.value = false
+    }
+  },
 )
 
 async function load() {
@@ -217,7 +332,7 @@ onMounted(() => {
           :class="{ 'cabinet-tab--active': activeCabinetTab === 'referral' }"
           :aria-selected="activeCabinetTab === 'referral'"
           aria-controls="cabinet-panel-referral"
-            @click="setCabinetTab('referral')"
+          @click="setCabinetTab('referral')"
         >
           Реферальная система
         </button>
@@ -420,15 +535,102 @@ onMounted(() => {
         <div class="stack">
           <div class="card card-pad referral-card">
             <h2 class="block-title">Реферальная система</h2>
-            <p class="hint">
-              Если новый пользователь открывает сайт по ссылке с параметром
-              <code class="inline-code">?ref=…</code>, токен сохраняется и передаётся при
-              регистрации — так отслеживается источник переходов и регистраций.
+            <p v-if="referralClientUser" class="hint">
+              Вам доступна персональная реферальная ссылка: по ней учитываются приглашённые
             </p>
-            <p class="hint">
-              Персональные реферальные токены и статистику по ним выпускает
-              администрация сервиса.
+            <p v-else-if="referralsStaffVisible" class="hint">
+              Сотрудникам: выпуск и учёт всех реферальных токенов — в админ-панели.
             </p>
+            <p v-else class="hint">
+              Персональные ссылки для клиентов создаются в личном кабинете при учётной
+              записи пользователя.
+            </p>
+
+            <div
+              v-if="referralClientUser"
+              class="referral-my-block"
+              aria-label="Ваша реферальная ссылка"
+            >
+              <div v-if="myReferralLoading" class="hint referral-my-status">
+                Загрузка…
+              </div>
+              <div v-else-if="myReferralError" class="referral-my-err">
+                {{ myReferralError }}
+              </div>
+              <template v-else-if="!myReferralLink">
+                <button
+                  type="button"
+                  class="copy-sub-btn referral-create-btn"
+                  :disabled="referralCreateBusy"
+                  @click="createMyReferral"
+                >
+                  {{ referralCreateBusy ? 'Создание…' : 'Создать реферальную ссылку' }}
+                </button>
+              </template>
+              <template v-else>
+                <dl class="dl referral-stats-dl">
+                  <div class="row">
+                    <dt>Токен</dt>
+                    <dd class="mono">{{ myReferralLink.token }}</dd>
+                  </div>
+                  <div class="row">
+                    <dt>Клики</dt>
+                    <dd class="mono">{{ myReferralLink.clicks_count ?? 0 }}</dd>
+                  </div>
+                  <div class="row">
+                    <dt>Регистрации</dt>
+                    <dd class="mono">{{ myReferralLink.registrations_count ?? 0 }}</dd>
+                  </div>
+                  <div class="row">
+                    <dt>Оплаты</dt>
+                    <dd class="mono">{{ myReferralLink.payments_count ?? 0 }}</dd>
+                  </div>
+                </dl>
+                <div class="referral-copy-stack">
+                  <button
+                    type="button"
+                    class="btn-secondary referral-copy-wide"
+                    :disabled="!effectiveReferralSiteUrl"
+                    @click="copyReferralSite"
+                  >
+                    {{
+                      referralCopySite
+                        ? 'Скопировано'
+                        : 'Скопировать ссылку на сайт'
+                    }}
+                  </button>
+                  <p
+                    v-if="!effectiveReferralSiteUrl"
+                    class="hint referral-copy-warn"
+                  >
+                    Не удалось собрать ссылку: задайте публичный URL сайта
+                    (например <code class="inline-code">VITE_PUBLIC_SITE_URL</code> в
+                    фронтенде или <code class="inline-code">REFERRAL_SITE_BASE_URL</code> на
+                    сервере).
+                  </p>
+                  <button
+                    type="button"
+                    class="btn-secondary referral-copy-wide"
+                    :disabled="!effectiveReferralTelegramUrl"
+                    @click="copyReferralTelegram"
+                  >
+                    {{
+                      referralCopyTg
+                        ? 'Скопировано'
+                        : 'Скопировать ссылку на бота (Telegram)'
+                    }}
+                  </button>
+                  <p
+                    v-if="!effectiveReferralTelegramUrl"
+                    class="hint referral-copy-warn"
+                  >
+                    Ссылка на бота не настроена на сервере — скопируйте токен и передайте
+                    приглашённому вручную или используйте ссылку на сайт.
+                  </p>
+                </div>
+              </template>
+            </div>
+
             <div v-if="referralsStaffVisible" class="referral-staff-actions">
               <RouterLink
                 class="client-btn referral-staff-btn"
@@ -527,6 +729,49 @@ onMounted(() => {
   width: 100%;
   box-sizing: border-box;
   text-decoration: none;
+}
+
+.referral-my-block {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--nav-border);
+}
+
+.referral-my-status {
+  margin-bottom: 0;
+}
+
+.referral-my-err {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--danger);
+  line-height: 1.45;
+}
+
+.referral-create-btn {
+  margin-top: 0;
+}
+
+.referral-stats-dl {
+  margin-bottom: 0.25rem;
+}
+
+.referral-copy-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.referral-copy-wide {
+  width: 100%;
+  box-sizing: border-box;
+  justify-content: center;
+}
+
+.referral-copy-warn {
+  margin: 0;
+  font-size: 0.82rem;
 }
 
 @media (max-width: 420px) {

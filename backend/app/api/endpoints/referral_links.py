@@ -130,7 +130,11 @@ async def post_referral_link(
         return referral_link_to_out(row, settings)
     except ValueError as e:
         detail = str(e)
-        status = 409 if "уже занят" in detail else 422
+        status = (
+            409
+            if "уже занят" in detail or "уже есть персональная" in detail or "уже создана" in detail
+            else 422
+        )
         raise HTTPException(status_code=status, detail=detail) from e
 
 
@@ -157,7 +161,11 @@ async def patch_referral_link(
         detail = str(e)
         if detail == "Запись не найдена":
             raise HTTPException(status_code=404, detail=detail) from e
-        status = 409 if "уже занят" in detail else 422
+        status = (
+            409
+            if "уже занят" in detail or "уже есть персональная" in detail or "уже создана" in detail
+            else 422
+        )
         raise HTTPException(status_code=status, detail=detail) from e
 
 

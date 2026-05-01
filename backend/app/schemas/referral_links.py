@@ -54,6 +54,15 @@ class ReferralLinkOut(ReferralLinkRead):
     )
 
 
+class ReferralMeResponse(BaseModel):
+    """GET /api/referral/me: текущая персональная ссылка клиента (или null)."""
+
+    link: ReferralLinkOut | None = Field(
+        default=None,
+        description="null, если пользователь ещё не создавал ссылку",
+    )
+
+
 class ReferralTrackClickBody(BaseModel):
     """Учёт клика по реферальной ссылке на сайте (публичный POST)."""
 
