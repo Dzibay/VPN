@@ -2,6 +2,8 @@
 # Удалённый хост: root. Режим: VPN_PROVISION_COMPONENT = all | xray | sync_clients | prometheus | fair_egress | cleanup
 # Каскад РФ: при VPN_CASCADE_RU_DIRECT=1 — direct для private / *.ru,*.su,*.рф (punycode) / geoip:ru, остальное → egress.
 # geosite:ru в Xray 26.2+ часто падает (code RU not found) — не используем, см. inline regexp в config.
+# Gemini / мультимодальные сервисы Google: внутренний DNS (DoH) + sniffing (вкл. QUIC) + правила доменов первыми;
+#   при каскаде Gemini → egress-cascade (не direct на РФ-входе). См. https://habr.com/ru/articles/992380/
 # all/xray: curl/wget, python3. prometheus: curl, systemctl. cleanup: curl/wget для uninstall xray.
 #
 # Справедливость uplink (между TCP/UDP-потоками, не «на UUID Xray»):
@@ -171,11 +173,49 @@ cfg = {
             },
         },
     ],
-    "outbounds": [{"protocol": "freedom", "tag": "direct", "settings": {}}],
+    "outbounds": [
+        {"protocol": "freedom", "tag": "direct", "settings": {"domainStrategy": "UseIPv4"}},
+    ],
+}
+
+cfg["dns"] = {
+    "servers": [
+        "https://1.1.1.1/dns-query",
+        "https://1.0.0.1/dns-query",
+    ],
+    "queryStrategy": "UseIPv4",
+}
+
+cascade = (os.environ.get("VPN_CASCADE_ENABLED") or "").strip() == "1"
+ru_direct = cascade and (os.environ.get("VPN_CASCADE_RU_DIRECT") or "1").strip() == "1"
+# routeOnly=False: подмена dest после sniff (лучше HTTP/3 и вызовы без SNI); при RU split теоретически хуже edge cases.
+cfg["inbounds"][0]["sniffing"] = {
+    "enabled": True,
+    "destOverride": ["http", "tls", "quic"],
+    "routeOnly": False,
+}
+
+gemini_domains = [
+    "domain:gemini.google.com",
+    "domain:aistudio.google.com",
+    "domain:generativelanguage.googleapis.com",
+    "domain:alkalimining-pa.googleapis.com",
+    "domain:proactivebackend-pa.googleapis.com",
+]
+gemini_tag = "egress-cascade" if cascade else "direct"
+gemini_rule = {
+    "type": "field",
+    "outboundTag": gemini_tag,
+    "domain": gemini_domains,
+}
+# Трафик на IP из списка google в geoip.dat (QUIC/без домена). Нужен geoip с тегом google (стандартный geoip.dat от install-release).
+gemini_google_ip_rule = {
+    "type": "field",
+    "outboundTag": gemini_tag,
+    "ip": ["geoip:google"],
 }
 
 # Каскад: РФ-вход — user traffic VLESS+REALITY inbound → VLESS+REALITY outbound на внешний exit
-cascade = (os.environ.get("VPN_CASCADE_ENABLED") or "").strip() == "1"
 if cascade:
     eg_sni_list = [
         x.strip()
@@ -221,19 +261,15 @@ if cascade:
             },
         },
     }
-    direct_out = {"protocol": "freedom", "tag": "direct", "settings": {}}
+    direct_out = {
+        "protocol": "freedom",
+        "tag": "direct",
+        "settings": {"domainStrategy": "UseIPv4"},
+    }
     cfg["outbounds"] = [vless_to_exit, direct_out]
     cfg["inbounds"][0]["tag"] = "vless-in"
     # РФ-ресурсы: прямой выход; остальное (иностранные) — через VLESS к exit
-    ru_direct = (os.environ.get("VPN_CASCADE_RU_DIRECT") or "1").strip() == "1"
     if ru_direct:
-        # Sniff: домен/протокол для geosite-правил (без SNI сначала сработает geoip:ru)
-        # http/tls без quic: часть старых сборок Xray падает на quic; routeOnly — только маршрут, не ломаем dest
-        cfg["inbounds"][0]["sniffing"] = {
-            "enabled": True,
-            "destOverride": ["http", "tls"],
-            "routeOnly": True,
-        }
         # Без geosite:ru: в Xray 26.2+ несовпадение кода RU/ru в geosite.dat. Замена: TLD-регэксп + geoip:ru
         # (Loyalsoldier geosite:ru тоже может не находиться). Инофисные .com и т.д. пойдут в каскад, RU-IP — через geoip:ru
         _ru_domains = [
@@ -243,8 +279,11 @@ if cascade:
             "regexp:.*\\.xn--p1ai$",  # .рф
         ]
         cfg["routing"] = {
+            # routing.domainStrategy только AsIs | IPIfNonMatch | IPOnDemand — не UseIPv4 (см. xtls.github.io routing). IPv4: dns.queryStrategy + freedom.
             "domainStrategy": "IPIfNonMatch",
             "rules": [
+                gemini_rule,
+                gemini_google_ip_rule,
                 {
                     "type": "field",
                     "outboundTag": "direct",
@@ -264,15 +303,22 @@ if cascade:
         }
     else:
         cfg["routing"] = {
-            "domainStrategy": "AsIs",
+            "domainStrategy": "IPIfNonMatch",
             "rules": [
+                gemini_rule,
+                gemini_google_ip_rule,
                 {
                     "type": "field",
                     "inboundTag": ["vless-in"],
                     "outboundTag": "egress-cascade",
-                }
+                },
             ],
         }
+else:
+    cfg["routing"] = {
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [gemini_rule, gemini_google_ip_rule],
+    }
 
 path = os.environ.get("VPN_XRAY_CONFIG_PATH", "/usr/local/etc/xray/config.json")
 with open(path, "w", encoding="utf-8") as f:
