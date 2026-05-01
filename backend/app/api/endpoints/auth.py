@@ -238,6 +238,7 @@ async def telegram_auth(
                 rlink = session.scalars(rstmt).first()
                 if rlink is not None:
                     user.referral_link_id = rlink.id
+                    increment_referral_counter(session, rlink.id, "clicks")
                     increment_referral_counter(session, rlink.id, "registrations")
                     session.flush()
             background_tasks.add_task(enqueue_sync_xray_clients_all_servers)

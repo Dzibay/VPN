@@ -15,6 +15,8 @@ from sqlalchemy.orm import Session
 from app.models.referral_link import ReferralLink
 from app.models.user import User
 
+CounterKind = Literal["clicks", "registrations", "payments"]
+
 # Telegram deep-link start: only A–Z, a–z, 0–9, _
 TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_]{4,64}$")
 
