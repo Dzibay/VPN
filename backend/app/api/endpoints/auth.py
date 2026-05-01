@@ -83,6 +83,7 @@ _AUTH_ME_OPENAPI_EXAMPLES: dict = {
             "traffic_up_bytes": 1073741824,
             "traffic_down_bytes": 5368709120,
             "traffic_total_bytes": 6442450944,
+            "registered_at": "2026-03-01T10:30:00+00:00",
         },
     },
     "user_telegram_only": {
@@ -109,6 +110,7 @@ _AUTH_ME_OPENAPI_EXAMPLES: dict = {
         "value": {
             "role": "admin",
             "email": "admin@example.com",
+            "registered_at": "2025-01-15T08:00:00+00:00",
             "subscription_active": False,
             "subscription_token": "",
         },
@@ -289,6 +291,7 @@ async def me(
             email=user.email,
             telegram_id=user.telegram_id,
             telegram_properties=user.telegram_properties,
+            registered_at=user.registered_at,
             subscription_until=user.subscription_until,
             subscription_active=user_has_active_subscription(user),
             subscription_token=user.token,
@@ -315,6 +318,7 @@ async def me(
         email=user.email,
         telegram_id=user.telegram_id,
         telegram_properties=user.telegram_properties,
+        registered_at=user.registered_at,
         subscription_until=user.subscription_until,
         subscription_active=user_has_active_subscription(user),
         subscription_token=user.token,

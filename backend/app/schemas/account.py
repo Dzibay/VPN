@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
@@ -236,6 +236,10 @@ class AccountMeResponse(BaseModel):
             "Словарь из `username`, `first_name`, `last_name`, `topic_id` (и др.) "
             "из `/api/auth/telegram`; для `admin` — `null`."
         ),
+    )
+    registered_at: datetime | None = Field(
+        default=None,
+        description="Момент регистрации (UTC в БД); `null` у старых записей без даты.",
     )
     subscription_until: date | None = Field(
         default=None,

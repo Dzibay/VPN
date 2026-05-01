@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   detectStorePlatform,
@@ -27,10 +27,43 @@ const PLATFORM_OPTIONS = [
 const router = useRouter()
 const route = useRoute()
 
+const CABINET_TAB_IDS = ['subscription', 'profile', 'referral']
+
+function normalizeCabinetTab(raw) {
+  const t =
+    typeof raw === 'string' ? raw.trim() : Array.isArray(raw) ? String(raw[0] ?? '').trim() : ''
+  return CABINET_TAB_IDS.includes(t) ? t : 'subscription'
+}
+
+const activeCabinetTab = ref(normalizeCabinetTab(route.query.tab))
+
+watch(
+  () => route.query.tab,
+  (q) => {
+    activeCabinetTab.value = normalizeCabinetTab(q)
+  },
+)
+
+function setCabinetTab(id) {
+  const next = normalizeCabinetTab(id)
+  activeCabinetTab.value = next
+  const q = { ...route.query }
+  if (next === 'subscription') {
+    delete q.tab
+  } else {
+    q.tab = next
+  }
+  router.replace({ path: route.path, query: q })
+}
+
 const loading = ref(true)
 const error = ref(null)
 /** @type {import('vue').Ref<null | Record<string, unknown>>} */
 const me = ref(null)
+
+const referralsStaffVisible = computed(
+  () => me.value?.role === 'admin' || me.value?.role === 'manager',
+)
 
 async function load() {
   loading.value = true
@@ -54,6 +87,18 @@ function formatDate(iso) {
   const s = String(iso)
   const d = s.length >= 10 ? s.slice(0, 10) : s
   return d
+}
+
+/** Календарная дата (UTC) по `registered_at` из API — в формате YYYY-MM-DD, как «Действует до». */
+function formatRegisteredAt(raw) {
+  if (raw == null || raw === '') return '—'
+  const t = Date.parse(String(raw))
+  if (Number.isNaN(t)) return '—'
+  const d = new Date(t)
+  const y = d.getUTCFullYear()
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(d.getUTCDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 /** После редиректа с бэка (?unknown_client=1) показываем подсказку и чистим URL. */
@@ -127,185 +172,275 @@ onMounted(() => {
     <header class="head">
       <RouterLink class="back" to="/">← На главную</RouterLink>
       <h1>Личный кабинет</h1>
-      <p class="sub">Профиль и параметры подписки.</p>
+      <p class="sub">
+        Подписка, профиль и реферальная программа.
+      </p>
     </header>
 
     <div v-if="loading" class="card card-pad muted">Загрузка…</div>
     <div v-else-if="error" class="card card-pad err">{{ error }}</div>
-    <div v-else-if="me" class="stack">
-      <div v-if="me.role === 'admin'" class="card card-pad">
-        <h2 class="block-title">Администратор</h2>
-        <p class="hint">
-          Управление серверами и пользователями — в разделе ниже в шапке или
-          <RouterLink class="sub-link" to="/admin/users">перейти к данным</RouterLink>.
-        </p>
-        <dl class="dl">
-          <div class="row">
-            <dt>Email</dt>
-            <dd>{{ me.email }}</dd>
-          </div>
-        </dl>
-      </div>
-
-      <div v-else class="card card-pad">
-        <h2 class="block-title">Профиль</h2>
-        <dl class="dl">
-          <div v-if="me.email" class="row">
-            <dt>Email</dt>
-            <dd>{{ me.email }}</dd>
-          </div>
-          <div
-            v-if="me.telegram_id != null || me.telegram_properties?.username"
-            class="row"
-          >
-            <dt>Telegram</dt>
-            <dd>
-              <template v-if="me.telegram_id != null">
-                {{ me.telegram_id
-                }}<span
-                  v-if="me.telegram_properties?.username"
-                  class="muted"
-                > @{{ me.telegram_properties.username }}</span>
-              </template>
-              <template
-                v-else-if="me.telegram_properties?.username"
-              >
-                <span class="muted"
-                  >@{{ me.telegram_properties.username }}</span
-                >
-              </template>
-            </dd>
-          </div>
-          <div
-            v-if="!me.email && me.telegram_id == null && !me.telegram_properties?.username"
-            class="row"
-          >
-            <dt>Контакт</dt>
-            <dd>—</dd>
-          </div>
-        </dl>
-      </div>
-
-      <div v-if="me.role === 'user' || me.role === 'manager'" class="card card-pad">
-        <h2 class="block-title">Подписка</h2>
-        <dl class="dl">
-          <div class="row">
-            <dt>Статус</dt>
-            <dd>
-              <span
-                class="pill"
-                :class="
-                  me.subscription_active ? 'pill--ok' : 'pill--off'
-                "
-              >
-                {{
-                  me.subscription_active ? 'Активна' : 'Неактивна / истекла'
-                }}
-              </span>
-            </dd>
-          </div>
-          <div class="row">
-            <dt>Действует до</dt>
-            <dd>{{ formatDate(me.subscription_until) }}</dd>
-          </div>
-          <div class="row">
-            <dt>Потреблённый трафик</dt>
-            <dd class="mono traffic-value">
-              <span class="traffic-total">{{
-                formatTrafficBytes(me.traffic_total_bytes ?? 0)
-              }}</span>
-              <span class="traffic-paren" aria-hidden="true">(</span>
-              <AppTooltip :text="TRAFFIC_HINT_UP">
-                <span class="traffic-detail">исх.&nbsp;{{
-                  formatTrafficBytes(me.traffic_up_bytes ?? 0)
-                }}</span>
-              </AppTooltip>
-              <span class="traffic-paren" aria-hidden="true">,&nbsp;</span>
-              <AppTooltip :text="TRAFFIC_HINT_DOWN">
-                <span class="traffic-detail">вх.&nbsp;{{
-                  formatTrafficBytes(me.traffic_down_bytes ?? 0)
-                }}</span>
-              </AppTooltip>
-              <span class="traffic-paren" aria-hidden="true">)</span>
-            </dd>
-          </div>
-        </dl>
+    <template v-else-if="me">
+      <nav
+        class="cabinet-tabs"
+        role="tablist"
+        aria-label="Разделы личного кабинета"
+      >
         <button
+          id="cabinet-tab-subscription"
           type="button"
-          class="copy-sub-btn"
-          :disabled="!subscriptionUrl"
-          @click="copySubscriptionUrl"
+          role="tab"
+          class="cabinet-tab"
+          :class="{ 'cabinet-tab--active': activeCabinetTab === 'subscription' }"
+          :aria-selected="activeCabinetTab === 'subscription'"
+          aria-controls="cabinet-panel-subscription"
+          @click="setCabinetTab('subscription')"
         >
-          {{ subscriptionCopied ? 'Скопировано' : 'Скопировать ссылку подписки' }}
+          Подписка
         </button>
-        <p class="hint hint-below-copy">
-          Используйте в VPN-клиенте как subscription URL (если поддерживается).
-        </p>
+        <button
+          id="cabinet-tab-profile"
+          type="button"
+          role="tab"
+          class="cabinet-tab"
+          :class="{ 'cabinet-tab--active': activeCabinetTab === 'profile' }"
+          :aria-selected="activeCabinetTab === 'profile'"
+          aria-controls="cabinet-panel-profile"
+          @click="setCabinetTab('profile')"
+        >
+          Профиль
+        </button>
+        <button
+          id="cabinet-tab-referral"
+          type="button"
+          role="tab"
+          class="cabinet-tab"
+          :class="{ 'cabinet-tab--active': activeCabinetTab === 'referral' }"
+          :aria-selected="activeCabinetTab === 'referral'"
+          aria-controls="cabinet-panel-referral"
+            @click="setCabinetTab('referral')"
+        >
+          Реферальная система
+        </button>
+      </nav>
+
+      <div
+        v-show="activeCabinetTab === 'subscription'"
+        id="cabinet-panel-subscription"
+        class="cabinet-panel"
+        role="tabpanel"
+        aria-labelledby="cabinet-tab-subscription"
+      >
+        <div class="stack">
+          <div class="card card-pad">
+            <h2 class="block-title">Подписка</h2>
+            <dl class="dl">
+              <div class="row">
+                <dt>Статус</dt>
+                <dd>
+                  <span
+                    class="pill"
+                    :class="
+                      me.subscription_active ? 'pill--ok' : 'pill--off'
+                    "
+                  >
+                    {{
+                      me.subscription_active ? 'Активна' : 'Неактивна / истекла'
+                    }}
+                  </span>
+                </dd>
+              </div>
+              <div class="row">
+                <dt>Действует до</dt>
+                <dd>{{ formatDate(me.subscription_until) }}</dd>
+              </div>
+              <div class="row">
+                <dt>Потреблённый трафик</dt>
+                <dd class="mono traffic-value">
+                  <span class="traffic-total">{{
+                    formatTrafficBytes(me.traffic_total_bytes ?? 0)
+                  }}</span>
+                  <span class="traffic-paren" aria-hidden="true">(</span>
+                  <AppTooltip :text="TRAFFIC_HINT_UP">
+                    <span class="traffic-detail">исх.&nbsp;{{
+                      formatTrafficBytes(me.traffic_up_bytes ?? 0)
+                    }}</span>
+                  </AppTooltip>
+                  <span class="traffic-paren" aria-hidden="true">,&nbsp;</span>
+                  <AppTooltip :text="TRAFFIC_HINT_DOWN">
+                    <span class="traffic-detail">вх.&nbsp;{{
+                      formatTrafficBytes(me.traffic_down_bytes ?? 0)
+                    }}</span>
+                  </AppTooltip>
+                  <span class="traffic-paren" aria-hidden="true">)</span>
+                </dd>
+              </div>
+            </dl>
+            <button
+              type="button"
+              class="copy-sub-btn"
+              :disabled="!subscriptionUrl"
+              @click="copySubscriptionUrl"
+            >
+              {{ subscriptionCopied ? 'Скопировано' : 'Скопировать ссылку подписки' }}
+            </button>
+            <p class="hint hint-below-copy">
+              Используйте в VPN-клиенте как subscription URL (если поддерживается).
+            </p>
+          </div>
+
+          <div
+            v-if="me.subscription_open_clients?.length"
+            class="card card-pad card-apps"
+          >
+            <div
+              v-if="unknownClientHint"
+              class="banner-warn"
+              role="status"
+            >
+              Такого клиента в ссылке нет — выберите приложение ниже.
+            </div>
+            <h2 class="block-title">Подключить в приложении</h2>
+            <div class="platform-block">
+              <div
+                class="platform-chips"
+                role="radiogroup"
+                aria-label="Платформа для ссылок приложения (сайт и скачивание)"
+              >
+                <button
+                  v-for="p in PLATFORM_OPTIONS"
+                  :key="p.value"
+                  type="button"
+                  class="platform-chip"
+                  :class="{ 'platform-chip--active': storePlatform === p.value }"
+                  role="radio"
+                  :aria-checked="storePlatform === p.value"
+                  @click="setStorePlatform(p.value)"
+                >
+                  {{ p.label }}
+                </button>
+              </div>
+            </div>
+            <p
+              v-if="!filteredOpenClients.length"
+              class="hint clients-empty"
+            >
+              Для этой платформы нет клиентов с готовой ссылкой установки — выберите другую ОС выше.
+            </p>
+            <div
+              v-else
+              class="client-btns"
+            >
+              <template
+                v-for="c in filteredOpenClients"
+                :key="c.client_code"
+              >
+                <RouterLink
+                  v-if="me.subscription_active"
+                  class="client-btn"
+                  :to="openClientTo(c.client_code)"
+                >{{ c.display_name }}</RouterLink>
+                <span
+                  v-else
+                  class="client-btn client-btn--off"
+                  title="Продлите подписку"
+                >{{ c.display_name }}</span>
+              </template>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div
-        v-if="
-          (me.role === 'user' || me.role === 'manager') &&
-          me.subscription_open_clients?.length
-        "
-        class="card card-pad card-apps"
+        v-show="activeCabinetTab === 'profile'"
+        id="cabinet-panel-profile"
+        class="cabinet-panel"
+        role="tabpanel"
+        aria-labelledby="cabinet-tab-profile"
       >
-        <div
-          v-if="unknownClientHint"
-          class="banner-warn"
-          role="status"
-        >
-          Такого клиента в ссылке нет — выберите приложение ниже.
-        </div>
-        <h2 class="block-title">Подключить в приложении</h2>
-        <div class="platform-block">
-          <div
-            class="platform-chips"
-            role="radiogroup"
-            aria-label="Платформа для ссылок приложения (сайт и скачивание)"
-          >
-            <button
-              v-for="p in PLATFORM_OPTIONS"
-              :key="p.value"
-              type="button"
-              class="platform-chip"
-              :class="{ 'platform-chip--active': storePlatform === p.value }"
-              role="radio"
-              :aria-checked="storePlatform === p.value"
-              @click="setStorePlatform(p.value)"
-            >
-              {{ p.label }}
-            </button>
+        <div class="stack">
+          <div v-if="me.role === 'admin'" class="card card-pad">
+            <h2 class="block-title">Администратор</h2>
+            <p class="hint">
+              Управление серверами и пользователями — в разделе ниже в шапке или
+              <RouterLink class="sub-link" to="/admin/users">перейти к данным</RouterLink>.
+            </p>
+          </div>
+          <div class="card card-pad">
+            <h2 class="block-title">Профиль</h2>
+            <dl class="dl">
+              <div v-if="me.email" class="row">
+                <dt>Email</dt>
+                <dd>{{ me.email }}</dd>
+              </div>
+              <div
+                v-if="me.telegram_id != null || me.telegram_properties?.username"
+                class="row"
+              >
+                <dt>Telegram</dt>
+                <dd>
+                  <template v-if="me.telegram_id != null">
+                    {{ me.telegram_id
+                    }}<span
+                      v-if="me.telegram_properties?.username"
+                      class="muted"
+                    > @{{ me.telegram_properties.username }}</span>
+                  </template>
+                  <template
+                    v-else-if="me.telegram_properties?.username"
+                  >
+                    <span class="muted"
+                      >@{{ me.telegram_properties.username }}</span
+                    >
+                  </template>
+                </dd>
+              </div>
+              <div
+                v-if="!me.email && me.telegram_id == null && !me.telegram_properties?.username"
+                class="row"
+              >
+                <dt>Контакт</dt>
+                <dd>—</dd>
+              </div>
+              <div class="row">
+                <dt>Дата регистрации</dt>
+                <dd>{{ formatRegisteredAt(me.registered_at) }}</dd>
+              </div>
+            </dl>
           </div>
         </div>
-        <p
-          v-if="!filteredOpenClients.length"
-          class="hint clients-empty"
-        >
-          Для этой платформы нет клиентов с готовой ссылкой установки — выберите другую ОС выше.
-        </p>
-        <div
-          v-else
-          class="client-btns"
-        >
-          <template
-            v-for="c in filteredOpenClients"
-            :key="c.client_code"
-          >
-            <RouterLink
-              v-if="me.subscription_active"
-              class="client-btn"
-              :to="openClientTo(c.client_code)"
-            >{{ c.display_name }}</RouterLink>
-            <span
-              v-else
-              class="client-btn client-btn--off"
-              title="Продлите подписку"
-            >{{ c.display_name }}</span>
-          </template>
+      </div>
+
+      <div
+        v-show="activeCabinetTab === 'referral'"
+        id="cabinet-panel-referral"
+        class="cabinet-panel"
+        role="tabpanel"
+        aria-labelledby="cabinet-tab-referral"
+      >
+        <div class="stack">
+          <div class="card card-pad referral-card">
+            <h2 class="block-title">Реферальная система</h2>
+            <p class="hint">
+              Если новый пользователь открывает сайт по ссылке с параметром
+              <code class="inline-code">?ref=…</code>, токен сохраняется и передаётся при
+              регистрации — так отслеживается источник переходов и регистраций.
+            </p>
+            <p class="hint">
+              Персональные реферальные токены и статистику по ним выпускает
+              администрация сервиса.
+            </p>
+            <div v-if="referralsStaffVisible" class="referral-staff-actions">
+              <RouterLink
+                class="client-btn referral-staff-btn"
+                :to="{ path: '/admin/referrals' }"
+              >
+                Управление реферальными токенами
+              </RouterLink>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </template>
   </div>
 </template>
 
@@ -314,6 +449,91 @@ onMounted(() => {
   max-width: 520px;
   margin: 0 auto;
   padding: 1.75rem 1rem 2.5rem;
+}
+
+.cabinet-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.cabinet-tab {
+  appearance: none;
+  margin: 0;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-pill);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.25;
+  cursor: pointer;
+  text-align: center;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+
+.cabinet-tab:hover {
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+
+.cabinet-tab:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.cabinet-tab--active {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.cabinet-tab--active:hover {
+  color: var(--on-accent);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.referral-card .inline-code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  padding: 0.08rem 0.3rem;
+  border-radius: 4px;
+  background: var(--code-bg);
+  border: 1px solid var(--card-border);
+  color: var(--text-h);
+}
+
+.referral-staff-actions {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--nav-border);
+}
+
+.referral-staff-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+  text-decoration: none;
+}
+
+@media (max-width: 420px) {
+  .cabinet-tab {
+    font-size: 0.72rem;
+    padding: 0.38rem 0.35rem;
+  }
 }
 
 .head {
