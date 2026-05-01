@@ -1073,7 +1073,7 @@ watch(formIsCascadeRuEntry, (v) => {
           :class="{ 'tab-active': route.name === 'admin-users-registrations-by-date' }"
           :to="{ path: '/admin/users/registrations-by-date' }"
         >
-          Регистрации по дням
+          Статистика по дням
         </RouterLink>
         <RouterLink
           class="tab"

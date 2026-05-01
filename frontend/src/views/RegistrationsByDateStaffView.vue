@@ -10,26 +10,20 @@ import { getSessionRole } from '../auth/session.js'
 import { fetchJson } from '../api/client.js'
 
 const route = useRoute()
-/** @type {import('vue').Ref<Array<{ registration_date: string | null; users_count: number; users_with_traffic_count?: number }>>} */
+/** @type {import('vue').Ref<Array<{ stats_date: string | null; users_count: number; users_with_traffic_count?: number; active_users_count?: number }>>} */
 const rows = ref([])
-/** @type {import('vue').Ref<Array<{ traffic_date: string; active_users_count: number }>>} */
-const activeByDayRows = ref([])
 const loading = ref(false)
 const error = ref(null)
 
 const isFullAdmin = computed(() => isAdminRole(getSessionRole()))
 
 const undatedCount = computed(() => {
-  const row = rows.value.find(
-    (r) => r.registration_date == null || r.registration_date === '',
-  )
+  const row = rows.value.find((r) => r.stats_date == null || r.stats_date === '')
   return row ? Number(row.users_count) || 0 : 0
 })
 
 const undatedTrafficCount = computed(() => {
-  const row = rows.value.find(
-    (r) => r.registration_date == null || r.registration_date === '',
-  )
+  const row = rows.value.find((r) => r.stats_date == null || r.stats_date === '')
   return row ? Number(row.users_with_traffic_count) || 0 : 0
 })
 
@@ -37,11 +31,12 @@ const chartPoints = computed(() => {
   const extraUsers = undatedCount.value
   const extraTraffic = undatedTrafficCount.value
   const sorted = rows.value
-    .filter((r) => r.registration_date != null && r.registration_date !== '')
+    .filter((r) => r.stats_date != null && r.stats_date !== '')
     .map((r) => ({
-      iso: String(r.registration_date),
+      iso: String(r.stats_date),
       dayUsers: Number(r.users_count) || 0,
       dayTraffic: Number(r.users_with_traffic_count) || 0,
+      dayActive: Number(r.active_users_count) || 0,
     }))
     .sort((a, b) => a.iso.localeCompare(b.iso))
 
@@ -54,6 +49,7 @@ const chartPoints = computed(() => {
       iso: row.iso,
       dayUsers: row.dayUsers,
       dayTraffic: row.dayTraffic,
+      dayActive: row.dayActive,
       cumDatedUsers,
       cumDatedTraffic,
       totalUsers: cumDatedUsers + extraUsers,
@@ -99,6 +95,8 @@ const registrationChartLabels = computed(() =>
   chartPoints.value.map((p) => formatDayShort(p.iso)),
 )
 
+const activeSkyRgb = [56, 189, 248]
+
 const registrationChartDatasets = computed(() => {
   const pts = chartPoints.value
   const accentRgb = rgbTupleFromVar('--accent', '#58d68d')
@@ -113,6 +111,13 @@ const registrationChartDatasets = computed(() => {
       label: 'С трафиком · накопительно',
       data: pts.map((p) => p.totalTraffic),
       rgb: trafficOrange,
+    },
+    {
+      label: 'Активные · за день',
+      data: pts.map((p) => p.dayActive),
+      rgb: activeSkyRgb,
+      filled: false,
+      yAxisID: 'y1',
     },
   ]
 })
@@ -141,51 +146,18 @@ function registrationTooltipLabel(ctx) {
       `Прирост с предыдущего дня: ${fmtDeltaRu(dUsers)}`,
     ]
   }
+  if (ctx.datasetIndex === 1) {
+    return [
+      `С трафиком: ${fmtRu(p.totalTraffic)}`,
+      `Без даты регистрации: ${fmtRu(undT)}`,
+      `Прирост с предыдущего дня: ${fmtDeltaRu(dTraffic)}`,
+    ]
+  }
+  const prevA = i > 0 ? pts[i - 1].dayActive : 0
+  const dA = p.dayActive - prevA
   return [
-    `С трафиком: ${fmtRu(p.totalTraffic)}`,
-    `Без даты регистрации: ${fmtRu(undT)}`,
-    `Прирост с предыдущего дня: ${fmtDeltaRu(dTraffic)}`,
-  ]
-}
-
-const activeChartPoints = computed(() =>
-  [...activeByDayRows.value]
-    .map((r) => ({
-      iso: String(r.traffic_date),
-      active_users_count: Number(r.active_users_count) || 0,
-    }))
-    .sort((a, b) => a.iso.localeCompare(b.iso)),
-)
-
-const activeSkyRgb = [56, 189, 248]
-
-const activeChartLabels = computed(() =>
-  activeChartPoints.value.map((p) => formatDayShort(p.iso)),
-)
-
-const activeChartDatasets = computed(() => [
-  {
-    label: 'Активные пользователи · по дням трафика',
-    data: activeChartPoints.value.map((p) => p.active_users_count),
-    rgb: activeSkyRgb,
-  },
-])
-
-function activeTooltipTitle(i) {
-  const iso = activeChartPoints.value[i]?.iso
-  return iso ? formatDayShort(iso) : ''
-}
-
-function activeTooltipLabel(ctx) {
-  const i = ctx.dataIndex
-  const pts = activeChartPoints.value
-  const p = pts[i]
-  if (!p) return ''
-  const prev = i > 0 ? pts[i - 1].active_users_count : 0
-  const d = p.active_users_count - prev
-  return [
-    `Активных: ${fmtRu(p.active_users_count)}`,
-    `К предыдущему дню: ${fmtDeltaRu(d)}`,
+    `Активных за день: ${fmtRu(p.dayActive)}`,
+    `К предыдущему дню: ${fmtDeltaRu(dA)}`,
   ]
 }
 
@@ -207,16 +179,10 @@ async function load() {
   error.value = null
   try {
     const data = await fetchJson('/api/users/daily-stats')
-    rows.value = Array.isArray(data.registrations_by_date)
-      ? data.registrations_by_date
-      : []
-    activeByDayRows.value = Array.isArray(data.traffic_active_by_day)
-      ? data.traffic_active_by_day
-      : []
+    rows.value = Array.isArray(data.stats_by_date) ? data.stats_by_date : []
   } catch (e) {
     error.value = e.message || String(e)
     rows.value = []
-    activeByDayRows.value = []
   } finally {
     loading.value = false
   }
@@ -231,7 +197,7 @@ onMounted(() => {
 <template>
   <AdminPageShell>
     <AdminPageHeader
-      title="Регистрации по дням"
+      title="Статистика по дням"
       :tabs-aria-label="isFullAdmin ? 'Разделы админки' : 'Раздел менеджера'"
     >
       <template #back>
@@ -268,7 +234,7 @@ onMounted(() => {
             :class="{ 'tab-active': route.name === 'admin-users-registrations-by-date' }"
             :to="{ path: '/admin/users/registrations-by-date' }"
           >
-            Регистрации по дням
+            Статистика по дням
           </RouterLink>
           <RouterLink
             class="tab"
@@ -301,7 +267,7 @@ onMounted(() => {
             :class="{ 'tab-active': route.name === 'admin-users-registrations-by-date' }"
             :to="{ path: '/admin/users/registrations-by-date' }"
           >
-            Регистрации по дням
+            Статистика по дням
           </RouterLink>
           <RouterLink
             class="tab"
@@ -321,11 +287,13 @@ onMounted(() => {
       </template>
       <div class="head-row">
         <div class="head-text">
-          <h2 class="section-heading">Накопление пользователей по дате регистрации</h2>
+          <h2 class="section-heading">Статистика по дням (UTC)</h2>
           <p class="section-sub">
-            Кривые растут по мере наступления дня (UTC): сколько уже есть
-            пользователей с этой датой или раньше; вторая линия — сколько из них
-            с трафиком по <span class="mono-inline">user_server_traffic</span>.
+            Две левые кривые — накопление по дате регистрации: всего пользователей и
+            сколько из них с ненулевым трафиком
+            (<span class="mono-inline">user_server_traffic</span>). Синяя линия
+            (правая ось) — сколько пользователей в этот календарный день увеличили
+            суммарный накопленный трафик относительно предыдущего дня.
           </p>
         </div>
         <div class="head-actions">
@@ -372,11 +340,12 @@ onMounted(() => {
     </section>
 
     <AdminLineChartPanel
-      aria-label="Накопление числа пользователей и пользователей с трафиком по датам регистрации UTC"
+      aria-label="Пользователи и трафик по дням: накопление по регистрации и активные за день по UTC"
       :loading="loading"
       :error="error"
       :has-data="chartPoints.length > 0"
       y-title="Пользователей (накопительно)"
+      y-title-right="Активных за день"
       :labels="registrationChartLabels"
       :datasets="registrationChartDatasets"
       :get-tooltip-title="registrationTooltipTitle"
@@ -394,26 +363,6 @@ onMounted(() => {
           записей с датой.
         </p>
         <p v-else class="empty-hint">Нет данных для графика.</p>
-      </template>
-    </AdminLineChartPanel>
-
-    <AdminLineChartPanel
-      title="Активные пользователи по дням трафика"
-      aria-label="Число пользователей с ростом накопленного трафика по календарным дням UTC"
-      :loading="loading"
-      :error="error"
-      :has-data="activeChartPoints.length > 0"
-      y-title="Пользователей в день"
-      hint="По дням из user_server_traffic (UTC): учтены пользователи, у которых сумма up+down по всем узлам (последний снимок на узел с датой не позже этого дня) стала больше, чем на предыдущий календарный день — в том числе в первый день появления снимков."
-      :labels="activeChartLabels"
-      :datasets="activeChartDatasets"
-      :get-tooltip-title="activeTooltipTitle"
-      :get-tooltip-label="activeTooltipLabel"
-    >
-      <template #empty>
-        <p class="empty-hint">
-          Нет строк трафика в базе — график появится после сборов статистики.
-        </p>
       </template>
     </AdminLineChartPanel>
   </AdminPageShell>

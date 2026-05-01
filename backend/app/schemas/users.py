@@ -8,46 +8,39 @@ class UsersCountResponse(BaseModel):
     users_count: int = Field(ge=0, description="Число записей в таблице users")
 
 
-class UserRegistrationByDateRow(BaseModel):
-    """Число пользователей с датой регистрации (календарный день UTC)."""
+class UserStatsByDateRow(BaseModel):
+    """Показатели за календарный день UTC (регистрации и активность по трафику)."""
 
-    registration_date: date | None = Field(
-        description="Дата из registered_at в UTC; null — записи без даты регистрации",
+    stats_date: date | None = Field(
+        description=(
+            "Календарный день UTC: по registered_at для счётчиков пользователей; "
+            "null — агрегат по записям без даты регистрации (только users_*, active = 0)"
+        ),
     )
     users_count: int = Field(ge=0)
     users_with_traffic_count: int = Field(
         ge=0,
         description=(
-            "Сколько из них имеют ненулевой суммарный трафик (up+down по последнему "
-            "снимку на каждый узел, таблица user_server_traffic)"
+            "Сколько пользователей с этим днём регистрации имеют ненулевой суммарный трафик "
+            "(последний снимок на узел, user_server_traffic)"
         ),
     )
-
-
-class UserTrafficActiveByDayRow(BaseModel):
-    """Сколько учётных записей «активны» в этот день по росту накопленного трафика."""
-
-    traffic_date: date = Field(description="Календарный день UTC (поле traffic_date)")
     active_users_count: int = Field(
         ge=0,
         description=(
-            "Пользователи, у которых сумма up+down по всем узлам (последний снимок на "
-            "узел с датой ≤ этот день) стала больше, чем на предыдущий календарный день "
-            "(включая появление первых снимков)"
+            "Число пользователей, у которых на этот календарный день (по traffic_date) "
+            "суммарный накопленный трафик вырос относительно предыдущего дня"
         ),
     )
 
 
 class UsersDailyStatsResponse(BaseModel):
-    """Сводная дневная статистика: регистрации и активность по трафику (UTC)."""
+    """Дневная сводка (UTC): регистрации и активные по трафику в одном списке по дате."""
 
-    registrations_by_date: list[UserRegistrationByDateRow] = Field(
-        description="Регистрации и доля с трафиком по дню registered_at (UTC)",
-    )
-    traffic_active_by_day: list[UserTrafficActiveByDayRow] = Field(
+    stats_by_date: list[UserStatsByDateRow] = Field(
         description=(
-            "Число пользователей с ростом накопленного трафика по календарным дням "
-            "из user_server_traffic"
+            "Исторические дни по возрастанию stats_date; при наличии записей без даты регистрации "
+            "в конце может быть строка с stats_date = null"
         ),
     )
 
