@@ -285,7 +285,6 @@ onMounted(() => {
 <template>
   <div class="page">
     <header class="head">
-      <RouterLink class="back" to="/">← На главную</RouterLink>
       <h1>Личный кабинет</h1>
       <p class="sub">
         Подписка, профиль и реферальная программа.
@@ -784,20 +783,6 @@ onMounted(() => {
 .head {
   margin-bottom: 1.35rem;
   text-align: center;
-}
-
-.back {
-  display: inline-block;
-  color: var(--muted);
-  text-decoration: none;
-  font-size: 0.9rem;
-  font-weight: 500;
-  margin-bottom: 1rem;
-  transition: color 0.2s ease;
-}
-
-.back:hover {
-  color: var(--accent);
 }
 
 h1 {
