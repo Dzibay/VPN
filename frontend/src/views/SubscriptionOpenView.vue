@@ -144,7 +144,7 @@ async function load() {
   try {
     const data = await fetchJson(buildDataPath())
 
-    if (data.state === 'invalid_token' || data.state === 'inactive') {
+    if (data.state === 'invalid_token') {
       goToApps(data.state)
       return
     }

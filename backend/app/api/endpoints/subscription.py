@@ -236,25 +236,18 @@ def _build_open_page_data(
             forced_platform=forced,
         )
 
-    if not user_has_active_subscription(user):
-        return SubscriptionOpenPageData(
-            state="inactive",
-            title="Подписка не активна",
-            headline="Подписка не активна",
-            message="Продлите подписку и попробуйте снова.",
-            deeplink=None,
-            open_button_label="",
-            lead=None,
-            hint=None,
-            store_links=None,
-            forced_platform=forced,
-        )
-
     base = _resolve_public_base(request, settings.subscription_public_base_url)
     subscription_url = f"{base}/sub/{user.token}"
     deeplink = app.build_deeplink(subscription_url)
     sl: AppStoreLinks = app.store_links
     store_json = sl.to_public_json_dict() if sl.any() else None
+
+    active = user_has_active_subscription(user)
+    lead_active = lead
+    lead_inactive = (
+        "Подписка сейчас не активна — узлы VPN в клиенте появятся после продления. "
+        "Приложение можно открыть и заранее добавить ссылку подписки — список серверов будет пустым, пока подписка не станет активной."
+    )
 
     return SubscriptionOpenPageData(
         state="ok",
@@ -263,7 +256,7 @@ def _build_open_page_data(
         message=None,
         deeplink=deeplink,
         open_button_label=open_label,
-        lead=lead,
+        lead=lead_active if active else lead_inactive,
         hint=hint,
         store_links=store_json,
         forced_platform=forced,

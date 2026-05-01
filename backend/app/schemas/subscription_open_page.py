@@ -12,7 +12,7 @@ class SubscriptionOpenPageData(BaseModel):
 
     state: Literal["ok", "invalid_token", "inactive"] = Field(
         ...,
-        description="ok — можно открыть клиент; invalid_token — нет пользователя; inactive — подписка не активна.",
+        description="ok — можно открыть клиент (при неактивной подписке узлы будут пустыми до продления); invalid_token — нет пользователя; inactive — устаревшее значение, не используется.",
     )
     title: str = Field(..., description="document.title")
     headline: str = Field(..., description="Заголовок на странице (h1)")

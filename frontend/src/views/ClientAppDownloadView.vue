@@ -32,14 +32,26 @@ const subError = computed(() => {
   return typeof e === 'string' ? e : null
 })
 
-const errorBanner = computed(() => {
+/** Текст опционального баннера; kind=info — нейтральная подсказка, danger — проблема со ссылкой. */
+const routeBanner = computed(() => {
   switch (subError.value) {
     case 'invalid_token':
-      return 'Ссылка недействительна. Получите новую в боте или в личном кабинете.'
+      return {
+        kind: 'danger',
+        text: 'Ссылка недействительна. Получите новую в боте или в личном кабинете.',
+      }
     case 'inactive':
-      return 'Подписка не активна. Продлите её и откройте ссылку снова.'
+      return {
+        kind: 'info',
+        text:
+          'Подписка не активна — серверы появятся после продления. '
+          + 'Ссылку подписки в клиент можно добавить заранее (кнопка ниже).',
+      }
     case 'load_failed':
-      return 'Не удалось проверить ссылку подписки. Попробуйте открыть снова или установите клиент.'
+      return {
+        kind: 'danger',
+        text: 'Не удалось проверить ссылку подписки. Попробуйте открыть снова или установите клиент.',
+      }
     default:
       return null
   }
@@ -144,11 +156,16 @@ const openWithSubscriptionHref = computed(() => {
         </template>
         <template v-else-if="appInfo">
           <div
-            v-if="errorBanner"
+            v-if="routeBanner"
             class="app-dl-banner"
+            :class="
+              routeBanner.kind === 'info'
+                ? 'app-dl-banner--info'
+                : 'app-dl-banner--danger'
+            "
             role="status"
           >
-            {{ errorBanner }}
+            {{ routeBanner.text }}
           </div>
           <h1 class="app-dl-h1">
             {{ appInfo.display_name }}
@@ -268,11 +285,20 @@ const openWithSubscriptionHref = computed(() => {
   margin: 0 0 1rem;
   padding: 0.65rem 0.75rem;
   border-radius: var(--radius);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.app-dl-banner--danger {
   background: var(--danger-soft);
   border: 1px solid rgba(248, 113, 113, 0.35);
   color: var(--danger);
-  font-size: 0.9rem;
-  line-height: 1.45;
+}
+
+.app-dl-banner--info {
+  background: var(--accent-soft, rgba(59, 130, 246, 0.12));
+  border: 1px solid rgba(59, 130, 246, 0.28);
+  color: var(--muted);
 }
 
 .app-dl-h1 {
