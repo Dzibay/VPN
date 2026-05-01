@@ -4,10 +4,11 @@
 Перед выдачей списка узлов обновляется servers.load_percent из Prometheus, затем
 узлы сортируются по возрастанию нагрузки (как и раньше).
 
-Ответы ``GET/HEAD /sub/{token}`` и ``GET /sub/{token}/json`` содержат заголовок
-``Subscription-Userinfo`` (де-факто формат Clash/Stash/Happ/v2rayNG: upload, download,
-total, expire). См. ``app.domain.subscription_userinfo`` и список клиентов в
-``subscription_open_apps``.
+Ответы ``GET/HEAD /sub/{token}`` и ``GET /sub/{token}/json`` отдают метаданные в HTTP-заголовках
+в форме Happ (``subscription-userinfo``, ``profile-update-interval``, ``profile-title``, …;
+см. https://www.happ.su/main/ru/dev-docs/app-management#standartnye-parametry) и тот же
+формат ``subscription-userinfo`` (upload, download, total, expire), что используют
+Stash / Clash Verge / v2rayNG. Подробнее: ``app.domain.subscription_userinfo``.
 
 - GET /sub/{subscription_token}/open/{client} — 302 на ту же страницу на origin SPA (если API и сайт разъехались).
 - GET /sub/{subscription_token}/open/{client}/data — JSON для попытки диплинка (Vue /sub/…/open/…); скачивание — /apps/{client}.
@@ -176,15 +177,30 @@ async def _subscription_payload_for_token(
     return build_subscription_payload(user, rows), user
 
 
-def _subscription_userinfo_headers(session: ReadonlySessionDep, user: User) -> dict[str, str]:
+def _subscription_client_metadata_headers(
+    session: ReadonlySessionDep,
+    user: User,
+    *,
+    request: Request | None = None,
+) -> dict[str, str]:
+    """Заголовки метаданных подписки для Happ / Stash / Clash (формат Happ — нижний регистр имён)."""
     up_b, down_b, _ = user_traffic_totals(session, int(user.id))
-    value = build_subscription_userinfo_header_value(
+    userinfo = build_subscription_userinfo_header_value(
         valid_until=user.subscription_until,
         upload=up_b,
         download=down_b,
         total=0,
     )
-    return {"Subscription-Userinfo": value}
+    headers: dict[str, str] = {
+        "subscription-userinfo": userinfo,
+        "profile-update-interval": "12",
+        "profile-title": "Podorozhnik VPN",
+        "support-url": "",
+        "profile-web-page-url": "",
+        "announce": "",
+        "announce-url": "",
+    }
+    return headers
 
 
 def _build_open_page_data(
@@ -328,17 +344,18 @@ async def subscription_open_in_app(
 
 @router.head(
     "/sub/{subscription_token}",
-    summary="Метаданные подписки без тела (Stash и др.: HEAD + Subscription-Userinfo)",
+    summary="Метаданные подписки без тела (Happ/Stash: HEAD + subscription-userinfo и др.)",
     response_class=Response,
 )
 async def subscription_head_by_token(
+    request: Request,
     session: ReadonlySessionDep,
     subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
 ) -> Response:
     user = table_select_one(session, User, filters={"token": subscription_token})
     if user is None:
         raise HTTPException(status_code=404, detail="Неизвестный токен")
-    headers = _subscription_userinfo_headers(session, user)
+    headers = _subscription_client_metadata_headers(session, user, request=request)
     return Response(content="", media_type="text/plain; charset=utf-8", headers=headers)
 
 
@@ -348,11 +365,12 @@ async def subscription_head_by_token(
     response_class=Response,
 )
 async def subscription_base64_by_token(
+    request: Request,
     session: ReadonlySessionDep,
     subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
 ) -> Response:
     payload, user = await _subscription_payload_for_token(subscription_token, session)
-    headers = _subscription_userinfo_headers(session, user)
+    headers = _subscription_client_metadata_headers(session, user, request=request)
     return Response(
         content=payload.subscription_base64,
         media_type="text/plain; charset=utf-8",
@@ -366,11 +384,12 @@ async def subscription_base64_by_token(
     summary="Подписка (JSON): узлы, vless:// и поле subscription_base64",
 )
 async def subscription_json_by_token(
+    request: Request,
     response: Response,
     session: ReadonlySessionDep,
     subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
 ) -> SubscriptionPayload:
     payload, user = await _subscription_payload_for_token(subscription_token, session)
-    for key, val in _subscription_userinfo_headers(session, user).items():
+    for key, val in _subscription_client_metadata_headers(session, user, request=request).items():
         response.headers[key] = val
     return payload

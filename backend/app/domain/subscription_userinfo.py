@@ -1,4 +1,7 @@
-"""HTTP-заголовок Subscription-Userinfo для ответов подписки /sub/…
+"""Значение HTTP-заголовка ``subscription-userinfo`` для ответов подписки /sub/…
+
+Имя заголовка в ответе API — ``subscription-userinfo`` (как в документации Happ); для клиентов
+оно эквивалентно историческому ``Subscription-Userinfo`` (HTTP нечувствителен к регистру).
 
 Формат (общий для экосистемы Clash / Mihomo и Xray-клиентов):
 
@@ -6,7 +9,8 @@
 
 - ``upload`` / ``download`` — использованный трафик по направлениям (байты).
 - ``total`` — квота в байтах; ``0`` означает без лимита (см. примеры Happ).
-- ``expire`` — время окончания в Unix **секундах** (UTC); поле опускается, если срока нет.
+- ``expire`` — Unix **секунды** (UTC): полночь календарного дня ``valid_until`` минус **3 часа**
+  (сдвиг для отображения в MSK и др.).
 
 Ссылки на документацию клиентов из ``subscription_open_apps``:
 
@@ -22,20 +26,21 @@
 - **Streisand**, **v2RayTun**: совместимы с распространёнными полями подписок Xray/Clash
   при запросе того же URL.
 
-Дата ``valid_until`` в БД — календарный день **включительно**; в ``expire`` кодируем
-конец этого дня 23:59:59 UTC.
+Дата ``valid_until`` в БД — календарный день; в ``expire`` — момент ``00:00 UTC`` этого дня,
+с минус 3 ч (секунды Unix).
 """
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 
 def subscription_valid_until_to_expire_unix(valid_until: date | None) -> int | None:
     if valid_until is None:
         return None
-    end_utc = datetime.combine(valid_until, time(23, 59, 59), tzinfo=timezone.utc)
-    return int(end_utc.timestamp())
+    day_start_utc = datetime.combine(valid_until, time.min, tzinfo=timezone.utc)
+    expire_moment = day_start_utc - timedelta(hours=3)
+    return int(expire_moment.timestamp())
 
 
 def build_subscription_userinfo_header_value(
