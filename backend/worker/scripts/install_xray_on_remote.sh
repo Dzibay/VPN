@@ -198,6 +198,7 @@ cfg["inbounds"][0]["sniffing"] = {
 gemini_domains = [
     "domain:gemini.google.com",
     "domain:aistudio.google.com",
+    "domain:clients6.google.com",  # grpc-web: ogads-pa / waa-pa → AsyncDataService, и т.д.
     "domain:generativelanguage.googleapis.com",
     "domain:alkalimining-pa.googleapis.com",
     "domain:proactivebackend-pa.googleapis.com",
