@@ -60,7 +60,8 @@ class Settings(BaseSettings):
     telegram_bot_api_secret: str = Field(
         default="",
         description=(
-            "Секрет для POST /api/auth/telegram, GET /api/telegram/users/{topic_id}, "
+            "Секрет для POST /api/auth/telegram, POST /api/auth/telegram/site-link/start, "
+            "GET /api/telegram/users/{topic_id}, "
             "PATCH /api/telegram/users/{telegram_id} и GET /api/telegram/subscription-open-clients: "
             "заголовок X-Telegram-Bot-Secret (вызывает только бэкенд бота, не Telegram-клиент). "
             "Пусто — эндпоинты отвечают 503."
@@ -94,8 +95,9 @@ class Settings(BaseSettings):
     referral_site_base_url: str = Field(
         default="",
         description=(
-            "Публичный origin SPA для реферальных ссылок на сайт (https://vpn.example.com без слэша). "
-            "Используется в админке и в ответах API: {base}/?ref={token} (главная страница). Пусто — ссылки только на фронте по VITE_PUBLIC_SITE_URL."
+            "Публичный origin SPA (https://vpn.example.com без слэша). Рефералы: {base}/?ref= . "
+            "Также нужен для абсолютных ссылок из бота «добавить email» (…/link-from-telegram?token=). "
+            "Пусто — задайте один из: SUBSCRIPTION_OPEN_SPA_BASE_URL, SUBSCRIPTION_PUBLIC_BASE_URL."
         ),
     )
     telegram_bot_username: str = Field(

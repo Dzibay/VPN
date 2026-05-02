@@ -277,6 +277,63 @@ class TelegramWebLinkResponse(BaseModel):
     user_id: int
 
 
+class TelegramSiteLinkStartBody(BaseModel):
+    """Запрос одноразовой ссылки на сайт (добавить email и пароль к учётке только-Telegram)."""
+
+    telegram_id: int = Field(
+        ge=1,
+        le=9223372036854775807,
+        description="Числовой id пользователя Telegram (Bot API); вызывает бэкенд бота.",
+    )
+
+
+class TelegramSiteLinkStartResponse(BaseModel):
+    site_url: str = Field(
+        description="Страница сайта с query token=… (одноразово, ~15 минут).",
+    )
+
+
+class TelegramSiteLinkPreviewResponse(BaseModel):
+    telegram_id: int
+    telegram_properties: dict[str, Any] | None = None
+    subscription_until: date | None = None
+    subscription_active: bool = Field(
+        default=False,
+        description="True, если срок подписки ещё действует.",
+    )
+    can_add_credentials: bool = Field(
+        default=True,
+        description="False — email уже задан, форма неактивна.",
+    )
+
+
+class TelegramSiteLinkCompleteBody(BaseModel):
+    link_token: str = Field(
+        ...,
+        max_length=80,
+        description="Тот же token, что в URL на сайте.",
+    )
+    email: EmailStr = Field(max_length=320)
+    password: str = Field(
+        min_length=1,
+        max_length=72,
+        description=(
+            "Для первого сохранения email на Telegram-аккаунте — не короче 8 символов (проверка в endpoint). "
+            "При объединении с уже существующим email — любой действующий пароль от этого аккаунта (до 72 байт bcrypt)."
+        ),
+    )
+
+    @field_validator("link_token", mode="before")
+    @classmethod
+    def strip_link_token(cls, v: object) -> str:
+        if not isinstance(v, str):
+            raise TypeError("link_token должен быть строкой")
+        s = v.strip()
+        if not s:
+            raise ValueError("link_token не может быть пустым")
+        return s
+
+
 class AccountMeResponse(BaseModel):
     """Схема ответа GET /api/auth/me; в Swagger смотрите примеры у этой операции."""
 

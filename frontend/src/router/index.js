@@ -16,6 +16,7 @@ import UsersAnalyticsStaffView from '../views/UsersAnalyticsStaffView.vue'
 import UserCabinetView from '../views/UserCabinetView.vue'
 import UserLoginView from '../views/UserLoginView.vue'
 import UserRegisterView from '../views/UserRegisterView.vue'
+import LinkFromTelegramView from '../views/LinkFromTelegramView.vue'
 import ClientAppDownloadView from '../views/ClientAppDownloadView.vue'
 import SubscriptionOpenView from '../views/SubscriptionOpenView.vue'
 
@@ -23,6 +24,11 @@ const routes = [
   { path: '/', name: 'home', component: HomeView },
   { path: '/login', name: 'login', component: UserLoginView },
   { path: '/register', name: 'register', component: UserRegisterView },
+  {
+    path: '/link-from-telegram',
+    name: 'link-from-telegram',
+    component: LinkFromTelegramView,
+  },
   { path: '/cabinet', name: 'cabinet', component: UserCabinetView },
   {
     path: '/apps/:client',

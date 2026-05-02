@@ -2,7 +2,12 @@ import { clearSession, getAccessToken } from '../auth/session.js'
 
 function tokenForApiPath(path) {
   if (!path.startsWith('/api/')) return null
-  if (path === '/api/auth/login' || path === '/api/auth/register') {
+  if (
+    path === '/api/auth/login' ||
+    path === '/api/auth/register' ||
+    path.startsWith('/api/auth/telegram/site-link/preview') ||
+    path === '/api/auth/telegram/site-link/complete'
+  ) {
     return null
   }
   return getAccessToken()

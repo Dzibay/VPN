@@ -12,6 +12,8 @@ if TYPE_CHECKING:
     from redis import Redis
 
 _KEY_PREFIX = "vpn:tg_web_link:"
+# Одноразовый токен: Telegram → сайт (добавить email/пароль к учётке по telegram_id).
+_SITE_CRED_PREFIX = "vpn:tg_site_cred:"
 _TTL_SEC = 15 * 60
 _TOKEN_LEN = 32
 _TOKEN_ALPHABET = string.ascii_letters + string.digits + "_"
@@ -54,5 +56,33 @@ def get_sync_token_user_id(redis: Redis, token_value: str) -> int | None:
 def delete_sync_token(redis: Redis, token_value: str) -> None:
     try:
         redis.delete(_KEY_PREFIX + token_value)
+    except RedisError as e:
+        raise TelegramSyncRedisError(str(e)) from e
+
+
+def store_site_cred_token(redis: Redis, token_value: str, user_id: int) -> None:
+    """Связь одноразового токена (URL на сайт) с internal user_id."""
+    try:
+        redis.setex(_SITE_CRED_PREFIX + token_value, _TTL_SEC, str(int(user_id)))
+    except RedisError as e:
+        raise TelegramSyncRedisError(str(e)) from e
+
+
+def get_site_cred_user_id(redis: Redis, token_value: str) -> int | None:
+    try:
+        raw = redis.get(_SITE_CRED_PREFIX + token_value)
+    except RedisError as e:
+        raise TelegramSyncRedisError(str(e)) from e
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def delete_site_cred_token(redis: Redis, token_value: str) -> None:
+    try:
+        redis.delete(_SITE_CRED_PREFIX + token_value)
     except RedisError as e:
         raise TelegramSyncRedisError(str(e)) from e

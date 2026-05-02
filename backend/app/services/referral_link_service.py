@@ -234,6 +234,22 @@ def telegram_bot_public_page_url(settings: object) -> str | None:
     return f"https://t.me/{bot}"
 
 
+def public_spa_base_url(settings: object) -> str | None:
+    """
+    Публичный origin SPA (без завершающего «/») для абсолютных ссылок из API.
+    Порядок: REFERRAL_SITE_BASE_URL → SUBSCRIPTION_OPEN_SPA_BASE_URL → SUBSCRIPTION_PUBLIC_BASE_URL.
+    """
+    for attr in (
+        "referral_site_base_url",
+        "subscription_open_spa_base_url",
+        "subscription_public_base_url",
+    ):
+        base = (getattr(settings, attr, None) or "").strip().rstrip("/")
+        if base:
+            return base
+    return None
+
+
 def referral_link_to_out(link: ReferralLink, settings: object):
     """Сборка ответа админ-API с подставленными URL из конфига."""
     from app.schemas.referral_links import ReferralLinkOut, ReferralLinkRead

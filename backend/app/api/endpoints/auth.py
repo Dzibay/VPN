@@ -3,7 +3,7 @@ from typing import Annotated, Literal
 
 from urllib.parse import quote
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -32,6 +32,10 @@ from app.schemas.account import (
     AccountMeResponse,
     AccountRegisterBody,
     TelegramAuthBody,
+    TelegramSiteLinkCompleteBody,
+    TelegramSiteLinkPreviewResponse,
+    TelegramSiteLinkStartBody,
+    TelegramSiteLinkStartResponse,
     TelegramSyncStartResponse,
     TelegramWebLinkBody,
     TelegramWebLinkResponse,
@@ -43,13 +47,17 @@ from app.schemas.auth import TokenResponse
 from app.services.merge_telegram_account import merge_drop_user_into_keep
 from app.services.referral_link_service import (
     increment_referral_counter,
+    public_spa_base_url,
     telegram_bot_public_page_url,
 )
 from app.services.telegram_sync_token import (
     TelegramSyncRedisError,
+    delete_site_cred_token,
     delete_sync_token,
     generate_sync_token_value,
+    get_site_cred_user_id,
     get_sync_token_user_id,
+    store_site_cred_token,
     store_sync_token,
     sync_start_payload,
 )
@@ -347,6 +355,241 @@ async def telegram_link_web_account(
         status="merged" if merged else "linked",
         user_id=int(target.id),
     )
+
+
+def _telegram_site_link_token_trim(raw: str) -> str:
+    s = raw.strip()
+    return s.replace(" ", "")
+
+
+def _user_can_add_credentials_from_site(user: User) -> tuple[bool, str | None]:
+    if user.account_role == "admin":
+        return False, "Недопустимо для аккаунта администратора"
+    mail = getattr(user, "email", None) or ""
+    if str(mail).strip():
+        return False, "На этом аккаунте уже указан email. Входите через сайт с паролём."
+    if user.telegram_id is None:
+        return False, "На аккаунте не указан Telegram"
+    return True, None
+
+
+@router.post(
+    "/telegram/site-link/start",
+    response_model=TelegramSiteLinkStartResponse,
+    tags=["public"],
+    dependencies=[Depends(require_telegram_bot_api_secret)],
+    summary="Одноразовая ссылка на сайт: добавить email и пароль к учётке по telegram_id",
+)
+async def telegram_site_link_start(
+    body: TelegramSiteLinkStartBody,
+    session: ReadonlySessionDep,
+) -> TelegramSiteLinkStartResponse:
+    stmt = select(User).where(User.telegram_id == body.telegram_id).limit(1)
+    user = session.scalars(stmt).first()
+    if user is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Пользователь с таким Telegram не найден. Запустите бота и войдите в аккаунт.",
+        )
+
+    ok, reason = _user_can_add_credentials_from_site(user)
+    if not ok:
+        raise HTTPException(status_code=409, detail=reason or "Нельзя добавить данные сайта для этого аккаунта")
+
+    base = public_spa_base_url(settings)
+    if not base:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Не задан публичный URL SPA: REFERRAL_SITE_BASE_URL или "
+                "SUBSCRIPTION_OPEN_SPA_BASE_URL / SUBSCRIPTION_PUBLIC_BASE_URL"
+            ),
+        )
+
+    token_val = generate_sync_token_value()
+    try:
+        store_site_cred_token(get_redis(), token_val, int(user.id))
+    except TelegramSyncRedisError:
+        raise HTTPException(status_code=503, detail="Redis недоступен") from None
+
+    site_url = f"{base}/link-from-telegram?token={quote(token_val, safe='')}"
+    return TelegramSiteLinkStartResponse(site_url=site_url)
+
+
+@router.get(
+    "/telegram/site-link/preview",
+    response_model=TelegramSiteLinkPreviewResponse,
+    tags=["public"],
+    summary="Данные Telegram по одноразовому token из URL (до отправки формы)",
+)
+async def telegram_site_link_preview(
+    session: ReadonlySessionDep,
+    token: str = Query(
+        ...,
+        min_length=1,
+        max_length=96,
+        description="Параметр token из URL",
+    ),
+) -> TelegramSiteLinkPreviewResponse:
+    key_part = _telegram_site_link_token_trim(token)
+    if len(key_part) < 4:
+        raise HTTPException(status_code=400, detail="Некорректный токен")
+
+    redis_conn = get_redis()
+    try:
+        uid = get_site_cred_user_id(redis_conn, key_part)
+    except TelegramSyncRedisError:
+        raise HTTPException(status_code=503, detail="Redis недоступен") from None
+
+    if uid is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Ссылка недействительна или истекла. Запросите новую в боте.",
+        )
+
+    user = session.get(User, uid)
+    if user is None or user.telegram_id is None:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    ok, _ = _user_can_add_credentials_from_site(user)
+    return TelegramSiteLinkPreviewResponse(
+        telegram_id=int(user.telegram_id),
+        telegram_properties=user.telegram_properties,
+        subscription_until=user.subscription_until,
+        subscription_active=user_has_active_subscription(user),
+        can_add_credentials=ok,
+    )
+
+
+@router.post(
+    "/telegram/site-link/complete",
+    response_model=TokenResponse,
+    tags=["public"],
+    summary=(
+        "По одноразовому token: новый email на Telegram-аккаунт либо объединение с "
+        "существующим email при верном пароле (merge_drop_user_into_keep)"
+    ),
+)
+async def telegram_site_link_complete(
+    body: TelegramSiteLinkCompleteBody,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+) -> TokenResponse:
+    key_part = _telegram_site_link_token_trim(body.link_token)
+    if len(key_part) < 4:
+        raise HTTPException(status_code=400, detail="Некорректный токен")
+
+    redis_conn = get_redis()
+    try:
+        uid = get_site_cred_user_id(redis_conn, key_part)
+    except TelegramSyncRedisError:
+        raise HTTPException(status_code=503, detail="Redis недоступен") from None
+
+    if uid is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Ссылка недействительна или истекла. Запросите новую в боте.",
+        )
+
+    tg_user = session.get(User, uid)
+    if tg_user is None:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    ok, reason = _user_can_add_credentials_from_site(tg_user)
+    if not ok:
+        raise HTTPException(status_code=409, detail=reason or "Нельзя выполнить операцию")
+
+    email_norm = normalize_email(str(body.email))
+    stmt_existing = select(User).where(User.email == email_norm).limit(1)
+    existing = session.scalars(stmt_existing).first()
+
+    winner: User
+    if existing is None:
+        if len(body.password.encode("utf-8")) > 72:
+            raise HTTPException(status_code=400, detail="Пароль слишком длинный для системы входа")
+        if len(str(body.password)) < 8:
+            raise HTTPException(
+                status_code=400,
+                detail="Пароль должен содержать не менее 8 символов",
+            )
+        tg_user.email = email_norm
+        tg_user.password_hash = hash_password(body.password)
+        try:
+            session.flush()
+        except IntegrityError as e:
+            session.rollback()
+            log.warning("telegram site-link complete conflict: %s", e)
+            raise HTTPException(
+                status_code=409,
+                detail="Пользователь с таким email уже зарегистрирован",
+            ) from e
+        winner = tg_user
+    else:
+        if existing.id == tg_user.id:
+            raise HTTPException(
+                status_code=500,
+                detail="Несогласованное состояние учётной записи",
+            )
+        if not getattr(existing, "password_hash", None):
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "У аккаунта с этим email не задан пароль для входа на сайте. "
+                    "Восстановите доступ или напишите в поддержку."
+                ),
+            )
+        if not verify_password(body.password, existing.password_hash):
+            raise HTTPException(status_code=401, detail="Неверный email или пароль")
+        if existing.telegram_id is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Аккаунт с этим email уже привязан к Telegram. "
+                    "Войдите на сайт с паролем."
+                ),
+            )
+        if existing.account_role not in ("client", "manager"):
+            raise HTTPException(
+                status_code=403,
+                detail="Учётная запись с этим email не поддерживает объединение",
+            )
+        if tg_user.account_role not in ("client", "manager"):
+            raise HTTPException(
+                status_code=403,
+                detail="Telegram-аккаунт не поддерживает объединение",
+            )
+
+        tid = tg_user.telegram_id
+        tprops = (
+            dict(tg_user.telegram_properties) if tg_user.telegram_properties else None
+        )
+        try:
+            merge_drop_user_into_keep(session, existing, tg_user)
+            existing.telegram_id = tid
+            existing.telegram_properties = tprops
+            session.flush()
+        except IntegrityError as e:
+            session.rollback()
+            log.warning("telegram site-link merge integrity: %s", e)
+            raise HTTPException(
+                status_code=409,
+                detail="Не удалось объединить учётные записи (конфликт данных). Попробуйте позже или обратитесь в поддержку.",
+            ) from e
+        winner = existing
+
+    try:
+        delete_site_cred_token(redis_conn, key_part)
+    except TelegramSyncRedisError:
+        log.warning("telegram site-link: не удалось удалить токен из Redis")
+
+    background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
+
+    jwt_role = _jwt_role_for_user(winner)
+    try:
+        jwt = create_access_token(settings, role=jwt_role, user_id=winner.id)
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    return TokenResponse(access_token=jwt, role=jwt_role)
 
 
 @router.post(
