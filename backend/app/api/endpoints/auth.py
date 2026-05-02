@@ -43,7 +43,7 @@ from app.schemas.account import (
     merge_telegram_auth_profile,
     telegram_auth_has_profile_fields,
 )
-from app.schemas.auth import TokenResponse
+from app.schemas.auth import TelegramAuthTokenResponse, TokenResponse
 from app.services.merge_telegram_account import merge_drop_user_into_keep
 from app.services.referral_link_service import (
     increment_referral_counter,
@@ -217,7 +217,7 @@ async def register(
 
 @router.post(
     "/telegram",
-    response_model=TokenResponse,
+    response_model=TelegramAuthTokenResponse,
     status_code=201,
     tags=["telegram"],
     dependencies=[Depends(require_telegram_bot_api_secret)],
@@ -227,11 +227,12 @@ async def telegram_auth(
     body: TelegramAuthBody,
     session: SessionDep,
     background_tasks: BackgroundTasks,
-) -> TokenResponse:
+) -> TelegramAuthTokenResponse:
     tid = body.telegram_id
     profile = merge_telegram_auth_profile(body, None)
     stmt = select(User).where(User.telegram_id == tid).limit(1)
     user = session.scalars(stmt).first()
+    is_new_user = False
     if user is None:
         user = User(
             email=None,
@@ -256,6 +257,7 @@ async def telegram_auth(
                     detail="Не удалось создать или найти пользователя по telegram_id",
                 ) from e
         else:
+            is_new_user = True
             if body.referral_token:
                 rstmt = select(ReferralLink).where(ReferralLink.token == body.referral_token).limit(1)
                 rlink = session.scalars(rstmt).first()
@@ -277,7 +279,11 @@ async def telegram_auth(
         token = create_access_token(settings, role=jwt_role, user_id=user.id)
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
-    return TokenResponse(access_token=token, role=jwt_role)
+    return TelegramAuthTokenResponse(
+        access_token=token,
+        role=jwt_role,
+        is_new_user=is_new_user,
+    )
 
 
 @router.post(
