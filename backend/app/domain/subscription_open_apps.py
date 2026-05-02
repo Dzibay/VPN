@@ -343,11 +343,8 @@ def get_subscription_open_app(client_code: str) -> SubscriptionOpenApp | None:
 
 
 def list_subscription_open_app_codes() -> list[str]:
-    return sorted(SUBSCRIPTION_OPEN_APPS.keys())
+    return list(SUBSCRIPTION_OPEN_APPS.keys())
 
 
 def list_subscription_open_apps() -> list[SubscriptionOpenApp]:
-    return sorted(
-        SUBSCRIPTION_OPEN_APPS.values(),
-        key=lambda a: (a.display_name.lower(), a.client_code),
-    )
+    return list(SUBSCRIPTION_OPEN_APPS.values())
