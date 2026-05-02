@@ -37,6 +37,23 @@ const createError = ref(null)
 /** null — создание пользователя; иначе id для PATCH */
 const editingUserId = ref(null)
 
+/** Текущая строка пользователя при открытом редактировании (модалка). */
+const editingUserRow = computed(() => {
+  const id = editingUserId.value
+  if (id == null) return null
+  return users.value.find((x) => x.id === id) ?? null
+})
+
+/** Есть ли в БД telegram_id или непустой telegram_properties — доступен сброс. */
+const editingUserHasTelegramData = computed(() => {
+  const u = editingUserRow.value
+  if (!u) return false
+  if (u.telegram_id != null) return true
+  const p = u.telegram_properties
+  if (!p || typeof p !== 'object') return false
+  return Object.keys(p).length > 0
+})
+
 const formTelegramId = ref('')
 const formSubUntil = ref('')
 /** client | manager | admin — при редактировании пользователя */
@@ -56,6 +73,7 @@ const extendError = ref(null)
 const extendOk = ref(null)
 /** @type {import('vue').Ref<number | null>} */
 const deletingUserId = ref(null)
+const clearTelegramBusy = ref(false)
 
 const formName = ref('')
 const formHost = ref('')
@@ -371,7 +389,14 @@ function openEditServer(s) {
 }
 
 function closeModal() {
-  if (creating.value || deletingServerId.value != null) return
+  if (
+    creating.value ||
+    deletingServerId.value != null ||
+    clearTelegramBusy.value ||
+    deletingUserId.value != null
+  ) {
+    return
+  }
   modalOpen.value = false
   editingServerId.value = null
   editingUserId.value = null
@@ -536,6 +561,45 @@ async function submitSaveUser() {
     createError.value = e.message || String(e)
   } finally {
     creating.value = false
+  }
+}
+
+async function clearEditingUserTelegram() {
+  const id = editingUserId.value
+  if (id == null || !editingUserHasTelegramData.value) return
+  const row = editingUserRow.value
+  const noEmail =
+    row &&
+    (row.email == null ||
+      (typeof row.email === 'string' && row.email.trim() === ''))
+  const warn =
+    noEmail ?
+      '\n\nУ пользователя нет email — после сброса Telegram войти в аккаунт будет нельзя.'
+    : ''
+  if (
+    !window.confirm(
+      `Сбросить привязку Telegram (числовой ID и профиль в JSON) у пользователя #${id}?${warn}`,
+    )
+  ) {
+    return
+  }
+  clearTelegramBusy.value = true
+  createError.value = null
+  try {
+    await fetchJson(`/api/users/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        telegram_id: null,
+        telegram_properties: null,
+      }),
+    })
+    formTelegramId.value = ''
+    editingUserTgUsername.value = ''
+    await loadUsers()
+  } catch (e) {
+    createError.value = e.message || String(e)
+  } finally {
+    clearTelegramBusy.value = false
   }
 }
 
@@ -1654,6 +1718,21 @@ watch(formIsCascadeRuEntry, (v) => {
                 <span v-if="editingUserTgUsername" class="muted">
                   @{{ editingUserTgUsername }}</span>
               </p>
+              <button
+                v-if="editingUserHasTelegramData"
+                type="button"
+                class="btn-secondary btn-tiny telegram-unlink-btn"
+                :disabled="
+                  creating ||
+                  deletingUserId != null ||
+                  clearTelegramBusy
+                "
+                @click="clearEditingUserTelegram"
+              >
+                {{
+                  clearTelegramBusy ? 'Сброс…' : 'Сбросить Telegram'
+                }}
+              </button>
             </div>
             <label class="field" v-if="editingUserId != null">
               <span>Роль доступа</span>
@@ -1711,7 +1790,9 @@ watch(formIsCascadeRuEntry, (v) => {
                 type="button"
                 class="btn-danger-modal"
                 :disabled="
-                  creating || deletingUserId === editingUserId
+                  creating ||
+                  deletingUserId === editingUserId ||
+                  clearTelegramBusy
                 "
                 @click="deleteUserFromModal"
               >
@@ -1725,7 +1806,11 @@ watch(formIsCascadeRuEntry, (v) => {
                 <button
                   type="button"
                   class="btn-secondary"
-                  :disabled="creating || deletingUserId != null"
+                  :disabled="
+                    creating ||
+                    deletingUserId != null ||
+                    clearTelegramBusy
+                  "
                   @click="closeModal"
                 >
                   Отмена
@@ -1733,7 +1818,11 @@ watch(formIsCascadeRuEntry, (v) => {
                 <button
                   type="submit"
                   class="btn-primary"
-                  :disabled="creating || deletingUserId != null"
+                  :disabled="
+                    creating ||
+                    deletingUserId != null ||
+                    clearTelegramBusy
+                  "
                 >
                   {{
                     creating
@@ -2313,6 +2402,10 @@ watch(formIsCascadeRuEntry, (v) => {
 .server-health-item--ok .server-health-line strong,
 .server-health-item--fail .server-health-line strong {
   font-weight: 600;
+}
+
+.field-readonly .telegram-unlink-btn {
+  margin-top: 0.45rem;
 }
 
 .field-readonly .readonly-value {
