@@ -398,10 +398,7 @@ def _user_can_add_credentials_from_site(user: User) -> tuple[bool, str | None]:
     response_model=TelegramSiteLinkStartResponse,
     tags=["telegram"],
     dependencies=[Depends(require_telegram_bot_api_secret)],
-    summary=(
-        "Ссылка на сайт для добавления email/пароля к учётке Telegram или немедленный JWT в кабинет, "
-        "если email и пароль уже заданы"
-    ),
+    summary="Ссылка на сайт: форма привязки email/пароля или вход в кабинет по JWT (поля site_url и has_account)",
 )
 async def telegram_site_link_start(
     body: TelegramSiteLinkStartBody,
@@ -436,14 +433,8 @@ async def telegram_site_link_start(
             token = create_access_token(settings, role=jwt_role, user_id=user.id)
         except ValueError as e:
             raise HTTPException(status_code=503, detail=str(e)) from e
-        cabinet_url = f"{base}/cabinet#tg_sso_token={token}"
-        return TelegramSiteLinkStartResponse(
-            site_url=None,
-            access_token=token,
-            token_type="bearer",
-            role=jwt_role,
-            cabinet_url=cabinet_url,
-        )
+        site_url = f"{base}/cabinet#tg_sso_token={token}"
+        return TelegramSiteLinkStartResponse(site_url=site_url, has_account=True)
 
     ok, reason = _user_can_add_credentials_from_site(user)
     if not ok:
@@ -465,13 +456,7 @@ async def telegram_site_link_start(
         raise HTTPException(status_code=503, detail="Redis недоступен") from None
 
     site_url = f"{base}/link-from-telegram?token={quote(token_val, safe='')}"
-    return TelegramSiteLinkStartResponse(
-        site_url=site_url,
-        access_token=None,
-        token_type="bearer",
-        role=None,
-        cabinet_url=None,
-    )
+    return TelegramSiteLinkStartResponse(site_url=site_url, has_account=False)
 
 
 @router.get(
