@@ -4,14 +4,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.api.deps import BearerPrincipal, ReadonlySessionDep, SessionDep, get_bearer_principal_dep
+from app.api.deps import BearerPrincipal, SessionDep, get_bearer_principal_dep
 from app.core.config import settings
 from app.schemas.referral_links import ReferralMeResponse
-from app.services.referral_link_service import (
-    create_user_owned_referral_link,
-    get_user_owned_referral_link,
-    referral_link_to_out,
-)
+from app.services.referral_link_service import get_or_create_user_owned_referral_link, referral_link_to_out
 
 router = APIRouter(prefix="/referral/me", tags=["user"])
 
@@ -36,37 +32,24 @@ def _client_site_user_id(principal: BearerPrincipal) -> int:
     "",
     response_model=ReferralMeResponse,
     summary="Персональная реферальная ссылка текущего пользователя",
+    description=(
+        "Возвращает существующую персональную ссылку или создаёт её при первом обращении "
+        "(не более одной на учётную запись)."
+    ),
 )
 async def get_my_referral_link(
-    session: ReadonlySessionDep,
-    principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
-) -> ReferralMeResponse:
-    user_id = _client_site_user_id(principal)
-    row = get_user_owned_referral_link(session, user_id)
-    return ReferralMeResponse(
-        link=referral_link_to_out(row, settings) if row is not None else None,
-    )
-
-
-@router.post(
-    "",
-    response_model=ReferralMeResponse,
-    status_code=201,
-    summary="Создание персональной реферальной ссылки (не более одной на учётную запись)",
-)
-async def create_my_referral_link(
     session: SessionDep,
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
 ) -> ReferralMeResponse:
     user_id = _client_site_user_id(principal)
     try:
-        row = create_user_owned_referral_link(session, user_id, token=None)
+        row = get_or_create_user_owned_referral_link(session, user_id)
     except ValueError as e:
         msg = str(e)
         if msg == "Пользователь не найден":
             raise HTTPException(status_code=404, detail=msg) from e
-        if msg == "Токен уже занят" or "уже создана" in msg or "уже есть персональная" in msg:
-            raise HTTPException(status_code=409, detail=msg) from e
         raise HTTPException(status_code=422, detail=msg) from e
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
     return ReferralMeResponse(link=referral_link_to_out(row, settings))

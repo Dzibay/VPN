@@ -55,11 +55,10 @@ class ReferralLinkOut(ReferralLinkRead):
 
 
 class ReferralMeResponse(BaseModel):
-    """GET /api/referral/me: текущая персональная ссылка клиента (или null)."""
+    """GET /api/referral/me: персональная ссылка клиента (при отсутствии создаётся автоматически)."""
 
-    link: ReferralLinkOut | None = Field(
-        default=None,
-        description="null, если пользователь ещё не создавал ссылку",
+    link: ReferralLinkOut = Field(
+        description="Текущая персональная ссылка; при первом успешном запросе создаётся на сервере",
     )
 
 

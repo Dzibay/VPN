@@ -98,7 +98,6 @@ const profileTelegramUsername = computed(() => {
 const myReferralLink = ref(null)
 const myReferralLoading = ref(false)
 const myReferralError = ref(null)
-const referralCreateBusy = ref(false)
 const referralCopySite = ref(false)
 const referralCopyTg = ref(false)
 /** @type {ReturnType<typeof setTimeout> | null} */
@@ -145,23 +144,6 @@ async function loadMyReferral() {
   }
 }
 
-async function createMyReferral() {
-  if (!referralClientUser.value || myReferralLink.value) return
-  referralCreateBusy.value = true
-  myReferralError.value = null
-  try {
-    const data = await fetchJson('/api/referral/me', {
-      method: 'POST',
-      body: '{}',
-    })
-    myReferralLink.value = data?.link ?? null
-  } catch (e) {
-    myReferralError.value = e.message || String(e)
-  } finally {
-    referralCreateBusy.value = false
-  }
-}
-
 async function copyReferralSite() {
   const url = effectiveReferralSiteUrl.value
   if (!url) return
@@ -197,12 +179,18 @@ async function copyReferralTelegram() {
 watch(
   () => me.value?.role,
   (role) => {
-    if (role === 'user') void loadMyReferral()
-    else {
+    if (role !== 'user') {
       myReferralLink.value = null
       myReferralError.value = null
       myReferralLoading.value = false
     }
+  },
+)
+
+watch(
+  () => [activeCabinetTab.value, referralClientUser.value],
+  ([tab, isClient]) => {
+    if (tab === 'referral' && isClient) void loadMyReferral()
   },
 )
 
@@ -589,14 +577,14 @@ onMounted(() => {
           <div class="card card-pad referral-card">
             <h2 class="block-title">Реферальная система</h2>
             <p v-if="referralClientUser" class="hint">
-              Вам доступна персональная реферальная ссылка: по ней учитываются приглашённые
+              Ваша персональная реферальная ссылка — ниже; по ней учитываются приглашённые. Ссылка при
+              необходимости создаётся автоматически при первом открытии этой вкладки.
             </p>
             <p v-else-if="referralsStaffVisible" class="hint">
               Сотрудникам: выпуск и учёт всех реферальных токенов — в админ-панели.
             </p>
             <p v-else class="hint">
-              Персональные ссылки для клиентов создаются в личном кабинете при учётной
-              записи пользователя.
+              Персональные ссылки для клиентов доступны в личном кабинете для учётной записи пользователя.
             </p>
 
             <div
@@ -610,17 +598,7 @@ onMounted(() => {
               <div v-else-if="myReferralError" class="referral-my-err">
                 {{ myReferralError }}
               </div>
-              <template v-else-if="!myReferralLink">
-                <button
-                  type="button"
-                  class="copy-sub-btn referral-create-btn"
-                  :disabled="referralCreateBusy"
-                  @click="createMyReferral"
-                >
-                  {{ referralCreateBusy ? 'Создание…' : 'Создать реферальную ссылку' }}
-                </button>
-              </template>
-              <template v-else>
+              <template v-else-if="myReferralLink">
                 <dl class="dl referral-stats-dl">
                   <div class="row">
                     <dt>Токен</dt>
@@ -680,6 +658,9 @@ onMounted(() => {
                   </p>
                 </div>
               </template>
+              <p v-else class="hint referral-my-status">
+                Не удалось получить реферальную ссылку. Обновите страницу или попробуйте позже.
+              </p>
             </div>
 
             <div v-if="referralsStaffVisible" class="referral-staff-actions">
@@ -797,10 +778,6 @@ onMounted(() => {
   font-size: 0.92rem;
   color: var(--danger);
   line-height: 1.45;
-}
-
-.referral-create-btn {
-  margin-top: 0;
 }
 
 .referral-stats-dl {

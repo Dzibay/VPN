@@ -88,6 +88,27 @@ def create_user_owned_referral_link(
     return row
 
 
+def get_or_create_user_owned_referral_link(session: Session, user_id: int) -> ReferralLink:
+    """Вернуть личную ссылку пользователя или создать одну (идемпотентно, с повтором при коллизии токена)."""
+    row = get_user_owned_referral_link(session, user_id)
+    if row is not None:
+        return row
+    for _ in range(16):
+        try:
+            return create_user_owned_referral_link(session, user_id, token=None)
+        except ValueError as e:
+            msg = str(e)
+            if msg == "Пользователь не найден":
+                raise
+            if msg == "Токен уже занят":
+                continue
+            again = get_user_owned_referral_link(session, user_id)
+            if again is not None:
+                return again
+            raise
+    raise RuntimeError("Не удалось сгенерировать уникальный реферальный токен")
+
+
 def create_referral_link(
     session: Session,
     *,
