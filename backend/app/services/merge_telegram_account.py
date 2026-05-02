@@ -14,6 +14,10 @@ from app.services.referral_link_service import get_user_owned_referral_link
 
 
 def _later_subscription(a: date | None, b: date | None) -> date | None:
+    """
+    Дата окончания подписки после слияния двух учёток: самая поздняя из двух
+    (больше календарных дней доступа; пример: +10 дней vs +14 дней → остаётся +14).
+    """
     if a is None:
         return b
     if b is None:
@@ -71,7 +75,11 @@ def merge_owned_referral_links(session: Session, keep_user_id: int, drop_user_id
 
 
 def merge_drop_user_into_keep(session: Session, keep: User, drop: User) -> None:
-    """Переносит трафик и личную реферальную ссылку с drop на keep, затем удаляет drop."""
+    """
+    Переносит трафик и личную реферальную ссылку с drop на keep, затем удаляет drop.
+
+    ``subscription_until`` у keep становится более поздней из двух дат (максимум остатка подписки).
+    """
     if keep.id == drop.id:
         return
     merge_user_server_traffic(session, keep.id, drop.id)

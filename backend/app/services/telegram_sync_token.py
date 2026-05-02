@@ -33,16 +33,16 @@ def sync_start_payload(token_value: str) -> str:
     return f"link_{token_value}"
 
 
-def store_sync_token(redis: Redis, token_value: str, user_id: int) -> None:
+def _setex_user_mapping(redis: Redis, full_key: str, user_id: int) -> None:
     try:
-        redis.setex(_KEY_PREFIX + token_value, _TTL_SEC, str(int(user_id)))
+        redis.setex(full_key, _TTL_SEC, str(int(user_id)))
     except RedisError as e:
         raise TelegramSyncRedisError(str(e)) from e
 
 
-def get_sync_token_user_id(redis: Redis, token_value: str) -> int | None:
+def _get_mapping_user_id(redis: Redis, full_key: str) -> int | None:
     try:
-        raw = redis.get(_KEY_PREFIX + token_value)
+        raw = redis.get(full_key)
     except RedisError as e:
         raise TelegramSyncRedisError(str(e)) from e
     if raw is None:
@@ -53,36 +53,33 @@ def get_sync_token_user_id(redis: Redis, token_value: str) -> int | None:
         return None
 
 
-def delete_sync_token(redis: Redis, token_value: str) -> None:
+def _delete_mapping(redis: Redis, full_key: str) -> None:
     try:
-        redis.delete(_KEY_PREFIX + token_value)
+        redis.delete(full_key)
     except RedisError as e:
         raise TelegramSyncRedisError(str(e)) from e
+
+
+def store_sync_token(redis: Redis, token_value: str, user_id: int) -> None:
+    _setex_user_mapping(redis, _KEY_PREFIX + token_value, user_id)
+
+
+def get_sync_token_user_id(redis: Redis, token_value: str) -> int | None:
+    return _get_mapping_user_id(redis, _KEY_PREFIX + token_value)
+
+
+def delete_sync_token(redis: Redis, token_value: str) -> None:
+    _delete_mapping(redis, _KEY_PREFIX + token_value)
 
 
 def store_site_cred_token(redis: Redis, token_value: str, user_id: int) -> None:
     """Связь одноразового токена (URL на сайт) с internal user_id."""
-    try:
-        redis.setex(_SITE_CRED_PREFIX + token_value, _TTL_SEC, str(int(user_id)))
-    except RedisError as e:
-        raise TelegramSyncRedisError(str(e)) from e
+    _setex_user_mapping(redis, _SITE_CRED_PREFIX + token_value, user_id)
 
 
 def get_site_cred_user_id(redis: Redis, token_value: str) -> int | None:
-    try:
-        raw = redis.get(_SITE_CRED_PREFIX + token_value)
-    except RedisError as e:
-        raise TelegramSyncRedisError(str(e)) from e
-    if raw is None:
-        return None
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return None
+    return _get_mapping_user_id(redis, _SITE_CRED_PREFIX + token_value)
 
 
 def delete_site_cred_token(redis: Redis, token_value: str) -> None:
-    try:
-        redis.delete(_SITE_CRED_PREFIX + token_value)
-    except RedisError as e:
-        raise TelegramSyncRedisError(str(e)) from e
+    _delete_mapping(redis, _SITE_CRED_PREFIX + token_value)

@@ -362,6 +362,26 @@ def _telegram_site_link_token_trim(raw: str) -> str:
     return s.replace(" ", "")
 
 
+def _resolve_site_cred_user_id(redis_conn, raw_token: str) -> tuple[int, str]:
+    """
+    Нормализует token из query или тела, достаёт user_id из Redis (vpn:tg_site_cred:).
+    Возвращает (user_id, key_part) — key_part нужен для delete_site_cred_token после успеха.
+    """
+    key_part = _telegram_site_link_token_trim(raw_token)
+    if len(key_part) < 4:
+        raise HTTPException(status_code=400, detail="Некорректный токен")
+    try:
+        uid = get_site_cred_user_id(redis_conn, key_part)
+    except TelegramSyncRedisError:
+        raise HTTPException(status_code=503, detail="Redis недоступен") from None
+    if uid is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Ссылка недействительна или истекла. Запросите новую в боте.",
+        )
+    return uid, key_part
+
+
 def _user_can_add_credentials_from_site(user: User) -> tuple[bool, str | None]:
     if user.account_role == "admin":
         return False, "Недопустимо для аккаунта администратора"
@@ -431,21 +451,8 @@ async def telegram_site_link_preview(
         description="Параметр token из URL",
     ),
 ) -> TelegramSiteLinkPreviewResponse:
-    key_part = _telegram_site_link_token_trim(token)
-    if len(key_part) < 4:
-        raise HTTPException(status_code=400, detail="Некорректный токен")
-
     redis_conn = get_redis()
-    try:
-        uid = get_site_cred_user_id(redis_conn, key_part)
-    except TelegramSyncRedisError:
-        raise HTTPException(status_code=503, detail="Redis недоступен") from None
-
-    if uid is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Ссылка недействительна или истекла. Запросите новую в боте.",
-        )
+    uid, _ = _resolve_site_cred_user_id(redis_conn, token)
 
     user = session.get(User, uid)
     if user is None or user.telegram_id is None:
@@ -475,21 +482,8 @@ async def telegram_site_link_complete(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> TokenResponse:
-    key_part = _telegram_site_link_token_trim(body.link_token)
-    if len(key_part) < 4:
-        raise HTTPException(status_code=400, detail="Некорректный токен")
-
     redis_conn = get_redis()
-    try:
-        uid = get_site_cred_user_id(redis_conn, key_part)
-    except TelegramSyncRedisError:
-        raise HTTPException(status_code=503, detail="Redis недоступен") from None
-
-    if uid is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Ссылка недействительна или истекла. Запросите новую в боте.",
-        )
+    uid, key_part = _resolve_site_cred_user_id(redis_conn, body.link_token)
 
     tg_user = session.get(User, uid)
     if tg_user is None:
