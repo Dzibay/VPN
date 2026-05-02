@@ -461,11 +461,8 @@ onMounted(() => {
               {{ subscriptionCopied ? 'Скопировано' : 'Скопировать ссылку подписки' }}
             </button>
             <p class="hint hint-below-copy">
-              Ссылка выше — для клиентов вроде Happ (после декодирования Base64 — строки
-              <span class="mono">vless://</span>).
-              Для FlClashX, Clash Meta и других клиентов на Clash используйте подписку YAML:
-              <span class="mono">{{ subscriptionClashUrl }}</span>
-              (скопируйте вручную при необходимости).
+              Для FlClashX, Clash Meta и других клиентов на Clash 
+              используйте специальную кнопку подключения ниже
             </p>
           </div>
 
