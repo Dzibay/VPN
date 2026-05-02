@@ -29,7 +29,7 @@ from app.api.deps import ReadonlySessionDep
 from app.core.config import settings
 from app.database.operations import table_select_one
 from app.domain.subscription import user_has_active_subscription
-from app.domain.subscription_public_base import subscription_public_base_from_setting
+from app.domain.subscription_public_base import site_address_to_public_origin
 from app.domain.subscription_userinfo import build_subscription_userinfo_header_value
 from app.domain.user_traffic import user_traffic_totals
 from app.domain.subscription_open_apps import (
@@ -84,41 +84,12 @@ def _cabinet_redirect_url(*, extra_query: dict[str, str] | None = None) -> str:
     return path
 
 
-def _infer_public_origin_from_request(request: Request) -> str:
-    """Публичный origin, когда SUBSCRIPTION_PUBLIC_BASE_URL не задан.
-
-    Uvicorn по умолчанию доверяет только 127.0.0.1 для подстановки X-Forwarded-* в scope;
-    за nginx в Docker подключение часто идёт не с loopback — scheme остаётся http, хотя у
-    клиента HTTPS. Явно читаем заголовки, которые прокси уже выставил к бэкенду.
-    """
-
-    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
-    if forwarded_proto not in ("http", "https"):
-        forwarded_proto = request.url.scheme
-
-    forwarded_host = (request.headers.get("x-forwarded-host") or "").split(",")[0].strip()
-    host = forwarded_host or (request.headers.get("host") or "").split(",")[0].strip()
-    if host:
-        netloc = host
-    else:
-        netloc = request.url.netloc
-
-    return f"{forwarded_proto}://{netloc}".rstrip("/")
-
-
-def _resolve_public_base(request: Request, configured_base: str) -> str:
-    configured = subscription_public_base_from_setting(configured_base)
-    if configured:
-        return configured
-    # Происхождение из Host + X-Forwarded-Proto (прокси должен пробрасывать протокол, см. deploy/nginx).
-    return _infer_public_origin_from_request(request)
+def _resolve_public_base(_request: Request) -> str:
+    return site_address_to_public_origin(settings.site_address)
 
 
 def _resolve_spa_base(request: Request) -> str:
-    raw = (settings.subscription_open_spa_base_url or "").strip().rstrip("/")
-    if raw:
-        return raw
-    return _resolve_public_base(request, settings.subscription_public_base_url)
+    return _resolve_public_base(request)
 
 
 def _open_subscription_spa_url(
@@ -248,7 +219,7 @@ def _build_open_page_data(
             forced_platform=forced,
         )
 
-    base = _resolve_public_base(request, settings.subscription_public_base_url)
+    base = _resolve_public_base(request)
     suffix = (app.subscription_fetch_path_suffix or "").strip()
     subscription_url = f"{base}/sub/{user.token}{suffix}"
     deeplink = app.build_deeplink(subscription_url)
@@ -342,7 +313,7 @@ async def subscription_open_in_app(
             status_code=503,
             detail=(
                 "Откройте эту ссылку через сайт (Vite в dev или nginx в проде), а не напрямую на порт API — "
-                "нужен тот же путь /sub/…/open/… на хосте с Vue. Или задайте SUBSCRIPTION_OPEN_SPA_BASE_URL."
+                "нужен тот же путь /sub/…/open/… на хосте с Vue. Укажите SITE_ADRESS на URL этого сайта."
             ),
         )
     return RedirectResponse(url=url, status_code=302)

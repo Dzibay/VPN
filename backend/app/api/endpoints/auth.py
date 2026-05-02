@@ -421,8 +421,7 @@ async def telegram_site_link_start(
         raise HTTPException(
             status_code=503,
             detail=(
-                "Не задан публичный URL SPA: REFERRAL_SITE_BASE_URL или "
-                "SUBSCRIPTION_OPEN_SPA_BASE_URL / SUBSCRIPTION_PUBLIC_BASE_URL"
+                "Не задан публичный URL SPA: задайте SITE_ADRESS в окружении (полный URL или host[:port])."
             ),
         )
 

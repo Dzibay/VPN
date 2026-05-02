@@ -67,14 +67,12 @@ class Settings(BaseSettings):
             "Пусто — эндпоинты отвечают 503."
         ),
     )
-    subscription_public_base_url: str = Field(
+    site_address: str = Field(
         default="",
+        validation_alias="SITE_ADRESS",
         description=(
-            "Публичный HTTPS-Origin для ссылок на подписку и happ:// (напр. /sub/{token}/open/happ), "
-            "напр. https://api.vpn.example.com (без слэша в конце). Рекомендуется всегда указывать "
-            "с https:// для продакшена. Пусто — собирается из Host и X-Forwarded-Proto "
-            "(прокси обязан пробрасывать реальный протокол клиента, см. deploy/nginx). "
-            "При прямом доступе к uvicorn без прокси см. FORWARDED_ALLOW_IPS."
+            "Публичный URL сайта (env SITE_ADRESS): полный URL или host[:port] без схемы. "
+            "Единственный источник origin для SPA, рефералов, ссылок бота и редиректов /sub/…"
         ),
     )
     public_cabinet_url: str = Field(
@@ -83,21 +81,6 @@ class Settings(BaseSettings):
             "Куда вести при неверном /sub/{token}/open/{client}: личный кабинет. "
             "Пусто — относительный путь /cabinet на том же хосте. "
             "Иначе полный URL (https://vpn.example.com/cabinet) или путь (/cabinet)."
-        ),
-    )
-    subscription_open_spa_base_url: str = Field(
-        default="",
-        description=(
-            "Origin сайта с Vue, если он не совпадает с API: редирект GET /sub/{token}/open/{client} "
-            "ведёт на {этот_origin}/sub/{token}/open/{client} . Пусто — как subscription_public_base_url / Host."
-        ),
-    )
-    referral_site_base_url: str = Field(
-        default="",
-        description=(
-            "Публичный origin SPA (https://vpn.example.com без слэша). Рефералы: {base}/?ref= . "
-            "Также нужен для абсолютных ссылок из бота «добавить email» (…/link-from-telegram?token=). "
-            "Пусто — задайте один из: SUBSCRIPTION_OPEN_SPA_BASE_URL, SUBSCRIPTION_PUBLIC_BASE_URL."
         ),
     )
     telegram_bot_username: str = Field(

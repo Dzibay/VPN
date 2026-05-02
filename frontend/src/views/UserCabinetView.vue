@@ -670,10 +670,8 @@ onMounted(() => {
                     v-if="!effectiveReferralSiteUrl"
                     class="hint referral-copy-warn"
                   >
-                    Не удалось собрать ссылку: задайте публичный URL сайта
-                    (например <code class="inline-code">VITE_PUBLIC_SITE_URL</code> в
-                    фронтенде или <code class="inline-code">REFERRAL_SITE_BASE_URL</code> на
-                    сервере).
+                    Не удалось собрать ссылку: задайте в .env API переменную
+                    <code class="inline-code">SITE_ADRESS</code> (публичный URL сайта).
                   </p>
                   <button
                     type="button"

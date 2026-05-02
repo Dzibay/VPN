@@ -1,6 +1,6 @@
 # Продакшен-стек: Caddy (TLS) → Nginx (SPA + /api) → FastAPI; Prometheus; Postgres; Redis; RQ worker.
 # Запуск из каталога deploy/:
-#   cp env.production.example .env   # JWT, POSTGRES_PASSWORD, SITE_ADDRESS, TELEGRAM_BOT_USERNAME
+#   cp env.production.example .env   # JWT, POSTGRES_PASSWORD, SITE_ADRESS, TELEGRAM_BOT_USERNAME
 #   mkdir -p secrets/ssh  # положите ключ для PROVISION_SSH_KEY_PATH
 #   docker compose up -d --build
 #
@@ -127,7 +127,7 @@ services:
       context: ..
       dockerfile: deploy/nginx/Dockerfile
       args:
-        SITE_ADDRESS: ${SITE_ADDRESS:?SITE_ADDRESS is required (e.g. vpn.example.com)}
+        SITE_ADRESS: ${SITE_ADRESS:?SITE_ADRESS is required (e.g. vpn.example.com)}
     restart: unless-stopped
     depends_on:
       api:
@@ -142,7 +142,7 @@ services:
       - "443:443"
       - "443:443/udp"
     environment:
-      SITE_ADDRESS: ${SITE_ADDRESS:?SITE_ADDRESS is required (e.g. vpn.example.com)}
+      SITE_ADRESS: ${SITE_ADRESS:?SITE_ADRESS is required (e.g. vpn.example.com)}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

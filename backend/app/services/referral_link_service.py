@@ -12,6 +12,7 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.domain.subscription_public_base import site_address_to_public_origin
 from app.models.referral_link import ReferralLink
 from app.models.user import User
 
@@ -207,8 +208,8 @@ def increment_referral_counter_by_token(
 
 
 def referral_site_register_url(settings: object, token: str) -> str | None:
-    """Публичная ссылка на главную SPA с ?ref= ; пустой referral_site_base_url в env — None."""
-    base = (getattr(settings, "referral_site_base_url", None) or "").strip().rstrip("/")
+    """Публичная ссылка на главную SPA с ?ref= ."""
+    base = public_spa_base_url(settings)
     if not base:
         return None
     return f"{base}/?ref={quote(token, safe='')}"
@@ -235,19 +236,10 @@ def telegram_bot_public_page_url(settings: object) -> str | None:
 
 
 def public_spa_base_url(settings: object) -> str | None:
-    """
-    Публичный origin SPA (без завершающего «/») для абсолютных ссылок из API.
-    Порядок: REFERRAL_SITE_BASE_URL → SUBSCRIPTION_OPEN_SPA_BASE_URL → SUBSCRIPTION_PUBLIC_BASE_URL.
-    """
-    for attr in (
-        "referral_site_base_url",
-        "subscription_open_spa_base_url",
-        "subscription_public_base_url",
-    ):
-        base = (getattr(settings, attr, None) or "").strip().rstrip("/")
-        if base:
-            return base
-    return None
+    """Публичный origin SPA из SITE_ADRESS (settings.site_address), без других источников."""
+
+    from_site = site_address_to_public_origin(getattr(settings, "site_address", None) or "")
+    return from_site or None
 
 
 def referral_link_to_out(link: ReferralLink, settings: object):

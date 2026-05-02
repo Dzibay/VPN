@@ -6,8 +6,8 @@ const API_TARGET = process.env.VITE_DEV_API_TARGET || 'http://127.0.0.1:5000'
 
 /**
  * @param {Record<string, string>} env result of loadEnv
- * Приоритет: VITE_PUBLIC_SITE_URL (полный URL) → SITE_ADDRESS (как в deploy/.env: домен без схемы) → плейсхолдер.
- * SITE_ADDRESS в Docker передаётся в nginx-build через ARG/ENV.
+ * Приоритет: VITE_PUBLIC_SITE_URL (полный URL) → SITE_ADRESS (домен без схемы, как в deploy/.env) → плейсхолдер.
+ * SITE_ADRESS в Docker передаётся в nginx-build через ARG/ENV.
  */
 function siteUrlFromEnv(env) {
   const explicit = (
@@ -19,7 +19,7 @@ function siteUrlFromEnv(env) {
     .replace(/\/$/, '')
   if (explicit) return explicit
 
-  const host = (env.SITE_ADDRESS || process.env.SITE_ADDRESS || '').trim()
+  const host = (env.SITE_ADRESS || process.env.SITE_ADRESS || '').trim()
   if (host) {
     if (/^https?:\/\//i.test(host)) return host.replace(/\/$/, '')
     return `https://${host.replace(/\/$/, '')}`

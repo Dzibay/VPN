@@ -11,7 +11,7 @@ from app.api.deps import (
     require_telegram_bot_api_secret,
 )
 from app.core.config import settings
-from app.domain.subscription_public_base import subscription_public_base_from_setting
+from app.domain.subscription_public_base import site_address_to_public_origin
 from app.models.user import User
 from app.schemas.account import (
     TelegramAuthBody,
@@ -33,7 +33,7 @@ router = APIRouter(prefix="/telegram", tags=["telegram"])
     summary="Список VPN-клиентов для кнопок в интерфейсе бота (источник данных совпадает с GET /api/auth/me)",
 )
 async def subscription_open_clients() -> TelegramSubscriptionOpenClientsResponse:
-    base = subscription_public_base_from_setting(settings.subscription_public_base_url)
+    base = site_address_to_public_origin(settings.site_address)
     return TelegramSubscriptionOpenClientsResponse(
         clients=build_subscription_open_client_items(),
         public_base_url=base or None,
