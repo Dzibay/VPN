@@ -55,11 +55,14 @@ def create_app() -> FastAPI:
                 "name": "public",
             },
             {
+                "name": "telegram",
+            },
+            {
                 "name": "user",
             },
             {
                 "name": "admin",
-            },
+            }
         ],
     )
     attach_openapi(application)

@@ -219,7 +219,7 @@ async def register(
     "/telegram",
     response_model=TokenResponse,
     status_code=201,
-    tags=["public"],
+    tags=["telegram"],
     dependencies=[Depends(require_telegram_bot_api_secret)],
     summary="Аутентификация и регистрация через Telegram (обязательный заголовок X-Telegram-Bot-Secret)",
 )
@@ -283,7 +283,7 @@ async def telegram_auth(
 @router.post(
     "/telegram/link",
     response_model=TelegramWebLinkResponse,
-    tags=["public"],
+    tags=["telegram"],
     dependencies=[Depends(require_telegram_bot_api_secret)],
     summary="Привязка Telegram к учётной записи по одноразовому токену из личного кабинета",
 )
@@ -376,7 +376,7 @@ def _user_can_add_credentials_from_site(user: User) -> tuple[bool, str | None]:
 @router.post(
     "/telegram/site-link/start",
     response_model=TelegramSiteLinkStartResponse,
-    tags=["public"],
+    tags=["telegram"],
     dependencies=[Depends(require_telegram_bot_api_secret)],
     summary="Одноразовая ссылка на сайт: добавить email и пароль к учётке по telegram_id",
 )

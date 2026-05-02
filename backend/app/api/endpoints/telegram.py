@@ -23,7 +23,7 @@ from app.schemas.account import (
 )
 from app.schemas.users import UserRead
 
-router = APIRouter(prefix="/telegram", tags=["public"])
+router = APIRouter(prefix="/telegram", tags=["telegram"])
 
 
 @router.get(
