@@ -1,5 +1,5 @@
 import logging
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from urllib.parse import quote
 
@@ -321,12 +321,12 @@ async def telegram_link_web_account(
         last_name=body.last_name,
         topic_id=body.topic_id,
     )
-    profile = merge_telegram_auth_profile(auth_fragment, None)
 
     stmt = select(User).where(User.telegram_id == tid).limit(1)
     other = session.scalars(stmt).first()
 
     merged = False
+    telegram_props_base: dict[str, Any] | None = None
     if other is not None and other.id != target.id:
         if other.account_role not in ("client", "manager"):
             raise HTTPException(
@@ -338,8 +338,13 @@ async def telegram_link_web_account(
                 status_code=403,
                 detail="Целевой аккаунт не поддерживает объединение с дубликатом Telegram",
             )
+        telegram_props_base = (
+            dict(other.telegram_properties) if other.telegram_properties else {}
+        )
         merge_drop_user_into_keep(session, target, other)
         merged = True
+
+    profile = merge_telegram_auth_profile(auth_fragment, telegram_props_base)
 
     target.telegram_id = tid
     target.telegram_properties = profile
