@@ -4,7 +4,12 @@ import {
   defaultPathAfterLogin,
   isAdminRole,
 } from '../auth/permissions.js'
-import { getAccessToken, getSessionRole, isAdminJwtRequired } from '../auth/session.js'
+import {
+  consumeCabinetSsoFragment,
+  getAccessToken,
+  getSessionRole,
+  isAdminJwtRequired,
+} from '../auth/session.js'
 import AdminTablesPage from '../views/AdminTablesPage.vue'
 import ReferralFunnelView from '../views/ReferralFunnelView.vue'
 import ReferralTokensAdminPage from '../views/ReferralTokensAdminPage.vue'
@@ -100,6 +105,10 @@ function isAdminProtectedRoute(to) {
 }
 
 router.beforeEach(async (to, _from, next) => {
+  if (consumeCabinetSsoFragment(to.name)) {
+    return next({ name: 'cabinet', replace: true })
+  }
+
   const token = getAccessToken()
   const role = getSessionRole()
 

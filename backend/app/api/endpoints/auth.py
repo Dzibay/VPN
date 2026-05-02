@@ -398,7 +398,10 @@ def _user_can_add_credentials_from_site(user: User) -> tuple[bool, str | None]:
     response_model=TelegramSiteLinkStartResponse,
     tags=["telegram"],
     dependencies=[Depends(require_telegram_bot_api_secret)],
-    summary="Одноразовая ссылка на сайт: добавить email и пароль к учётке по telegram_id",
+    summary=(
+        "Ссылка на сайт для добавления email/пароля к учётке Telegram или немедленный JWT в кабинет, "
+        "если email и пароль уже заданы"
+    ),
 )
 async def telegram_site_link_start(
     body: TelegramSiteLinkStartBody,
@@ -410,6 +413,36 @@ async def telegram_site_link_start(
         raise HTTPException(
             status_code=404,
             detail="Пользователь с таким Telegram не найден. Запустите бота и войдите в аккаунт.",
+        )
+
+    if user.account_role == "admin":
+        raise HTTPException(
+            status_code=409,
+            detail="Недопустимо для аккаунта администратора",
+        )
+
+    mail = (getattr(user, "email", None) or "").strip()
+    if mail and user.password_hash:
+        base = public_spa_base_url(settings)
+        if not base:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Не задан публичный URL SPA: задайте SITE_ADRESS в окружении (полный URL или host[:port])."
+                ),
+            )
+        jwt_role = _jwt_role_for_user(user)
+        try:
+            token = create_access_token(settings, role=jwt_role, user_id=user.id)
+        except ValueError as e:
+            raise HTTPException(status_code=503, detail=str(e)) from e
+        cabinet_url = f"{base}/cabinet#tg_sso_token={token}"
+        return TelegramSiteLinkStartResponse(
+            site_url=None,
+            access_token=token,
+            token_type="bearer",
+            role=jwt_role,
+            cabinet_url=cabinet_url,
         )
 
     ok, reason = _user_can_add_credentials_from_site(user)
@@ -432,7 +465,13 @@ async def telegram_site_link_start(
         raise HTTPException(status_code=503, detail="Redis недоступен") from None
 
     site_url = f"{base}/link-from-telegram?token={quote(token_val, safe='')}"
-    return TelegramSiteLinkStartResponse(site_url=site_url)
+    return TelegramSiteLinkStartResponse(
+        site_url=site_url,
+        access_token=None,
+        token_type="bearer",
+        role=None,
+        cabinet_url=None,
+    )
 
 
 @router.get(

@@ -130,9 +130,9 @@ watch(linkToken, (next, prev) => {
 
       <div v-if="!preview.can_add_credentials" class="card card-pad">
         <p class="muted">
-          К этому аккаунту уже привязан email. Откройте сайт через
-          <RouterLink class="inl" to="/login">«Вход»</RouterLink>
-          с паролем.
+          К этому аккаунту уже указан email. Если пароль для сайта уже задан — откройте личный кабинет через
+          кнопку в Telegram-боте или войдите через
+          <RouterLink class="inl" to="/login">«Вход»</RouterLink>.
         </p>
       </div>
 

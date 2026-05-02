@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
 class SubscriptionOpenClientItem(BaseModel):
@@ -288,9 +288,41 @@ class TelegramSiteLinkStartBody(BaseModel):
 
 
 class TelegramSiteLinkStartResponse(BaseModel):
-    site_url: str = Field(
-        description="Страница сайта с query token=… (одноразово, ~15 минут).",
+    """Ответ боту: либо одноразовая ссылка на форму email/пароль, либо JWT и URL кабинета (уже есть вход на сайте)."""
+
+    site_url: str | None = Field(
+        None,
+        description="Страница /link-from-telegram?token=… (~15 минут), если нужно задать email/пароль; иначе null.",
     )
+    access_token: str | None = Field(
+        None,
+        description="JWT Bearer (14 дней), если у пользователя уже есть email и password_hash.",
+    )
+    token_type: str = Field(
+        default="bearer",
+        description="При режиме JWT всегда bearer; при режиме ссылки может игнорироваться клиентом.",
+    )
+    role: Literal["admin", "user", "manager"] | None = Field(
+        None,
+        description="Роль в JWT при режиме немедленного входа.",
+    )
+    cabinet_url: str | None = Field(
+        None,
+        description=(
+            "SPA /cabinet с фрагментом #tg_sso_token=<JWT> для сохранения сессии в браузере без формы; "
+            "только при режиме немедленного входа."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _exclusive_flow(self) -> "TelegramSiteLinkStartResponse":
+        link_flow = bool(self.site_url)
+        jwt_flow = bool(self.access_token and self.role and self.cabinet_url)
+        if link_flow == jwt_flow:
+            raise ValueError(
+                "Задайте ровно один сценарий: site_url для формы или связку access_token + role + cabinet_url для входа.",
+            )
+        return self
 
 
 class TelegramSiteLinkPreviewResponse(BaseModel):

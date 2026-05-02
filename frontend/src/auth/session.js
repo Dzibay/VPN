@@ -57,3 +57,49 @@ export function clearSession() {
   localStorage.removeItem(ROLE_KEY)
   invalidateAdminJwtProbe()
 }
+
+/** Payload JWT без проверки подписи (только для извлечения role/exp после выдачи API). */
+function parseJwtPayloadUnsafe(token) {
+  const parts = String(token).split('.')
+  if (parts.length !== 3) return null
+  let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+  const pad = base64.length % 4
+  if (pad) base64 += '='.repeat(4 - pad)
+  try {
+    const json = atob(base64)
+    return JSON.parse(json)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Переход из Telegram с URL вида /cabinet#tg_sso_token=<JWT>: сохранить сессию и убрать фрагмент из истории.
+ * @returns {boolean} true если фрагмент обработан
+ */
+export function consumeCabinetSsoFragment(routeName) {
+  if (routeName !== 'cabinet' || typeof window === 'undefined') return false
+  const hash = window.location.hash || ''
+  if (!hash.startsWith('#tg_sso_token=')) return false
+  const jwt = hash.slice('#tg_sso_token='.length).trim()
+  const clean = `${window.location.pathname}${window.location.search}`
+  if (!jwt) {
+    window.history.replaceState(window.history.state, '', clean)
+    return false
+  }
+  const payload = parseJwtPayloadUnsafe(jwt)
+  const role = payload?.role
+  const invalid =
+    !payload ||
+    (role !== 'user' && role !== 'manager' && role !== 'admin') ||
+    (payload.exp != null &&
+      typeof payload.exp === 'number' &&
+      payload.exp * 1000 < Date.now())
+  if (invalid) {
+    window.history.replaceState(window.history.state, '', clean)
+    return false
+  }
+  setSession(jwt, role)
+  window.history.replaceState(window.history.state, '', clean)
+  return true
+}
