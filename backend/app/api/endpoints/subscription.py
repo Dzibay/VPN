@@ -4,7 +4,7 @@
 Перед выдачей списка узлов обновляется servers.load_percent из Prometheus, затем
 узлы сортируются по возрастанию нагрузки (как и раньше).
 
-Ответы ``GET/HEAD /sub/{token}`` и ``GET /sub/{token}/json`` отдают метаданные в HTTP-заголовках
+Ответы ``GET/HEAD /sub/{token}``, ``GET /sub/{token}/json`` и ``GET /sub/{token}/clash`` отдают метаданные в HTTP-заголовках
 в форме Happ (``subscription-userinfo``, ``profile-update-interval``, ``profile-title``, …;
 см. https://www.happ.su/main/ru/dev-docs/app-management#standartnye-parametry) и тот же
 формат ``subscription-userinfo`` (upload, download, total, expire), что используют
@@ -37,10 +37,12 @@ from app.domain.subscription_open_apps import (
     get_subscription_open_app,
     list_subscription_open_app_codes,
 )
+from app.models.server import Server
 from app.models.user import User
 from app.schemas.subscription_open_page import SubscriptionOpenPageData
 from app.schemas.users import SubscriptionPayload
 from app.services.subscription_delivery import (
+    build_clash_subscription_yaml,
     build_subscription_payload,
     subscription_servers_after_prometheus_sync,
 )
@@ -154,9 +156,9 @@ def _open_redirect_would_loop(request: Request, redirect_url: str) -> bool:
     )
 
 
-async def _subscription_payload_for_token(
+async def _subscription_payload_rows_for_token(
     subscription_token: str, session: ReadonlySessionDep
-) -> tuple[SubscriptionPayload, User]:
+) -> tuple[SubscriptionPayload, User, list[Server]]:
     user = table_select_one(session, User, filters={"token": subscription_token})
     if user is None:
         raise HTTPException(status_code=404, detail="Неизвестный токен")
@@ -171,10 +173,20 @@ async def _subscription_payload_for_token(
                 subscription_base64="",
             ),
             user,
+            [],
         )
 
     rows = await run_in_threadpool(subscription_servers_after_prometheus_sync)
-    return build_subscription_payload(user, rows), user
+    return build_subscription_payload(user, rows), user, rows
+
+
+async def _subscription_payload_for_token(
+    subscription_token: str, session: ReadonlySessionDep
+) -> tuple[SubscriptionPayload, User]:
+    payload, user, _rows = await _subscription_payload_rows_for_token(
+        subscription_token, session
+    )
+    return payload, user
 
 
 def _subscription_client_metadata_headers(
@@ -237,7 +249,8 @@ def _build_open_page_data(
         )
 
     base = _resolve_public_base(request, settings.subscription_public_base_url)
-    subscription_url = f"{base}/sub/{user.token}"
+    suffix = (app.subscription_fetch_path_suffix or "").strip()
+    subscription_url = f"{base}/sub/{user.token}{suffix}"
     deeplink = app.build_deeplink(subscription_url)
     sl: AppStoreLinks = app.store_links
     store_json = sl.to_public_json_dict() if sl.any() else None
@@ -367,6 +380,45 @@ async def subscription_base64_by_token(
     return Response(
         content=payload.subscription_base64,
         media_type="text/plain; charset=utf-8",
+        headers=headers,
+    )
+
+
+@router.head(
+    "/sub/{subscription_token}/clash",
+    summary="HEAD подписки Clash: без тела, те же заголовки метаданных",
+    response_class=Response,
+)
+async def subscription_clash_head_by_token(
+    request: Request,
+    session: ReadonlySessionDep,
+    subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
+) -> Response:
+    user = table_select_one(session, User, filters={"token": subscription_token})
+    if user is None:
+        raise HTTPException(status_code=404, detail="Неизвестный токен")
+    headers = _subscription_client_metadata_headers(session, user, request=request)
+    return Response(content="", media_type="text/plain; charset=utf-8", headers=headers)
+
+
+@router.get(
+    "/sub/{subscription_token}/clash",
+    summary="Подписка для Clash / FlClashX / Stash: YAML (Clash Meta), не Base64",
+    response_class=Response,
+)
+async def subscription_clash_yaml_by_token(
+    request: Request,
+    session: ReadonlySessionDep,
+    subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
+) -> Response:
+    _payload, user, rows = await _subscription_payload_rows_for_token(
+        subscription_token, session
+    )
+    headers = _subscription_client_metadata_headers(session, user, request=request)
+    yaml_body = build_clash_subscription_yaml(user, rows)
+    return Response(
+        content=yaml_body,
+        media_type="text/yaml; charset=utf-8",
         headers=headers,
     )
 

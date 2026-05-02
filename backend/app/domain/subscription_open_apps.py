@@ -7,11 +7,12 @@
 (см. ``app.domain.subscription_userinfo`` и документацию Happ, Stash Wiki, Clash Verge Rev).
 
 - happ: сырая ссылка в path — happ://add/https://…/sub/{token}
-- Stash, Clash Meta, v2rayNG (url), flclashx, koala-clash, prizrak-box: в query
-  передаётся url=… (сырая строка HTTPS URL без percent-encoding)
+- Stash, Clash Meta, flclashx, koala-clash, prizrak-box: в query url=… указывает на
+  ``GET /sub/{token}/clash`` (тело — YAML Clash Meta), не на Base64-подписку ``/sub/{token}``.
+- v2rayNG: url на ``/sub/{token}`` (Base64 со строками vless://); по UrlSchemeActivity
+  читаются только query url и fragment (имя), не name=.
 - Shadowrocket: shadowrocket://add/sub://<base64(UTF-8 ссылки)>?remark=…
   (3x-ui / community, иначе импорт не срабатывает; не путать с urlencoding в path)
-- v2rayNG: по UrlSchemeActivity читается только query url и fragment (имя), не name=
 - Streisand: панели (напр. 3x-ui) — streisand://install-subscription?url=…
 - v2raytun: v2raytun://import/{subscription} (сырая ссылка в path)
 
@@ -144,6 +145,8 @@ class SubscriptionOpenApp:
     build_deeplink: Callable[[str], str]
     # Ссылки на магазины / сайт — выбор по userAgent в HTML
     store_links: AppStoreLinks = field(default_factory=AppStoreLinks)
+    # Хвост пути после /sub/{token}: для Clash-клиентов — /clash (YAML), иначе пусто (Base64 vless).
+    subscription_fetch_path_suffix: str = ""
 
 
 def _sub_url_trim(subscription_https_url: str) -> str:
@@ -301,23 +304,37 @@ def _app(
     client_code: str,
     name: str,
     fn: Callable[[str], str],
+    *,
+    subscription_fetch_path_suffix: str = "",
 ) -> SubscriptionOpenApp:
     return SubscriptionOpenApp(
-        client_code, name, fn, _STORE.get(client_code, AppStoreLinks())
+        client_code,
+        name,
+        fn,
+        _STORE.get(client_code, AppStoreLinks()),
+        subscription_fetch_path_suffix=subscription_fetch_path_suffix,
     )
 
 
 SUBSCRIPTION_OPEN_APPS: dict[str, SubscriptionOpenApp] = {
     "happ": _app("happ", "Happ", _happ_deeplink),
-    "stash": _app("stash", "Stash", _stash_deeplink),
+    "stash": _app("stash", "Stash", _stash_deeplink, subscription_fetch_path_suffix="/clash"),
     "shadowrocket": _app("shadowrocket", "Shadowrocket", _shadowrocket_deeplink),
     "streisand": _app("streisand", "Streisand", _streisand_deeplink),
-    "flclashx": _app("flclashx", "FLClashX", _flclashx_deeplink),
-    "clashmeta": _app("clashmeta", "Clash Meta", _clashmeta_deeplink),
+    "flclashx": _app(
+        "flclashx", "FLClashX", _flclashx_deeplink, subscription_fetch_path_suffix="/clash"
+    ),
+    "clashmeta": _app(
+        "clashmeta", "Clash Meta", _clashmeta_deeplink, subscription_fetch_path_suffix="/clash"
+    ),
     "v2rayng": _app("v2rayng", "v2rayNG", _v2rayng_deeplink),
     "v2raytun": _app("v2raytun", "v2RayTun", _v2raytun_deeplink),
-    "koala-clash": _app("koala-clash", "Koala Clash", _koala_clash_deeplink),
-    "prizrak-box": _app("prizrak-box", "Prizrak Box", _prizrak_box_deeplink),
+    "koala-clash": _app(
+        "koala-clash", "Koala Clash", _koala_clash_deeplink, subscription_fetch_path_suffix="/clash"
+    ),
+    "prizrak-box": _app(
+        "prizrak-box", "Prizrak Box", _prizrak_box_deeplink, subscription_fetch_path_suffix="/clash"
+    ),
 }
 
 

@@ -1,16 +1,19 @@
-"""Формирование ответа публичной подписки (/sub/...): узлы, vless://, Base64."""
+"""Формирование ответа публичной подписки (/sub/...): узлы, vless://, Base64, YAML Clash."""
 
 from __future__ import annotations
 
 import base64
 import logging
 from typing import Any
+
+import yaml
 from urllib.parse import quote, urlencode
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database.session import SessionLocal
+from app.domain.subscription_open_apps import SUBSCRIPTION_IMPORT_DISPLAY_NAME
 from app.models.server import Server
 from app.models.user import User
 from app.schemas.users import SubscriptionPayload
@@ -155,6 +158,87 @@ def _server_to_subscription_dict(
         "dest": s.reality_dest,
         "server_names": s.reality_server_names,
     }
+
+
+def _unique_clash_proxy_name(base_label: str, seen: dict[str, int]) -> str:
+    b = (base_label or "").strip() or "node"
+    if b not in seen:
+        seen[b] = 0
+        return b
+    seen[b] += 1
+    return f"{b} ({seen[b]})"
+
+
+def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
+    """Clash Meta: VLESS + REALITY; то же множество узлов, что и в Base64-подписке."""
+    client_uuid = (user.vless_uuid or "").strip()
+    exit_ids_referenced: set[int] = {
+        int(s.cascade_next_server_id)
+        for s in rows
+        if s.cascade_next_server_id is not None
+    }
+    proxies: list[dict[str, Any]] = []
+    names_seen: dict[str, int] = {}
+    for s in rows:
+        if (
+            _vless_reality_share_uri(
+                s,
+                client_uuid=client_uuid,
+                exit_ids_referenced=exit_ids_referenced,
+            )
+            is None
+        ):
+            continue
+        label = _node_subscription_label(s, exit_ids_referenced=exit_ids_referenced)
+        name = _unique_clash_proxy_name(label, names_seen)
+        pbk = (s.reality_public_key or "").strip()
+        sid = (s.reality_short_id or "").strip()
+        flow = (s.vless_flow or "").strip() or "xtls-rprx-vision"
+        fp = (s.reality_fingerprint or "").strip() or "chrome"
+        sni = _primary_sni(s.reality_server_names, s.reality_dest)
+        host = (s.host or "").strip()
+        short_ids = ["", sid] if sid else [""]
+        proxies.append(
+            {
+                "name": name,
+                "type": "vless",
+                "server": host,
+                "port": int(s.port),
+                "uuid": client_uuid,
+                "network": "tcp",
+                "tls": True,
+                "udp": True,
+                "flow": flow,
+                "servername": sni,
+                "reality-opts": {
+                    "public-key": pbk,
+                    "short-id": short_ids,
+                },
+                "client-fingerprint": fp,
+            }
+        )
+    group_name = SUBSCRIPTION_IMPORT_DISPLAY_NAME
+    proxy_names = [p["name"] for p in proxies]
+    if not proxy_names:
+        doc: dict[str, Any] = {"proxies": [], "proxy-groups": [], "rules": []}
+    else:
+        doc = {
+            "proxies": proxies,
+            "proxy-groups": [
+                {
+                    "name": group_name,
+                    "type": "select",
+                    "proxies": proxy_names,
+                }
+            ],
+            "rules": [f"MATCH,{group_name}"],
+        }
+    return yaml.safe_dump(
+        doc,
+        sort_keys=False,
+        allow_unicode=True,
+        default_flow_style=False,
+    )
 
 
 def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPayload:

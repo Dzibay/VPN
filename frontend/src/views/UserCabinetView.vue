@@ -5,6 +5,7 @@ import {
   detectStorePlatform,
   fetchJson,
   sitePublicUrl,
+  subscriptionClashPublicUrl,
   subscriptionOpenPath,
   subscriptionPublicUrl,
 } from '../api/client.js'
@@ -313,6 +314,11 @@ const subscriptionUrl = computed(() => {
   return t ? subscriptionPublicUrl(String(t)) : ''
 })
 
+const subscriptionClashUrl = computed(() => {
+  const t = me.value?.subscription_token
+  return t ? subscriptionClashPublicUrl(String(t)) : ''
+})
+
 async function copySubscriptionUrl() {
   const url = subscriptionUrl.value
   if (!url) return
@@ -455,7 +461,11 @@ onMounted(() => {
               {{ subscriptionCopied ? 'Скопировано' : 'Скопировать ссылку подписки' }}
             </button>
             <p class="hint hint-below-copy">
-              Используйте в VPN-клиенте как subscription URL (если поддерживается).
+              Ссылка выше — для клиентов вроде Happ (после декодирования Base64 — строки
+              <span class="mono">vless://</span>).
+              Для FlClashX, Clash Meta и других клиентов на Clash используйте подписку YAML:
+              <span class="mono">{{ subscriptionClashUrl }}</span>
+              (скопируйте вручную при необходимости).
             </p>
           </div>
 

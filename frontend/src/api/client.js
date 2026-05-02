@@ -100,8 +100,9 @@ export async function fetchJson(path, options = {}) {
 }
 
 /**
- * URL подписки для VPN-клиента: GET возвращает text/plain — одна строка Base64.
+ * URL подписки для VPN-клиента: GET возвращает text/plain — одна строка Base64 (строки vless:// после декодирования).
  * JSON с узлами и vless://: …/sub/{token}/json
+ * Clash / FlClashX / Stash: …/sub/{token}/clash (YAML).
  * В проде задайте VITE_SUBSCRIPTION_BASE_URL=https://api.yourvpn.com
  */
 export function subscriptionPublicUrl(token) {
@@ -114,6 +115,19 @@ export function subscriptionPublicUrl(token) {
     return `${window.location.origin}/sub/${token}`
   }
   return `/sub/${token}`
+}
+
+/** Та же база, что у {@link subscriptionPublicUrl}, путь `/sub/{token}/clash` (YAML для Clash Meta и совместимых клиентов). */
+export function subscriptionClashPublicUrl(token) {
+  const base =
+    import.meta.env.VITE_SUBSCRIPTION_BASE_URL?.replace(/\/$/, '') ?? ''
+  if (base) {
+    return `${base}/sub/${token}/clash`
+  }
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}/sub/${token}/clash`
+  }
+  return `/sub/${token}/clash`
 }
 
 /** @typedef {'windows'|'android'|'ios'|'macos'|'linux'} StorePlatform */
