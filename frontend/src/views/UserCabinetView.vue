@@ -94,14 +94,6 @@ const profileTelegramUsername = computed(() => {
   return raw.startsWith('@') ? raw : `@${raw}`
 })
 
-const profileTelegramFullName = computed(() => {
-  const p = me.value?.telegram_properties
-  const fn = telegramPropTrim(p, 'first_name')
-  const ln = telegramPropTrim(p, 'last_name')
-  const parts = [fn, ln].filter(Boolean)
-  return parts.length ? parts.join(' ') : ''
-})
-
 /** @type {import('vue').Ref<null | Record<string, unknown>>} */
 const myReferralLink = ref(null)
 const myReferralLoading = ref(false)
@@ -545,15 +537,12 @@ onMounted(() => {
                 <dt>Telegram</dt>
                 <dd>
                   <template v-if="profileTelegramLinked">
-                    <div v-if="me.telegram_id != null" class="mono">
-                      {{ me.telegram_id }}
-                    </div>
                     <div v-if="profileTelegramUsername">
                       {{ profileTelegramUsername }}
                     </div>
-                    <div v-if="profileTelegramFullName">
-                      {{ profileTelegramFullName }}
-                    </div>
+                    <p v-else class="hint profile-tg-no-username-hint">
+                      Никнейм в Telegram (@username) не указан.
+                    </p>
                   </template>
                   <template v-else>
                     <p class="hint profile-tg-unlinked-hint">
