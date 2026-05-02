@@ -197,7 +197,6 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
         fp = (s.reality_fingerprint or "").strip() or "chrome"
         sni = _primary_sni(s.reality_server_names, s.reality_dest)
         host = (s.host or "").strip()
-        short_ids = ["", sid] if sid else [""]
         proxies.append(
             {
                 "name": name,
@@ -212,7 +211,7 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
                 "servername": sni,
                 "reality-opts": {
                     "public-key": pbk,
-                    "short-id": short_ids,
+                    "short-id": sid,
                 },
                 "client-fingerprint": fp,
             }
