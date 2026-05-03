@@ -24,15 +24,31 @@ log = logging.getLogger("app.subscription_delivery")
 _LOAD_SYNC_HOURS = 24
 
 
+def subscription_servers_for_delivery(rows: list[Server]) -> list[Server]:
+    """
+    Узлы, которые попадают в тело подписки (JSON / Base64 / Clash).
+
+    Если в выдаче есть пара каскада (РФ-вход с cascade_next_server_id), отдельная
+    строка для внешнего exit не показывается — пользователь подключается только ко
+    входу. Имя узла — как у одиночного сервера (без пометки «каскад»).
+    Одиночные серверы и РФ-вход без привязанного exit не меняются.
+    """
+    referenced_exit_ids = {
+        int(s.cascade_next_server_id)
+        for s in rows
+        if s.cascade_next_server_id is not None
+    }
+    if not referenced_exit_ids:
+        return rows
+    return [s for s in rows if s.id not in referenced_exit_ids]
+
+
 def _subscription_server_rows(session: Session) -> list[Server]:
     """
-    Все валидные узлы для ссылки в подписке.
+    Все валидные узлы для ссылки в подписке (до фильтра каскада на выдаче).
 
-    Каскад (РФ → exit) не скрывает ни одну ногу: и вход (is_cascade_ru + cascade_next),
-    и внешний id из пары, и полностью одиночный сервер (без участия в каскаде) попадают
-    сюда по тем же критериям is_active, provision_ready, REALITY в БД. Пользователь
-    в клиенте выбирает: прямой vless:// на зарубежный хост и/или на РФ-вход (трафик
-    дальше пойдёт на exit по внутреннему каскаду на стороне Xray).
+    Дальше ``subscription_servers_for_delivery`` убирает внешние exit из пар
+    «РФ-вход → exit», чтобы в клиенте не дублировать прямой доступ к exit.
     """
     stmt = (
         select(Server)
@@ -73,12 +89,11 @@ def _node_subscription_label(
     exit_ids_referenced: set[int],
 ) -> str:
     """
-    Имя для подписки (vless #fragment и JSON name): одиночные узлы без пометок;
-    RU-вход с каскадом / без; exit, на который ссылается каскад (прямое подключение).
+    Имя для подписки (vless #fragment и JSON name): одиночные узлы и РФ-вход с exit
+    без отдельной пометки; РФ-вход без exit — «(RU, прямой)»; для exit из пары
+    «(прямой)» — только если узел ещё попал в выдачу (обычно exit скрыт).
     """
     base = (s.name or s.country or s.host or "node").strip()
-    if s.is_cascade_ru_entry and s.cascade_next_server_id is not None:
-        return f"{base} (каскад)"
     if s.is_cascade_ru_entry and s.cascade_next_server_id is None:
         return f"{base} (RU, прямой)"
     if s.id in exit_ids_referenced and not s.is_cascade_ru_entry:
@@ -171,6 +186,7 @@ def _unique_clash_proxy_name(base_label: str, seen: dict[str, int]) -> str:
 
 def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
     """Clash Meta: VLESS + REALITY; то же множество узлов, что и в Base64-подписке."""
+    rows = subscription_servers_for_delivery(rows)
     client_uuid = (user.vless_uuid or "").strip()
     exit_ids_referenced: set[int] = {
         int(s.cascade_next_server_id)
@@ -241,6 +257,7 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
 
 
 def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPayload:
+    rows = subscription_servers_for_delivery(rows)
     client_uuid = (user.vless_uuid or "").strip()
     # id узлов, на которые RU-входа с каскадом ссылаются как на exit
     exit_ids_referenced: set[int] = {
