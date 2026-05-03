@@ -29,6 +29,12 @@ async def lifespan(_app: FastAPI):
         from app.services.subscription_daily_xray_sync import subscription_daily_xray_sync_loop
 
         bg_tasks.append(asyncio.create_task(subscription_daily_xray_sync_loop()))
+    if settings.server_load_prometheus_sync_schedule_enabled and (
+        settings.prometheus_base_url or ""
+    ).strip():
+        from app.services.server_load_scheduler import periodic_server_load_from_prometheus_loop
+
+        bg_tasks.append(asyncio.create_task(periodic_server_load_from_prometheus_loop()))
     try:
         yield
     finally:

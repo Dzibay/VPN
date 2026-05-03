@@ -297,6 +297,31 @@ class Settings(BaseSettings):
             "Пусто — эндпоинт отвечает 404."
         ),
     )
+    server_load_prometheus_sync_schedule_enabled: bool = Field(
+        default=True,
+        description=(
+            "Включить фоновую синхронизацию servers.load_percent из Prometheus по расписанию (lifespan API). "
+            "Запросы подписки /sub только читают уже сохранённые значения из БД."
+        ),
+    )
+    server_load_prometheus_sync_interval_seconds: int = Field(
+        default=300,
+        ge=60,
+        le=86400,
+        description=(
+            "Интервал между синками load_percent из Prometheus (секунды). По умолчанию 300 (5 минут). "
+            "Переменная: SERVER_LOAD_PROMETHEUS_SYNC_INTERVAL_SECONDS."
+        ),
+    )
+    server_load_prometheus_sync_initial_delay_seconds: int = Field(
+        default=30,
+        ge=0,
+        le=3600,
+        description=(
+            "Задержка перед первым тиком синхронизации нагрузки после старта процесса API (секунды). "
+            "Переменная: SERVER_LOAD_PROMETHEUS_SYNC_INITIAL_DELAY_SECONDS."
+        ),
+    )
 
     @computed_field
     def sqlalchemy_database_url(self) -> str:

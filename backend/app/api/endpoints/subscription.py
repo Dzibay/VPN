@@ -1,8 +1,9 @@
 """
 Публичный эндпоинт подписки (без префикса /api — стабильные ссылки /sub/{subscription_token}).
 
-Перед выдачей списка узлов обновляется servers.load_percent из Prometheus, затем
-узлы сортируются по возрастанию нагрузки (как и раньше).
+Список узлов строится из БД и сортируется по ``servers.load_percent`` (актуализация из Prometheus —
+фоновый планировщик в процессе API, по умолчанию каждые 5 минут, см. настройки
+``SERVER_LOAD_PROMETHEUS_SYNC_*``).
 
 Ответы ``GET/HEAD /sub/{token}``, ``GET /sub/{token}/json`` и ``GET /sub/{token}/clash`` отдают метаданные в HTTP-заголовках
 в форме Happ (``subscription-userinfo``, ``profile-update-interval``, ``profile-title``, …;
@@ -51,7 +52,7 @@ from app.schemas.users import SubscriptionPayload
 from app.services.subscription_delivery import (
     build_clash_subscription_yaml,
     build_subscription_payload,
-    subscription_servers_after_prometheus_sync,
+    subscription_servers_from_db,
 )
 from app.services.subscription_devices import (
     SUBSCRIPTION_DEVICE_LIMIT_ANNOUNCE,
@@ -170,7 +171,7 @@ async def _subscription_payload_rows_for_resolved_user(
             [],
         )
 
-    rows = await run_in_threadpool(subscription_servers_after_prometheus_sync)
+    rows = await run_in_threadpool(subscription_servers_from_db)
     return build_subscription_payload(user, rows), user, rows
 
 

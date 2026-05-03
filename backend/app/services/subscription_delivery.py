@@ -17,11 +17,8 @@ from app.domain.subscription_open_apps import SUBSCRIPTION_IMPORT_DISPLAY_NAME
 from app.models.server import Server
 from app.models.user import User
 from app.schemas.users import SubscriptionPayload
-from app.services.server_load_sync import sync_all_servers_load_from_prometheus
 
 log = logging.getLogger("app.subscription_delivery")
-
-_LOAD_SYNC_HOURS = 24
 
 
 def subscription_servers_for_delivery(rows: list[Server]) -> list[Server]:
@@ -63,10 +60,12 @@ def _subscription_server_rows(session: Session) -> list[Server]:
     return list(session.scalars(stmt).all())
 
 
-def subscription_servers_after_prometheus_sync() -> list[Server]:
+def subscription_servers_from_db() -> list[Server]:
+    """
+    Узлы для выдачи в подписке: только чтение из БД (servers.load_percent обновляет фоновый планировщик).
+    """
     db = SessionLocal()
     try:
-        sync_all_servers_load_from_prometheus(db, hours=_LOAD_SYNC_HOURS)
         return _subscription_server_rows(db)
     finally:
         db.close()
