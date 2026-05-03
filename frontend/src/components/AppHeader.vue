@@ -16,16 +16,10 @@ function refreshSessions() {
 }
 
 const showGuestAuthLinks = computed(
-  () =>
-    route.name === 'home' ||
-    (route.name !== 'cabinet' && !hasToken.value),
+  () => !hasToken.value && route.name !== 'cabinet',
 )
 
-const showUserLogout = computed(
-  () =>
-    route.name === 'cabinet' ||
-    (route.name !== 'home' && hasToken.value),
-)
+const showUserLogout = computed(() => Boolean(hasToken.value))
 
 function logout() {
   clearSession()
