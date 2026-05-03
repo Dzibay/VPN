@@ -3,11 +3,13 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import AdminPageHeader from '../components/AdminPageHeader.vue'
 import AdminPageShell from '../components/AdminPageShell.vue'
+import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
 import RowActionsDropdown from '../components/RowActionsDropdown.vue'
 import { isAdminRole } from '../auth/permissions.js'
 import { getSessionRole } from '../auth/session.js'
 import { fetchJson, sitePublicUrl } from '../api/client.js'
+import { useTableSort } from '../utils/adminTableSort.js'
 
 const route = useRoute()
 const rows = ref([])
@@ -174,6 +176,25 @@ function siteUrlForRow(r) {
 function telegramUrlForRow(r) {
   return r.telegram_deep_link || ''
 }
+
+const referralSortAccessors = {
+  id: (r) => r.id,
+  token: (r) => String(r.token ?? '').toLowerCase(),
+  owner_kind: (r) => String(r.owner_kind ?? '').toLowerCase(),
+  owner_user_id: (r) => (r.owner_user_id != null ? r.owner_user_id : -1),
+  site: (r) => siteUrlForRow(r).toLowerCase(),
+  telegram: (r) => (telegramUrlForRow(r) || '').toLowerCase(),
+  clicks_count: (r) => Number(r.clicks_count) || 0,
+  registrations_count: (r) => Number(r.registrations_count) || 0,
+  payments_count: (r) => Number(r.payments_count) || 0,
+  created_at: (r) => Date.parse(r.created_at) || 0,
+}
+
+const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(
+  rows,
+  referralSortAccessors,
+  'id',
+)
 
 const copyHint = ref(null)
 /** id строки во время DELETE */
@@ -360,20 +381,91 @@ onMounted(() => {
     </section>
 
     <AdminTableWrap aria-label="Таблица реферальных токенов">
-      <table class="data-table">
+      <table class="admin-table">
         <thead>
           <tr>
-            <th>ID</th>
-            <th>Токен</th>
-            <th>Источник</th>
-            <th>User id</th>
-            <th>Сайт</th>
-            <th>Telegram</th>
-            <th class="num">Клики</th>
-            <th class="num">Рег.</th>
-            <th class="num">Оплаты</th>
-            <th>Создан</th>
-            <th class="col-actions">Действия</th>
+            <AdminSortTh
+              label="ID"
+              column-key="id"
+              align="right"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              @sort="toggleSort"
+            />
+            <AdminSortTh
+              label="Токен"
+              column-key="token"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              @sort="toggleSort"
+            />
+            <AdminSortTh
+              label="Источник"
+              column-key="owner_kind"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              @sort="toggleSort"
+            />
+            <AdminSortTh
+              label="User id"
+              column-key="owner_user_id"
+              align="right"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              @sort="toggleSort"
+            />
+            <AdminSortTh
+              label="Сайт"
+              column-key="site"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              @sort="toggleSort"
+            />
+            <AdminSortTh
+              label="Telegram"
+              column-key="telegram"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              @sort="toggleSort"
+            />
+            <AdminSortTh
+              label="Клики"
+              column-key="clicks_count"
+              align="right"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              @sort="toggleSort"
+            />
+            <AdminSortTh
+              label="Рег."
+              column-key="registrations_count"
+              align="right"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              @sort="toggleSort"
+            />
+            <AdminSortTh
+              label="Оплаты"
+              column-key="payments_count"
+              align="right"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              @sort="toggleSort"
+            />
+            <AdminSortTh
+              label="Создан"
+              column-key="created_at"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              @sort="toggleSort"
+            />
+            <AdminSortTh
+              label="Действия"
+              column-key="actions"
+              :sortable="false"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+            />
           </tr>
         </thead>
         <tbody>
@@ -387,12 +479,12 @@ onMounted(() => {
             <td colspan="11" class="muted">Пока нет записей</td>
           </tr>
           <tr
-            v-for="r in rows"
+            v-for="r in sortedRows"
             :key="r.id"
             :id="'ref-' + r.id"
             :class="{ 'ref-row-highlight': highlightRowId === r.id }"
           >
-            <td>{{ r.id }}</td>
+            <td class="num">{{ r.id }}</td>
             <td class="mono-cell">{{ r.token }}</td>
             <td>
               <span class="pill pill-mono" :title="r.owner_kind">{{ r.owner_kind }}</span>
@@ -614,26 +706,6 @@ onMounted(() => {
   color: var(--accent);
   font-weight: 600;
 }
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.85rem;
-}
-.data-table th,
-.data-table td {
-  padding: 0.55rem 0.65rem;
-  text-align: left;
-  border-bottom: 1px solid var(--card-border);
-}
-.data-table th {
-  font-weight: 700;
-  color: var(--muted);
-  background: var(--surface);
-}
-.data-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
 .owner-user-id-cell {
   vertical-align: middle;
 }
@@ -663,7 +735,7 @@ onMounted(() => {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.data-table tbody tr.ref-row-highlight td {
+.admin-table tbody tr.ref-row-highlight td {
   animation: refRowHighlight 3.2s ease-out forwards;
 }
 @keyframes refRowHighlight {

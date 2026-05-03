@@ -3,11 +3,13 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import AdminPageHeader from '../components/AdminPageHeader.vue'
 import AdminPageShell from '../components/AdminPageShell.vue'
+import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
 import { isAdminRole } from '../auth/permissions.js'
 import { getSessionRole } from '../auth/session.js'
 import { fetchJson } from '../api/client.js'
 import { formatTrafficBytes } from '../utils/formatTraffic.js'
+import { useTableSort } from '../utils/adminTableSort.js'
 
 const route = useRoute()
 
@@ -168,6 +170,22 @@ function telegramCell(u) {
   }
   return '—'
 }
+
+const clientSortAccessors = {
+  email: (u) => String(u.email ?? '').toLowerCase(),
+  telegram: (u) => telegramCell(u).toLowerCase(),
+  registered_at: (u) => Date.parse(u.registered_at) || 0,
+  subscription_until: (u) => Date.parse(u.subscription_until) || 0,
+  traffic: (u) => Number(u.total_traffic_bytes) || 0,
+  devices: (u) => Number(u.subscription_devices_count) || 0,
+  referral_link_id: (u) => (u.referral_link_id != null ? u.referral_link_id : -1),
+}
+
+const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(
+  rows,
+  clientSortAccessors,
+  'email',
+)
 
 async function load() {
   loading.value = true
@@ -354,16 +372,61 @@ onMounted(() => {
     </section>
 
     <AdminTableWrap aria-label="Таблица аналитики пользователей">
-      <table class="table">
+      <table class="admin-table">
         <thead>
           <tr>
-            <th>Email</th>
-            <th>Telegram</th>
-            <th>Регистрация</th>
-            <th>Подписка до</th>
-            <th class="num">Трафик (всего)</th>
-            <th class="num">Устройства</th>
-            <th class="num">ID реф. ссылки</th>
+            <AdminSortTh
+              label="Email"
+              column-key="email"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              @sort="toggleSort"
+            />
+            <AdminSortTh
+              label="Telegram"
+              column-key="telegram"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              @sort="toggleSort"
+            />
+            <AdminSortTh
+              label="Регистрация"
+              column-key="registered_at"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              @sort="toggleSort"
+            />
+            <AdminSortTh
+              label="Подписка до"
+              column-key="subscription_until"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              @sort="toggleSort"
+            />
+            <AdminSortTh
+              label="Трафик (всего)"
+              column-key="traffic"
+              align="right"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              @sort="toggleSort"
+            />
+            <AdminSortTh
+              label="Устройства"
+              column-key="devices"
+              align="right"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              @sort="toggleSort"
+            />
+            <AdminSortTh
+              label="ID реф. ссылки"
+              column-key="referral_link_id"
+              align="right"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              @sort="toggleSort"
+            />
           </tr>
         </thead>
         <tbody>
@@ -377,7 +440,7 @@ onMounted(() => {
             <td colspan="7" class="muted">Нет пользователей</td>
           </tr>
           <tr
-            v-for="u in rows"
+            v-for="u in sortedRows"
             :id="'client-' + u.id"
             :key="u.id"
             :class="{ 'client-row-highlight': highlightUserId === u.id }"
@@ -524,29 +587,6 @@ onMounted(() => {
   word-break: break-word;
 }
 
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.88rem;
-}
-.table th,
-.table td {
-  padding: 0.55rem 0.65rem;
-  text-align: left;
-  border-bottom: 1px solid var(--nav-border);
-  vertical-align: top;
-}
-.table th {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  white-space: nowrap;
-}
-.table .num {
-  text-align: right;
-  white-space: nowrap;
-}
 .ref-id-cell {
   display: flex;
   align-items: center;
@@ -573,7 +613,7 @@ onMounted(() => {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.table tbody tr.client-row-highlight td {
+.admin-table tbody tr.client-row-highlight td {
   animation: clientRowHighlight 3.2s ease-out forwards;
 }
 @keyframes clientRowHighlight {

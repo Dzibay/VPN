@@ -1,0 +1,91 @@
+/**
+ * Единый вид таблиц админки (внутри AdminTableWrap).
+ * Класс таблицы: admin-table
+ */
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  color: var(--text);
+}
+
+.admin-table th {
+  color: var(--muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  vertical-align: middle;
+}
+
+.admin-table th.admin-th--num,
+.admin-table td.num {
+  text-align: right;
+}
+
+.admin-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  margin: 0;
+  padding: 0.2rem 0.15rem;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-weight: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.admin-sort-btn:hover {
+  color: var(--text-h);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.admin-th--num .admin-sort-btn {
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.admin-sort-btn__label {
+  min-width: 0;
+  text-align: inherit;
+  line-height: 1.25;
+}
+
+.admin-sort-btn__icon {
+  font-size: 0.68rem;
+  opacity: 0.45;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-sort-btn:hover .admin-sort-btn__icon,
+.admin-th[aria-sort] .admin-sort-btn__icon {
+  opacity: 0.95;
+}
+
+.admin-th__static {
+  display: block;
+  padding: 0.2rem 0.15rem;
+}
+
+.admin-table th.row-actions-head {
+  width: 1%;
+  white-space: nowrap;
+}

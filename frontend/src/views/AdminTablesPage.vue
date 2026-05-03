@@ -9,11 +9,13 @@ import {
 } from 'vue'
 import AdminPageHeader from '../components/AdminPageHeader.vue'
 import AdminPageShell from '../components/AdminPageShell.vue'
+import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
 import UserRolePill from '../components/UserRolePill.vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { fetchJson, subscriptionPublicUrl } from '../api/client.js'
 import { formatTrafficBytes } from '../utils/formatTraffic.js'
+import { useTableSort } from '../utils/adminTableSort.js'
 
 const route = useRoute()
 
@@ -30,6 +32,61 @@ const servers = ref([])
 const serversCount = ref(null)
 const serversLoading = ref(false)
 const serversError = ref(null)
+
+function userTelegramSortKey(u) {
+  if (u.telegram_id != null) {
+    const un = (u.telegram_properties?.username || '').toLowerCase()
+    return `${String(u.telegram_id).padStart(20, '0')}\t${un}`
+  }
+  if (u.telegram_properties?.username) {
+    return String(u.telegram_properties.username).toLowerCase()
+  }
+  return ''
+}
+
+const userSortAccessors = {
+  id: (u) => u.id,
+  email: (u) => (u.email ?? '').toLowerCase(),
+  telegram: (u) => userTelegramSortKey(u),
+  role: (u) => (u.account_role ?? '').toLowerCase(),
+  registered_at: (u) => Date.parse(u.registered_at) || 0,
+  subscription_until: (u) => Date.parse(u.subscription_until) || 0,
+  subscription: (u) => (u.token ?? '').toLowerCase(),
+  traffic: (u) => Number(u.total_traffic_bytes) || 0,
+}
+
+const {
+  sortKey: userSortKey,
+  sortDir: userSortDir,
+  sortedRows: sortedUsers,
+  toggleSort: toggleUserSort,
+} = useTableSort(users, userSortAccessors, 'id')
+
+function serverCascadeSortKey(s) {
+  if (!s.is_cascade_ru_entry) return '0-external'
+  if (s.cascade_next_server_id) {
+    return `1-ru-${String(s.cascade_next_server_id).padStart(8, '0')}`
+  }
+  return '2-ru-no-exit'
+}
+
+const serverSortAccessors = {
+  id: (s) => s.id,
+  name: (s) => (s.name ?? '').toLowerCase(),
+  country: (s) => (s.country ?? '').toLowerCase(),
+  cascade: (s) => serverCascadeSortKey(s),
+  load: (s) => Number(s.load_percent) || 0,
+  cap: (s) => (s.network_cap_mbps != null ? Number(s.network_cap_mbps) : -1),
+  host: (s) => (s.host ?? '').toLowerCase(),
+  status: (s) => String(s.provision_status ?? '').toLowerCase(),
+}
+
+const {
+  sortKey: serverSortKey,
+  sortDir: serverSortDir,
+  sortedRows: sortedServers,
+  toggleSort: toggleServerSort,
+} = useTableSort(servers, serverSortAccessors, 'id')
 
 const modalOpen = ref(false)
 const creating = ref(false)
@@ -1258,23 +1315,73 @@ watch(formIsCascadeRuEntry, (v) => {
         Пока нет пользователей. Создайте первого.
       </div>
       <AdminTableWrap v-else-if="!usersLoading" aria-label="Таблица пользователей">
-        <table class="table">
+        <table class="admin-table">
           <thead>
             <tr>
-              <th>ID</th>
-              <th>Email</th>
-              <th>Telegram</th>
-              <th>Роль</th>
-              <th>Регистрация</th>
-              <th>Подписка до</th>
-              <th>Подписка</th>
-              <th class="num">Трафик</th>
-              <th />
+              <AdminSortTh
+                label="ID"
+                column-key="id"
+                align="right"
+                :sort-key="userSortKey"
+                :sort-dir="userSortDir"
+                @sort="toggleUserSort"
+              />
+              <AdminSortTh
+                label="Email"
+                column-key="email"
+                :sort-key="userSortKey"
+                :sort-dir="userSortDir"
+                @sort="toggleUserSort"
+              />
+              <AdminSortTh
+                label="Telegram"
+                column-key="telegram"
+                :sort-key="userSortKey"
+                :sort-dir="userSortDir"
+                @sort="toggleUserSort"
+              />
+              <AdminSortTh
+                label="Роль"
+                column-key="role"
+                :sort-key="userSortKey"
+                :sort-dir="userSortDir"
+                @sort="toggleUserSort"
+              />
+              <AdminSortTh
+                label="Регистрация"
+                column-key="registered_at"
+                :sort-key="userSortKey"
+                :sort-dir="userSortDir"
+                @sort="toggleUserSort"
+              />
+              <AdminSortTh
+                label="Подписка до"
+                column-key="subscription_until"
+                :sort-key="userSortKey"
+                :sort-dir="userSortDir"
+                @sort="toggleUserSort"
+              />
+              <AdminSortTh
+                label="Подписка"
+                column-key="subscription"
+                :sort-key="userSortKey"
+                :sort-dir="userSortDir"
+                @sort="toggleUserSort"
+              />
+              <AdminSortTh
+                label="Трафик"
+                column-key="traffic"
+                align="right"
+                :sort-key="userSortKey"
+                :sort-dir="userSortDir"
+                @sort="toggleUserSort"
+              />
+              <th class="row-actions-head" aria-label="Действия" />
             </tr>
           </thead>
           <tbody>
-            <tr v-for="u in users" :key="u.id">
-              <td>{{ u.id }}</td>
+            <tr v-for="u in sortedUsers" :key="u.id">
+              <td class="num">{{ u.id }}</td>
               <td>{{ u.email ?? '—' }}</td>
               <td>
                 <template v-if="u.telegram_id != null">
@@ -1439,23 +1546,74 @@ watch(formIsCascadeRuEntry, (v) => {
           </ul>
         </div>
         <AdminTableWrap aria-label="Таблица серверов">
-        <table class="table">
+        <table class="admin-table">
           <thead>
             <tr>
-              <th>ID</th>
-              <th>Название</th>
-              <th>Страна</th>
-              <th>Каскад</th>
-              <th>Нагрузка</th>
-              <th>Тариф Мбит/с</th>
-              <th>Host</th>
-              <th>Статус</th>
-              <th />
+              <AdminSortTh
+                label="ID"
+                column-key="id"
+                align="right"
+                :sort-key="serverSortKey"
+                :sort-dir="serverSortDir"
+                @sort="toggleServerSort"
+              />
+              <AdminSortTh
+                label="Название"
+                column-key="name"
+                :sort-key="serverSortKey"
+                :sort-dir="serverSortDir"
+                @sort="toggleServerSort"
+              />
+              <AdminSortTh
+                label="Страна"
+                column-key="country"
+                :sort-key="serverSortKey"
+                :sort-dir="serverSortDir"
+                @sort="toggleServerSort"
+              />
+              <AdminSortTh
+                label="Каскад"
+                column-key="cascade"
+                :sort-key="serverSortKey"
+                :sort-dir="serverSortDir"
+                @sort="toggleServerSort"
+              />
+              <AdminSortTh
+                label="Нагрузка"
+                column-key="load"
+                align="right"
+                :sort-key="serverSortKey"
+                :sort-dir="serverSortDir"
+                @sort="toggleServerSort"
+              />
+              <AdminSortTh
+                label="Тариф Мбит/с"
+                column-key="cap"
+                align="right"
+                :sort-key="serverSortKey"
+                :sort-dir="serverSortDir"
+                @sort="toggleServerSort"
+              />
+              <AdminSortTh
+                label="Host"
+                column-key="host"
+                :sort-key="serverSortKey"
+                :sort-dir="serverSortDir"
+                @sort="toggleServerSort"
+              />
+              <AdminSortTh
+                label="Статус"
+                column-key="status"
+                :sort-key="serverSortKey"
+                :sort-dir="serverSortDir"
+                @sort="toggleServerSort"
+              />
+              <th class="row-actions-head" aria-label="Действия" />
             </tr>
           </thead>
           <tbody>
-            <tr v-for="s in servers" :key="s.id">
-              <td>{{ s.id }}</td>
+            <tr v-for="s in sortedServers" :key="s.id">
+              <td class="num">{{ s.id }}</td>
               <td>{{ s.name ?? '—' }}</td>
               <td>{{ s.country || '—' }}</td>
               <td class="cascade-col">
@@ -1468,7 +1626,7 @@ watch(formIsCascadeRuEntry, (v) => {
                 </template>
                 <span v-else class="cascade-pill cascade-pill--ru">РФ (без exit)</span>
               </td>
-              <td class="mono">
+              <td class="mono num">
                 {{ s.load_percent ?? 0 }}%
                 <span
                   class="load-bar"
@@ -1478,7 +1636,7 @@ watch(formIsCascadeRuEntry, (v) => {
                   aria-hidden="true"
                 />
               </td>
-              <td class="mono tabular">
+              <td class="mono tabular num">
                 {{ s.network_cap_mbps != null ? s.network_cap_mbps : '—' }}
               </td>
               <td class="mono">{{ s.host }}</td>
@@ -2187,26 +2345,6 @@ watch(formIsCascadeRuEntry, (v) => {
 .card.muted {
   color: var(--muted);
 }
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9rem;
-}
-.table th,
-.table td {
-  padding: 0.65rem 0.75rem;
-  text-align: left;
-  border-bottom: 1px solid var(--border);
-  vertical-align: top;
-  color: var(--text);
-}
-.table th {
-  color: var(--muted);
-  font-weight: 700;
-  text-transform: uppercase;
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
-}
 .mono {
   font-family: var(--mono);
   font-size: 0.8rem;
@@ -2440,9 +2578,6 @@ watch(formIsCascadeRuEntry, (v) => {
   margin-right: 0.35rem;
 }
 
-.table th.num {
-  text-align: right;
-}
 .traffic-link-cell {
   text-align: right;
   vertical-align: middle;
