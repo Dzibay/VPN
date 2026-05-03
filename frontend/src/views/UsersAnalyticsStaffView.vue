@@ -214,18 +214,19 @@ onMounted(() => {
             <th>Регистрация</th>
             <th>Подписка до</th>
             <th class="num">Трафик (всего)</th>
+            <th class="num">Устройства</th>
             <th class="num">ID реф. ссылки</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="6" class="muted">Загрузка…</td>
+            <td colspan="7" class="muted">Загрузка…</td>
           </tr>
           <tr v-else-if="error">
-            <td colspan="6" class="error-cell">{{ error }}</td>
+            <td colspan="7" class="error-cell">{{ error }}</td>
           </tr>
           <tr v-else-if="rows.length === 0">
-            <td colspan="6" class="muted">Нет пользователей</td>
+            <td colspan="7" class="muted">Нет пользователей</td>
           </tr>
           <tr
             v-for="u in rows"
@@ -238,6 +239,7 @@ onMounted(() => {
             <td>{{ formatDate(u.registered_at) }}</td>
             <td>{{ formatDate(u.subscription_until) }}</td>
             <td class="num mono-num">{{ formatTrafficBytes(u.total_traffic_bytes) }}</td>
+            <td class="num mono-num">{{ u.subscription_devices_count ?? 0 }}</td>
             <td class="num ref-id-cell">
               <template v-if="u.referral_link_id != null">
                 <span>{{ u.referral_link_id }}</span>

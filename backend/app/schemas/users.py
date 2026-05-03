@@ -137,6 +137,10 @@ class UserListItem(BaseModel):
         ge=0,
         description="Сумма up+down по всем узлам (user_server_traffic)",
     )
+    subscription_devices_count: int = Field(
+        ge=0,
+        description="Число записей subscription_devices (подключённых устройств по подписке)",
+    )
     referral_link_id: int | None = None
     token: str | None = Field(
         default=None,

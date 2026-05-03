@@ -20,6 +20,7 @@ from app.api.deps import (
 from app.database.operations import table_insert
 from app.domain.user_traffic import user_server_traffic_latest_subquery
 from app.models.server import Server
+from app.models.subscription_device import SubscriptionDevice
 from app.models.user import User
 from app.models.user_server_traffic import UserServerTraffic
 from app.schemas.server_traffic import (
@@ -59,7 +60,7 @@ def _normalize_account_role(raw: str | None) -> str:
     return "client"
 
 
-def _user_rows_with_traffic(session: Session) -> list[tuple[User, int]]:
+def _user_rows_with_traffic(session: Session) -> list[tuple[User, int, int]]:
     latest = user_server_traffic_latest_subquery()
     traffic_agg = (
         select(
@@ -72,9 +73,22 @@ def _user_rows_with_traffic(session: Session) -> list[tuple[User, int]]:
         .group_by(latest.c.user_id)
         .subquery()
     )
+    dev_agg = (
+        select(
+            SubscriptionDevice.user_id.label("uid"),
+            func.count(SubscriptionDevice.id).label("dev_cnt"),
+        )
+        .group_by(SubscriptionDevice.user_id)
+        .subquery()
+    )
     stmt = (
-        select(User, func.coalesce(traffic_agg.c.total_bytes, 0).label("total_traffic"))
+        select(
+            User,
+            func.coalesce(traffic_agg.c.total_bytes, 0).label("total_traffic"),
+            func.coalesce(dev_agg.c.dev_cnt, 0).label("device_count"),
+        )
         .outerjoin(traffic_agg, User.id == traffic_agg.c.uid)
+        .outerjoin(dev_agg, User.id == dev_agg.c.uid)
         .order_by(User.id.desc())
     )
     return list(session.execute(stmt).all())
@@ -163,13 +177,19 @@ async def list_users(
     show_secrets = list_mode in ("open", "admin")
     rows = _user_rows_with_traffic(session)
     out: list[UserListItem] = []
-    for user, total_raw in rows:
+    for user, total_raw, dev_raw in rows:
         try:
             total = int(total_raw or 0)
         except (TypeError, ValueError):
             total = 0
         if total < 0:
             total = 0
+        try:
+            dev_n = int(dev_raw or 0)
+        except (TypeError, ValueError):
+            dev_n = 0
+        if dev_n < 0:
+            dev_n = 0
         role = _normalize_account_role(user.account_role)
         role_lit = type_cast(Literal["client", "manager", "admin"], role)
         out.append(
@@ -182,6 +202,7 @@ async def list_users(
                 telegram_properties=user.telegram_properties,
                 subscription_until=user.subscription_until,
                 total_traffic_bytes=total,
+                subscription_devices_count=dev_n,
                 referral_link_id=user.referral_link_id,
                 token=(user.token if show_secrets else None),
                 vless_uuid=(user.vless_uuid if show_secrets else None),
