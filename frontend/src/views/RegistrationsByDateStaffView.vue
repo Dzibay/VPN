@@ -84,6 +84,32 @@ const totalWithSubscriptionDevices = computed(() =>
     ),
 )
 
+function utcTodayIso() {
+  const d = new Date()
+  const y = d.getUTCFullYear()
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(d.getUTCDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** Пик «активных за день» на графике и значение за текущий календарный день UTC. */
+const activeUsersWidget = computed(() => {
+  if (loading.value || error.value) {
+    return { peak: '—', today: '—' }
+  }
+  const row = rows.value.find((r) => String(r.stats_date) === utcTodayIso())
+  const todayVal = row ? Number(row.active_users_count) || 0 : 0
+  let peakVal = 0
+  for (const p of chartPoints.value) {
+    const a = Number(p.dayActive) || 0
+    if (a > peakVal) peakVal = a
+  }
+  return {
+    peak: peakVal.toLocaleString('ru-RU'),
+    today: todayVal.toLocaleString('ru-RU'),
+  }
+})
+
 /** Склонение «день» для числа n */
 function pluralRuDays(n) {
   const k = Math.abs(Math.trunc(Number(n))) % 100
@@ -316,16 +342,7 @@ onMounted(() => {
       </template>
       <div class="head-row">
         <div class="head-text">
-          <h2 class="section-heading">Статистика по дням (UTC)</h2>
-          <p class="section-sub">
-            Две первые кривые — накопление по дате регистрации: всего пользователей и с ненулевым трафиком
-            (<span class="mono-inline">user_server_traffic</span>). Фиолетовая — накопительно клиенты с хотя
-            бы одной записью в
-            <span class="mono-inline">subscription_devices</span> (по UTC-дню первого
-            <span class="mono-inline">created_at</span> для пользователя). Синяя линия —
-            сколько пользователей в этот календарный день увеличили суммарный накопленный трафик относительно
-            предыдущего дня; все линии в одной шкале по оси Y.
-          </p>
+          <h2 class="section-heading">Статистика по дням</h2>
         </div>
         <div class="head-actions">
           <button
@@ -366,6 +383,16 @@ onMounted(() => {
             {{ totalWithTraffic.toLocaleString('ru-RU') }}
           </dd>
           <p class="stats-hint">Up+down по последнему дню на узел</p>
+        </div>
+        <div class="stats-card">
+          <dt class="stats-label">Активные за день</dt>
+          <dd class="stats-value stats-value--active">
+            {{ activeUsersWidget.peak }}
+          </dd>
+          <p class="stats-hint">
+            Пик на графике · рост накопл. трафика к предыдущему дню. Сегодня (UTC):
+            {{ activeUsersWidget.today }}
+          </p>
         </div>
         <div class="stats-card">
           <dt class="stats-label">С записью устройства</dt>
@@ -498,6 +525,16 @@ onMounted(() => {
 @media (prefers-color-scheme: light) {
   .stats-value--traffic {
     color: #ea580c;
+  }
+}
+
+.stats-value--active {
+  color: #38bdf8;
+}
+
+@media (prefers-color-scheme: light) {
+  .stats-value--active {
+    color: #0284c7;
   }
 }
 
