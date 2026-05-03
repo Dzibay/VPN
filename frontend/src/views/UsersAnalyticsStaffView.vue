@@ -184,7 +184,6 @@ const clientSortAccessors = {
 const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(
   rows,
   clientSortAccessors,
-  'email',
 )
 
 async function load() {

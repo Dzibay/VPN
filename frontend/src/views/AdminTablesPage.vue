@@ -60,7 +60,7 @@ const {
   sortDir: userSortDir,
   sortedRows: sortedUsers,
   toggleSort: toggleUserSort,
-} = useTableSort(users, userSortAccessors, 'id')
+} = useTableSort(users, userSortAccessors)
 
 function serverCascadeSortKey(s) {
   if (!s.is_cascade_ru_entry) return '0-external'
@@ -86,7 +86,7 @@ const {
   sortDir: serverSortDir,
   sortedRows: sortedServers,
   toggleSort: toggleServerSort,
-} = useTableSort(servers, serverSortAccessors, 'id')
+} = useTableSort(servers, serverSortAccessors)
 
 const modalOpen = ref(false)
 const creating = ref(false)

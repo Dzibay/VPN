@@ -2,9 +2,13 @@
 defineProps({
   label: { type: String, required: true },
   columnKey: { type: String, required: true },
-  sortKey: { type: String, required: true },
+  /** Текущий отсортированный столбец; null — сортировка не применялась */
+  sortKey: {
+    type: [String, null],
+    default: null,
+  },
   /** @type {'asc' | 'desc'} */
-  sortDir: { type: String, required: true },
+  sortDir: { type: String, default: 'asc' },
   align: {
     type: String,
     default: 'left',
@@ -21,7 +25,7 @@ defineEmits(['sort'])
     class="admin-th"
     :class="{ 'admin-th--num': align === 'right' }"
     :aria-sort="
-      sortable && sortKey === columnKey
+      sortable && sortKey != null && sortKey === columnKey
         ? sortDir === 'asc'
           ? 'ascending'
           : 'descending'
@@ -37,7 +41,7 @@ defineEmits(['sort'])
     >
       <span class="admin-sort-btn__label">{{ label }}</span>
       <span class="admin-sort-btn__icon" aria-hidden="true">
-        <template v-if="sortKey === columnKey">{{
+        <template v-if="sortKey != null && sortKey === columnKey">{{
           sortDir === 'asc' ? '↑' : '↓'
         }}</template>
         <template v-else>⇅</template>

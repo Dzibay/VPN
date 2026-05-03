@@ -193,7 +193,6 @@ const referralSortAccessors = {
 const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(
   rows,
   referralSortAccessors,
-  'id',
 )
 
 const copyHint = ref(null)

@@ -43,15 +43,18 @@ function normalizeString(v) {
 
 /**
  * Клиентская сортировка строк таблицы по выбранному столбцу.
+ * Пока столбец не выбран (клик по заголовку), порядок строк совпадает с данными с сервера.
  *
  * @template T
  * @param {import('vue').MaybeRefOrGetter<T[]>} sourceRows
  * @param {Record<string, (row: T) => unknown>} accessors
- * @param {string} [defaultKey]
+ * @param {string | null} [defaultKey] — начальная сортировка (обычно не задаётся)
  */
-export function useTableSort(sourceRows, accessors, defaultKey = '') {
+export function useTableSort(sourceRows, accessors, defaultKey = null) {
   const sortKey = ref(
-    defaultKey && accessors[defaultKey] ? defaultKey : Object.keys(accessors)[0] || '',
+    defaultKey != null && defaultKey !== '' && accessors[defaultKey]
+      ? defaultKey
+      : null,
   )
   const sortDir = ref(/** @type {'asc' | 'desc'} */ ('asc'))
 
@@ -68,6 +71,7 @@ export function useTableSort(sourceRows, accessors, defaultKey = '') {
   const sortedRows = computed(() => {
     const rows = [...(toValue(sourceRows) ?? [])]
     const key = sortKey.value
+    if (key == null || key === '') return rows
     const fn = accessors[key]
     if (!fn || rows.length < 2) return rows
     const mult = sortDir.value === 'asc' ? 1 : -1
