@@ -1,30 +1,14 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import AdminLineChartPanel from '../components/AdminLineChartPanel.vue'
 import AdminPageHeader from '../components/AdminPageHeader.vue'
 import AdminPageShell from '../components/AdminPageShell.vue'
-import {
-  useUsersDailyStatsChart,
-  utcTodayIso,
-  formatDayShort,
-} from '../composables/useUsersDailyStatsChart.js'
+import { utcTodayIso, formatDayShort } from '../composables/useUsersDailyStatsChart.js'
 import { isAdminRole } from '../auth/permissions.js'
 import { getSessionRole } from '../auth/session.js'
 import { fetchJson } from '../api/client.js'
 
 const route = useRoute()
-const {
-  loading: dailyStatsLoading,
-  error: dailyStatsError,
-  load: loadDailyStats,
-  undatedCount: dailyUndatedCount,
-  chartPoints: dailyChartPoints,
-  registrationChartLabels,
-  registrationChartDatasets,
-  registrationTooltipTitle,
-  registrationTooltipLabel,
-} = useUsersDailyStatsChart()
 const loading = ref(false)
 const linksLoading = ref(false)
 const error = ref(null)
@@ -134,17 +118,13 @@ async function loadFunnel() {
   }
 }
 
-async function refreshAll() {
-  await Promise.all([loadFunnel(), loadDailyStats()])
-}
-
 function onFilterChange() {
-  void refreshAll()
+  void loadFunnel()
 }
 
 onMounted(async () => {
   await loadReferralLinks()
-  await refreshAll()
+  await loadFunnel()
 })
 </script>
 
@@ -252,12 +232,10 @@ onMounted(async () => {
             <button
               type="button"
               class="btn-secondary"
-              :disabled="loading || dailyStatsLoading"
-              @click="refreshAll"
+              :disabled="loading"
+              @click="loadFunnel"
             >
-              {{
-                loading || dailyStatsLoading ? 'Обновление…' : 'Обновить'
-              }}
+              {{ loading ? 'Обновление…' : 'Обновить' }}
             </button>
           </div>
         </div>
@@ -407,32 +385,6 @@ onMounted(async () => {
         </div>
       </template>
     </section>
-
-    <AdminLineChartPanel
-      class="funnel-chart-panel"
-      aria-label="По дням UTC: накопление регистраций и клиентов с устройствами, активные по трафику"
-      :loading="dailyStatsLoading"
-      :error="dailyStatsError"
-      :has-data="dailyChartPoints.length > 0"
-      y-title="Пользователей"
-      :labels="registrationChartLabels"
-      :datasets="registrationChartDatasets"
-      :get-tooltip-title="registrationTooltipTitle"
-      :get-tooltip-label="registrationTooltipLabel"
-    >
-      <template #empty>
-        <p
-          v-if="dailyChartPoints.length === 0 && dailyUndatedCount > 0"
-          class="empty-hint"
-        >
-          Нет ни одной известной даты регистрации — только пользователи без даты:
-          <strong>{{ dailyUndatedCount.toLocaleString('ru-RU') }}</strong>
-          . Добавить их к точкам по дням нельзя — появится график после появления
-          записей с датой.
-        </p>
-        <p v-else class="empty-hint">Нет данных для графика.</p>
-      </template>
-    </AdminLineChartPanel>
   </AdminPageShell>
 </template>
 
@@ -597,18 +549,6 @@ onMounted(async () => {
     color-mix(in srgb, #38bdf8 55%, #0c4a6e),
     #38bdf8
   );
-}
-
-.funnel-chart-panel {
-  margin-top: 0.5rem;
-}
-
-.empty-hint {
-  margin: 0;
-  padding: 0.5rem 0 0;
-  color: var(--muted);
-  font-size: 0.9rem;
-  line-height: 1.5;
 }
 
 .funnel-connector {
