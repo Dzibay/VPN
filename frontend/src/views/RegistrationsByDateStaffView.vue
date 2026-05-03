@@ -375,31 +375,24 @@ onMounted(() => {
           <dd class="stats-value">
             {{ totalUsers.toLocaleString('ru-RU') }}
           </dd>
-          <p class="stats-hint">Записей в БД</p>
         </div>
         <div class="stats-card">
           <dt class="stats-label">С ненулевым трафиком</dt>
           <dd class="stats-value stats-value--traffic">
             {{ totalWithTraffic.toLocaleString('ru-RU') }}
           </dd>
-          <p class="stats-hint">Up+down по последнему дню на узел</p>
         </div>
         <div class="stats-card">
           <dt class="stats-label">Активные за день</dt>
           <dd class="stats-value stats-value--active">
             {{ activeUsersWidget.peak }}
           </dd>
-          <p class="stats-hint">
-            Пик на графике · рост накопл. трафика к предыдущему дню. Сегодня (UTC):
-            {{ activeUsersWidget.today }}
-          </p>
         </div>
         <div class="stats-card">
           <dt class="stats-label">С записью устройства</dt>
           <dd class="stats-value stats-value--devices">
             {{ totalWithSubscriptionDevices.toLocaleString('ru-RU') }}
           </dd>
-          <p class="stats-hint">Уникальные пользователи, первый запрос /sub · UTC</p>
         </div>
       </dl>
     </section>
