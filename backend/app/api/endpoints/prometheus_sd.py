@@ -1,5 +1,4 @@
-"""
-HTTP service discovery для Prometheus (node_exporter).
+"""HTTP service discovery для Prometheus (node_exporter).
 
 Формат ответа: https://prometheus.io/docs/prometheus/latest/http_sd/
 """
@@ -7,22 +6,21 @@ HTTP service discovery для Prometheus (node_exporter).
 from __future__ import annotations
 
 import secrets
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
-from sqlalchemy import select
 
-from app.api.deps import ReadonlySessionDep
 from app.api.security_bearer import bearer_jwt
-from app.core.config import settings
-from app.models.server import Server
+from app.config import settings
+from app.core.dependencies import ReadonlySessionDep
+from app.domain.services import prometheus_sd_service
 
 router = APIRouter(prefix="/prometheus/sd", tags=["admin"])
 
 
 def _require_sd_bearer(
-    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_jwt)] = None,
+    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_jwt)],
 ) -> None:
     expected = (settings.prometheus_sd_token or "").strip()
     if not expected:
@@ -41,21 +39,8 @@ def _require_sd_bearer(
     dependencies=[Depends(_require_sd_bearer)],
     summary="HTTP service discovery Prometheus: цели scrape node_exporter",
 )
-async def prometheus_sd_node_exporter(session: ReadonlySessionDep) -> list[dict[str, Any]]:
+async def prometheus_sd_node_exporter(session: ReadonlySessionDep):
     """
     Активные серверы из БД → targets для scrape (host:port как в PromQL).
     """
-    stmt = select(Server).where(Server.is_active.is_(True)).order_by(Server.id)
-    servers = list(session.scalars(stmt).all())
-    port = int(settings.provision_node_exporter_port)
-    out: list[dict[str, Any]] = []
-    for s in servers:
-        inst = (s.prometheus_instance or "").strip()
-        if not inst:
-            inst = f"{s.host.strip()}:{port}"
-        name = (s.name or "").strip()
-        labels: dict[str, str] = {"server_id": str(s.id)}
-        if name:
-            labels["server_name"] = name
-        out.append({"targets": [inst], "labels": labels})
-    return out
+    return prometheus_sd_service.node_exporter_targets(session, settings)

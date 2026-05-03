@@ -1,5 +1,5 @@
 """
-Запуск воркера RQ (из каталога backend):
+Запуск воркера RQ (из каталога backend). Задачи очереди описаны в ``app.worker.jobs``.
 
     python -m worker.run
 
@@ -33,9 +33,9 @@ from rq import Worker
 from rq.defaults import DEFAULT_WORKER_TTL
 from rq.worker import SimpleWorker
 
-from app.core.config import settings
+from app.config import settings
 from app.core.logging_config import setup_logging
-from app.database.schema import ensure_schema
+from app.infrastructure.database.schema import ensure_schema
 
 
 def _worker_ttl() -> int:

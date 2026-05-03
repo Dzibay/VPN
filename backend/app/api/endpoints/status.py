@@ -1,10 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
-from app.api.deps import ReadonlySessionDep, require_admin
-from app.core.config import settings
-from app.database.operations import table_select
-from app.models.user import User
-from app.schemas.status import StatusResponse
+from app.config import settings
+from app.core.dependencies import ReadonlySessionDep, require_admin
+from app.domain.models.status import StatusResponse
+from app.domain.services.status_service import db_ping_ok
 
 router = APIRouter(tags=["admin"])
 
@@ -16,16 +15,9 @@ router = APIRouter(tags=["admin"])
     dependencies=[Depends(require_admin)],
 )
 async def server_status(session: ReadonlySessionDep) -> StatusResponse:
-    db_connected = False
-    try:
-        table_select(session, User, limit=1)
-        db_connected = True
-    except Exception:
-        db_connected = False
-
     return StatusResponse(
         service=settings.app_name,
         status="running",
         debug=settings.debug,
-        db_connected=db_connected,
+        db_connected=db_ping_ok(session),
     )

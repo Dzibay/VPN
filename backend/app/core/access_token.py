@@ -9,7 +9,7 @@ from typing import Literal
 
 import jwt
 
-from app.core.config import Settings
+from app.config import Settings
 
 _JWT_ALG = "HS256"
 _TOKEN_TTL = timedelta(days=14)

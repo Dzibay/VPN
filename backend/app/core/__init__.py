@@ -1,3 +1,3 @@
-from app.core.config import settings
+from app.config import settings
 
 __all__ = ["settings"]

@@ -2,4 +2,4 @@
 * text=auto
 
 # Bash по SSH ожидает LF; иначе на Windows в репо попадают CRLF и удалённый bash падает.
-backend/worker/scripts/*.sh text eol=lf
+backend/app/worker/scripts/*.sh text eol=lf

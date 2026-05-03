@@ -4,8 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path
 
-from app.api.deps import BearerPrincipal, SessionDep, get_bearer_principal_dep
-from app.models.subscription_device import SubscriptionDevice
+from app.core.dependencies import BearerPrincipal, SessionDep, get_bearer_principal_dep
+from app.domain.services.http_errors import HttpServiceError
+from app.domain.services.me_service import delete_subscription_device
 
 router = APIRouter(prefix="/me", tags=["user"])
 
@@ -26,7 +27,7 @@ async def delete_my_subscription_device(
 ) -> None:
     if principal.user_id is None:
         raise HTTPException(status_code=401, detail="Требуется вход")
-    row = session.get(SubscriptionDevice, device_id)
-    if row is None or int(row.user_id) != int(principal.user_id):
-        raise HTTPException(status_code=404, detail="Подключение не найдено")
-    session.delete(row)
+    try:
+        delete_subscription_device(session, user_id=int(principal.user_id), device_id=device_id)
+    except HttpServiceError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail) from e

@@ -6,7 +6,7 @@ from datetime import date, timedelta
 
 from sqlalchemy import or_
 
-from app.models.user import User
+from app.infrastructure.persistence.models.user import User
 
 TRIAL_DAYS_AFTER_REGISTRATION = 14
 

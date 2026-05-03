@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.schemas.status import HealthResponse
+from app.domain.models.status import HealthResponse
 
 router = APIRouter(tags=["public"])
 

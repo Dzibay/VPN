@@ -1,7 +1,7 @@
 """
-Применяет database/init.sql и database/migrate.sql к БД (app.database.session).
+Применяет database/init.sql и database/migrate.sql к БД (app.infrastructure.database.session).
 
-Переменные подключения — из backend/.env: DATABASE_URL или DB_HOST / DB_USER / DB_PASSWORD / DB_NAME (см. app.core.config).
+Переменные подключения — из backend/.env: DATABASE_URL или DB_HOST / DB_USER / DB_PASSWORD / DB_NAME (см. app.config).
 
 Запуск из корня репозитория: python backend/scripts/init_db.py
 или из backend: python scripts/init_db.py
@@ -42,7 +42,7 @@ def main() -> None:
     _load_env()
 
     try:
-        from app.database.schema import ensure_schema
+        from app.infrastructure.database.schema import ensure_schema
     except Exception as e:
         print(
             "Не удалось импортировать ensure_schema (проверьте DATABASE_URL или DB_* в backend/.env):",

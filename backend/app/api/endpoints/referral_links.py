@@ -1,45 +1,59 @@
-"""Админка: реферальные токены и счётчики конверсии."""
+"""Реферальные ссылки: админка, публичный трекинг кликов, персональная ссылка пользователя."""
 
-import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
-from sqlalchemy import func, select
 
-from app.api.deps import ReadonlySessionDep, SessionDep, require_referrals_staff
-from app.core.config import settings
-from app.domain.user_traffic import user_server_traffic_latest_subquery
-from app.models.referral_link import ReferralLink
-from app.models.user import User
-from app.schemas.referral_links import (
+from app.config import settings
+from app.core.dependencies import (
+    BearerPrincipal,
+    ReadonlySessionDep,
+    SessionDep,
+    get_bearer_principal_dep,
+    require_referrals_staff,
+)
+from app.domain.models.referral_links import (
     ReferralFunnelSummary,
     ReferralLinkCreate,
     ReferralLinkOut,
     ReferralLinkUpdate,
+    ReferralMeResponse,
+    ReferralTrackClickBody,
 )
-from app.services.referral_link_service import create_referral_link, referral_link_to_out, update_referral_link
+from app.domain.services.http_errors import HttpServiceError
+from app.domain.services.referral_links_service import (
+    client_site_user_id,
+    create_referral_link,
+    delete_referral_link_row,
+    increment_referral_counter_by_token,
+    list_staff_referral_links,
+    referral_funnel_compute,
+    referral_link_to_out,
+    referral_me_for_user,
+    update_referral_link,
+)
 
-log = logging.getLogger("app.referral_links")
-
-router = APIRouter(
+staff_router = APIRouter(
     prefix="/referral-links",
     tags=["admin"],
     dependencies=[Depends(require_referrals_staff)],
 )
 
 
-@router.get(
+def _raise_svc(e: HttpServiceError) -> None:
+    raise HTTPException(status_code=e.status_code, detail=e.detail) from e
+
+
+@staff_router.get(
     "",
     response_model=list[ReferralLinkOut],
     summary="Перечень реферальных ссылок",
 )
 async def list_referral_links(session: ReadonlySessionDep) -> list[ReferralLinkOut]:
-    stmt = select(ReferralLink).order_by(ReferralLink.id.desc())
-    rows = list(session.scalars(stmt).all())
-    return [referral_link_to_out(r, settings) for r in rows]
+    return list_staff_referral_links(session, settings)
 
 
-@router.get(
+@staff_router.get(
     "/funnel",
     response_model=ReferralFunnelSummary,
     summary=(
@@ -57,63 +71,13 @@ async def referral_funnel_summary(
         ),
     ] = None,
 ) -> ReferralFunnelSummary:
-    def _nz(v: object) -> int:
-        try:
-            n = int(v or 0)
-        except (TypeError, ValueError):
-            return 0
-        return max(0, n)
-
-    latest = user_server_traffic_latest_subquery()
-    per_user_traffic = (
-        select(
-            latest.c.user_id.label("uid"),
-            func.coalesce(
-                func.sum(latest.c.up_bytes + latest.c.down_bytes),
-                0,
-            ).label("tot"),
-        )
-        .group_by(latest.c.user_id)
-        .having(
-            func.coalesce(
-                func.sum(latest.c.up_bytes + latest.c.down_bytes),
-                0,
-            )
-            > 0,
-        )
-        .subquery()
-    )
-
-    if referral_link_id is not None:
-        row = session.scalars(
-            select(ReferralLink).where(ReferralLink.id == referral_link_id).limit(1),
-        ).first()
-        if row is None:
-            raise HTTPException(status_code=404, detail="Реферальная ссылка не найдена")
-        registrations_total_raw = row.registrations_count
-        users_with_traffic_raw = session.scalar(
-            select(func.count())
-            .select_from(per_user_traffic)
-            .join(User, User.id == per_user_traffic.c.uid)
-            .where(User.referral_link_id == referral_link_id),
-        )
-        return ReferralFunnelSummary(
-            clicks_total=_nz(row.clicks_count),
-            registrations_total=_nz(registrations_total_raw),
-            users_with_traffic=_nz(users_with_traffic_raw),
-        )
-
-    registrations_total_raw = session.scalar(select(func.count()).select_from(User))
-    users_with_traffic_raw = session.scalar(select(func.count()).select_from(per_user_traffic))
-
-    return ReferralFunnelSummary(
-        clicks_total=None,
-        registrations_total=_nz(registrations_total_raw),
-        users_with_traffic=_nz(users_with_traffic_raw),
-    )
+    try:
+        return referral_funnel_compute(session, referral_link_id, settings)
+    except HttpServiceError as e:
+        _raise_svc(e)
 
 
-@router.post(
+@staff_router.post(
     "",
     response_model=ReferralLinkOut,
     status_code=201,
@@ -141,7 +105,7 @@ async def post_referral_link(
         raise HTTPException(status_code=status, detail=detail) from e
 
 
-@router.patch(
+@staff_router.patch(
     "/{link_id}",
     response_model=ReferralLinkOut,
     summary="Частичное обновление реферальной ссылки",
@@ -172,7 +136,7 @@ async def patch_referral_link(
         raise HTTPException(status_code=status, detail=detail) from e
 
 
-@router.delete(
+@staff_router.delete(
     "/{link_id}",
     status_code=204,
     summary="Удаление реферальной ссылки",
@@ -181,9 +145,47 @@ async def delete_referral_link(
     session: SessionDep,
     link_id: Annotated[int, Path(ge=1, description="Первичный ключ referral_links.id")],
 ) -> Response:
-    stmt = select(ReferralLink).where(ReferralLink.id == link_id).limit(1)
-    row = session.scalars(stmt).first()
-    if row is None:
-        raise HTTPException(status_code=404, detail="Токен не найден")
-    session.delete(row)
+    try:
+        delete_referral_link_row(session, link_id)
+    except HttpServiceError as e:
+        _raise_svc(e)
     return Response(status_code=204)
+
+
+public_router = APIRouter(prefix="/referral", tags=["public"])
+
+
+@public_router.post(
+    "/track-click",
+    status_code=204,
+    summary="Регистрация перехода по реферальной ссылке на сайте (инкремент счётчика кликов)",
+)
+async def track_referral_click(
+    body: ReferralTrackClickBody,
+    session: SessionDep,
+) -> Response:
+    increment_referral_counter_by_token(session, body.token, "clicks")
+    return Response(status_code=204)
+
+
+me_router = APIRouter(prefix="/referral/me", tags=["user"])
+
+
+@me_router.get(
+    "",
+    response_model=ReferralMeResponse,
+    summary="Персональная реферальная ссылка текущего пользователя",
+    description=(
+        "Возвращает существующую персональную ссылку или создаёт её при первом обращении "
+        "(не более одной на учётную запись)."
+    ),
+)
+async def get_my_referral_link(
+    session: SessionDep,
+    principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
+) -> ReferralMeResponse:
+    try:
+        uid = client_site_user_id(principal)
+        return referral_me_for_user(session, uid, settings)
+    except HttpServiceError as e:
+        _raise_svc(e)

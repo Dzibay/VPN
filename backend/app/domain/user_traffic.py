@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.user_server_traffic import UserServerTraffic
+from app.infrastructure.persistence.models.user_server_traffic import UserServerTraffic
 
 
 def user_server_traffic_latest_subquery():

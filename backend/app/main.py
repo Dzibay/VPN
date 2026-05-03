@@ -7,32 +7,33 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.endpoints.subscription import router as subscription_router
 from app.api.router import api_router
-from app.core.config import settings
+from app.config import settings
+from app.core.error_handlers import register_exception_handlers
 from app.core.logging_config import setup_logging
-from app.core.openapi import attach_openapi
-from app.middleware.request_context import RequestContextMiddleware
+from app.core.middleware.request_context import RequestContextMiddleware
+from app.extensions import attach_openapi
 
 log = logging.getLogger("app.main")
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    from app.database.schema import ensure_schema
+    from app.infrastructure.database.schema import ensure_schema
 
     ensure_schema()
     bg_tasks: list[asyncio.Task[None]] = []
     if settings.xray_traffic_collect_schedule_enabled:
-        from app.services.xray_traffic_scheduler import periodic_xray_traffic_collect_loop
+        from app.infrastructure.xray.xray_traffic_scheduler import periodic_xray_traffic_collect_loop
 
         bg_tasks.append(asyncio.create_task(periodic_xray_traffic_collect_loop()))
     if settings.subscription_daily_xray_clients_sync_enabled:
-        from app.services.subscription_daily_xray_sync import subscription_daily_xray_sync_loop
+        from app.domain.services.subscription_service import subscription_daily_xray_sync_loop
 
         bg_tasks.append(asyncio.create_task(subscription_daily_xray_sync_loop()))
     if settings.server_load_prometheus_sync_schedule_enabled and (
         settings.prometheus_base_url or ""
     ).strip():
-        from app.services.server_load_scheduler import periodic_server_load_from_prometheus_loop
+        from app.infrastructure.prometheus.server_load_scheduler import periodic_server_load_from_prometheus_loop
 
         bg_tasks.append(asyncio.create_task(periodic_server_load_from_prometheus_loop()))
     try:
@@ -71,6 +72,7 @@ def create_app() -> FastAPI:
             }
         ],
     )
+    register_exception_handlers(application)
     attach_openapi(application)
     application.add_middleware(RequestContextMiddleware)
     application.add_middleware(
