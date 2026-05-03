@@ -1,6 +1,6 @@
 import logging
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Literal, cast as type_cast
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -347,22 +347,52 @@ def _registration_counts_by_date(
     return out
 
 
+def _first_subscription_device_users_by_utc_date(session: Session) -> dict[date, int]:
+    """Календарный день UTC → сколько пользователей впервые появились в subscription_devices."""
+    stmt = (
+        select(
+            SubscriptionDevice.user_id,
+            func.min(SubscriptionDevice.created_at).label("first_at"),
+        )
+        .group_by(SubscriptionDevice.user_id)
+    )
+    raw = session.execute(stmt).all()
+    by_day: dict[date, int] = defaultdict(int)
+    for _uid, first_at in raw:
+        if first_at is None:
+            continue
+        if isinstance(first_at, datetime):
+            if first_at.tzinfo is None:
+                cal = first_at.replace(tzinfo=timezone.utc).date()
+            else:
+                cal = first_at.astimezone(timezone.utc).date()
+        elif isinstance(first_at, date):
+            cal = first_at
+        else:
+            continue
+        by_day[cal] += 1
+    return dict(by_day)
+
+
 def _stats_by_date_merged(session: Session) -> list[UserStatsByDateRow]:
     reg_map = _registration_counts_by_date(session)
     active_map = _traffic_active_count_by_date(session)
+    dev_map = _first_subscription_device_users_by_utc_date(session)
     undated = reg_map.pop(None, None)
-    date_keys = set(reg_map) | set(active_map)
+    date_keys = set(reg_map) | set(active_map) | set(dev_map)
     ordered = sorted(d for d in date_keys if d is not None)
     result: list[UserStatsByDateRow] = []
     for d in ordered:
         u, wt = reg_map.get(d, (0, 0))
         a = active_map.get(d, 0)
+        dev_u = int(dev_map.get(d, 0) or 0)
         result.append(
             UserStatsByDateRow(
                 stats_date=d,
                 users_count=u,
                 users_with_traffic_count=wt,
                 active_users_count=a,
+                subscription_devices_users_count=dev_u,
             ),
         )
     if undated is not None:
@@ -373,6 +403,7 @@ def _stats_by_date_merged(session: Session) -> list[UserStatsByDateRow]:
                 users_count=u,
                 users_with_traffic_count=wt,
                 active_users_count=0,
+                subscription_devices_users_count=0,
             ),
         )
     return result
@@ -382,7 +413,7 @@ def _stats_by_date_merged(session: Session) -> list[UserStatsByDateRow]:
     "/daily-stats",
     response_model=UsersDailyStatsResponse,
     dependencies=[Depends(require_referrals_staff)],
-    summary="Дневная статистика (UTC): регистрации, трафик и активные пользователи по датам",
+    summary="Дневная статистика (UTC): регистрации, трафик, устройства подписки и активность по датам",
 )
 async def users_daily_stats(session: ReadonlySessionDep) -> UsersDailyStatsResponse:
     return UsersDailyStatsResponse(stats_by_date=_stats_by_date_merged(session))

@@ -28,10 +28,125 @@ function clientHighlightFromRoute() {
 
 const isFullAdmin = computed(() => isAdminRole(getSessionRole()))
 
-const statsLine = computed(() => {
-  if (loading.value) return 'Загрузка…'
-  if (error.value) return 'Ошибка загрузки'
-  return `${rows.value.length} пользователей`
+/** Календарный день UTC как одно число для сравнения. */
+function utcCalendarDayKey(d) {
+  return (
+    d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate()
+  )
+}
+
+function countRegistrationsOnUtcDay(userRows, dayKey) {
+  let n = 0
+  for (const u of userRows) {
+    if (u.registered_at == null || u.registered_at === '') continue
+    const t = new Date(u.registered_at)
+    if (!Number.isFinite(t.getTime())) continue
+    if (utcCalendarDayKey(t) === dayKey) n += 1
+  }
+  return n
+}
+
+const userCountWidget = computed(() => {
+  if (loading.value || error.value) {
+    return {
+      totalDisplay: '—',
+      todayRegsDisplay: '—',
+      vsLabel: '',
+      vsClass: '',
+    }
+  }
+  const total = rows.value.length
+  const now = new Date()
+  const todayKey = utcCalendarDayKey(now)
+  const prevUtc = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  )
+  prevUtc.setUTCDate(prevUtc.getUTCDate() - 1)
+  const yesterdayKey = utcCalendarDayKey(prevUtc)
+
+  const todayRegs = countRegistrationsOnUtcDay(rows.value, todayKey)
+  const yesterdayRegs = countRegistrationsOnUtcDay(rows.value, yesterdayKey)
+
+  let vsLabel = ''
+  let vsClass = 'stat-delta--muted'
+  if (yesterdayRegs > 0) {
+    const pct = ((todayRegs - yesterdayRegs) / yesterdayRegs) * 100
+    const r = Math.round(pct * 10) / 10
+    if (Math.abs(r) < 0.05) {
+      vsLabel = 'к вчера: 0%'
+      vsClass = 'stat-delta--neutral'
+    } else if (r > 0) {
+      vsLabel = `к вчера: ↑ ${formatPercentRu(r)}%`
+      vsClass = 'stat-delta--up'
+    } else {
+      vsLabel = `к вчера: ↓ ${formatPercentRu(Math.abs(r))}%`
+      vsClass = 'stat-delta--down'
+    }
+  } else {
+    vsLabel = 'к вчера: —'
+    vsClass = 'stat-delta--muted'
+  }
+
+  return {
+    totalDisplay: total.toLocaleString('ru-RU'),
+    todayRegsDisplay: String(todayRegs),
+    vsLabel,
+    vsClass,
+  }
+})
+
+function meanRegistrationGapMs(sortedAsc) {
+  if (sortedAsc.length < 2) return null
+  let sum = 0
+  let n = 0
+  for (let i = 1; i < sortedAsc.length; i++) {
+    const g = sortedAsc[i].getTime() - sortedAsc[i - 1].getTime()
+    if (g >= 0) {
+      sum += g
+      n += 1
+    }
+  }
+  return n > 0 ? sum / n : null
+}
+
+/** Человекочитаемый интервал; ru — запятая в десятичных. */
+function formatIntervalRu(ms) {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return '—'
+  const sec = ms / 1000
+  const min = sec / 60
+  const hr = min / 60
+  const day = hr / 24
+  const dec = (x) => String(x).replace('.', ',')
+  if (day >= 1) return `${dec(day.toFixed(1))} сут.`
+  if (hr >= 1) return `${dec(hr.toFixed(1))} ч`
+  if (min >= 1) return `${Math.round(min)} мин`
+  return `${Math.round(sec)} с`
+}
+
+function formatPercentRu(x) {
+  return String(Math.round(x * 10) / 10).replace('.', ',')
+}
+
+const registrationGapStats = computed(() => {
+  if (loading.value || error.value) {
+    return { overallMs: null, todayMs: null }
+  }
+
+  const times = rows.value
+    .map((u) => {
+      if (u.registered_at == null || u.registered_at === '') return null
+      const t = new Date(u.registered_at)
+      return Number.isFinite(t.getTime()) ? t : null
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.getTime() - b.getTime())
+
+  const overallMs = meanRegistrationGapMs(times)
+  const todayKey = utcCalendarDayKey(new Date())
+  const todayTimes = times.filter((t) => utcCalendarDayKey(t) === todayKey)
+  const todayMs = meanRegistrationGapMs(todayTimes)
+
+  return { overallMs, todayMs }
 })
 
 function formatDate(d) {
@@ -201,8 +316,41 @@ onMounted(() => {
       </div>
     </AdminPageHeader>
 
-    <section class="stats" aria-live="polite">
-      <p class="stats-value">{{ statsLine }}</p>
+    <section class="stats widgets-row" aria-live="polite">
+      <div class="widgets-grid">
+        <div class="stat-widget" aria-label="Число пользователей">
+          <h3 class="stat-widget-title">Пользователи</h3>
+          <p class="stat-widget-value">
+            {{ loading ? '…' : error ? '—' : userCountWidget.totalDisplay }}
+          </p>
+          <p v-if="!loading && !error" class="stat-widget-meta">
+            Сегодня: {{ userCountWidget.todayRegsDisplay }}
+          </p>
+          <p
+            v-if="!loading && !error && userCountWidget.vsLabel"
+            class="stat-widget-delta"
+            :class="userCountWidget.vsClass"
+          >
+            {{ userCountWidget.vsLabel }}
+          </p>
+        </div>
+        <div class="stat-widget" aria-label="Интервал между регистрациями">
+          <h3 class="stat-widget-title">Интервал регистраций</h3>
+          <dl v-if="!loading && !error" class="stat-widget-split">
+            <div>
+              <dt>Всего</dt>
+              <dd>{{ formatIntervalRu(registrationGapStats.overallMs) }}</dd>
+            </div>
+            <div>
+              <dt>Сегодня (UTC)</dt>
+              <dd>{{ formatIntervalRu(registrationGapStats.todayMs) }}</dd>
+            </div>
+          </dl>
+          <p v-else class="stat-widget-value stat-widget-value--muted">
+            {{ loading ? '…' : '—' }}
+          </p>
+        </div>
+      </div>
     </section>
 
     <AdminTableWrap aria-label="Таблица аналитики пользователей">
@@ -288,10 +436,92 @@ onMounted(() => {
 .stats {
   margin-bottom: 1rem;
 }
-.stats-value {
-  margin: 0;
-  font-size: 0.92rem;
+.widgets-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+@media (max-width: 640px) {
+  .widgets-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.stat-widget {
+  padding: 1rem 1.1rem;
+  border-radius: 10px;
+  border: 1px solid var(--nav-border);
+  background: var(--surface, color-mix(in srgb, var(--bg) 92%, var(--text) 8%));
+}
+.stat-widget-title {
+  margin: 0 0 0.65rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--muted);
+  font-weight: 600;
+}
+.stat-widget-value {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  color: var(--text-h);
+}
+.stat-widget-value--muted {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.stat-widget-meta {
+  margin: 0.4rem 0 0;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+.stat-widget-delta {
+  margin: 0.2rem 0 0;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+.stat-delta--up {
+  color: var(--success, #2e7d32);
+}
+.stat-delta--down {
+  color: var(--danger, #c62828);
+}
+.stat-delta--neutral {
+  color: var(--muted);
+}
+.stat-delta--muted {
+  color: var(--muted);
+  font-weight: 500;
+}
+.stat-widget-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  margin: 0;
+}
+.stat-widget-split div {
+  margin: 0;
+  min-width: 0;
+}
+.stat-widget-split dt {
+  margin: 0 0 0.2rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.stat-widget-split dd {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  color: var(--text-h);
+  word-break: break-word;
 }
 
 .table {

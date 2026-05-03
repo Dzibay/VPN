@@ -10,7 +10,7 @@ import { getSessionRole } from '../auth/session.js'
 import { fetchJson } from '../api/client.js'
 
 const route = useRoute()
-/** @type {import('vue').Ref<Array<{ stats_date: string | null; users_count: number; users_with_traffic_count?: number; active_users_count?: number }>>} */
+/** @type {import('vue').Ref<Array<{ stats_date: string | null; users_count: number; users_with_traffic_count?: number; active_users_count?: number; subscription_devices_users_count?: number }>>} */
 const rows = ref([])
 const loading = ref(false)
 const error = ref(null)
@@ -37,23 +37,29 @@ const chartPoints = computed(() => {
       dayUsers: Number(r.users_count) || 0,
       dayTraffic: Number(r.users_with_traffic_count) || 0,
       dayActive: Number(r.active_users_count) || 0,
+      dayDevices: Number(r.subscription_devices_users_count) || 0,
     }))
     .sort((a, b) => a.iso.localeCompare(b.iso))
 
   let cumDatedUsers = 0
   let cumDatedTraffic = 0
+  let cumDatedDevices = 0
   return sorted.map((row) => {
     cumDatedUsers += row.dayUsers
     cumDatedTraffic += row.dayTraffic
+    cumDatedDevices += row.dayDevices
     return {
       iso: row.iso,
       dayUsers: row.dayUsers,
       dayTraffic: row.dayTraffic,
       dayActive: row.dayActive,
+      dayDevices: row.dayDevices,
       cumDatedUsers,
       cumDatedTraffic,
+      cumDatedDevices,
       totalUsers: cumDatedUsers + extraUsers,
       totalTraffic: cumDatedTraffic + extraTraffic,
+      totalDevices: cumDatedDevices,
     }
   })
 })
@@ -67,6 +73,15 @@ const totalWithTraffic = computed(() =>
     (acc, r) => acc + (Number(r.users_with_traffic_count) || 0),
     0,
   ),
+)
+
+const totalWithSubscriptionDevices = computed(() =>
+  rows.value
+    .filter((r) => r.stats_date != null && r.stats_date !== '')
+    .reduce(
+      (acc, r) => acc + (Number(r.subscription_devices_users_count) || 0),
+      0,
+    ),
 )
 
 /** Склонение «день» для числа n */
@@ -97,6 +112,8 @@ const registrationChartLabels = computed(() =>
 
 const activeSkyRgb = [56, 189, 248]
 
+const deviceVioletRgb = [167, 139, 250]
+
 const registrationChartDatasets = computed(() => {
   const pts = chartPoints.value
   const accentRgb = rgbTupleFromVar('--accent', '#58d68d')
@@ -111,6 +128,11 @@ const registrationChartDatasets = computed(() => {
       label: 'С трафиком · накопительно',
       data: pts.map((p) => p.totalTraffic),
       rgb: trafficOrange,
+    },
+    {
+      label: 'С подключением (устройства) · накопительно',
+      data: pts.map((p) => p.totalDevices),
+      rgb: deviceVioletRgb,
     },
     {
       label: 'Активные · за день',
@@ -150,6 +172,14 @@ function registrationTooltipLabel(ctx) {
       `С трафиком: ${fmtRu(p.totalTraffic)}`,
       `Без даты регистрации: ${fmtRu(undT)}`,
       `Прирост с предыдущего дня: ${fmtDeltaRu(dTraffic)}`,
+    ]
+  }
+  if (ctx.datasetIndex === 2) {
+    const prevDev = i > 0 ? pts[i - 1].totalDevices : 0
+    const dDev = p.totalDevices - prevDev
+    return [
+      `С подключением (записи устройств): ${fmtRu(p.totalDevices)}`,
+      `Прирост с предыдущего дня: ${fmtDeltaRu(dDev)}`,
     ]
   }
   const prevA = i > 0 ? pts[i - 1].dayActive : 0
@@ -288,11 +318,13 @@ onMounted(() => {
         <div class="head-text">
           <h2 class="section-heading">Статистика по дням (UTC)</h2>
           <p class="section-sub">
-            Две первые кривые — накопление по дате регистрации: всего пользователей и
-            сколько из них с ненулевым трафиком
-            (<span class="mono-inline">user_server_traffic</span>). Синяя линия —
-            сколько пользователей в этот календарный день увеличили суммарный
-            накопленный трафик относительно предыдущего дня; все линии в одной шкале по оси Y.
+            Две первые кривые — накопление по дате регистрации: всего пользователей и с ненулевым трафиком
+            (<span class="mono-inline">user_server_traffic</span>). Фиолетовая — накопительно клиенты с хотя
+            бы одной записью в
+            <span class="mono-inline">subscription_devices</span> (по UTC-дню первого
+            <span class="mono-inline">created_at</span> для пользователя). Синяя линия —
+            сколько пользователей в этот календарный день увеличили суммарный накопленный трафик относительно
+            предыдущего дня; все линии в одной шкале по оси Y.
           </p>
         </div>
         <div class="head-actions">
@@ -335,11 +367,18 @@ onMounted(() => {
           </dd>
           <p class="stats-hint">Up+down по последнему дню на узел</p>
         </div>
+        <div class="stats-card">
+          <dt class="stats-label">С записью устройства</dt>
+          <dd class="stats-value stats-value--devices">
+            {{ totalWithSubscriptionDevices.toLocaleString('ru-RU') }}
+          </dd>
+          <p class="stats-hint">Уникальные пользователи, первый запрос /sub · UTC</p>
+        </div>
       </dl>
     </section>
 
     <AdminLineChartPanel
-      aria-label="Пользователи и трафик по дням: накопление по регистрации и активные за день по UTC"
+      aria-label="По дням UTC: накопление регистраций и клиентов с устройствами, активные по трафику"
       :loading="loading"
       :error="error"
       :has-data="chartPoints.length > 0"
@@ -459,6 +498,16 @@ onMounted(() => {
 @media (prefers-color-scheme: light) {
   .stats-value--traffic {
     color: #ea580c;
+  }
+}
+
+.stats-value--devices {
+  color: #a78bfa;
+}
+
+@media (prefers-color-scheme: light) {
+  .stats-value--devices {
+    color: #7c3aed;
   }
 }
 

@@ -32,6 +32,13 @@ class UserStatsByDateRow(BaseModel):
             "суммарный накопленный трафик вырос относительно предыдущего дня"
         ),
     )
+    subscription_devices_users_count: int = Field(
+        ge=0,
+        description=(
+            "Сколько пользователей впервые получили строку в subscription_devices в этот календарный день UTC "
+            "(по минимальному created_at на пользователя)"
+        ),
+    )
 
 
 class UsersDailyStatsResponse(BaseModel):
