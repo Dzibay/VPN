@@ -213,7 +213,7 @@ def _subscription_client_metadata_headers(
         announce_raw = ""
     headers: dict[str, str] = {
         "subscription-userinfo": userinfo,
-        "profile-update-interval": "12",
+        "profile-update-interval": "2",
         "profile-title": "Podorozhnik VPN",
         "support-url": "",
         "profile-web-page-url": "",
