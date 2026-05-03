@@ -35,6 +35,19 @@ class ReferralFunnelSummary(BaseModel):
             "Пользователей с ненулевым трафиком по узлам: вся БД или только с выбранным referral_link_id"
         ),
     )
+    users_with_subscription_device: int = Field(
+        ge=0,
+        description=(
+            "Пользователей с хотя бы одной записью subscription_devices (подключённое устройство по подписке)"
+        ),
+    )
+    active_users_today_utc: int = Field(
+        ge=0,
+        description=(
+            "Активные за текущий календарный день UTC: накопленный трафик вырос относительно предыдущего дня "
+            "(та же логика, что active_users_count в GET /api/users/daily-stats)"
+        ),
+    )
     clicks_total: int | None = Field(
         default=None,
         description="Только при referral_link_id: накопительный счётчик кликов по этой ссылке",

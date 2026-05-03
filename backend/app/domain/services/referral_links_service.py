@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from urllib.parse import quote
 import secrets
 import string
@@ -14,6 +15,10 @@ from sqlalchemy.orm import Session
 
 from app.domain.subscription_public_base import site_address_to_public_origin
 from app.domain.services.http_errors import HttpServiceError
+from app.domain.services.users_service import (
+    active_users_count_for_utc_date,
+    count_users_with_subscription_device,
+)
 from app.domain.user_traffic import user_server_traffic_latest_subquery
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.user import User
@@ -327,19 +332,33 @@ def referral_funnel_compute(session: Session, referral_link_id: int | None, _cfg
             .join(User, User.id == per_user_traffic.c.uid)
             .where(User.referral_link_id == referral_link_id),
         )
+        utc_today = datetime.now(timezone.utc).date()
+        with_dev = count_users_with_subscription_device(session, referral_link_id)
+        active_today = active_users_count_for_utc_date(
+            session,
+            utc_today,
+            referral_link_id,
+        )
         return ReferralFunnelSummary(
             clicks_total=_nz_metric(row.clicks_count),
             registrations_total=_nz_metric(registrations_total_raw),
             users_with_traffic=_nz_metric(users_with_traffic_raw),
+            users_with_subscription_device=_nz_metric(with_dev),
+            active_users_today_utc=_nz_metric(active_today),
         )
 
     registrations_total_raw = session.scalar(select(func.count()).select_from(User))
     users_with_traffic_raw = session.scalar(select(func.count()).select_from(per_user_traffic))
+    utc_today = datetime.now(timezone.utc).date()
+    with_dev = count_users_with_subscription_device(session, None)
+    active_today = active_users_count_for_utc_date(session, utc_today, None)
 
     return ReferralFunnelSummary(
         clicks_total=None,
         registrations_total=_nz_metric(registrations_total_raw),
         users_with_traffic=_nz_metric(users_with_traffic_raw),
+        users_with_subscription_device=_nz_metric(with_dev),
+        active_users_today_utc=_nz_metric(active_today),
     )
 
 

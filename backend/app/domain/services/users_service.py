@@ -266,7 +266,11 @@ def user_traffic_cumulative_by_day_rows(
     return out
 
 
-def _traffic_active_count_by_date(session: Session) -> dict[date, int]:
+def _traffic_active_count_by_date(
+    session: Session,
+    *,
+    user_ids_filter: set[int] | None = None,
+) -> dict[date, int]:
     stmt = (
         select(
             UserServerTraffic.user_id,
@@ -293,6 +297,8 @@ def _traffic_active_count_by_date(session: Session) -> dict[date, int]:
         if tot < 0:
             tot = 0
         uid = int(uid_raw)
+        if user_ids_filter is not None and uid not in user_ids_filter:
+            continue
         sid = int(sid_raw)
         by_user[uid][sid].append((cal, tot))
         all_dates.add(cal)
@@ -338,6 +344,37 @@ def _traffic_active_count_by_date(session: Session) -> dict[date, int]:
             st["prev_total"] = total
         result[cal_day] = active
     return result
+
+
+def count_users_with_subscription_device(
+    session: Session,
+    referral_link_id: int | None,
+) -> int:
+    """Число пользователей с хотя бы одной записью в subscription_devices (опционально по referral_link_id)."""
+
+    stmt = select(func.count(func.distinct(SubscriptionDevice.user_id))).select_from(
+        SubscriptionDevice,
+    ).join(User, User.id == SubscriptionDevice.user_id)
+    if referral_link_id is not None:
+        stmt = stmt.where(User.referral_link_id == referral_link_id)
+    return int(session.scalar(stmt) or 0)
+
+
+def active_users_count_for_utc_date(
+    session: Session,
+    cal_day: date,
+    referral_link_id: int | None,
+) -> int:
+    """Столько же «активных», что и active_users_count в /api/users/daily-stats для календарного дня UTC."""
+
+    filt: set[int] | None = None
+    if referral_link_id is not None:
+        ids_raw = session.scalars(
+            select(User.id).where(User.referral_link_id == referral_link_id),
+        ).all()
+        filt = {int(i) for i in ids_raw}
+    m = _traffic_active_count_by_date(session, user_ids_filter=filt)
+    return int(m.get(cal_day, 0) or 0)
 
 
 def _registration_counts_by_date(

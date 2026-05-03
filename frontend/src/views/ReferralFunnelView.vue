@@ -1,13 +1,30 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
+import AdminLineChartPanel from '../components/AdminLineChartPanel.vue'
 import AdminPageHeader from '../components/AdminPageHeader.vue'
 import AdminPageShell from '../components/AdminPageShell.vue'
+import {
+  useUsersDailyStatsChart,
+  utcTodayIso,
+  formatDayShort,
+} from '../composables/useUsersDailyStatsChart.js'
 import { isAdminRole } from '../auth/permissions.js'
 import { getSessionRole } from '../auth/session.js'
 import { fetchJson } from '../api/client.js'
 
 const route = useRoute()
+const {
+  loading: dailyStatsLoading,
+  error: dailyStatsError,
+  load: loadDailyStats,
+  undatedCount: dailyUndatedCount,
+  chartPoints: dailyChartPoints,
+  registrationChartLabels,
+  registrationChartDatasets,
+  registrationTooltipTitle,
+  registrationTooltipLabel,
+} = useUsersDailyStatsChart()
 const loading = ref(false)
 const linksLoading = ref(false)
 const error = ref(null)
@@ -15,7 +32,7 @@ const error = ref(null)
 const referralLinks = ref([])
 /** '' — без фильтра (воронка по всей базе) */
 const filterLinkId = ref('')
-/** @type {import('vue').Ref<{ registrations_total: number; users_with_traffic: number; clicks_total?: number | null } | null>} */
+/** @type {import('vue').Ref<{ registrations_total: number; users_with_traffic: number; users_with_subscription_device?: number; active_users_today_utc?: number; clicks_total?: number | null } | null>} */
 const data = ref(null)
 
 const isFullAdmin = computed(() => isAdminRole(getSessionRole()))
@@ -34,6 +51,10 @@ function funnelUrl() {
 
 const registrations = computed(() => data.value?.registrations_total ?? 0)
 const trafficUsers = computed(() => data.value?.users_with_traffic ?? 0)
+const deviceUsers = computed(
+  () => data.value?.users_with_subscription_device ?? 0,
+)
+const activeToday = computed(() => data.value?.active_users_today_utc ?? 0)
 
 const clicks = computed(() => {
   if (!hasLinkFilter.value) return 0
@@ -42,10 +63,16 @@ const clicks = computed(() => {
 })
 
 const maxVal = computed(() => {
+  const nums = [
+    registrations.value,
+    trafficUsers.value,
+    deviceUsers.value,
+    activeToday.value,
+  ]
   if (hasLinkFilter.value) {
-    return Math.max(clicks.value, registrations.value, trafficUsers.value, 1)
+    return Math.max(clicks.value, ...nums, 1)
   }
-  return Math.max(registrations.value, trafficUsers.value, 1)
+  return Math.max(...nums, 1)
 })
 
 function barPct(n) {
@@ -62,6 +89,18 @@ const pctClickToReg = computed(() => {
 const pctRegToTrafficHint = computed(() => {
   if (!registrations.value) return null
   return (trafficUsers.value / registrations.value) * 100
+})
+
+/** С трафиком → с подключённым устройством (запись в subscription_devices) */
+const pctTrafficToDevices = computed(() => {
+  if (!trafficUsers.value) return null
+  return (deviceUsers.value / trafficUsers.value) * 100
+})
+
+/** С устройством → активные за текущий день UTC */
+const pctDevicesToActive = computed(() => {
+  if (!deviceUsers.value) return null
+  return (activeToday.value / deviceUsers.value) * 100
 })
 
 function fmtPct(x) {
@@ -82,7 +121,7 @@ async function loadReferralLinks() {
   }
 }
 
-async function load() {
+async function loadFunnel() {
   loading.value = true
   error.value = null
   try {
@@ -95,13 +134,17 @@ async function load() {
   }
 }
 
+async function refreshAll() {
+  await Promise.all([loadFunnel(), loadDailyStats()])
+}
+
 function onFilterChange() {
-  void load()
+  void refreshAll()
 }
 
 onMounted(async () => {
   await loadReferralLinks()
-  await load()
+  await refreshAll()
 })
 </script>
 
@@ -209,10 +252,12 @@ onMounted(async () => {
             <button
               type="button"
               class="btn-secondary"
-              :disabled="loading"
-              @click="load"
+              :disabled="loading || dailyStatsLoading"
+              @click="refreshAll"
             >
-              {{ loading ? 'Обновление…' : 'Обновить' }}
+              {{
+                loading || dailyStatsLoading ? 'Обновление…' : 'Обновить'
+              }}
             </button>
           </div>
         </div>
@@ -310,9 +355,84 @@ onMounted(async () => {
               />
             </div>
           </div>
+
+          <div class="funnel-connector funnel-connector--soft" aria-hidden="true">
+            <span class="connector-pct">{{
+              pctTrafficToDevices != null ? fmtPct(pctTrafficToDevices) : '—'
+            }}</span>
+            <span class="connector-caption">трафик → устройства</span>
+          </div>
+
+          <div class="funnel-step">
+            <div class="funnel-label-row">
+              <span class="funnel-label"
+                >С подключённым устройством (по подписке)</span
+              >
+              <span class="funnel-num">{{ deviceUsers.toLocaleString('ru-RU') }}</span>
+            </div>
+            <div class="funnel-track">
+              <div
+                class="funnel-fill funnel-fill--d"
+                :style="{ width: barPct(deviceUsers) + '%' }"
+              />
+            </div>
+          </div>
+
+          <div class="funnel-connector funnel-connector--soft" aria-hidden="true">
+            <span class="connector-pct">{{
+              pctDevicesToActive != null ? fmtPct(pctDevicesToActive) : '—'
+            }}</span>
+            <span class="connector-caption"
+              >устройства → активные
+              <span class="connector-hint"
+                >({{ formatDayShort(utcTodayIso()) }} UTC)</span
+              ></span
+            >
+          </div>
+
+          <div class="funnel-step">
+            <div class="funnel-label-row">
+              <span class="funnel-label"
+                >Активные за день UTC (накопленный трафик вырос)</span
+              >
+              <span class="funnel-num">{{ activeToday.toLocaleString('ru-RU') }}</span>
+            </div>
+            <div class="funnel-track">
+              <div
+                class="funnel-fill funnel-fill--e"
+                :style="{ width: barPct(activeToday) + '%' }"
+              />
+            </div>
+          </div>
         </div>
       </template>
     </section>
+
+    <AdminLineChartPanel
+      class="funnel-chart-panel"
+      aria-label="По дням UTC: накопление регистраций и клиентов с устройствами, активные по трафику"
+      :loading="dailyStatsLoading"
+      :error="dailyStatsError"
+      :has-data="dailyChartPoints.length > 0"
+      y-title="Пользователей"
+      :labels="registrationChartLabels"
+      :datasets="registrationChartDatasets"
+      :get-tooltip-title="registrationTooltipTitle"
+      :get-tooltip-label="registrationTooltipLabel"
+    >
+      <template #empty>
+        <p
+          v-if="dailyChartPoints.length === 0 && dailyUndatedCount > 0"
+          class="empty-hint"
+        >
+          Нет ни одной известной даты регистрации — только пользователи без даты:
+          <strong>{{ dailyUndatedCount.toLocaleString('ru-RU') }}</strong>
+          . Добавить их к точкам по дням нельзя — появится график после появления
+          записей с датой.
+        </p>
+        <p v-else class="empty-hint">Нет данных для графика.</p>
+      </template>
+    </AdminLineChartPanel>
   </AdminPageShell>
 </template>
 
@@ -461,6 +581,34 @@ onMounted(async () => {
     rgba(120, 200, 170, 0.55),
     color-mix(in srgb, var(--accent) 45%, #6bc4a8)
   );
+}
+
+.funnel-fill--d {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, #a78bfa 70%, #5b21b6),
+    #a78bfa
+  );
+}
+
+.funnel-fill--e {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, #38bdf8 55%, #0c4a6e),
+    #38bdf8
+  );
+}
+
+.funnel-chart-panel {
+  margin-top: 0.5rem;
+}
+
+.empty-hint {
+  margin: 0;
+  padding: 0.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 
 .funnel-connector {
