@@ -54,12 +54,39 @@ def _strip_line_comments(sql: str) -> str:
 
 
 def split_sql_statements(sql: str) -> list[str]:
+    """Делит SQL на выражения по `;`, не разрывая тела `DO $$ ... $$`.
+
+    Простое разбиение по «;» ломает PL/pgSQL в migrate.sql."""
     cleaned = _strip_line_comments(sql)
     parts: list[str] = []
-    for raw in cleaned.split(";"):
-        stmt = raw.strip()
-        if stmt:
-            parts.append(stmt)
+    buf: list[str] = []
+    i = 0
+    n = len(cleaned)
+    dollar_depth = 0  # счётчик незакрытых пар $$
+    while i < n:
+        if dollar_depth == 0 and cleaned[i : i + 2] == "$$":
+            dollar_depth += 1
+            buf.extend(["$", "$"])
+            i += 2
+            continue
+        if dollar_depth > 0 and cleaned[i : i + 2] == "$$":
+            dollar_depth -= 1
+            buf.extend(["$", "$"])
+            i += 2
+            continue
+        if dollar_depth == 0 and cleaned[i] == ";":
+            stmt = "".join(buf).strip()
+            if stmt:
+                parts.append(stmt)
+            buf = []
+            i += 1
+            continue
+        buf.append(cleaned[i])
+        i += 1
+
+    tail = "".join(buf).strip()
+    if tail:
+        parts.append(tail)
     return parts
 
 

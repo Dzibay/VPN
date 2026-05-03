@@ -340,6 +340,20 @@ class TelegramSiteLinkCompleteBody(BaseModel):
         return s
 
 
+class SubscriptionConnectionItem(BaseModel):
+    """Строка учёта устройства для личного кабинета (по запросам /sub/{token})."""
+
+    id: int = Field(ge=1, description="Идентификатор строки subscription_devices.")
+    os: str | None = Field(
+        default=None,
+        description="Заголовок x-device-os с последнего запроса конфигурации подписки.",
+    )
+    user_agent: str | None = Field(
+        default=None,
+        description="User-Agent клиента с последнего запроса подписки.",
+    )
+
+
 class AccountMeResponse(BaseModel):
     """Схема ответа GET /api/auth/me; в Swagger смотрите примеры у этой операции."""
 
@@ -392,6 +406,22 @@ class AccountMeResponse(BaseModel):
     subscription_open_clients: list[SubscriptionOpenClientItem] = Field(
         default_factory=list,
         description="Клиенты VPN для кнопок подключения в ЛК; у admin — пустой список.",
+    )
+    subscription_connections_count: int = Field(
+        default=0,
+        ge=0,
+        description="Число зарегистрированных уникальных клиентов/устройств по запросам /sub/{token}.",
+    )
+    subscription_connections_limit: int | None = Field(
+        default=None,
+        description=(
+            "Глобальный лимит уникальных устройств на пользователя для /sub/{token}; `null`, если ограничения нет "
+            "(SUBSCRIPTION_MAX_DEVICES на API равен 0 или не задан)."
+        ),
+    )
+    subscription_connections: list[SubscriptionConnectionItem] = Field(
+        default_factory=list,
+        description="Список зафиксированных подключений (os, user_agent), по убыванию updated_at.",
     )
     traffic_up_bytes: int = Field(
         default=0,

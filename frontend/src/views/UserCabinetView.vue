@@ -63,6 +63,9 @@ const error = ref(null)
 /** @type {import('vue').Ref<null | Record<string, unknown>>} */
 const me = ref(null)
 
+const subscriptionConnectionDeletingId = ref(null)
+const subscriptionConnectionDeleteError = ref(null)
+
 const referralsStaffVisible = computed(
   () => me.value?.role === 'admin' || me.value?.role === 'manager',
 )
@@ -197,6 +200,7 @@ watch(
 async function load() {
   loading.value = true
   error.value = null
+  subscriptionConnectionDeleteError.value = null
   try {
     me.value = await fetchJson('/api/auth/me')
   } catch (e) {
@@ -299,6 +303,60 @@ const subscriptionClashUrl = computed(() => {
   return t ? subscriptionClashPublicUrl(String(t)) : ''
 })
 
+/** Сколько уникальных приложений уже запрашивали подписку по ссылке (subscription_devices). */
+const subscriptionConnectionsDisplay = computed(() => {
+  const m = me.value
+  if (!m) return '—'
+  const n = Number(m.subscription_connections_count ?? 0)
+  const raw = m.subscription_connections_limit
+  const lim =
+    raw == null || raw === ''
+      ? null
+      : typeof raw === 'number'
+        ? raw
+        : Number(raw)
+  if (lim != null && !Number.isNaN(lim) && lim > 0) return `${n} из ${lim}`
+  return `${n}`
+})
+
+const subscriptionConnectionsList = computed(() => {
+  const list = me.value?.subscription_connections
+  return Array.isArray(list) ? list : []
+})
+
+function formatConnectionOs(raw) {
+  if (raw == null || String(raw).trim() === '') return '—'
+  return String(raw).trim()
+}
+
+/** Часть User-Agent до первого «/» (напр. Happ из Happ/2.9.1/…). */
+function formatConnectionUserAgentHead(raw) {
+  if (raw == null || String(raw).trim() === '') return '—'
+  const s = String(raw).trim()
+  const i = s.indexOf('/')
+  const head = i === -1 ? s : s.slice(0, i).trim()
+  return head || '—'
+}
+
+async function deleteSubscriptionConnection(deviceId) {
+  const id = Number(deviceId)
+  if (!Number.isFinite(id) || id < 1) return
+  if (subscriptionConnectionDeletingId.value !== null) return
+  subscriptionConnectionDeleteError.value = null
+  subscriptionConnectionDeletingId.value = id
+  try {
+    await fetchJson(`/api/me/subscription-devices/${id}`, {
+      method: 'DELETE',
+    })
+    await load()
+  } catch (e) {
+    subscriptionConnectionDeleteError.value =
+      e.message || String(e)
+  } finally {
+    subscriptionConnectionDeletingId.value = null
+  }
+}
+
 async function copySubscriptionUrl() {
   const url = subscriptionUrl.value
   if (!url) return
@@ -329,9 +387,6 @@ onMounted(() => {
   <div class="page">
     <header class="head">
       <h1>Личный кабинет</h1>
-      <p class="sub">
-        Подписка, профиль и реферальная программа.
-      </p>
     </header>
 
     <div v-if="loading" class="card card-pad muted">Загрузка…</div>
@@ -429,6 +484,70 @@ onMounted(() => {
                     }}</span>
                   </AppTooltip>
                   <span class="traffic-paren" aria-hidden="true">)</span>
+                </dd>
+              </div>
+              <div class="row row-connections">
+                <dt>Подключения</dt>
+                <dd class="connections-block">
+                  <div class="mono connections-count">
+                    {{ subscriptionConnectionsDisplay }}
+                  </div>
+                  <details
+                    v-if="subscriptionConnectionsList.length"
+                    class="connections-expand"
+                  >
+                    <summary class="connections-expand__summary">
+                      Устройства
+                    </summary>
+                    <ul
+                      class="connections-expand__list"
+                      role="list"
+                    >
+                      <li
+                        v-for="conn in subscriptionConnectionsList"
+                        :key="conn.id"
+                        class="connections-expand__item"
+                      >
+                        <div class="connections-expand__line mono">
+                          <span class="connections-expand__os">{{
+                            formatConnectionOs(conn.os)
+                          }}</span>
+                          <span
+                            class="connections-expand__dot"
+                            aria-hidden="true"
+                          > · </span>
+                          <span class="connections-expand__ua">{{
+                            formatConnectionUserAgentHead(conn.user_agent)
+                          }}</span>
+                        </div>
+                        <button
+                          type="button"
+                          class="connections-expand__remove"
+                          :disabled="subscriptionConnectionDeletingId !== null"
+                          :aria-busy="
+                            subscriptionConnectionDeletingId === Number(conn.id)
+                          "
+                          :aria-label="
+                            `Удалить подключение: ${formatConnectionOs(conn.os)}, ${formatConnectionUserAgentHead(conn.user_agent)}`
+                          "
+                          @click.stop="deleteSubscriptionConnection(conn.id)"
+                        >
+                          {{
+                            subscriptionConnectionDeletingId === Number(conn.id)
+                              ? 'Удаление…'
+                              : 'Удалить'
+                          }}
+                        </button>
+                      </li>
+                    </ul>
+                    <p
+                      v-if="subscriptionConnectionDeleteError"
+                      class="connections-expand__del-err"
+                      role="alert"
+                    >
+                      {{ subscriptionConnectionDeleteError }}
+                    </p>
+                  </details>
                 </dd>
               </div>
             </dl>
@@ -884,6 +1003,119 @@ dd {
   margin: 0;
   color: var(--text-h);
   word-break: break-word;
+}
+
+.connections-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.connections-expand {
+  width: 100%;
+  margin: 0;
+}
+
+.connections-expand__summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent);
+  line-height: 1.35;
+  list-style: none;
+}
+
+.connections-expand__summary::-webkit-details-marker {
+  display: none;
+}
+
+.connections-expand__summary::before {
+  content: '';
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-right: 0.38em;
+  border-style: solid;
+  border-width: 0.28em 0 0.28em 0.42em;
+  border-color: transparent transparent transparent currentColor;
+  vertical-align: 0.12em;
+  transition: transform 0.15s ease;
+}
+
+.connections-expand[open] .connections-expand__summary::before {
+  transform: rotate(90deg);
+}
+
+.connections-expand__list {
+  margin: 0.4rem 0 0;
+  padding: 0.35rem 0 0 1rem;
+  list-style: disc;
+  font-size: 0.82rem;
+  border-top: 1px dashed color-mix(in srgb, var(--muted) 40%, transparent);
+}
+
+.connections-expand__item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0.22rem 0;
+  padding: 0;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.connections-expand__line {
+  min-width: 0;
+  flex: 1;
+}
+
+.connections-expand__remove {
+  appearance: none;
+  margin: 0;
+  padding: 0.12rem 0.42rem;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.35;
+  cursor: pointer;
+  flex-shrink: 0;
+  color: var(--danger);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  border-radius: 6px;
+  transition:
+    opacity 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.connections-expand__remove:hover:not(:disabled) {
+  border-color: var(--danger);
+}
+
+.connections-expand__remove:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.connections-expand__remove:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.connections-expand__del-err {
+  margin: 0.35rem 0 0;
+  padding: 0;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: var(--danger);
+}
+
+.connections-expand__dot {
+  color: color-mix(in srgb, var(--muted) 65%, transparent);
+  font-weight: 400;
 }
 
 .mono {

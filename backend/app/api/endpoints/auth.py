@@ -31,6 +31,7 @@ from app.schemas.account import (
     AccountLoginBody,
     AccountMeResponse,
     AccountRegisterBody,
+    SubscriptionConnectionItem,
     TelegramAuthBody,
     TelegramSiteLinkCompleteBody,
     TelegramSiteLinkPreviewResponse,
@@ -49,6 +50,11 @@ from app.services.referral_link_service import (
     increment_referral_counter,
     public_spa_base_url,
     telegram_bot_public_page_url,
+)
+from app.services.subscription_devices import (
+    count_subscription_devices_for_user,
+    effective_subscription_device_limit,
+    list_subscription_connection_records,
 )
 from app.services.telegram_sync_token import (
     TelegramSyncRedisError,
@@ -105,6 +111,12 @@ _AUTH_ME_OPENAPI_EXAMPLES: dict = {
                     "display_name": "Happ",
                     "store_platforms": ["android", "ios", "windows", "macos", "linux"],
                 },
+            ],
+            "subscription_connections_count": 2,
+            "subscription_connections_limit": None,
+            "subscription_connections": [
+                {"id": 1, "os": "Windows", "user_agent": "Happ/2.9.1/Windows/example"},
+                {"id": 2, "os": "Windows", "user_agent": "v2raytun/windows"},
             ],
             "traffic_up_bytes": 1073741824,
             "traffic_down_bytes": 5368709120,
@@ -691,6 +703,12 @@ async def me(
         if user.account_role != "admin":
             raise HTTPException(status_code=401, detail="Недействительный токен")
         up_b, down_b, total_b = user_traffic_totals(session, user.id)
+        subs_dev_count = count_subscription_devices_for_user(session, user.id)
+        subs_dev_limit = effective_subscription_device_limit(settings)
+        subs_conns = [
+            SubscriptionConnectionItem(**r)
+            for r in list_subscription_connection_records(session, user.id)
+        ]
         return AccountMeResponse(
             role="admin",
             id=user.id,
@@ -703,6 +721,9 @@ async def me(
             subscription_active=user_has_active_subscription(user),
             subscription_token=user.token,
             subscription_open_clients=build_subscription_open_client_items(),
+            subscription_connections_count=subs_dev_count,
+            subscription_connections_limit=subs_dev_limit,
+            subscription_connections=subs_conns,
             traffic_up_bytes=up_b,
             traffic_down_bytes=down_b,
             traffic_total_bytes=total_b,
@@ -718,6 +739,12 @@ async def me(
             detail="У записи нет ни email, ни telegram_id",
         )
     up_b, down_b, total_b = user_traffic_totals(session, user.id)
+    subs_dev_count = count_subscription_devices_for_user(session, user.id)
+    subs_dev_limit = effective_subscription_device_limit(settings)
+    subs_conns = [
+        SubscriptionConnectionItem(**r)
+        for r in list_subscription_connection_records(session, user.id)
+    ]
     api_role = "manager" if principal.role == "manager" else "user"
     return AccountMeResponse(
         role=api_role,
@@ -731,6 +758,9 @@ async def me(
         subscription_active=user_has_active_subscription(user),
         subscription_token=user.token,
         subscription_open_clients=build_subscription_open_client_items(),
+        subscription_connections_count=subs_dev_count,
+        subscription_connections_limit=subs_dev_limit,
+        subscription_connections=subs_conns,
         traffic_up_bytes=up_b,
         traffic_down_bytes=down_b,
         traffic_total_bytes=total_b,

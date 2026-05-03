@@ -21,11 +21,12 @@ from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, HTTPException, Path, Query, Response
 from fastapi.responses import RedirectResponse
+from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import URL as StarletteURL
 from starlette.requests import Request
 
-from app.api.deps import ReadonlySessionDep
+from app.api.deps import ReadonlySessionDep, SessionDep
 from app.core.config import settings
 from app.database.operations import table_select_one
 from app.domain.subscription import user_has_active_subscription
@@ -46,6 +47,7 @@ from app.services.subscription_delivery import (
     build_subscription_payload,
     subscription_servers_after_prometheus_sync,
 )
+from app.services.subscription_devices import register_or_touch_subscription_device
 
 router = APIRouter(tags=["public"])
 
@@ -127,13 +129,10 @@ def _open_redirect_would_loop(request: Request, redirect_url: str) -> bool:
     )
 
 
-async def _subscription_payload_rows_for_token(
-    subscription_token: str, session: ReadonlySessionDep
+async def _subscription_payload_rows_for_resolved_user(
+    session: Session,
+    user: User,
 ) -> tuple[SubscriptionPayload, User, list[Server]]:
-    user = table_select_one(session, User, filters={"token": subscription_token})
-    if user is None:
-        raise HTTPException(status_code=404, detail="Неизвестный токен")
-
     if not user_has_active_subscription(user):
         return (
             SubscriptionPayload(
@@ -151,17 +150,24 @@ async def _subscription_payload_rows_for_token(
     return build_subscription_payload(user, rows), user, rows
 
 
-async def _subscription_payload_for_token(
-    subscription_token: str, session: ReadonlySessionDep
-) -> tuple[SubscriptionPayload, User]:
-    payload, user, _rows = await _subscription_payload_rows_for_token(
-        subscription_token, session
+def _maybe_register_subscription_device(
+    *,
+    session: Session,
+    request: Request,
+    user: User | None,
+) -> None:
+    if user is None:
+        return
+    register_or_touch_subscription_device(
+        session,
+        settings=settings,
+        user=user,
+        request=request,
     )
-    return payload, user
 
 
 def _subscription_client_metadata_headers(
-    session: ReadonlySessionDep,
+    session: Session,
     user: User,
     *,
     request: Request | None = None,
@@ -326,12 +332,13 @@ async def subscription_open_in_app(
 )
 async def subscription_head_by_token(
     request: Request,
-    session: ReadonlySessionDep,
+    session: SessionDep,
     subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
 ) -> Response:
     user = table_select_one(session, User, filters={"token": subscription_token})
     if user is None:
         raise HTTPException(status_code=404, detail="Неизвестный токен")
+    _maybe_register_subscription_device(session=session, request=request, user=user)
     headers = _subscription_client_metadata_headers(session, user, request=request)
     return Response(content="", media_type="text/plain; charset=utf-8", headers=headers)
 
@@ -343,10 +350,17 @@ async def subscription_head_by_token(
 )
 async def subscription_base64_by_token(
     request: Request,
-    session: ReadonlySessionDep,
+    session: SessionDep,
     subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
 ) -> Response:
-    payload, user = await _subscription_payload_for_token(subscription_token, session)
+    user = table_select_one(session, User, filters={"token": subscription_token})
+    if user is None:
+        raise HTTPException(status_code=404, detail="Неизвестный токен")
+    _maybe_register_subscription_device(session=session, request=request, user=user)
+    payload, user, _rows = await _subscription_payload_rows_for_resolved_user(
+        session,
+        user,
+    )
     headers = _subscription_client_metadata_headers(session, user, request=request)
     return Response(
         content=payload.subscription_base64,
@@ -362,12 +376,13 @@ async def subscription_base64_by_token(
 )
 async def subscription_clash_head_by_token(
     request: Request,
-    session: ReadonlySessionDep,
+    session: SessionDep,
     subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
 ) -> Response:
     user = table_select_one(session, User, filters={"token": subscription_token})
     if user is None:
         raise HTTPException(status_code=404, detail="Неизвестный токен")
+    _maybe_register_subscription_device(session=session, request=request, user=user)
     headers = _subscription_client_metadata_headers(session, user, request=request)
     return Response(content="", media_type="text/plain; charset=utf-8", headers=headers)
 
@@ -379,11 +394,16 @@ async def subscription_clash_head_by_token(
 )
 async def subscription_clash_yaml_by_token(
     request: Request,
-    session: ReadonlySessionDep,
+    session: SessionDep,
     subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
 ) -> Response:
-    _payload, user, rows = await _subscription_payload_rows_for_token(
-        subscription_token, session
+    user = table_select_one(session, User, filters={"token": subscription_token})
+    if user is None:
+        raise HTTPException(status_code=404, detail="Неизвестный токен")
+    _maybe_register_subscription_device(session=session, request=request, user=user)
+    _payload, user, rows = await _subscription_payload_rows_for_resolved_user(
+        session,
+        user,
     )
     headers = _subscription_client_metadata_headers(session, user, request=request)
     yaml_body = build_clash_subscription_yaml(user, rows)
@@ -402,10 +422,17 @@ async def subscription_clash_yaml_by_token(
 async def subscription_json_by_token(
     request: Request,
     response: Response,
-    session: ReadonlySessionDep,
+    session: SessionDep,
     subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
 ) -> SubscriptionPayload:
-    payload, user = await _subscription_payload_for_token(subscription_token, session)
+    user = table_select_one(session, User, filters={"token": subscription_token})
+    if user is None:
+        raise HTTPException(status_code=404, detail="Неизвестный токен")
+    _maybe_register_subscription_device(session=session, request=request, user=user)
+    payload, user, _rows = await _subscription_payload_rows_for_resolved_user(
+        session,
+        user,
+    )
     for key, val in _subscription_client_metadata_headers(session, user, request=request).items():
         response.headers[key] = val
     return payload

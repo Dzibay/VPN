@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.endpoints import (
     auth,
     client_app_public,
+    me as me_endpoints,
     health,
     prometheus_sd,
     referral_links,
@@ -20,6 +21,7 @@ api_router.include_router(health.router)
 api_router.include_router(client_app_public.router)
 api_router.include_router(referral_public.router)
 api_router.include_router(referral_me.router)
+api_router.include_router(me_endpoints.router)
 api_router.include_router(auth.router)
 api_router.include_router(telegram.router)
 api_router.include_router(status.router)

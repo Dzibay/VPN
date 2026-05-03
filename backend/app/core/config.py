@@ -242,6 +242,16 @@ class Settings(BaseSettings):
         le=59,
         description="Минута локального времени процесса API.",
     )
+    subscription_max_devices: int = Field(
+        default=0,
+        ge=0,
+        le=10_000,
+        description=(
+            "Максимум разных устройств (по x-hwid или по отпечатку заголовков), с которых можно "
+            "запрашивать подписку /sub/{token} и варианты /json, /clash. 0 — без ограничения. "
+            "Переменная окружения: SUBSCRIPTION_MAX_DEVICES."
+        ),
+    )
 
     prometheus_base_url: str = Field(
         default="",

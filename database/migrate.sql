@@ -103,3 +103,19 @@ ALTER TABLE user_server_traffic ALTER COLUMN traffic_date SET NOT NULL;
 ALTER TABLE user_server_traffic DROP CONSTRAINT IF EXISTS user_server_traffic_pkey;
 ALTER TABLE user_server_traffic ADD PRIMARY KEY (user_id, server_id, traffic_date);
 CREATE INDEX IF NOT EXISTS idx_user_server_traffic_user_day ON user_server_traffic (user_id, traffic_date DESC);
+
+-- Устройства, с которых запрашивали подписку (уникальный fingerprint по hwid или заголовкам)
+CREATE TABLE IF NOT EXISTS subscription_devices (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    fingerprint TEXT NOT NULL,
+    user_agent TEXT,
+    os TEXT,
+    hwid_raw TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_subscription_devices_user_fp UNIQUE (user_id, fingerprint)
+);
+
+CREATE INDEX IF NOT EXISTS idx_subscription_devices_user_updated_at
+    ON subscription_devices (user_id, updated_at DESC);
