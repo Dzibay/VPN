@@ -32,7 +32,32 @@
 
 from __future__ import annotations
 
+import base64
 from datetime import date, datetime, time, timedelta, timezone
+
+_HAPP_ANNOUNCE_MAX_CHARS = 200
+
+
+def subscription_announce_header_value(text: str) -> str:
+    """
+    Значение для HTTP-заголовка ``announce`` (Happ и др.).
+
+    Starlette кодирует заголовки как latin-1 — сырой кириллический текст даёт ``UnicodeEncodeError``.
+    Happ принимает текст в форме ``base64:<Base64(UTF-8)>`` (см. их dev-docs app-management).
+
+    Длина после декодирования — не более 200 символов (ограничение Happ).
+    """
+    if not (text or "").strip():
+        return ""
+    t = text.strip()
+    if len(t) > _HAPP_ANNOUNCE_MAX_CHARS:
+        t = t[:_HAPP_ANNOUNCE_MAX_CHARS]
+    try:
+        t.encode("latin-1")
+        return t
+    except UnicodeEncodeError:
+        payload = base64.b64encode(t.encode("utf-8")).decode("ascii")
+        return f"base64:{payload}"
 
 
 def subscription_valid_until_to_expire_unix(valid_until: date | None) -> int | None:

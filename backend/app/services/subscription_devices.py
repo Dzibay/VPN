@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 
-from fastapi import HTTPException
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 from starlette.requests import Request
@@ -13,6 +12,11 @@ from starlette.requests import Request
 from app.core.config import Settings
 from app.models.subscription_device import SubscriptionDevice
 from app.models.user import User
+
+SUBSCRIPTION_DEVICE_LIMIT_ANNOUNCE = (
+    "Достигнуто максимальное количество подключений (устройств). "
+    "Освободите слот в личном кабинете или обратитесь в поддержку."
+)
 
 
 def _norm_header(headers: Request.headers, key: str) -> str | None:
@@ -69,13 +73,16 @@ def register_or_touch_subscription_device(
     settings: Settings,
     user: User,
     request: Request,
-) -> None:
+) -> bool:
     """
     Сохраняет или обновляет запись устройства.
 
     Лимит уникальных устройств проверяется здесь всегда (включая истёкшую подписку), если в API
-    задано положительное ``SUBSCRIPTION_MAX_DEVICES``. Ответ без узлов VPN при неактивной
-    подписке формируется уже после этого в обработчике /sub.
+    задано положительное ``SUBSCRIPTION_MAX_DEVICES``. Новое устройство при исчерпанном лимите
+    не регистрируется — возвращается ``False``; обработчик /sub отдаёт пустой список узлов и
+    текст в заголовке ``announce``.
+
+    :returns: ``True``, если клиенту можно выдавать узлы (известное устройство или успешная регистрация).
     """
     fingerprint = subscription_device_fingerprint(request)
     limit = effective_subscription_device_limit(settings)
@@ -100,13 +107,7 @@ def register_or_touch_subscription_device(
                 )
             ).scalar_one()
             if int(cnt or 0) >= limit:
-                raise HTTPException(
-                    status_code=403,
-                    detail=(
-                        "Достигнут лимит количества устройств для этой подписки "
-                        "(каждый клиент с уникальным HWID считается отдельным устройством)."
-                    ),
-                )
+                return False
         now = datetime.now(timezone.utc)
         session.add(
             SubscriptionDevice(
@@ -119,6 +120,7 @@ def register_or_touch_subscription_device(
     else:
         for k, v in fields.items():
             setattr(row, k, v)
+    return True
 
 
 def list_subscription_connection_records(
