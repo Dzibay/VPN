@@ -344,7 +344,7 @@ onMounted(async () => {
           <div class="funnel-step">
             <div class="funnel-label-row">
               <span class="funnel-label"
-                >С подключённым устройством (по подписке)</span
+                >С подключённым устройством</span
               >
               <span class="funnel-num">{{ deviceUsers.toLocaleString('ru-RU') }}</span>
             </div>
@@ -371,7 +371,7 @@ onMounted(async () => {
           <div class="funnel-step">
             <div class="funnel-label-row">
               <span class="funnel-label"
-                >Активные за день UTC (накопленный трафик вырос)</span
+                >Активные за день</span
               >
               <span class="funnel-num">{{ activeToday.toLocaleString('ru-RU') }}</span>
             </div>
