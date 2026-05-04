@@ -9,6 +9,7 @@ const router = useRouter()
 
 const email = ref('')
 const password = ref('')
+const passwordConfirm = ref('')
 const submitting = ref(false)
 const error = ref(null)
 
@@ -16,6 +17,10 @@ async function submit() {
   submitting.value = true
   error.value = null
   try {
+    if (password.value !== passwordConfirm.value) {
+      error.value = 'Пароли не совпадают'
+      return
+    }
     const referral_token = peekPendingReferralToken()
     const body = {
       email: email.value.trim(),
@@ -67,6 +72,19 @@ async function submit() {
           class="input"
           type="password"
           name="password"
+          autocomplete="new-password"
+          minlength="8"
+          maxlength="72"
+          required
+        />
+      </label>
+      <label class="field">
+        <span class="label">Подтверждение пароля</span>
+        <input
+          v-model="passwordConfirm"
+          class="input"
+          type="password"
+          name="password-confirm"
           autocomplete="new-password"
           minlength="8"
           maxlength="72"
