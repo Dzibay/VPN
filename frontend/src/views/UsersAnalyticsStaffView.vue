@@ -589,9 +589,6 @@ onMounted(() => {
           </header>
 
           <section class="user-detail-block" aria-labelledby="user-detail-table-heading">
-            <h3 id="user-detail-table-heading" class="user-detail-block__title">
-              Данные из таблицы
-            </h3>
             <ul class="tg-props-list">
               <li class="tg-props-item">
                 <div class="tg-props-item__grid">
