@@ -3,6 +3,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+from app.constants import BIGINT_MAX
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -36,8 +38,8 @@ class SubscriptionOpenClientItem(BaseModel):
 
 
 def build_subscription_open_client_items() -> list[SubscriptionOpenClientItem]:
-    """Один список клиентов из app.domain.subscription_open_apps (как в GET /api/auth/me)."""
-    from app.domain.subscription_open_apps import list_subscription_open_apps, store_platform_tags
+    """Один список клиентов из app.domain.subscription.open_apps (как в GET /api/auth/me)."""
+    from app.domain.subscription.open_apps import list_subscription_open_apps, store_platform_tags
 
     return [
         SubscriptionOpenClientItem(
@@ -58,9 +60,9 @@ class TelegramSubscriptionOpenClientsResponse(BaseModel):
     public_base_url: str | None = Field(
         default=None,
         description=(
-            "Origin сайта из SITE_ADRESS на бэкенде (HTTPS или http для локальной разработки, без «/» в конце). "
+            "Origin сайта из SITE_ADDRESS на бэкенде (HTTPS или http для локальной разработки, без «/» в конце). "
             "Полная ссылка (302 на SPA): {public_base_url}/sub/{subscription_token}/open/{client_code} — "
-            "если null, задайте SITE_ADRESS в .env API."
+            "если null, задайте SITE_ADDRESS в .env API."
         ),
     )
     open_path_template: str = Field(
@@ -114,7 +116,7 @@ class TelegramAuthBody(BaseModel):
 
     telegram_id: int = Field(
         ge=1,
-        le=9223372036854775807,
+        le=BIGINT_MAX,
         description="Числовой id пользователя в Telegram (как в Bot API).",
     )
     username: str | None = Field(
@@ -137,7 +139,7 @@ class TelegramAuthBody(BaseModel):
     topic_id: int | None = Field(
         default=None,
         ge=1,
-        le=9223372036854775807,
+        le=BIGINT_MAX,
         description="Id топика; в users.telegram_properties.topic_id.",
     )
     referral_token: str | None = Field(
@@ -183,7 +185,7 @@ class TelegramProfilePatchBody(BaseModel):
     topic_id: int | None = Field(
         default=None,
         ge=1,
-        le=9223372036854775807,
+        le=BIGINT_MAX,
         description="Id топика; в users.telegram_properties.topic_id.",
     )
 
@@ -247,7 +249,7 @@ class TelegramWebLinkBody(BaseModel):
     )
     telegram_id: int = Field(
         ge=1,
-        le=9223372036854775807,
+        le=BIGINT_MAX,
         description="Числовой id пользователя в Telegram (Bot API).",
     )
     username: str | None = Field(
@@ -260,7 +262,7 @@ class TelegramWebLinkBody(BaseModel):
     topic_id: int | None = Field(
         default=None,
         ge=1,
-        le=9223372036854775807,
+        le=BIGINT_MAX,
     )
 
     @field_validator("link_token", mode="before")
@@ -297,7 +299,7 @@ class TelegramSiteLinkStartBody(BaseModel):
 
     telegram_id: int = Field(
         ge=1,
-        le=9223372036854775807,
+        le=BIGINT_MAX,
         description="Числовой id пользователя Telegram (Bot API); вызывает бэкенд бота.",
     )
 

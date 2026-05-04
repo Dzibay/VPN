@@ -12,7 +12,7 @@
 - ``expire`` — Unix **секунды** (UTC): полночь календарного дня ``valid_until`` минус **3 часа**
   (сдвиг для отображения в MSK и др.).
 
-Ссылки на документацию клиентов из ``subscription_open_apps``:
+Ссылки на документацию клиентов из ``subscription.open_apps``:
 
 - **Happ**: https://www.happ.su/happ/dev-docs/app-management — заголовок
   ``subscription-userinfo``, параметр ``expire`` для даты окончания.

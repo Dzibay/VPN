@@ -1,4 +1,9 @@
-"""Централизованная регистрация обработчиков исключений FastAPI."""
+"""Централизованная регистрация обработчиков исключений FastAPI.
+
+Любое исключение из иерархии :class:`app.core.exceptions.AppError` превращается в JSON
+``{"detail": …}`` с указанным ``status_code``: эндпоинтам не нужно ловить и руками
+переоборачивать в ``HTTPException``.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +16,8 @@ from app.core.exceptions import AppError
 
 
 def register_exception_handlers(application: FastAPI) -> None:
+    """Зарегистрировать единый обработчик ``AppError`` и его подклассов на ``application``."""
+
     @application.exception_handler(AppError)
     async def app_error_handler(_request: Request, exc: AppError) -> JSONResponse:
         return JSONResponse(

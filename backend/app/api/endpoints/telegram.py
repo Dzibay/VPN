@@ -2,9 +2,10 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, Path
 
 from app.config import settings
+from app.constants import BIGINT_MAX
 from app.core.dependencies import (
     ReadonlySessionDep,
     SessionDep,
@@ -16,7 +17,6 @@ from app.domain.models.auth import (
     TelegramUserPropertiesUpdateResponse,
 )
 from app.domain.models.users import UserRead
-from app.domain.services.http_errors import HttpServiceError
 from app.domain.services.telegram_service import (
     get_user_by_topic_id,
     patch_user_telegram_properties,
@@ -24,10 +24,6 @@ from app.domain.services.telegram_service import (
 )
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
-
-
-def _raise_svc(exc: HttpServiceError) -> None:
-    raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.get(
@@ -51,16 +47,13 @@ async def get_user_by_topic_id_ep(
         int,
         Path(
             ge=1,
-            le=9223372036854775807,
+            le=BIGINT_MAX,
             description="Значение topic_id внутри объекта telegram_properties",
         ),
     ],
     session: ReadonlySessionDep,
 ) -> UserRead:
-    try:
-        return get_user_by_topic_id(session, topic_id)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return get_user_by_topic_id(session, topic_id)
 
 
 @router.patch(
@@ -74,7 +67,4 @@ async def patch_user_telegram_properties_ep(
     body: TelegramProfilePatchBody,
     session: SessionDep,
 ) -> TelegramUserPropertiesUpdateResponse:
-    try:
-        return patch_user_telegram_properties(session, telegram_id, body)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return patch_user_telegram_properties(session, telegram_id, body)

@@ -9,7 +9,7 @@ import json
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from app.domain.subscription import subscription_active_sql
+from app.domain.subscription.validity import subscription_active_sql
 from app.infrastructure.persistence.models.server import Server
 from app.infrastructure.persistence.models.user import User
 

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends
 
 from app.core.dependencies import (
     ReadonlySessionDep,
@@ -21,30 +21,27 @@ from app.domain.models.users import (
     UsersDailyStatsResponse,
     UserUpdate,
 )
-from app.domain.services.http_errors import HttpServiceError
-from app.infrastructure.persistence.models.user import User
 from app.domain.services.users_service import (
     create_staff_user,
     delete_staff_user,
-    enqueue_sync_xray_clients_all_servers,
     extend_active_subscriptions,
     patch_staff_user,
     require_user_exists,
     staff_list_users,
+    users_count,
+)
+from app.domain.users.daily_stats import users_daily_stats
+from app.domain.users.traffic_breakdown import (
     user_traffic_by_servers_bundle,
     user_traffic_cumulative_by_day_rows,
-    users_count,
-    users_daily_stats,
 )
+from app.domain.users.xray_sync_queue import enqueue_sync_xray_clients_all_servers
+from app.infrastructure.persistence.models.user import User
 
 router = APIRouter(
     prefix="/users",
     tags=["admin"],
 )
-
-
-def _raise_svc(exc: HttpServiceError) -> None:
-    raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.get(
@@ -95,10 +92,7 @@ async def create_user(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> User:
-    try:
-        user = create_staff_user(session, body)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    user = create_staff_user(session, body)
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return user
 
@@ -133,10 +127,7 @@ async def user_traffic_by_server(
     user_id: int,
     session: ReadonlySessionDep,
 ) -> UserTrafficByServersBundle:
-    try:
-        return user_traffic_by_servers_bundle(session, user_id)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return user_traffic_by_servers_bundle(session, user_id)
 
 
 @router.get(
@@ -149,10 +140,7 @@ async def user_traffic_by_day(
     user_id: int,
     session: ReadonlySessionDep,
 ) -> list[UserTrafficByDayRow]:
-    try:
-        require_user_exists(session, user_id)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    require_user_exists(session, user_id)
     return user_traffic_cumulative_by_day_rows(session, user_id)
 
 
@@ -167,10 +155,7 @@ async def delete_user(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> None:
-    try:
-        delete_staff_user(session, user_id)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    delete_staff_user(session, user_id)
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
 
 
@@ -186,9 +171,6 @@ async def patch_user(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> User:
-    try:
-        user = patch_staff_user(session, user_id, body)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    user = patch_staff_user(session, user_id, body)
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return user

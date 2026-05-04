@@ -1,7 +1,7 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response
 
 from app.config import settings
 from app.core.dependencies import (
@@ -11,13 +11,13 @@ from app.core.dependencies import (
     get_bearer_principal_dep,
     require_telegram_bot_api_secret,
 )
-from app.infrastructure.cache import get_redis
 from app.domain.models.auth import (
     AccountChangePasswordBody,
     AccountLoginBody,
     AccountMeResponse,
     AccountRegisterBody,
     TelegramAuthBody,
+    TelegramAuthTokenResponse,
     TelegramSiteLinkCompleteBody,
     TelegramSiteLinkPreviewResponse,
     TelegramSiteLinkStartBody,
@@ -25,13 +25,15 @@ from app.domain.models.auth import (
     TelegramSyncStartResponse,
     TelegramWebLinkBody,
     TelegramWebLinkResponse,
+    TokenResponse,
 )
-from app.domain.models.auth import TelegramAuthTokenResponse, TokenResponse
 from app.domain.services.auth_service import (
     account_me,
     change_account_password,
     login_with_password,
     register_with_email,
+)
+from app.domain.services.telegram_auth_service import (
     telegram_authenticate,
     telegram_link_web_account,
     telegram_site_link_complete,
@@ -39,8 +41,8 @@ from app.domain.services.auth_service import (
     telegram_site_link_start,
     telegram_sync_start_link,
 )
-from app.domain.services.http_errors import HttpServiceError
-from app.domain.services.users_service import enqueue_sync_xray_clients_all_servers
+from app.domain.users.xray_sync_queue import enqueue_sync_xray_clients_all_servers
+from app.infrastructure.cache import get_redis
 
 log = logging.getLogger("app.auth")
 
@@ -115,10 +117,6 @@ _AUTH_ME_OPENAPI_EXAMPLES: dict = {
 router = APIRouter(prefix="/auth")
 
 
-def _raise_svc(e: HttpServiceError) -> None:
-    raise HTTPException(status_code=e.status_code, detail=e.detail) from e
-
-
 @router.post(
     "/login",
     response_model=TokenResponse,
@@ -126,10 +124,7 @@ def _raise_svc(e: HttpServiceError) -> None:
     summary="Аутентификация по email и паролю; ответ содержит JWT",
 )
 async def login(body: AccountLoginBody, session: ReadonlySessionDep) -> TokenResponse:
-    try:
-        return login_with_password(session, body, settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return login_with_password(session, body, settings)
 
 
 @router.post(
@@ -144,10 +139,7 @@ async def register(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> TokenResponse:
-    try:
-        resp = register_with_email(session, body, settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    resp = register_with_email(session, body, settings)
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return resp
 
@@ -165,10 +157,7 @@ async def telegram_auth(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> TelegramAuthTokenResponse:
-    try:
-        resp = telegram_authenticate(session, body, settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    resp = telegram_authenticate(session, body, settings)
     if resp.is_new_user:
         background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return resp
@@ -186,10 +175,7 @@ async def telegram_link_web_account_ep(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> TelegramWebLinkResponse:
-    try:
-        resp = telegram_link_web_account(session, body, get_redis(), settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    resp = telegram_link_web_account(session, body, get_redis(), settings)
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return resp
 
@@ -205,10 +191,7 @@ async def telegram_site_link_start_ep(
     body: TelegramSiteLinkStartBody,
     session: ReadonlySessionDep,
 ) -> TelegramSiteLinkStartResponse:
-    try:
-        return telegram_site_link_start(session, body, get_redis(), settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return telegram_site_link_start(session, body, get_redis(), settings)
 
 
 @router.get(
@@ -226,10 +209,7 @@ async def telegram_site_link_preview_ep(
         description="Параметр token из URL",
     ),
 ) -> TelegramSiteLinkPreviewResponse:
-    try:
-        return telegram_site_link_preview_response(session, get_redis(), token, settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return telegram_site_link_preview_response(session, get_redis(), token, settings)
 
 
 @router.post(
@@ -238,7 +218,7 @@ async def telegram_site_link_preview_ep(
     tags=["public"],
     summary=(
         "По одноразовому token: новый email на Telegram-аккаунт либо объединение с "
-        "существующим email при верном пароле (merge_drop_user_into_keep)"
+        "существующим email при верном пароле"
     ),
 )
 async def telegram_site_link_complete_ep(
@@ -246,10 +226,7 @@ async def telegram_site_link_complete_ep(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> TokenResponse:
-    try:
-        resp = telegram_site_link_complete(session, body, get_redis(), settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    resp = telegram_site_link_complete(session, body, get_redis(), settings)
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return resp
 
@@ -264,10 +241,7 @@ async def telegram_sync_start(
     session: ReadonlySessionDep,
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
 ) -> TelegramSyncStartResponse:
-    try:
-        return telegram_sync_start_link(session, principal, get_redis(), settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return telegram_sync_start_link(session, principal, get_redis(), settings)
 
 
 @router.get(
@@ -290,10 +264,7 @@ async def me(
     session: ReadonlySessionDep,
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
 ) -> AccountMeResponse:
-    try:
-        return account_me(session, principal, settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return account_me(session, principal, settings)
 
 
 @router.post(
@@ -307,8 +278,5 @@ async def change_password(
     session: SessionDep,
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
 ) -> Response:
-    try:
-        change_account_password(session, principal, body)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    change_account_password(session, principal, body)
     return Response(status_code=204)

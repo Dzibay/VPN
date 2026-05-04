@@ -370,7 +370,7 @@ def sync_xray_clients_all_servers() -> None:
     Обновить inbound на всех узлах с provision_ready.
 
     При очень большом числе пользователей узкое место — выборка всех UUID в память
-    и размер конфига на узле; коалесцинг задач в очереди см. users_service.
+    и размер конфига на узле; коалесцинг задач в очереди см. ``app.domain.users.xray_sync_queue``.
     """
     db = SessionLocal()
     try:

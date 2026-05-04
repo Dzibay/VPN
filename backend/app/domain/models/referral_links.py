@@ -55,7 +55,7 @@ class ReferralFunnelSummary(BaseModel):
 
 
 class ReferralLinkOut(ReferralLinkRead):
-    """Ответ админ-API: те же поля + готовые ссылки (SITE_ADRESS на API, TELEGRAM_BOT_USERNAME)."""
+    """Ответ админ-API: те же поля + готовые ссылки (SITE_ADDRESS на API, TELEGRAM_BOT_USERNAME)."""
 
     site_entry_url: str | None = Field(
         default=None,

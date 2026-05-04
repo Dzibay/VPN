@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Query, Response
 from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
@@ -16,14 +16,9 @@ from app.domain.models.server_traffic import (
     UserTrafficCollectEnqueueResponse,
     UserTrafficCollectPollResponse,
 )
-from app.domain.services.http_errors import HttpServiceError
 from app.domain.services import server_metrics_service
 
 router = APIRouter(prefix="/servers", tags=["admin"])
-
-
-def _raise_svc(exc: HttpServiceError) -> None:
-    raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.post(
@@ -34,10 +29,7 @@ def _raise_svc(exc: HttpServiceError) -> None:
     summary="Постановка в очередь RQ пакетного сбора трафика Xray по всем узлам в состоянии provision_ready",
 )
 async def enqueue_user_traffic_collect_all() -> UserTrafficCollectAllEnqueueResponse:
-    try:
-        return await run_in_threadpool(server_metrics_service.enqueue_user_traffic_collect_all)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return await run_in_threadpool(server_metrics_service.enqueue_user_traffic_collect_all)
 
 
 @router.get(
@@ -52,16 +44,13 @@ async def get_server_metrics_prometheus(
     hours: int = Query(24, ge=1, le=720, description="Глубина выборки, часов"),
     step: int = Query(60, ge=15, le=300, description="Интервал между точками ряда, с"),
 ) -> ServerMetricsFromPrometheus:
-    try:
-        inst, adj_step, tariff_cap = server_metrics_service.resolve_prometheus_metrics_inputs(
-            session,
-            server_id,
-            hours,
-            step,
-            settings,
-        )
-    except HttpServiceError as e:
-        _raise_svc(e)
+    inst, adj_step, tariff_cap = server_metrics_service.resolve_prometheus_metrics_inputs(
+        session,
+        server_id,
+        hours,
+        step,
+        settings,
+    )
 
     def _run():
         return server_metrics_service.fetch_merged_metrics_for_instance(
@@ -72,12 +61,9 @@ async def get_server_metrics_prometheus(
             cfg=settings,
         )
 
-    try:
-        raw_points, used_step, axis_hints, online_clients_val, online_from_cfg = (
-            await run_in_threadpool(_run)
-        )
-    except HttpServiceError as e:
-        _raise_svc(e)
+    raw_points, used_step, axis_hints, online_clients_val, online_from_cfg = (
+        await run_in_threadpool(_run)
+    )
 
     return server_metrics_service.build_server_metrics_response(
         inst,
@@ -100,10 +86,7 @@ async def enqueue_user_traffic_collect(
     server_id: int,
     session: ReadonlySessionDep,
 ) -> UserTrafficCollectEnqueueResponse:
-    try:
-        return server_metrics_service.enqueue_user_traffic_collect_one(session, server_id, settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return server_metrics_service.enqueue_user_traffic_collect_one(session, server_id, settings)
 
 
 @router.get(
@@ -117,10 +100,7 @@ async def poll_user_traffic_collect_job(
     job_id: str,
     session: ReadonlySessionDep,
 ) -> UserTrafficCollectPollResponse:
-    try:
-        return server_metrics_service.poll_user_traffic_collect_job_sync(session, server_id, job_id)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return server_metrics_service.poll_user_traffic_collect_job_sync(session, server_id, job_id)
 
 
 @router.get(
@@ -146,7 +126,4 @@ async def get_server_user_traffic(
             collect=collect,
         )
 
-    try:
-        return await run_in_threadpool(_run)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return await run_in_threadpool(_run)

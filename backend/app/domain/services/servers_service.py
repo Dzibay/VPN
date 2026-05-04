@@ -1,9 +1,15 @@
-"""Управление записями серверов, каскад, очередь установки и синхронизация нагрузки."""
+"""Управление серверами: CRUD-операции и оркестрация очередей установки/синхронизации.
+
+Низкоуровневые примитивы лежат в пакете :mod:`app.domain.servers`:
+
+* каскадные инварианты — :mod:`app.domain.servers.cascade`,
+* очередь установки ПО — :mod:`app.domain.servers.provision_queue`,
+* дефолты REALITY/VLESS — :mod:`app.domain.servers.reality_defaults`.
+"""
 
 from __future__ import annotations
 
 import logging
-import secrets
 import uuid as uuid_lib
 
 from redis.exceptions import RedisError
@@ -13,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import Settings, settings
+from app.core.exceptions import ConflictError, NotFoundError, ServiceUnavailableError
 from app.domain.models.servers import (
     ServerCreate,
     ServerLoadSyncItemRead,
@@ -22,12 +29,21 @@ from app.domain.models.servers import (
     XrayClientsSyncOneResultRead,
     XrayClientsSyncResultRead,
 )
-from app.domain.services.http_errors import HttpServiceError
-from app.domain.services.users_service import (
+from app.domain.servers.cascade import (
+    merge_cascade_fields,
+    try_enqueue_sync_xray_on_exit_for_cascade,
+    validate_cascade_pair,
+)
+from app.domain.servers.provision_queue import (
+    enqueue_software_job,
+    provision_command_blocks_split_install,
+)
+from app.domain.servers.reality_defaults import reality_defaults_for_create
+from app.domain.users.xray_sync_queue import (
     ensure_sync_xray_clients_all_servers_enqueued,
     ensure_sync_xray_clients_to_server_enqueued,
 )
-from app.infrastructure.cache import get_install_queue, get_redis
+from app.infrastructure.cache import get_redis
 from app.infrastructure.database.operations import table_insert
 from app.infrastructure.database.session import SessionLocal
 from app.infrastructure.persistence.models.server import Server
@@ -37,131 +53,24 @@ from app.infrastructure.server_health_check import run_tcp_probes
 log = logging.getLogger("app.servers_service")
 
 
-def validate_cascade_pair(
-    session: Session,
-    *,
-    self_id: int | None,
-    is_ru_entry: bool,
-    cascade_next_id: int | None,
-) -> None:
-    if cascade_next_id is None:
-        return
-    if not is_ru_entry:
-        raise HttpServiceError(
-            400,
-            "cascade_next_server_id задан: включите is_cascade_ru_entry (вход в каскаде) "
-            "или сбросьте внешний id",
-        )
-    if self_id is not None and cascade_next_id == self_id:
-        raise HttpServiceError(
-            400,
-            "cascade_next_server_id не может совпадать с id этого сервера",
-        )
-    target = session.get(Server, cascade_next_id)
-    if target is None:
-        raise HttpServiceError(
-            400,
-            "cascade_next_server_id: внешний сервер не найден",
-        )
-    if target.is_cascade_ru_entry:
-        raise HttpServiceError(
-            400,
-            "Каскад: внешний узел — сервер с is_cascade_ru_entry=false; "
-            "нельзя направлять на вход (РФ) другой пары",
-        )
-    if target.cascade_next_server_id is not None:
-        raise HttpServiceError(
-            400,
-            "Каскад: внешний узел не должен иметь собственного cascade_next (один уровень)",
-        )
-
-
-def merge_cascade_fields(
-    server: Server,
-    data: dict,
-) -> tuple[bool, int | None]:
-    is_ru = server.is_cascade_ru_entry
-    next_id = server.cascade_next_server_id
-    if "is_cascade_ru_entry" in data:
-        is_ru = bool(data["is_cascade_ru_entry"])
-    if "cascade_next_server_id" in data:
-        next_id = data["cascade_next_server_id"]
-    if is_ru is False:
-        next_id = None
-    elif next_id is not None:
-        is_ru = True
-    return is_ru, next_id
-
-
-def try_enqueue_sync_xray_on_exit_for_cascade(session: Session, *exit_ids: int | None) -> None:
-    need = {int(x) for x in exit_ids if x is not None}
-    for eid in need:
-        ex = session.get(Server, eid)
-        if ex is None or not ex.provision_ready:
-            log.info(
-                "cascade: пропуск sync Xray на exit id=%s (нет или provision_ready=false)",
-                eid,
-            )
-            continue
-        if (settings.provision_command or "").strip():
-            continue
-        try:
-            ensure_sync_xray_clients_to_server_enqueued(eid)
-        except RedisError as e:
-            log.warning("cascade: не поставлена в очередь sync Xray на exit id=%s: %s", eid, e)
-
-
-def provision_command_blocks_split_install(cfg: Settings) -> None:
-    if (cfg.provision_command or "").strip():
-        raise HttpServiceError(
-            400,
-            "Отключите provision_command на воркере для пошаговой установки и очистки по SSH.",
-        )
-
-
-def enqueue_software_job(
-    session: Session,
-    server: Server,
-    *,
-    component: str,
-    reconcile: bool = False,
-    clear_ready: bool = False,
-    cfg: Settings | None = None,
-) -> Server:
-    cfg = cfg or settings
-    try:
-        q = get_install_queue()
-        job = q.enqueue(
-            "app.worker.jobs.install_server_software",
-            server.id,
-            reconcile=reconcile,
-            component=component,
-            job_timeout=cfg.provision_job_timeout,
-        )
-    except RedisError as e:
-        log.exception("Redis/RQ недоступен")
-        raise HttpServiceError(503, f"Очередь установки недоступна: {e}") from e
-
-    server.provision_status = "queued"
-    server.provision_error = None
-    if clear_ready:
-        server.provision_ready = False
-    server.provision_job_id = job.id
-    session.flush()
-    return server
-
-
 def servers_count(session: Session) -> ServersCountResponse:
+    """Общее число записей в таблице ``servers``."""
     total = session.scalar(select(func.count()).select_from(Server))
     return ServersCountResponse(servers_count=int(total or 0))
 
 
 def list_servers(session: Session) -> list[Server]:
+    """Список всех серверов; новейшие первыми (для админки)."""
     stmt = select(Server).order_by(Server.id.desc())
     return list(session.scalars(stmt).all())
 
 
 def sync_load_from_prometheus_result(hours: int) -> ServerLoadSyncResultRead:
+    """Подтянуть текущую нагрузку узлов из Prometheus (среднее за последние ``hours`` часов).
+
+    Используется отдельная сессия БД (``SessionLocal``), потому что эту функцию вызывает
+    как HTTP-обработчик, так и фоновые задачи без готового ``Session`` под рукой.
+    """
     db = SessionLocal()
     try:
         rep = sync_all_servers_load_from_prometheus(db, hours=hours)
@@ -185,13 +94,9 @@ def sync_load_from_prometheus_result(hours: int) -> ServerLoadSyncResultRead:
 
 
 def create_server(session: Session, body: ServerCreate, cfg: Settings | None = None) -> Server:
+    """Создать запись сервера; недостающие REALITY/VLESS-поля заполняются дефолтами."""
     cfg = cfg or settings
-    vless_uuid = body.vless_uuid or str(uuid_lib.uuid4())
-    reality_short_id = body.reality_short_id or secrets.token_hex(4)
-    reality_dest = body.reality_dest or "www.amazon.com:443"
-    reality_server_names = body.reality_server_names or "www.amazon.com,amazon.com"
-    reality_fingerprint = body.reality_fingerprint or "chrome"
-    vless_flow = body.vless_flow or "xtls-rprx-vision"
+    defaults = reality_defaults_for_create(body)
     is_ru = bool(body.is_cascade_ru_entry)
     cnext = body.cascade_next_server_id
     if cnext is not None:
@@ -207,24 +112,18 @@ def create_server(session: Session, body: ServerCreate, cfg: Settings | None = N
         country=body.country,
         load_percent=body.load_percent,
         is_active=body.is_active,
-        vless_uuid=vless_uuid,
-        reality_short_id=reality_short_id,
-        reality_dest=reality_dest,
-        reality_server_names=reality_server_names,
-        reality_fingerprint=reality_fingerprint,
-        vless_flow=vless_flow,
         prometheus_instance=body.prometheus_instance,
         network_cap_mbps=body.network_cap_mbps,
         is_cascade_ru_entry=is_ru,
         cascade_next_server_id=cnext,
         cascade_egress_client_uuid=cascade_egress_uuid,
+        **defaults,
     )
     try:
         table_insert(session, server)
     except IntegrityError as e:
         log.warning("create_server conflict: %s", e)
-        raise HttpServiceError(
-            409,
+        raise ConflictError(
             "Сервер с таким host и port уже существует",
         ) from e
     try_enqueue_sync_xray_on_exit_for_cascade(session, cnext)
@@ -232,13 +131,14 @@ def create_server(session: Session, body: ServerCreate, cfg: Settings | None = N
 
 
 def enqueue_sync_xray_all(cfg: Settings | None = None) -> XrayClientsSyncResultRead:
+    """Поставить полную синхронизацию Xray-клиентов на всех ``provision_ready`` узлах."""
     cfg = cfg or settings
     provision_command_blocks_split_install(cfg)
     try:
         job_id = ensure_sync_xray_clients_all_servers_enqueued()
     except RedisError as e:
         log.exception("Redis/RQ недоступен (sync Xray)")
-        raise HttpServiceError(503, f"Очередь недоступна: {e}") from e
+        raise ServiceUnavailableError(f"Очередь недоступна: {e}") from e
     return XrayClientsSyncResultRead(job_id=job_id)
 
 
@@ -247,34 +147,34 @@ def enqueue_sync_xray_one(
     server_id: int,
     cfg: Settings | None = None,
 ) -> XrayClientsSyncOneResultRead:
+    """Поставить точечную синхронизацию Xray-клиентов на одном узле."""
     cfg = cfg or settings
     provision_command_blocks_split_install(cfg)
     server = session.get(Server, server_id)
     if server is None:
-        raise HttpServiceError(404, "Сервер не найден")
+        raise NotFoundError("Сервер не найден")
     if not server.provision_ready:
-        raise HttpServiceError(
-            409,
+        raise ConflictError(
             "Узел не готов (provision_ready=false); сначала установите ПО",
         )
     try:
         job_id = ensure_sync_xray_clients_to_server_enqueued(server_id)
     except RedisError as e:
         log.exception("Redis/RQ недоступен (sync Xray)")
-        raise HttpServiceError(503, f"Очередь недоступна: {e}") from e
+        raise ServiceUnavailableError(f"Очередь недоступна: {e}") from e
     return XrayClientsSyncOneResultRead(server_id=server_id, job_id=job_id)
 
 
 def enqueue_full_provision(session: Session, server_id: int, cfg: Settings | None = None) -> Server:
+    """Полная установка ПО узла с нуля (помечает его не готовым на время прогона)."""
     cfg = cfg or settings
     server = session.get(Server, server_id)
     if server is None:
-        raise HttpServiceError(404, "Сервер не найден")
+        raise NotFoundError("Сервер не найден")
     if server.provision_status in ("queued", "running"):
-        raise HttpServiceError(409, "Установка уже в очереди или выполняется")
+        raise ConflictError("Установка уже в очереди или выполняется")
     if server.provision_status == "success" and server.provision_ready:
-        raise HttpServiceError(
-            409,
+        raise ConflictError(
             "Узел уже помечен как готовый; сбросьте статус в БД для повторной установки",
         )
     return enqueue_software_job(
@@ -288,11 +188,17 @@ def enqueue_full_provision(session: Session, server_id: int, cfg: Settings | Non
 
 
 def reset_server_provision(session: Session, server_id: int) -> Server:
+    """Сбросить «зависший» статус установки и попытаться отменить задачу в RQ.
+
+    Используется когда задача установки висит ``queued/running`` дольше разумного: после
+    сброса можно поставить новую задачу. Падение отмены RQ — не блокер, статус всё равно
+    переключается в ``idle``.
+    """
     server = session.get(Server, server_id)
     if server is None:
-        raise HttpServiceError(404, "Сервер не найден")
+        raise NotFoundError("Сервер не найден")
     if server.provision_status not in ("queued", "running"):
-        raise HttpServiceError(409, "Сброс только для статусов «в очереди» или «установка»")
+        raise ConflictError("Сброс только для статусов «в очереди» или «установка»")
     jid = (server.provision_job_id or "").strip()
     if jid:
         try:
@@ -308,12 +214,13 @@ def reset_server_provision(session: Session, server_id: int) -> Server:
 
 
 def enqueue_server_reconcile(session: Session, server_id: int, cfg: Settings | None = None) -> Server:
+    """Прогнать reconcile (проверка/выравнивание) ПО узла без снятия флага ``provision_ready``."""
     cfg = cfg or settings
     server = session.get(Server, server_id)
     if server is None:
-        raise HttpServiceError(404, "Сервер не найден")
+        raise NotFoundError("Сервер не найден")
     if server.provision_status in ("queued", "running"):
-        raise HttpServiceError(409, "Уже выполняется установка или синхронизация")
+        raise ConflictError("Уже выполняется установка или синхронизация")
     return enqueue_software_job(
         session,
         server,
@@ -331,20 +238,26 @@ def enqueue_component_install(
     component: str,
     cfg: Settings | None = None,
 ) -> Server:
+    """Установка/обновление одного компонента (например ``xray`` или ``nginx``)."""
     cfg = cfg or settings
     provision_command_blocks_split_install(cfg)
     server = session.get(Server, server_id)
     if server is None:
-        raise HttpServiceError(404, "Сервер не найден")
+        raise NotFoundError("Сервер не найден")
     if server.provision_status in ("queued", "running"):
-        raise HttpServiceError(409, "Уже в очереди или выполняется")
+        raise ConflictError("Уже в очереди или выполняется")
     return enqueue_software_job(session, server, component=component, cfg=cfg)
 
 
 def patch_server(session: Session, server_id: int, body: ServerUpdate) -> Server:
+    """Частичное обновление сервера; cascade-поля валидируются совместно.
+
+    Замена ``reality_private_key`` обнуляет публичный ключ — он будет пересчитан воркером.
+    Изменение cascade-связки порождает sync Xray на старом и новом exit-узлах.
+    """
     server = session.get(Server, server_id)
     if server is None:
-        raise HttpServiceError(404, "Сервер не найден")
+        raise NotFoundError("Сервер не найден")
     data = body.model_dump(exclude_unset=True)
     if not data:
         return server
@@ -394,7 +307,7 @@ def tcp_probes_payload(
     timeout_sec: float,
     cfg: Settings | None = None,
 ) -> dict:
-    """Только сетевые пробы; без обращения к БД (можно вызывать из ``run_in_threadpool``)."""
+    """Только сетевые TCP-пробы; без обращения к БД (можно вызывать из ``run_in_threadpool``)."""
     cfg = cfg or settings
     return run_tcp_probes(
         host,
@@ -407,8 +320,9 @@ def tcp_probes_payload(
 
 
 def delete_server(session: Session, server_id: int) -> None:
+    """Удалить запись сервера; вызывающий код решает, нужен ли каскадный sync Xray."""
     server = session.get(Server, server_id)
     if server is None:
-        raise HttpServiceError(404, "Сервер не найден")
+        raise NotFoundError("Сервер не найден")
     session.delete(server)
     session.flush()

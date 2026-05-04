@@ -1,6 +1,6 @@
 # Продакшен-стек: Caddy (TLS) → Nginx (SPA + /api) → FastAPI; Prometheus; Postgres; Redis; RQ worker.
 # Запуск из каталога deploy/:
-#   cp env.production.example .env   # JWT, POSTGRES_PASSWORD, SITE_ADRESS, TELEGRAM_BOT_USERNAME
+#   cp env.production.example .env   # JWT, POSTGRES_PASSWORD, SITE_ADDRESS, TELEGRAM_BOT_USERNAME
 #   mkdir -p secrets/ssh  # положите ключ для PROVISION_SSH_KEY_PATH
 #   docker compose up -d --build
 #
@@ -99,6 +99,10 @@ services:
       redis:
         condition: service_healthy
     volumes:
+      # Образ запускается под UID/GID 10001 (см. backend/Dockerfile). Чтобы worker мог
+      # читать ключ через openssh-client, заранее на хосте:
+      #   sudo chown -R 10001:10001 ./secrets/ssh && chmod 0700 ./secrets/ssh && chmod 0600 ./secrets/ssh/*
+      # Альтернатива — переопределить пользователя сервиса (например, ``user: "1000:1000"``).
       - ${PROVISION_SSH_KEYS:-./secrets/ssh}:/ssh:ro
     networks: [internal]
 
@@ -127,7 +131,7 @@ services:
       context: ..
       dockerfile: deploy/nginx/Dockerfile
       args:
-        SITE_ADRESS: ${SITE_ADRESS:?SITE_ADRESS is required (e.g. vpn.example.com)}
+        SITE_ADDRESS: ${SITE_ADDRESS:?SITE_ADDRESS is required (e.g. vpn.example.com)}
     restart: unless-stopped
     depends_on:
       api:
@@ -142,7 +146,7 @@ services:
       - "443:443"
       - "443:443/udp"
     environment:
-      SITE_ADRESS: ${SITE_ADRESS:?SITE_ADRESS is required (e.g. vpn.example.com)}
+      SITE_ADDRESS: ${SITE_ADDRESS:?SITE_ADDRESS is required (e.g. vpn.example.com)}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

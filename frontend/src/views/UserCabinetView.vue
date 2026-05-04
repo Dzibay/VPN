@@ -882,7 +882,7 @@ onMounted(() => {
                     class="hint referral-copy-warn"
                   >
                     Не удалось собрать ссылку: задайте в .env API переменную
-                    <code class="inline-code">SITE_ADRESS</code> (публичный URL сайта).
+                    <code class="inline-code">SITE_ADDRESS</code> (публичный URL сайта).
                   </p>
                   <button
                     type="button"

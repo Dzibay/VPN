@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
 from app.config import settings
 from app.core.dependencies import ReadonlySessionDep, require_admin

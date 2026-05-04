@@ -1,6 +1,6 @@
 """Публичный origin для /sub/…
 
-Нормализация URL из SITE_ADRESS: при http:// на публичном хосте поднимаем до https://
+Нормализация URL из SITE_ADDRESS: при http:// на публичном хосте поднимаем до https://
 (диплинки вроде v2raytun://import/{url} на http ломаются).
 """
 
@@ -49,7 +49,7 @@ def subscription_public_base_from_setting(configured: str) -> str:
 
 
 def site_address_to_public_origin(raw: str) -> str:
-    """SITE_ADRESS: полный URL или host[:port] без схемы (как во frontend/deploy)."""
+    """SITE_ADDRESS: полный URL или host[:port] без схемы (как во frontend/deploy)."""
 
     s = (raw or "").strip().rstrip("/")
     if not s:

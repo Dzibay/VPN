@@ -36,8 +36,12 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def get_db_readonly() -> Generator[Session, None, None]:
+    """Read-only сессия: rollback на ошибке (PostgreSQL иначе помечает транзакцию failed)."""
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()

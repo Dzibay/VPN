@@ -10,21 +10,27 @@ from typing import Literal
 import jwt
 
 from app.config import Settings
+from app.constants import JWT_TOKEN_TTL_DAYS
 
 _JWT_ALG = "HS256"
-_TOKEN_TTL = timedelta(days=14)
+_TOKEN_TTL = timedelta(days=JWT_TOKEN_TTL_DAYS)
 _DEV_FALLBACK = b"vpn-dev-access-jwt-v1"
 
 
 def jwt_signing_secret(settings: Settings) -> str:
+    """Подписной ключ JWT: явно заданный ``JWT_SECRET`` или dev-fallback в ``DEBUG``-режиме.
+
+    В боевом окружении пустой секрет ловится раньше — на старте процесса
+    (см. :func:`app.core.startup_checks.validate_production_secrets`); этот ``ValueError``
+    остаётся как защита от ошибок последовательности импорта.
+    """
     explicit = (settings.jwt_secret or "").strip()
     if explicit:
         return explicit
     if settings.debug:
         return hashlib.sha256(_DEV_FALLBACK).hexdigest()
     raise ValueError(
-        "Задайте переменную окружения JWT_SECRET "
-        "(или включите DEBUG только для локальной разработки).",
+        "JWT_SECRET не задан и DEBUG=false: см. app.core.startup_checks.",
     )
 
 

@@ -13,7 +13,6 @@ from app.domain.models.servers import (
     XrayClientsSyncOneResultRead,
     XrayClientsSyncResultRead,
 )
-from app.domain.services.http_errors import HttpServiceError
 from app.domain.services.servers_service import (
     create_server,
     delete_server,
@@ -29,7 +28,7 @@ from app.domain.services.servers_service import (
     sync_load_from_prometheus_result,
     tcp_probes_payload,
 )
-from app.domain.services.users_service import enqueue_sync_xray_clients_all_servers
+from app.domain.users.xray_sync_queue import enqueue_sync_xray_clients_all_servers
 from app.infrastructure.persistence.models.server import Server
 from app.infrastructure.server_health_check import build_server_health_read
 
@@ -38,10 +37,6 @@ router = APIRouter(
     tags=["admin"],
     dependencies=[Depends(require_admin)],
 )
-
-
-def _raise_svc(exc: HttpServiceError) -> None:
-    raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.get(
@@ -87,10 +82,7 @@ async def sync_load_from_prometheus(
     summary="Создание записи сервера",
 )
 async def create_server_ep(body: ServerCreate, session: SessionDep) -> Server:
-    try:
-        return create_server(session, body, settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return create_server(session, body, settings)
 
 
 @router.post(
@@ -100,10 +92,7 @@ async def create_server_ep(body: ServerCreate, session: SessionDep) -> Server:
     summary="Постановка в очередь RQ синхронизации списка клиентов Xray на всех готовых узлах",
 )
 async def enqueue_sync_xray_clients_all() -> XrayClientsSyncResultRead:
-    try:
-        return enqueue_sync_xray_all(settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return enqueue_sync_xray_all(settings)
 
 
 @router.post(
@@ -116,10 +105,7 @@ async def enqueue_sync_xray_clients_one(
     server_id: int,
     session: ReadonlySessionDep,
 ) -> XrayClientsSyncOneResultRead:
-    try:
-        return enqueue_sync_xray_one(session, server_id, settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return enqueue_sync_xray_one(session, server_id, settings)
 
 
 @router.post(
@@ -129,10 +115,7 @@ async def enqueue_sync_xray_clients_one(
     summary="Постановка в очередь RQ полной установки ПО на узле",
 )
 async def enqueue_server_provision(server_id: int, session: SessionDep) -> Server:
-    try:
-        return enqueue_full_provision(session, server_id, settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return enqueue_full_provision(session, server_id, settings)
 
 
 @router.post(
@@ -142,10 +125,7 @@ async def enqueue_server_provision(server_id: int, session: SessionDep) -> Serve
     summary="Сброс статуса provision (queued или running) и отмена связанной задачи RQ",
 )
 async def reset_server_provision_ep(server_id: int, session: SessionDep) -> Server:
-    try:
-        return reset_server_provision(session, server_id)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return reset_server_provision(session, server_id)
 
 
 @router.post(
@@ -155,10 +135,7 @@ async def reset_server_provision_ep(server_id: int, session: SessionDep) -> Serv
     summary="Повторный прогон сценария установки (Xray и node_exporter) без предварительного сброса готовности",
 )
 async def enqueue_server_reconcile_ep(server_id: int, session: SessionDep) -> Server:
-    try:
-        return enqueue_server_reconcile(session, server_id, settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return enqueue_server_reconcile(session, server_id, settings)
 
 
 @router.post(
@@ -168,10 +145,7 @@ async def enqueue_server_reconcile_ep(server_id: int, session: SessionDep) -> Se
     summary="Установка и настройка только Xray на узле",
 )
 async def enqueue_server_provision_xray(server_id: int, session: SessionDep) -> Server:
-    try:
-        return enqueue_component_install(session, server_id, component="xray", cfg=settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return enqueue_component_install(session, server_id, component="xray", cfg=settings)
 
 
 @router.post(
@@ -181,10 +155,7 @@ async def enqueue_server_provision_xray(server_id: int, session: SessionDep) -> 
     summary="Установка и настройка только node_exporter на узле",
 )
 async def enqueue_server_provision_prometheus(server_id: int, session: SessionDep) -> Server:
-    try:
-        return enqueue_component_install(session, server_id, component="prometheus", cfg=settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return enqueue_component_install(session, server_id, component="prometheus", cfg=settings)
 
 
 @router.post(
@@ -194,10 +165,7 @@ async def enqueue_server_provision_prometheus(server_id: int, session: SessionDe
     summary="Настройка справедливой очереди на uplink (CAKE или fq_codel)",
 )
 async def enqueue_server_provision_fair_egress(server_id: int, session: SessionDep) -> Server:
-    try:
-        return enqueue_component_install(session, server_id, component="fair_egress", cfg=settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return enqueue_component_install(session, server_id, component="fair_egress", cfg=settings)
 
 
 @router.post(
@@ -207,10 +175,7 @@ async def enqueue_server_provision_fair_egress(server_id: int, session: SessionD
     summary="Удаление Xray и node_exporter с узла и очистка связанных полей в базе данных",
 )
 async def enqueue_server_provision_cleanup(server_id: int, session: SessionDep) -> Server:
-    try:
-        return enqueue_component_install(session, server_id, component="cleanup", cfg=settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return enqueue_component_install(session, server_id, component="cleanup", cfg=settings)
 
 
 @router.patch(
@@ -219,10 +184,7 @@ async def enqueue_server_provision_cleanup(server_id: int, session: SessionDep) 
     summary="Частичное обновление параметров сервера",
 )
 async def patch_server_ep(server_id: int, body: ServerUpdate, session: SessionDep) -> Server:
-    try:
-        return patch_server(session, server_id, body)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return patch_server(session, server_id, body)
 
 
 @router.get(
@@ -283,8 +245,5 @@ async def delete_server_ep(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> None:
-    try:
-        delete_server(session, server_id)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    delete_server(session, server_id)
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)

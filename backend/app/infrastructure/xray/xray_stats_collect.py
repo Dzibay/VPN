@@ -18,6 +18,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.core.time import utc_today
 from app.infrastructure.persistence.models.server import Server
 from app.infrastructure.persistence.models.user import User
 from app.infrastructure.persistence.models.user_server_traffic import UserServerTraffic
@@ -121,7 +122,7 @@ def parse_statsquery_json(text: str) -> dict[int, dict[str, int]]:
 
 def _traffic_day_utc() -> date:
     """Календарный день для привязки строк в БД (UTC)."""
-    return datetime.now(timezone.utc).date()
+    return utc_today()
 
 
 def _latest_prior_day_row(
@@ -455,7 +456,7 @@ def load_user_traffic_bundle_rows(
         .where(
             or_(
                 User.subscription_until.is_(None),
-                User.subscription_until >= date.today(),
+                User.subscription_until >= utc_today(),
                 has_traffic_here,
             ),
         )

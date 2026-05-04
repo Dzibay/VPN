@@ -3,6 +3,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.constants import BIGINT_MAX
+
 
 class UsersCountResponse(BaseModel):
     users_count: int = Field(ge=0, description="Число записей в таблице users")
@@ -71,7 +73,7 @@ class UserCreate(BaseModel):
     telegram_id: int | None = Field(
         default=None,
         ge=1,
-        le=9223372036854775807,
+        le=BIGINT_MAX,
         description="Числовой id пользователя в Telegram; пусто — не указывать",
     )
     telegram_properties: dict[str, Any] | None = Field(
@@ -169,7 +171,7 @@ class UserUpdate(BaseModel):
     telegram_id: int | None = Field(
         default=None,
         ge=1,
-        le=9223372036854775807,
+        le=BIGINT_MAX,
         description="Telegram id; null — сбросить привязку (редко). Не указывайте поле, если не меняете.",
     )
     telegram_properties: dict[str, Any] | None = Field(

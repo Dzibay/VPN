@@ -12,6 +12,12 @@ from rq.job import Job, JobStatus
 from sqlalchemy.orm import Session
 
 from app.config import Settings, settings
+from app.core.exceptions import (
+    BadGatewayError,
+    BadRequestError,
+    NotFoundError,
+    ServiceUnavailableError,
+)
 from app.domain.models.server_metrics import (
     ServerMetricPoint,
     ServerMetricsAxisHints,
@@ -24,7 +30,6 @@ from app.domain.models.server_traffic import (
     UserTrafficCollectEnqueueResponse,
     UserTrafficCollectPollResponse,
 )
-from app.domain.services.http_errors import HttpServiceError
 from app.infrastructure.cache import get_install_queue, get_redis
 from app.infrastructure.database.session import SessionLocal
 from app.infrastructure.persistence.models.server import Server
@@ -46,7 +51,7 @@ def enqueue_user_traffic_collect_all() -> UserTrafficCollectAllEnqueueResponse:
         job_id = enqueue_xray_traffic_collect_batch_admin()
     except RedisError as e:
         log.exception("Redis/RQ недоступен (батч-сбор трафика)")
-        raise HttpServiceError(503, f"Очередь недоступна: {e}") from e
+        raise ServiceUnavailableError(f"Очередь недоступна: {e}") from e
     return UserTrafficCollectAllEnqueueResponse(job_id=job_id)
 
 
@@ -113,7 +118,7 @@ def resolve_prometheus_metrics_inputs(
     cfg = cfg or settings
     server = session.get(Server, server_id)
     if server is None:
-        raise HttpServiceError(404, "Сервер не найден")
+        raise NotFoundError("Сервер не найден")
 
     inst = (server.prometheus_instance or "").strip()
     if not inst:
@@ -147,10 +152,10 @@ def fetch_merged_metrics_for_instance(
             cfg=cfg,
         )
     except RuntimeError as e:
-        raise HttpServiceError(503, str(e)) from e
+        raise ServiceUnavailableError(str(e)) from e
     except httpx.HTTPError as e:
         log.warning("Prometheus HTTP error: %s", e)
-        raise HttpServiceError(502, f"Не удалось запросить Prometheus: {e}") from e
+        raise BadGatewayError(f"Не удалось запросить Prometheus: {e}") from e
 
 
 def build_server_metrics_response(
@@ -197,7 +202,7 @@ def enqueue_user_traffic_collect_one(
 ) -> UserTrafficCollectEnqueueResponse:
     cfg = cfg or settings
     if session.get(Server, server_id) is None:
-        raise HttpServiceError(404, "Сервер не найден")
+        raise NotFoundError("Сервер не найден")
     job_timeout = max(300, int(cfg.xray_stats_ssh_timeout_seconds) + 120)
     try:
         q = get_install_queue()
@@ -208,7 +213,7 @@ def enqueue_user_traffic_collect_one(
         )
     except RedisError as e:
         log.exception("Redis/RQ недоступен (сбор трафика)")
-        raise HttpServiceError(503, f"Очередь недоступна: {e}") from e
+        raise ServiceUnavailableError(f"Очередь недоступна: {e}") from e
     return UserTrafficCollectEnqueueResponse(server_id=server_id, job_id=job.id)
 
 
@@ -239,13 +244,13 @@ def poll_user_traffic_collect_job_sync(
     job_id: str,
 ) -> UserTrafficCollectPollResponse:
     if session.get(Server, server_id) is None:
-        raise HttpServiceError(404, "Сервер не найден")
+        raise NotFoundError("Сервер не найден")
     try:
         job = Job.fetch(job_id, connection=get_redis())
     except NoSuchJobError:
-        raise HttpServiceError(404, "Задача не найдена") from None
+        raise NotFoundError("Задача не найдена") from None
     if not job.args or job.args[0] != server_id:
-        raise HttpServiceError(404, "Задача не относится к этому серверу")
+        raise NotFoundError("Задача не относится к этому серверу")
 
     status = _rq_poll_status(job)
     if status in ("queued", "started"):
@@ -297,20 +302,17 @@ def poll_user_traffic_collect_job_sync(
 
 def server_user_traffic_bundle_db_only(server_id: int, *, collect: bool) -> ServerUserTrafficBundle:
     if collect:
-        raise HttpServiceError(
-            400,
-            (
-                "Сбор по SSH выполняет воркер RQ: "
-                "POST /api/servers/{id}/user-traffic/collect, затем GET "
-                "/api/servers/{id}/user-traffic/collect-jobs/{job_id}"
-            ),
+        raise BadRequestError(
+            "Сбор по SSH выполняет воркер RQ: "
+            "POST /api/servers/{id}/user-traffic/collect, затем GET "
+            "/api/servers/{id}/user-traffic/collect-jobs/{job_id}",
         )
 
     db = SessionLocal()
     try:
         srv = db.get(Server, server_id)
         if srv is None:
-            raise HttpServiceError(404, "Сервер не найден")
+            raise NotFoundError("Сервер не найден")
         return load_user_traffic_bundle_rows(db, server_id)
     finally:
         db.close()

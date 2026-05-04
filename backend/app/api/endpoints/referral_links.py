@@ -20,17 +20,18 @@ from app.domain.models.referral_links import (
     ReferralMeResponse,
     ReferralTrackClickBody,
 )
-from app.domain.services.http_errors import HttpServiceError
+from app.domain.referrals.funnel import referral_funnel_compute
+from app.domain.referrals.public_links import referral_link_to_response
+from app.domain.referrals.repository import (
+    create_referral_link,
+    increment_referral_counter_by_token,
+    update_referral_link,
+)
 from app.domain.services.referral_links_service import (
     client_site_user_id,
-    create_referral_link,
     delete_referral_link_row,
-    increment_referral_counter_by_token,
     list_staff_referral_links,
-    referral_funnel_compute,
-    referral_link_to_out,
     referral_me_for_user,
-    update_referral_link,
 )
 
 staff_router = APIRouter(
@@ -38,10 +39,6 @@ staff_router = APIRouter(
     tags=["admin"],
     dependencies=[Depends(require_referrals_staff)],
 )
-
-
-def _raise_svc(e: HttpServiceError) -> None:
-    raise HTTPException(status_code=e.status_code, detail=e.detail) from e
 
 
 @staff_router.get(
@@ -71,10 +68,7 @@ async def referral_funnel_summary(
         ),
     ] = None,
 ) -> ReferralFunnelSummary:
-    try:
-        return referral_funnel_compute(session, referral_link_id, settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    return referral_funnel_compute(session, referral_link_id, settings)
 
 
 @staff_router.post(
@@ -94,7 +88,7 @@ async def post_referral_link(
             owner_user_id=body.owner_user_id,
             token=body.token,
         )
-        return referral_link_to_out(row, settings)
+        return referral_link_to_response(row, settings)
     except ValueError as e:
         detail = str(e)
         status = (
@@ -123,7 +117,7 @@ async def patch_referral_link(
             owner_user_id=body.owner_user_id,
             token=body.token,
         )
-        return referral_link_to_out(row, settings)
+        return referral_link_to_response(row, settings)
     except ValueError as e:
         detail = str(e)
         if detail == "Запись не найдена":
@@ -145,10 +139,7 @@ async def delete_referral_link(
     session: SessionDep,
     link_id: Annotated[int, Path(ge=1, description="Первичный ключ referral_links.id")],
 ) -> Response:
-    try:
-        delete_referral_link_row(session, link_id)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    delete_referral_link_row(session, link_id)
     return Response(status_code=204)
 
 
@@ -184,8 +175,5 @@ async def get_my_referral_link(
     session: SessionDep,
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
 ) -> ReferralMeResponse:
-    try:
-        uid = client_site_user_id(principal)
-        return referral_me_for_user(session, uid, settings)
-    except HttpServiceError as e:
-        _raise_svc(e)
+    uid = client_site_user_id(principal)
+    return referral_me_for_user(session, uid, settings)

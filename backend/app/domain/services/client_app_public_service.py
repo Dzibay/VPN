@@ -1,7 +1,7 @@
 """Публичная информация о VPN-клиентах для страницы /public/client-apps."""
 
 from app.domain.models.client_app_public import ClientAppPublicResponse
-from app.domain.subscription_open_apps import get_subscription_open_app
+from app.domain.subscription.open_apps import get_subscription_open_app
 
 
 def build_client_app_public(client_code: str) -> ClientAppPublicResponse | None:

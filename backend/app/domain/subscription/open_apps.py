@@ -4,7 +4,7 @@
 
 Метаданные срока и трафика при запросе URL подписки: заголовки Happ
 (``subscription-userinfo``, ``profile-update-interval``, …) на ``GET/HEAD /sub/{token}``
-(см. ``app.domain.subscription_userinfo`` и документацию Happ, Stash Wiki, Clash Verge Rev).
+(см. ``app.domain.subscription.userinfo`` и документацию Happ, Stash Wiki, Clash Verge Rev).
 
 - happ: сырая ссылка в path — happ://add/https://…/sub/{token}
 - Stash, Clash Meta, flclashx, koala-clash, prizrak-box: в query url=… указывает на
@@ -16,7 +16,7 @@
 - Streisand: панели (напр. 3x-ui) — streisand://install-subscription?url=…
 - v2raytun: v2raytun://import/{subscription} (сырая ссылка в path)
 
-Имя профиля — SUBSCRIPTION_IMPORT_DISPLAY_NAME.
+Имя профиля — ``app.constants.BRAND_NAME``.
 
 Ссылки для страницы open: см. `_stores` / `_platform_ref`. Строка (URL) = только сайт/магазин;
 кортеж ``(site, download)`` = отдельно страница и прямое скачивание файла.
@@ -32,11 +32,8 @@ from dataclasses import dataclass, field
 from typing import TypeAlias
 from urllib.parse import quote
 
-# Параметр name/fragment для отображаемого имени подписки
-SUBSCRIPTION_IMPORT_DISPLAY_NAME = "Подорожник VPN"
+from app.constants import BRAND_NAME
 
-# Одна платформа для _stores: строка → только сайт (без отдельного файла и без кнопки «Скачать»);
-# кортеж (site, download) → страница + прямое скачивание артефакта (две кнопки ниже страницы open).
 PlatformLinkInput: TypeAlias = str | tuple[str | None, str | None]
 
 
@@ -143,9 +140,7 @@ class SubscriptionOpenApp:
     client_code: str
     display_name: str
     build_deeplink: Callable[[str], str]
-    # Ссылки на магазины / сайт — выбор по userAgent в HTML
     store_links: AppStoreLinks = field(default_factory=AppStoreLinks)
-    # Хвост пути после /sub/{token}: для Clash-клиентов — /clash (YAML), иначе пусто (Base64 vless).
     subscription_fetch_path_suffix: str = ""
 
 
@@ -180,9 +175,8 @@ _stash_deeplink = _deeplink_query_url("stash://install-config?url=")
 
 def _shadowrocket_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
-    name = SUBSCRIPTION_IMPORT_DISPLAY_NAME
     b64 = _b64_utf8(u)
-    return f"shadowrocket://add/sub://{b64}?remark={_q(name)}"
+    return f"shadowrocket://add/sub://{b64}?remark={_q(BRAND_NAME)}"
 
 
 _streisand_deeplink = _deeplink_query_url("streisand://install-subscription?url=")
@@ -192,14 +186,12 @@ _flclashx_deeplink = _deeplink_query_url("flclashx://install-config?url=")
 
 def _clashmeta_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
-    n = SUBSCRIPTION_IMPORT_DISPLAY_NAME
-    return f"clashmeta://install-config?url={u}&name={_q(n)}"
+    return f"clashmeta://install-config?url={u}&name={_q(BRAND_NAME)}"
 
 
 def _v2rayng_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
-    n = SUBSCRIPTION_IMPORT_DISPLAY_NAME
-    return f"v2rayng://install-sub?url={u}#{_q(n)}"
+    return f"v2rayng://install-sub?url={u}#{_q(BRAND_NAME)}"
 
 
 def _v2raytun_deeplink(subscription_https_url: str) -> str:

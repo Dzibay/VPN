@@ -11,7 +11,8 @@ from app.config import settings
 from app.core.error_handlers import register_exception_handlers
 from app.core.logging_config import setup_logging
 from app.core.middleware.request_context import RequestContextMiddleware
-from app.extensions import attach_openapi
+from app.core.openapi import attach_openapi
+from app.core.startup_checks import validate_production_secrets
 
 log = logging.getLogger("app.main")
 
@@ -27,7 +28,7 @@ async def lifespan(_app: FastAPI):
 
         bg_tasks.append(asyncio.create_task(periodic_xray_traffic_collect_loop()))
     if settings.subscription_daily_xray_clients_sync_enabled:
-        from app.domain.services.subscription_service import subscription_daily_xray_sync_loop
+        from app.domain.subscription.scheduler import subscription_daily_xray_sync_loop
 
         bg_tasks.append(asyncio.create_task(subscription_daily_xray_sync_loop()))
     if settings.server_load_prometheus_sync_schedule_enabled and (
@@ -98,6 +99,8 @@ def create_app() -> FastAPI:
     return application
 
 
-# логирование при импорте модуля (до первого запроса под uvicorn)
+# Логирование и обязательные проверки конфига выполняются на этапе импорта модуля
+# (uvicorn делает это до первого запроса; неправильный конфиг = падение процесса).
 setup_logging(settings.log_level)
+validate_production_secrets(settings)
 app = create_app()

@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Path
 
 from app.domain.models.client_app_public import ClientAppPublicResponse
 from app.domain.services.client_app_public_service import build_client_app_public
-from app.domain.subscription_open_apps import list_subscription_open_app_codes
+from app.domain.subscription.open_apps import list_subscription_open_app_codes
 
 router = APIRouter(tags=["public"])
 

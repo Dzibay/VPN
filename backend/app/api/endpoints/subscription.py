@@ -9,7 +9,7 @@
 в форме Happ (``subscription-userinfo``, ``profile-update-interval``, ``profile-title``, …;
 см. https://www.happ.su/main/ru/dev-docs/app-management#standartnye-parametry) и тот же
 формат ``subscription-userinfo`` (upload, download, total, expire), что используют
-Stash / Clash Verge / v2rayNG. Подробнее: ``app.domain.subscription_userinfo``.
+Stash / Clash Verge / v2rayNG. Подробнее: ``app.domain.subscription.userinfo``.
 
 При исчерпании лимита устройств (``SUBSCRIPTION_MAX_DEVICES``) ответ остаётся 200 с пустым списком узлов
 и текстом в заголовке ``announce``, без HTTP 403.
@@ -28,18 +28,23 @@ from starlette.requests import Request
 from app.config import settings
 from app.core.dependencies import ReadonlySessionDep, SessionDep
 from app.domain.models.subscription import SubscriptionOpenPageData, SubscriptionPayload
-from app.domain.subscription_open_apps import get_subscription_open_app, list_subscription_open_app_codes
 from app.domain.services.subscription_service import (
-    build_clash_subscription_yaml,
-    normalize_subscription_store_platform,
     subscription_build_open_page_data,
-    subscription_cabinet_redirect_url,
     subscription_client_metadata_headers,
     subscription_maybe_register_device,
+    subscription_payload_rows_for_resolved_user,
+)
+from app.domain.subscription.build import build_clash_subscription_yaml
+from app.domain.subscription.links import (
+    normalize_subscription_store_platform,
+    subscription_cabinet_redirect_url,
     subscription_open_redirect_would_loop,
     subscription_open_spa_url,
-    subscription_payload_rows_for_resolved_user,
     user_by_subscription_token,
+)
+from app.domain.subscription.open_apps import (
+    get_subscription_open_app,
+    list_subscription_open_app_codes,
 )
 
 router = APIRouter(tags=["public"])
@@ -118,7 +123,7 @@ async def subscription_open_in_app(
             status_code=503,
             detail=(
                 "Откройте эту ссылку через сайт (Vite в dev или nginx в проде), а не напрямую на порт API — "
-                "нужен тот же путь /sub/…/open/… на хосте с Vue. Укажите SITE_ADRESS на URL этого сайта."
+                "нужен тот же путь /sub/…/open/… на хосте с Vue. Укажите SITE_ADDRESS на URL этого сайта."
             ),
         )
     return RedirectResponse(url=url, status_code=302)

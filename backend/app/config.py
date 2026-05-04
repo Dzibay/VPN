@@ -54,7 +54,10 @@ class Settings(BaseSettings):
         default="",
         description=(
             "Секрет HS256 для JWT (портал и админ-API). "
-            "Пусто — в режиме DEBUG используется небезопасный локальный ключ; в продакшене задайте явно."
+            "В режиме DEBUG=true пусто допустимо (используется небезопасный локальный ключ); "
+            "при DEBUG=false старт API падает (см. core/startup_checks.py): без секрета "
+            "защита require_roles отключается и админ-API становится открытым. "
+            "Сгенерировать сильный ключ: `openssl rand -hex 32`."
         ),
     )
     telegram_bot_api_secret: str = Field(
@@ -69,9 +72,8 @@ class Settings(BaseSettings):
     )
     site_address: str = Field(
         default="",
-        validation_alias="SITE_ADRESS",
         description=(
-            "Публичный URL сайта (env SITE_ADRESS): полный URL или host[:port] без схемы. "
+            "Публичный URL сайта (env SITE_ADDRESS): полный URL или host[:port] без схемы. "
             "Единственный источник origin для SPA, рефералов, ссылок бота и редиректов /sub/…"
         ),
     )
