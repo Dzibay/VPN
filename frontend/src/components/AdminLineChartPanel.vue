@@ -3,7 +3,7 @@
  * Стеклянная панель с линейным Chart.js — общий вид с страницей регистраций по дням.
  */
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import Chart from 'chart.js/auto'
+import Chart from '../utils/chartSetup.js'
 import { adminChartTheme, rgba } from '../utils/adminChartTheme.js'
 
 /** @typedef {{ label: string; data: number[]; rgb: [number, number, number]; filled?: boolean; borderWidth?: number }} LineSeries */

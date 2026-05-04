@@ -10,20 +10,29 @@ import {
   getSessionRole,
   isAdminJwtRequired,
 } from '../auth/session.js'
-import AdminTablesPage from '../views/AdminTablesPage.vue'
-import ReferralFunnelView from '../views/ReferralFunnelView.vue'
-import ReferralTokensAdminPage from '../views/ReferralTokensAdminPage.vue'
-import RegistrationsByDateStaffView from '../views/RegistrationsByDateStaffView.vue'
-import HomeView from '../views/HomeView.vue'
-import ServerAnalyticsView from '../views/ServerAnalyticsView.vue'
-import UserAnalyticsView from '../views/UserAnalyticsView.vue'
-import UsersAnalyticsStaffView from '../views/UsersAnalyticsStaffView.vue'
-import UserCabinetView from '../views/UserCabinetView.vue'
-import UserLoginView from '../views/UserLoginView.vue'
-import UserRegisterView from '../views/UserRegisterView.vue'
-import LinkFromTelegramView from '../views/LinkFromTelegramView.vue'
-import ClientAppDownloadView from '../views/ClientAppDownloadView.vue'
-import SubscriptionOpenView from '../views/SubscriptionOpenView.vue'
+
+/**
+ * Ленивые импорты вью: каждый роут — отдельный chunk.
+ * Посетитель лендинга `/` не грузит админку и Chart.js.
+ */
+const HomeView = () => import('../views/HomeView.vue')
+const UserLoginView = () => import('../views/UserLoginView.vue')
+const UserRegisterView = () => import('../views/UserRegisterView.vue')
+const LinkFromTelegramView = () => import('../views/LinkFromTelegramView.vue')
+const UserCabinetView = () => import('../views/UserCabinetView.vue')
+const ClientAppDownloadView = () =>
+  import('../views/ClientAppDownloadView.vue')
+const SubscriptionOpenView = () => import('../views/SubscriptionOpenView.vue')
+const AdminTablesPage = () => import('../views/AdminTablesPage.vue')
+const ReferralFunnelView = () => import('../views/ReferralFunnelView.vue')
+const ReferralTokensAdminPage = () =>
+  import('../views/ReferralTokensAdminPage.vue')
+const RegistrationsByDateStaffView = () =>
+  import('../views/RegistrationsByDateStaffView.vue')
+const ServerAnalyticsView = () => import('../views/ServerAnalyticsView.vue')
+const UserAnalyticsView = () => import('../views/UserAnalyticsView.vue')
+const UsersAnalyticsStaffView = () =>
+  import('../views/UsersAnalyticsStaffView.vue')
 
 const routes = [
   { path: '/', name: 'home', component: HomeView },

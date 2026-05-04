@@ -119,6 +119,31 @@ export default defineConfig(({ mode }) => {
         },
       },
     ],
+    build: {
+      // Ограничиваем собственные чанки до 250 KB, чтобы не получить «всё в одном».
+      chunkSizeWarningLimit: 300,
+      rollupOptions: {
+        output: {
+          /**
+           * Вендор-чанки: Chart.js тянется только на админ-аналитики,
+           * vue + vue-router используются на каждом роуте — один shared chunk.
+           * Правки в одной вью не инвалидируют кэш этих vendor-чанков.
+           * Rolldown (Vite 8) поддерживает только функциональную форму manualChunks.
+           */
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return
+            if (id.includes('node_modules/chart.js/')) return 'chart-vendor'
+            if (
+              id.includes('node_modules/vue-router/') ||
+              /node_modules\/@vue\//.test(id) ||
+              /node_modules\/vue\//.test(id)
+            ) {
+              return 'vue-vendor'
+            }
+          },
+        },
+      },
+    },
     server: {
       host: true,
       proxy: {
