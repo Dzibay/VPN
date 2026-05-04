@@ -458,3 +458,18 @@ class AccountMeResponse(BaseModel):
         ge=0,
         description="Итого в байтах: traffic_up_bytes + traffic_down_bytes.",
     )
+    has_site_password: bool = Field(
+        default=False,
+        description="True, если задан пароль для входа на сайте (смена пароля в ЛК доступна).",
+    )
+
+
+class AccountChangePasswordBody(BaseModel):
+    """Смена пароля для текущего пользователя (JWT)."""
+
+    current_password: str = Field(min_length=1, max_length=72)
+    new_password: str = Field(
+        min_length=8,
+        max_length=72,
+        description="Не короче 8 символов; до 72 байт в UTF-8 (ограничение bcrypt).",
+    )

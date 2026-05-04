@@ -1,7 +1,7 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 
 from app.config import settings
 from app.core.dependencies import (
@@ -13,6 +13,7 @@ from app.core.dependencies import (
 )
 from app.infrastructure.cache import get_redis
 from app.domain.models.auth import (
+    AccountChangePasswordBody,
     AccountLoginBody,
     AccountMeResponse,
     AccountRegisterBody,
@@ -28,6 +29,7 @@ from app.domain.models.auth import (
 from app.domain.models.auth import TelegramAuthTokenResponse, TokenResponse
 from app.domain.services.auth_service import (
     account_me,
+    change_account_password,
     login_with_password,
     register_with_email,
     telegram_authenticate,
@@ -77,6 +79,7 @@ _AUTH_ME_OPENAPI_EXAMPLES: dict = {
             "traffic_down_bytes": 5368709120,
             "traffic_total_bytes": 6442450944,
             "registered_at": "2026-03-01T10:30:00+00:00",
+            "has_site_password": True,
         },
     },
     "user_telegram_only": {
@@ -92,6 +95,7 @@ _AUTH_ME_OPENAPI_EXAMPLES: dict = {
             "subscription_active": False,
             "subscription_token": "subscription-token-telegram",
             "subscription_open_clients": [],
+            "has_site_password": False,
         },
     },
     "admin": {
@@ -103,6 +107,7 @@ _AUTH_ME_OPENAPI_EXAMPLES: dict = {
             "registered_at": "2025-01-15T08:00:00+00:00",
             "subscription_active": False,
             "subscription_token": "",
+            "has_site_password": True,
         },
     },
 }
@@ -289,3 +294,21 @@ async def me(
         return account_me(session, principal, settings)
     except HttpServiceError as e:
         _raise_svc(e)
+
+
+@router.post(
+    "/me/change-password",
+    status_code=204,
+    tags=["user"],
+    summary="Смена пароля: текущий и новый (JWT)",
+)
+async def change_password(
+    body: AccountChangePasswordBody,
+    session: SessionDep,
+    principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
+) -> Response:
+    try:
+        change_account_password(session, principal, body)
+    except HttpServiceError as e:
+        _raise_svc(e)
+    return Response(status_code=204)

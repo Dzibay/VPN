@@ -239,6 +239,55 @@ async function openTelegramSyncLink() {
   }
 }
 
+const pwdCurrent = ref('')
+const pwdNew = ref('')
+const pwdNew2 = ref('')
+const pwdBusy = ref(false)
+const pwdError = ref(null)
+const pwdOk = ref(false)
+/** @type {ReturnType<typeof setTimeout> | null} */
+let pwdOkTimer = null
+
+async function submitPasswordChange() {
+  pwdError.value = null
+  pwdOk.value = false
+  if (pwdOkTimer) {
+    clearTimeout(pwdOkTimer)
+    pwdOkTimer = null
+  }
+  if (pwdNew.value.length < 8) {
+    pwdError.value = 'Новый пароль — не короче 8 символов'
+    return
+  }
+  if (pwdNew.value !== pwdNew2.value) {
+    pwdError.value = 'Новый пароль и подтверждение не совпадают'
+    return
+  }
+  pwdBusy.value = true
+  try {
+    await fetchJson('/api/auth/me/change-password', {
+      method: 'POST',
+      body: JSON.stringify({
+        current_password: pwdCurrent.value,
+        new_password: pwdNew.value,
+      }),
+    })
+    pwdCurrent.value = ''
+    pwdNew.value = ''
+    pwdNew2.value = ''
+    pwdOk.value = true
+    pwdOkTimer = setTimeout(() => {
+      pwdOk.value = false
+      pwdOkTimer = null
+    }, 4000)
+    await load()
+  } catch (e) {
+    pwdError.value = e.message || String(e)
+  } finally {
+    pwdBusy.value = false
+  }
+}
+
 function formatDate(iso) {
   if (iso == null || iso === '') return '—'
   const s = String(iso)
@@ -681,6 +730,85 @@ onMounted(() => {
                 <dd>{{ formatRegisteredAt(me.registered_at) }}</dd>
               </div>
             </dl>
+            <details
+              v-if="me.has_site_password"
+              class="profile-pwd"
+            >
+              <summary class="profile-pwd__summary">
+                Смена пароля
+              </summary>
+              <form
+                class="profile-pwd__form"
+                @submit.prevent="submitPasswordChange"
+              >
+                <label class="profile-pwd__field">
+                  <span class="profile-pwd__label">Текущий пароль</span>
+                  <input
+                    v-model="pwdCurrent"
+                    class="profile-pwd__input"
+                    type="password"
+                    name="current-password"
+                    autocomplete="current-password"
+                    required
+                  />
+                </label>
+                <label class="profile-pwd__field">
+                  <span class="profile-pwd__label">Новый пароль</span>
+                  <input
+                    v-model="pwdNew"
+                    class="profile-pwd__input"
+                    type="password"
+                    name="new-password"
+                    autocomplete="new-password"
+                    required
+                    minlength="8"
+                  />
+                </label>
+                <label class="profile-pwd__field">
+                  <span class="profile-pwd__label">Повтор нового пароля</span>
+                  <input
+                    v-model="pwdNew2"
+                    class="profile-pwd__input"
+                    type="password"
+                    name="new-password-confirm"
+                    autocomplete="new-password"
+                    required
+                    minlength="8"
+                  />
+                </label>
+                <p class="profile-pwd__hint hint">
+                  Минимум 8 символов.
+                </p>
+                <p
+                  v-if="pwdError"
+                  class="profile-pwd__err err"
+                  role="alert"
+                >
+                  {{ pwdError }}
+                </p>
+                <p
+                  v-if="pwdOk"
+                  class="profile-pwd__ok"
+                  role="status"
+                >
+                  Пароль обновлён.
+                </p>
+                <button
+                  class="btn-primary profile-pwd__submit"
+                  type="submit"
+                  :disabled="pwdBusy"
+                >
+                  {{ pwdBusy ? 'Сохранение…' : 'Сохранить новый пароль' }}
+                </button>
+              </form>
+            </details>
+            <p
+              v-else
+              class="hint profile-pwd-missing"
+            >
+              Вход по паролю на сайте не настроен — задайте пароль при регистрации
+              или через привязку email в Telegram-боте.
+            </p>
           </div>
         </div>
       </div>
@@ -1228,6 +1356,118 @@ dd {
 .profile-tg-open-btn {
   margin-top: 0.35rem;
   text-decoration: none;
+}
+
+.profile-pwd {
+  margin-top: 1.1rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--nav-border);
+}
+
+.profile-pwd__summary {
+  cursor: pointer;
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--accent);
+  line-height: 1.35;
+  list-style: none;
+  user-select: none;
+}
+
+.profile-pwd__summary::-webkit-details-marker {
+  display: none;
+}
+
+.profile-pwd__summary::before {
+  content: '';
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-right: 0.38em;
+  border-style: solid;
+  border-width: 0.28em 0 0.28em 0.42em;
+  border-color: transparent transparent transparent currentColor;
+  vertical-align: 0.12em;
+  transition: transform 0.15s ease;
+}
+
+.profile-pwd[open] .profile-pwd__summary::before {
+  transform: rotate(90deg);
+}
+
+.profile-pwd__summary:focus-visible {
+  outline: none;
+  border-radius: 6px;
+  box-shadow: var(--focus-ring);
+}
+
+.profile-pwd__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: 0.85rem;
+  padding-top: 0.35rem;
+}
+
+.profile-pwd__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  text-align: left;
+}
+
+.profile-pwd__label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.profile-pwd__input {
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+  color: var(--text-h);
+  font: inherit;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.profile-pwd__input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.profile-pwd__hint {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.profile-pwd__err {
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.profile-pwd__ok {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.profile-pwd__submit {
+  width: 100%;
+  box-sizing: border-box;
+  justify-content: center;
+  margin-top: 0.15rem;
+}
+
+.profile-pwd-missing {
+  margin: 1rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--nav-border);
 }
 
 .row--telegram dd {

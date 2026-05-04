@@ -20,6 +20,7 @@ from app.core.auth_env import normalize_email
 from app.core.dependencies import BearerPrincipal
 from app.core.passwords import hash_password, verify_password
 from app.domain.models.auth import (
+    AccountChangePasswordBody,
     AccountLoginBody,
     AccountMeResponse,
     AccountRegisterBody,
@@ -617,6 +618,7 @@ def account_me(session: Session, principal: BearerPrincipal, cfg: Settings) -> A
             traffic_up_bytes=up_b,
             traffic_down_bytes=down_b,
             traffic_total_bytes=total_b,
+            has_site_password=bool(user.password_hash),
         )
 
     if principal.role == "admin":
@@ -639,3 +641,46 @@ def account_me(session: Session, principal: BearerPrincipal, cfg: Settings) -> A
 
     api_role = "manager" if principal.role == "manager" else "user"
     return response_for(user, role=api_role)
+
+
+def _account_user_for_password_change(session: Session, principal: BearerPrincipal) -> User:
+    """Та же проверка субъекта, что у GET /api/auth/me (admin / manager / user)."""
+    if principal.role == "admin":
+        if principal.user_id is None:
+            raise HttpServiceError(401, "Недействительный токен")
+        user = session.get(User, principal.user_id)
+        if user is None:
+            raise HttpServiceError(401, "Пользователь не найден")
+        if user.account_role != "admin":
+            raise HttpServiceError(401, "Недействительный токен")
+        return user
+    if principal.user_id is None:
+        raise HttpServiceError(401, "Недействительный токен")
+    user = session.get(User, principal.user_id)
+    if user is None:
+        raise HttpServiceError(401, "Пользователь не найден")
+    if not user.email and not user.telegram_id:
+        raise HttpServiceError(500, "У записи нет ни email, ни telegram_id")
+    return user
+
+
+def change_account_password(
+    session: Session,
+    principal: BearerPrincipal,
+    body: AccountChangePasswordBody,
+) -> None:
+    user = _account_user_for_password_change(session, principal)
+    if not user.password_hash:
+        raise HttpServiceError(
+            400,
+            "Для этого аккаунта не задан пароль входа на сайте. "
+            "Задайте пароль при регистрации или через привязку email в боте.",
+        )
+    if not verify_password(body.current_password, user.password_hash):
+        raise HttpServiceError(403, "Неверный текущий пароль")
+    if len(body.new_password.encode("utf-8")) > 72:
+        raise HttpServiceError(400, "Пароль слишком длинный (не более 72 байт в UTF-8)")
+    if verify_password(body.new_password, user.password_hash):
+        raise HttpServiceError(400, "Новый пароль совпадает с текущим")
+    user.password_hash = hash_password(body.new_password)
+    session.flush()
