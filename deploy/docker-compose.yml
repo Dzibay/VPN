@@ -45,12 +45,28 @@ services:
       context: ..
       dockerfile: backend/Dockerfile
     restart: unless-stopped
+    # --workers 2: defense-in-depth поверх async-стека. Один воркер всё ещё может
+    # деградировать (баг, OOM-killer внутри потока, зависший syscall) — второй продолжит
+    # обслуживать запросы. На небольшом VPS это меньше 100 МБ дополнительной памяти.
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --workers
+      - "2"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/health || exit 1"]
       interval: 30s
       timeout: 5s
       start_period: 40s
       retries: 3
+    # Метка для autoheal: контейнер с label "autoheal=true" автоматически перезапускается,
+    # как только healthcheck перешёл в unhealthy (см. сервис ``autoheal`` ниже).
+    labels:
+      - autoheal=true
     env_file:
       - .env
     environment:
@@ -71,6 +87,18 @@ services:
     # Проброс только для отладки (в продакшене закомментируйте):
     # ports:
     #   - "127.0.0.1:8000:8000"
+
+  # autoheal перезапускает любой контейнер из стека, перешедший в unhealthy. Без него
+  # api с зависшим event loop остаётся мёртвым до ручного `docker restart` — ровно
+  # симптом, с которого начался этот рефакторинг.
+  autoheal:
+    image: willfarrell/autoheal:latest
+    restart: unless-stopped
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+      AUTOHEAL_INTERVAL: "10"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
   worker:
     build:
@@ -104,6 +132,35 @@ services:
       #   sudo chown -R 10001:10001 ./secrets/ssh && chmod 0700 ./secrets/ssh && chmod 0600 ./secrets/ssh/*
       # Альтернатива — переопределить пользователя сервиса (например, ``user: "1000:1000"``).
       - ${PROVISION_SSH_KEYS:-./secrets/ssh}:/ssh:ro
+    networks: [internal]
+
+  # Отдельный процесс с тремя периодическими корутинами (раньше жили в lifespan API):
+  # сбор трафика Xray, sync servers.load_percent из Prometheus, ежедневный sync клиентов.
+  # Тот же образ, что у api/worker — отличается только командой.
+  scheduler:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    command: ["python", "-m", "app.scheduler.run"]
+    healthcheck:
+      disable: true
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER:-vpn}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB:-vpn}
+      DATABASE_URL: ""
+      REDIS_URL: redis://redis:6379/0
+      PROMETHEUS_BASE_URL: http://prometheus:9090
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks: [internal]
 
   prometheus:

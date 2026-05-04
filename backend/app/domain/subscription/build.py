@@ -9,11 +9,10 @@ from urllib.parse import quote, urlencode
 
 import yaml
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import BRAND_NAME
 from app.domain.models.subscription import SubscriptionPayload
-from app.infrastructure.database.session import SessionLocal
 from app.infrastructure.persistence.models.server import Server
 from app.infrastructure.persistence.models.user import User
 
@@ -39,9 +38,9 @@ def subscription_servers_for_delivery(rows: list[Server]) -> list[Server]:
     return [s for s in rows if s.id not in referenced_exit_ids]
 
 
-def _subscription_server_rows(session: Session) -> list[Server]:
+async def subscription_servers_from_db(session: AsyncSession) -> list[Server]:
     """
-    Все валидные узлы для ссылки в подписке (до фильтра каскада на выдаче).
+    Узлы для выдачи в подписке: только чтение из БД (servers.load_percent обновляет фоновый планировщик).
 
     Дальше ``subscription_servers_for_delivery`` убирает внешние exit из пар
     «РФ-вход → exit», чтобы в клиенте не дублировать прямой доступ к exit.
@@ -56,18 +55,7 @@ def _subscription_server_rows(session: Session) -> list[Server]:
         )
         .order_by(Server.load_percent.asc(), Server.id.asc())
     )
-    return list(session.scalars(stmt).all())
-
-
-def subscription_servers_from_db() -> list[Server]:
-    """
-    Узлы для выдачи в подписке: только чтение из БД (servers.load_percent обновляет фоновый планировщик).
-    """
-    db = SessionLocal()
-    try:
-        return _subscription_server_rows(db)
-    finally:
-        db.close()
+    return list((await session.scalars(stmt)).all())
 
 
 def _primary_sni(server_names: str, dest: str) -> str:

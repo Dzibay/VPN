@@ -26,4 +26,4 @@ async def delete_my_subscription_device(
 ) -> None:
     if principal.user_id is None:
         raise HTTPException(status_code=401, detail="Требуется вход")
-    delete_subscription_device(session, user_id=int(principal.user_id), device_id=device_id)
+    await delete_subscription_device(session, user_id=int(principal.user_id), device_id=device_id)

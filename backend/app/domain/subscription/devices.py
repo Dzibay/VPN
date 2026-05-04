@@ -6,7 +6,7 @@ import hashlib
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select, text
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from app.config import Settings
@@ -67,8 +67,8 @@ def _device_row_fields(request: Request) -> dict:
     }
 
 
-def register_or_touch_subscription_device(
-    session: Session,
+async def register_or_touch_subscription_device(
+    session: AsyncSession,
     *,
     settings: Settings,
     user: User,
@@ -88,12 +88,14 @@ def register_or_touch_subscription_device(
     limit = effective_subscription_device_limit(settings)
 
     # Сериализуем по пользователю, чтобы два новых клиента параллельно не превысили лимит.
-    session.execute(text("SELECT pg_advisory_xact_lock(:uid)"), {"uid": int(user.id)})
+    await session.execute(text("SELECT pg_advisory_xact_lock(:uid)"), {"uid": int(user.id)})
 
-    row = session.execute(
-        select(SubscriptionDevice).where(
-            SubscriptionDevice.user_id == user.id,
-            SubscriptionDevice.fingerprint == fingerprint,
+    row = (
+        await session.execute(
+            select(SubscriptionDevice).where(
+                SubscriptionDevice.user_id == user.id,
+                SubscriptionDevice.fingerprint == fingerprint,
+            )
         )
     ).scalar_one_or_none()
 
@@ -101,9 +103,11 @@ def register_or_touch_subscription_device(
 
     if row is None:
         if limit is not None:
-            cnt = session.execute(
-                select(func.count()).select_from(SubscriptionDevice).where(
-                    SubscriptionDevice.user_id == user.id,
+            cnt = (
+                await session.execute(
+                    select(func.count()).select_from(SubscriptionDevice).where(
+                        SubscriptionDevice.user_id == user.id,
+                    )
                 )
             ).scalar_one()
             if int(cnt or 0) >= limit:
@@ -123,25 +127,29 @@ def register_or_touch_subscription_device(
     return True
 
 
-def list_subscription_connection_records(
-    session: Session, user_id: int
+async def list_subscription_connection_records(
+    session: AsyncSession, user_id: int
 ) -> list[dict[str, int | str | None]]:
-    rows = session.execute(
-        select(
-            SubscriptionDevice.id,
-            SubscriptionDevice.os,
-            SubscriptionDevice.user_agent,
+    rows = (
+        await session.execute(
+            select(
+                SubscriptionDevice.id,
+                SubscriptionDevice.os,
+                SubscriptionDevice.user_agent,
+            )
+            .where(SubscriptionDevice.user_id == user_id)
+            .order_by(SubscriptionDevice.updated_at.desc()),
         )
-        .where(SubscriptionDevice.user_id == user_id)
-        .order_by(SubscriptionDevice.updated_at.desc()),
     ).all()
     return [{"id": int(r[0]), "os": r[1], "user_agent": r[2]} for r in rows]
 
 
-def count_subscription_devices_for_user(session: Session, user_id: int) -> int:
-    n = session.execute(
-        select(func.count())
-        .select_from(SubscriptionDevice)
-        .where(SubscriptionDevice.user_id == user_id),
+async def count_subscription_devices_for_user(session: AsyncSession, user_id: int) -> int:
+    n = (
+        await session.execute(
+            select(func.count())
+            .select_from(SubscriptionDevice)
+            .where(SubscriptionDevice.user_id == user_id),
+        )
     ).scalar_one()
     return int(n or 0)

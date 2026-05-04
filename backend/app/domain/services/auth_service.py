@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import logging
 
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.core.auth_env import normalize_email
@@ -48,27 +49,37 @@ from app.infrastructure.persistence.models.user import User
 log = logging.getLogger("app.auth_service")
 
 
-def login_with_password(session: Session, body: AccountLoginBody, cfg: Settings) -> TokenResponse:
+async def login_with_password(
+    session: AsyncSession, body: AccountLoginBody, cfg: Settings,
+) -> TokenResponse:
     """Логин по email и паролю; ответ — JWT-токен с API-ролью."""
     email = normalize_email(str(body.email))
-    user = session.scalars(select(User).where(User.email == email).limit(1)).first()
+    user = (
+        await session.scalars(select(User).where(User.email == email).limit(1))
+    ).first()
     if user is None:
         raise UnauthorizedError("Неверный email или пароль")
-    if not user.password_hash or not verify_password(body.password, user.password_hash):
+    if not user.password_hash:
+        raise UnauthorizedError("Неверный email или пароль")
+    # bcrypt — CPU-bound (~100–300 мс): держим за пределами event loop.
+    ok = await run_in_threadpool(verify_password, body.password, user.password_hash)
+    if not ok:
         raise UnauthorizedError("Неверный email или пароль")
     jwt_role = jwt_role_for_user(user)
     token = issue_access_token_or_http_error(cfg, role=jwt_role, user_id=user.id)
     return TokenResponse(access_token=token, role=jwt_role)
 
 
-def register_with_email(session: Session, body: AccountRegisterBody, cfg: Settings) -> TokenResponse:
+async def register_with_email(
+    session: AsyncSession, body: AccountRegisterBody, cfg: Settings,
+) -> TokenResponse:
     """Регистрация по email и паролю; ответ — JWT-токен.
 
     При наличии валидного ``referral_token`` инкремент счётчика регистраций по реферальной
     ссылке делается в той же транзакции, что и вставка пользователя.
     """
     email = normalize_email(str(body.email))
-    pwd_hash = hash_password(body.password)
+    pwd_hash = await run_in_threadpool(hash_password, body.password)
     user = User(
         email=email,
         password_hash=pwd_hash,
@@ -79,29 +90,31 @@ def register_with_email(session: Session, body: AccountRegisterBody, cfg: Settin
         vless_uuid=new_vless_uuid(),
     )
     try:
-        table_insert(session, user)
+        await table_insert(session, user)
     except IntegrityError as e:
         log.warning("register conflict: %s", e)
         raise ConflictError("Пользователь с таким email уже зарегистрирован") from e
 
     if body.referral_token:
         rstmt = select(ReferralLink).where(ReferralLink.token == body.referral_token).limit(1)
-        rlink = session.scalars(rstmt).first()
+        rlink = (await session.scalars(rstmt)).first()
         if rlink is not None:
             user.referral_link_id = rlink.id
-            increment_referral_counter(session, rlink.id, "registrations")
-            session.flush()
+            await increment_referral_counter(session, rlink.id, "registrations")
+            await session.flush()
 
     token = issue_access_token_or_http_error(cfg, role="user", user_id=user.id)
     return TokenResponse(access_token=token, role="user")
 
 
-def account_me(session: Session, principal: BearerPrincipal, cfg: Settings) -> AccountMeResponse:
+async def account_me(
+    session: AsyncSession, principal: BearerPrincipal, cfg: Settings,
+) -> AccountMeResponse:
     """Профиль текущего пользователя по JWT (включая трафик и активные подписочные устройства)."""
-    user, role = resolve_authenticated_user(session, principal)
+    user, role = await resolve_authenticated_user(session, principal)
 
-    up_b, down_b, total_b = user_traffic_totals(session, user.id)
-    raw_conns = list_subscription_connection_records(session, user.id)
+    up_b, down_b, total_b = await user_traffic_totals(session, user.id)
+    raw_conns = await list_subscription_connection_records(session, user.id)
     subs_dev_limit = effective_subscription_device_limit(cfg)
     subs_conns = [SubscriptionConnectionItem(**r) for r in raw_conns]
 
@@ -127,23 +140,25 @@ def account_me(session: Session, principal: BearerPrincipal, cfg: Settings) -> A
     )
 
 
-def change_account_password(
-    session: Session,
+async def change_account_password(
+    session: AsyncSession,
     principal: BearerPrincipal,
     body: AccountChangePasswordBody,
 ) -> None:
     """Смена пароля для аккаунта с email; верифицирует текущий и запрещает совпадение с новым."""
-    user, _ = resolve_authenticated_user(session, principal)
+    user, _ = await resolve_authenticated_user(session, principal)
     if not user.password_hash:
         raise BadRequestError(
             "Для этого аккаунта не задан пароль входа на сайте. "
             "Задайте пароль при регистрации или через привязку email в боте.",
         )
-    if not verify_password(body.current_password, user.password_hash):
+    cur_ok = await run_in_threadpool(verify_password, body.current_password, user.password_hash)
+    if not cur_ok:
         raise ForbiddenError("Неверный текущий пароль")
     if len(body.new_password.encode("utf-8")) > 72:
         raise BadRequestError("Пароль слишком длинный (не более 72 байт в UTF-8)")
-    if verify_password(body.new_password, user.password_hash):
+    same = await run_in_threadpool(verify_password, body.new_password, user.password_hash)
+    if same:
         raise BadRequestError("Новый пароль совпадает с текущим")
-    user.password_hash = hash_password(body.new_password)
-    session.flush()
+    user.password_hash = await run_in_threadpool(hash_password, body.new_password)
+    await session.flush()

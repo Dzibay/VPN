@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 
 from redis.exceptions import RedisError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.exceptions import BadRequestError
@@ -26,8 +26,8 @@ from app.infrastructure.persistence.models.server import Server
 log = logging.getLogger("app.servers.cascade")
 
 
-def validate_cascade_pair(
-    session: Session,
+async def validate_cascade_pair(
+    session: AsyncSession,
     *,
     self_id: int | None,
     is_ru_entry: bool,
@@ -48,7 +48,7 @@ def validate_cascade_pair(
         raise BadRequestError(
             "cascade_next_server_id не может совпадать с id этого сервера",
         )
-    target = session.get(Server, cascade_next_id)
+    target = await session.get(Server, cascade_next_id)
     if target is None:
         raise BadRequestError(
             "cascade_next_server_id: внешний сервер не найден",
@@ -86,7 +86,9 @@ def merge_cascade_fields(
     return is_ru, next_id
 
 
-def try_enqueue_sync_xray_on_exit_for_cascade(session: Session, *exit_ids: int | None) -> None:
+async def try_enqueue_sync_xray_on_exit_for_cascade(
+    session: AsyncSession, *exit_ids: int | None,
+) -> None:
     """Поставить точечный sync Xray-клиентов на exit-узлы каскада.
 
     Принимает несколько exit-id (старый и новый при PATCH); пропускает ``None``, узлы без
@@ -94,7 +96,7 @@ def try_enqueue_sync_xray_on_exit_for_cascade(session: Session, *exit_ids: int |
     """
     need = {int(x) for x in exit_ids if x is not None}
     for eid in need:
-        ex = session.get(Server, eid)
+        ex = await session.get(Server, eid)
         if ex is None or not ex.provision_ready:
             log.info(
                 "cascade: пропуск sync Xray на exit id=%s (нет или provision_ready=false)",

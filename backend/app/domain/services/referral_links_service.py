@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import (
     ForbiddenError,
@@ -28,16 +28,16 @@ from app.domain.referrals.repository import (
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 
 
-def list_staff_referral_links(session: Session, cfg: object) -> list:
+async def list_staff_referral_links(session: AsyncSession, cfg: object) -> list:
     """Все реферальные записи в админке, новейшие первыми; URL подставляются из ``cfg``."""
     stmt = select(ReferralLink).order_by(ReferralLink.id.desc())
-    rows = list(session.scalars(stmt).all())
+    rows = list((await session.scalars(stmt)).all())
     return [referral_link_to_response(r, cfg) for r in rows]
 
 
-def delete_referral_link_row(session: Session, link_id: int) -> None:
+async def delete_referral_link_row(session: AsyncSession, link_id: int) -> None:
     """Удалить запись по id; 404 если не найдена."""
-    if not delete_referral_link(session, link_id):
+    if not await delete_referral_link(session, link_id):
         raise NotFoundError("Токен не найден")
 
 
@@ -59,12 +59,12 @@ def client_site_user_id(principal: object) -> int:
     return int(uid)
 
 
-def referral_me_for_user(session: Session, user_id: int, cfg: object):
+async def referral_me_for_user(session: AsyncSession, user_id: int, cfg: object):
     """Получить (или создать) персональную ссылку пользователя и вернуть её для /me."""
     from app.domain.models.referral_links import ReferralMeResponse
 
     try:
-        row = get_or_create_user_owned_referral_link(session, user_id)
+        row = await get_or_create_user_owned_referral_link(session, user_id)
     except ValueError as e:
         msg = str(e)
         if msg == "Пользователь не найден":

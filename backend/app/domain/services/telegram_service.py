@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.core.exceptions import ConflictError, NotFoundError, UnprocessableEntityError
@@ -27,14 +27,14 @@ def subscription_open_clients_payload(settings: Settings) -> TelegramSubscriptio
     )
 
 
-def get_user_by_topic_id(session: Session, topic_id: int) -> User:
+async def get_user_by_topic_id(session: AsyncSession, topic_id: int) -> User:
     stmt = (
         select(User)
         .where(User.telegram_properties.contains({"topic_id": topic_id}))
         .order_by(User.id.asc())
         .limit(2)
     )
-    rows = list(session.scalars(stmt).all())
+    rows = list((await session.scalars(stmt)).all())
     if not rows:
         raise NotFoundError(
             "Пользователь с таким topic_id в telegram_properties не найден",
@@ -46,8 +46,8 @@ def get_user_by_topic_id(session: Session, topic_id: int) -> User:
     return rows[0]
 
 
-def patch_user_telegram_properties(
-    session: Session,
+async def patch_user_telegram_properties(
+    session: AsyncSession,
     telegram_id: int,
     body: TelegramProfilePatchBody,
 ) -> TelegramUserPropertiesUpdateResponse:
@@ -59,7 +59,7 @@ def patch_user_telegram_properties(
     auth_fragment = TelegramAuthBody(telegram_id=telegram_id, **patch)
 
     stmt = select(User).where(User.telegram_id == telegram_id).limit(1)
-    user = session.scalars(stmt).first()
+    user = (await session.scalars(stmt)).first()
     if user is None:
         raise NotFoundError("Пользователь с таким telegram_id не найден")
 
@@ -67,7 +67,7 @@ def patch_user_telegram_properties(
         auth_fragment,
         user.telegram_properties,
     )
-    session.flush()
+    await session.flush()
 
     return TelegramUserPropertiesUpdateResponse(
         telegram_id=int(user.telegram_id or telegram_id),

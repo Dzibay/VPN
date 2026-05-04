@@ -51,7 +51,7 @@ router = APIRouter(
     summary="Число записей пользователей в базе данных",
 )
 async def users_count_ep(session: ReadonlySessionDep) -> UsersCountResponse:
-    return users_count(session)
+    return await users_count(session)
 
 
 @router.get(
@@ -67,7 +67,7 @@ async def list_users(
     list_mode: Annotated[StaffUserListMode, Depends(require_staff_user_list_access)],
 ) -> list[UserListItem]:
     show_secrets = list_mode in ("open", "admin")
-    return staff_list_users(session, show_secrets=show_secrets)
+    return await staff_list_users(session, show_secrets=show_secrets)
 
 
 @router.get(
@@ -77,7 +77,7 @@ async def list_users(
     summary="Дневная статистика (UTC): регистрации, трафик, устройства подписки и активность по датам",
 )
 async def users_daily_stats_ep(session: ReadonlySessionDep) -> UsersDailyStatsResponse:
-    return users_daily_stats(session)
+    return await users_daily_stats(session)
 
 
 @router.post(
@@ -92,7 +92,7 @@ async def create_user(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> User:
-    user = create_staff_user(session, body)
+    user = await create_staff_user(session, body)
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return user
 
@@ -111,7 +111,7 @@ async def extend_active_subscriptions_ep(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> ExtendActiveSubscriptionsResponse:
-    resp = extend_active_subscriptions(session, body)
+    resp = await extend_active_subscriptions(session, body)
     if resp.updated_count:
         background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return resp
@@ -127,7 +127,7 @@ async def user_traffic_by_server(
     user_id: int,
     session: ReadonlySessionDep,
 ) -> UserTrafficByServersBundle:
-    return user_traffic_by_servers_bundle(session, user_id)
+    return await user_traffic_by_servers_bundle(session, user_id)
 
 
 @router.get(
@@ -140,8 +140,8 @@ async def user_traffic_by_day(
     user_id: int,
     session: ReadonlySessionDep,
 ) -> list[UserTrafficByDayRow]:
-    require_user_exists(session, user_id)
-    return user_traffic_cumulative_by_day_rows(session, user_id)
+    await require_user_exists(session, user_id)
+    return await user_traffic_cumulative_by_day_rows(session, user_id)
 
 
 @router.delete(
@@ -155,7 +155,7 @@ async def delete_user(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> None:
-    delete_staff_user(session, user_id)
+    await delete_staff_user(session, user_id)
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
 
 
@@ -171,6 +171,6 @@ async def patch_user(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> User:
-    user = patch_staff_user(session, user_id, body)
+    user = await patch_staff_user(session, user_id, body)
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return user

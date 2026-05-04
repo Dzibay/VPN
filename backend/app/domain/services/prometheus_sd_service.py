@@ -3,15 +3,17 @@
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.infrastructure.persistence.models.server import Server
 
 
-def node_exporter_targets(session: Session, settings: Settings) -> list[dict[str, Any]]:
+async def node_exporter_targets(
+    session: AsyncSession, settings: Settings,
+) -> list[dict[str, Any]]:
     stmt = select(Server).where(Server.is_active.is_(True)).order_by(Server.id)
-    servers = list(session.scalars(stmt).all())
+    servers = list((await session.scalars(stmt)).all())
     port = int(settings.provision_node_exporter_port)
     out: list[dict[str, Any]] = []
     for s in servers:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.persistence.models.user_server_traffic import UserServerTraffic
 
@@ -44,14 +44,14 @@ def user_server_traffic_latest_subquery():
     )
 
 
-def user_traffic_totals(session: Session, user_id: int) -> tuple[int, int, int]:
+async def user_traffic_totals(session: AsyncSession, user_id: int) -> tuple[int, int, int]:
     """Суммы up_bytes, down_bytes и их сумма по всем узлам (последний снимок на узел)."""
     latest = user_server_traffic_latest_subquery()
     stmt = select(
         func.coalesce(func.sum(latest.c.up_bytes), 0),
         func.coalesce(func.sum(latest.c.down_bytes), 0),
     ).where(latest.c.user_id == user_id)
-    row = session.execute(stmt).one()
+    row = (await session.execute(stmt)).one()
     up_b = int(row[0])
     down_b = int(row[1])
     return up_b, down_b, up_b + down_b

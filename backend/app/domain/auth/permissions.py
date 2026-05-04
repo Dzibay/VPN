@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import BearerPrincipal
 from app.core.exceptions import InternalServerError, UnauthorizedError
 from app.infrastructure.persistence.models.user import User
 
 
-def resolve_authenticated_user(session: Session, principal: BearerPrincipal) -> tuple[User, str]:
+async def resolve_authenticated_user(
+    session: AsyncSession,
+    principal: BearerPrincipal,
+) -> tuple[User, str]:
     """Текущий пользователь по JWT и его API-роль (``admin``/``manager``/``user``).
 
     Эта проверка переиспользуется ``GET /api/auth/me`` и ``POST /api/auth/me/change-password``:
@@ -19,7 +22,7 @@ def resolve_authenticated_user(session: Session, principal: BearerPrincipal) -> 
     if principal.role == "admin":
         if principal.user_id is None:
             raise UnauthorizedError("Недействительный токен")
-        user = session.get(User, principal.user_id)
+        user = await session.get(User, principal.user_id)
         if user is None:
             raise UnauthorizedError("Пользователь не найден")
         if user.account_role != "admin":
@@ -28,7 +31,7 @@ def resolve_authenticated_user(session: Session, principal: BearerPrincipal) -> 
 
     if principal.user_id is None:
         raise UnauthorizedError("Недействительный токен")
-    user = session.get(User, principal.user_id)
+    user = await session.get(User, principal.user_id)
     if user is None:
         raise UnauthorizedError("Пользователь не найден")
     if not user.email and not user.telegram_id:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 
 from sqlalchemy import and_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
 from app.core.time import as_calendar_date
@@ -20,8 +20,8 @@ from app.infrastructure.persistence.models.user import User
 from app.infrastructure.persistence.models.user_server_traffic import UserServerTraffic
 
 
-def user_traffic_cumulative_by_day_rows(
-    session: Session,
+async def user_traffic_cumulative_by_day_rows(
+    session: AsyncSession,
     user_id: int,
 ) -> list[UserTrafficByDayRow]:
     """Накопительный по календарному дню (UTC) трафик пользователя по всем узлам.
@@ -39,7 +39,7 @@ def user_traffic_cumulative_by_day_rows(
         .where(UserServerTraffic.user_id == user_id)
         .order_by(UserServerTraffic.server_id.asc(), UserServerTraffic.traffic_date.asc())
     )
-    rows_raw = session.execute(stmt).all()
+    rows_raw = (await session.execute(stmt)).all()
     by_server: dict[int, list[tuple[date, int]]] = {}
     day_markers: set[date] = set()
     for sid_raw, td_raw, total_raw in rows_raw:
@@ -71,8 +71,8 @@ def user_traffic_cumulative_by_day_rows(
     return out
 
 
-def user_traffic_by_servers_bundle(
-    session: Session,
+async def user_traffic_by_servers_bundle(
+    session: AsyncSession,
     user_id: int,
 ) -> UserTrafficByServersBundle:
     """Распределение трафика пользователя по узлам с метаданными узла.
@@ -80,7 +80,7 @@ def user_traffic_by_servers_bundle(
     Возвращает строки по всем серверам (не только тем, где есть статистика), чтобы UI всегда
     показывал полный список узлов из админ-кабинета.
     """
-    user = session.get(User, user_id)
+    user = await session.get(User, user_id)
     if user is None:
         raise NotFoundError("Пользователь не найден")
     latest = user_server_traffic_latest_subquery().alias("ut_latest")
@@ -96,7 +96,7 @@ def user_traffic_by_servers_bundle(
         )
         .order_by(Server.id.asc())
     )
-    rows = session.execute(stmt).all()
+    rows = (await session.execute(stmt)).all()
     out: list[UserTrafficPerServerRow] = []
     total_up = 0
     total_down = 0

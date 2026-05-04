@@ -45,7 +45,7 @@ router = APIRouter(
     summary="Число записей серверов в базе данных",
 )
 async def servers_count_ep(session: ReadonlySessionDep) -> ServersCountResponse:
-    return servers_count(session)
+    return await servers_count(session)
 
 
 @router.get(
@@ -54,7 +54,7 @@ async def servers_count_ep(session: ReadonlySessionDep) -> ServersCountResponse:
     summary="Перечень серверов",
 )
 async def list_servers_ep(session: ReadonlySessionDep) -> list[Server]:
-    return list_servers(session)
+    return await list_servers(session)
 
 
 @router.post(
@@ -72,7 +72,7 @@ async def sync_load_from_prometheus(
         description="Длительность интервала усреднения, часов",
     ),
 ) -> ServerLoadSyncResultRead:
-    return await run_in_threadpool(sync_load_from_prometheus_result, hours)
+    return await sync_load_from_prometheus_result(hours)
 
 
 @router.post(
@@ -82,7 +82,7 @@ async def sync_load_from_prometheus(
     summary="Создание записи сервера",
 )
 async def create_server_ep(body: ServerCreate, session: SessionDep) -> Server:
-    return create_server(session, body, settings)
+    return await create_server(session, body, settings)
 
 
 @router.post(
@@ -105,7 +105,7 @@ async def enqueue_sync_xray_clients_one(
     server_id: int,
     session: ReadonlySessionDep,
 ) -> XrayClientsSyncOneResultRead:
-    return enqueue_sync_xray_one(session, server_id, settings)
+    return await enqueue_sync_xray_one(session, server_id, settings)
 
 
 @router.post(
@@ -115,7 +115,7 @@ async def enqueue_sync_xray_clients_one(
     summary="Постановка в очередь RQ полной установки ПО на узле",
 )
 async def enqueue_server_provision(server_id: int, session: SessionDep) -> Server:
-    return enqueue_full_provision(session, server_id, settings)
+    return await enqueue_full_provision(session, server_id, settings)
 
 
 @router.post(
@@ -125,7 +125,7 @@ async def enqueue_server_provision(server_id: int, session: SessionDep) -> Serve
     summary="Сброс статуса provision (queued или running) и отмена связанной задачи RQ",
 )
 async def reset_server_provision_ep(server_id: int, session: SessionDep) -> Server:
-    return reset_server_provision(session, server_id)
+    return await reset_server_provision(session, server_id)
 
 
 @router.post(
@@ -135,7 +135,7 @@ async def reset_server_provision_ep(server_id: int, session: SessionDep) -> Serv
     summary="Повторный прогон сценария установки (Xray и node_exporter) без предварительного сброса готовности",
 )
 async def enqueue_server_reconcile_ep(server_id: int, session: SessionDep) -> Server:
-    return enqueue_server_reconcile(session, server_id, settings)
+    return await enqueue_server_reconcile(session, server_id, settings)
 
 
 @router.post(
@@ -145,7 +145,7 @@ async def enqueue_server_reconcile_ep(server_id: int, session: SessionDep) -> Se
     summary="Установка и настройка только Xray на узле",
 )
 async def enqueue_server_provision_xray(server_id: int, session: SessionDep) -> Server:
-    return enqueue_component_install(session, server_id, component="xray", cfg=settings)
+    return await enqueue_component_install(session, server_id, component="xray", cfg=settings)
 
 
 @router.post(
@@ -155,7 +155,7 @@ async def enqueue_server_provision_xray(server_id: int, session: SessionDep) -> 
     summary="Установка и настройка только node_exporter на узле",
 )
 async def enqueue_server_provision_prometheus(server_id: int, session: SessionDep) -> Server:
-    return enqueue_component_install(session, server_id, component="prometheus", cfg=settings)
+    return await enqueue_component_install(session, server_id, component="prometheus", cfg=settings)
 
 
 @router.post(
@@ -165,7 +165,7 @@ async def enqueue_server_provision_prometheus(server_id: int, session: SessionDe
     summary="Настройка справедливой очереди на uplink (CAKE или fq_codel)",
 )
 async def enqueue_server_provision_fair_egress(server_id: int, session: SessionDep) -> Server:
-    return enqueue_component_install(session, server_id, component="fair_egress", cfg=settings)
+    return await enqueue_component_install(session, server_id, component="fair_egress", cfg=settings)
 
 
 @router.post(
@@ -175,7 +175,7 @@ async def enqueue_server_provision_fair_egress(server_id: int, session: SessionD
     summary="Удаление Xray и node_exporter с узла и очистка связанных полей в базе данных",
 )
 async def enqueue_server_provision_cleanup(server_id: int, session: SessionDep) -> Server:
-    return enqueue_component_install(session, server_id, component="cleanup", cfg=settings)
+    return await enqueue_component_install(session, server_id, component="cleanup", cfg=settings)
 
 
 @router.patch(
@@ -184,7 +184,7 @@ async def enqueue_server_provision_cleanup(server_id: int, session: SessionDep) 
     summary="Частичное обновление параметров сервера",
 )
 async def patch_server_ep(server_id: int, body: ServerUpdate, session: SessionDep) -> Server:
-    return patch_server(session, server_id, body)
+    return await patch_server(session, server_id, body)
 
 
 @router.get(
@@ -202,7 +202,7 @@ async def ping_server_reachable(
         description="Таймаут установки TCP-соединения, с",
     ),
 ) -> ServerPingRead:
-    server = session.get(Server, server_id)
+    server = await session.get(Server, server_id)
     if server is None:
         raise HTTPException(status_code=404, detail="Сервер не найден")
     host = (server.host or "").strip()
@@ -210,7 +210,7 @@ async def ping_server_reachable(
     ex_host: str | None = None
     ex_port: int | None = None
     if server.is_cascade_ru_entry and server.cascade_next_server_id is not None:
-        ex = session.get(Server, int(server.cascade_next_server_id))
+        ex = await session.get(Server, int(server.cascade_next_server_id))
         if ex is not None:
             ex_host = (ex.host or "").strip() or None
             ex_port = int(ex.port)
@@ -226,7 +226,7 @@ async def ping_server_reachable(
         )
 
     tcp = await run_in_threadpool(_run)
-    return build_server_health_read(
+    return await build_server_health_read(
         session,
         server,
         settings,
@@ -245,5 +245,5 @@ async def delete_server_ep(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> None:
-    delete_server(session, server_id)
+    await delete_server(session, server_id)
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)

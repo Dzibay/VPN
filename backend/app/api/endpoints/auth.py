@@ -124,7 +124,7 @@ router = APIRouter(prefix="/auth")
     summary="Аутентификация по email и паролю; ответ содержит JWT",
 )
 async def login(body: AccountLoginBody, session: ReadonlySessionDep) -> TokenResponse:
-    return login_with_password(session, body, settings)
+    return await login_with_password(session, body, settings)
 
 
 @router.post(
@@ -139,7 +139,7 @@ async def register(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> TokenResponse:
-    resp = register_with_email(session, body, settings)
+    resp = await register_with_email(session, body, settings)
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return resp
 
@@ -157,7 +157,7 @@ async def telegram_auth(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> TelegramAuthTokenResponse:
-    resp = telegram_authenticate(session, body, settings)
+    resp = await telegram_authenticate(session, body, settings)
     if resp.is_new_user:
         background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return resp
@@ -175,7 +175,7 @@ async def telegram_link_web_account_ep(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> TelegramWebLinkResponse:
-    resp = telegram_link_web_account(session, body, get_redis(), settings)
+    resp = await telegram_link_web_account(session, body, get_redis(), settings)
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return resp
 
@@ -191,7 +191,7 @@ async def telegram_site_link_start_ep(
     body: TelegramSiteLinkStartBody,
     session: ReadonlySessionDep,
 ) -> TelegramSiteLinkStartResponse:
-    return telegram_site_link_start(session, body, get_redis(), settings)
+    return await telegram_site_link_start(session, body, get_redis(), settings)
 
 
 @router.get(
@@ -209,7 +209,7 @@ async def telegram_site_link_preview_ep(
         description="Параметр token из URL",
     ),
 ) -> TelegramSiteLinkPreviewResponse:
-    return telegram_site_link_preview_response(session, get_redis(), token, settings)
+    return await telegram_site_link_preview_response(session, get_redis(), token, settings)
 
 
 @router.post(
@@ -226,7 +226,7 @@ async def telegram_site_link_complete_ep(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> TokenResponse:
-    resp = telegram_site_link_complete(session, body, get_redis(), settings)
+    resp = await telegram_site_link_complete(session, body, get_redis(), settings)
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return resp
 
@@ -241,7 +241,7 @@ async def telegram_sync_start(
     session: ReadonlySessionDep,
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
 ) -> TelegramSyncStartResponse:
-    return telegram_sync_start_link(session, principal, get_redis(), settings)
+    return await telegram_sync_start_link(session, principal, get_redis(), settings)
 
 
 @router.get(
@@ -264,7 +264,7 @@ async def me(
     session: ReadonlySessionDep,
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
 ) -> AccountMeResponse:
-    return account_me(session, principal, settings)
+    return await account_me(session, principal, settings)
 
 
 @router.post(
@@ -278,5 +278,5 @@ async def change_password(
     session: SessionDep,
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
 ) -> Response:
-    change_account_password(session, principal, body)
+    await change_account_password(session, principal, body)
     return Response(status_code=204)

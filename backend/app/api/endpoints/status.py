@@ -19,5 +19,5 @@ async def server_status(session: ReadonlySessionDep) -> StatusResponse:
         service=settings.app_name,
         status="running",
         debug=settings.debug,
-        db_connected=db_ping_ok(session),
+        db_connected=await db_ping_ok(session),
     )

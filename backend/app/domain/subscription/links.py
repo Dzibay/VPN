@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from urllib.parse import quote, urlencode
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import URL as StarletteURL
 from starlette.requests import Request
 
@@ -48,8 +48,8 @@ def subscription_public_base_url(cfg: Settings | None = None) -> str:
     return site_address_to_public_origin(cfg.site_address)
 
 
-def user_by_subscription_token(session: Session, subscription_token: str) -> User | None:
-    return table_select_one(session, User, filters={"token": subscription_token})
+async def user_by_subscription_token(session: AsyncSession, subscription_token: str) -> User | None:
+    return await table_select_one(session, User, filters={"token": subscription_token})
 
 
 def subscription_open_spa_url(

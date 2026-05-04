@@ -53,7 +53,7 @@ async def get_user_by_topic_id_ep(
     ],
     session: ReadonlySessionDep,
 ) -> UserRead:
-    return get_user_by_topic_id(session, topic_id)
+    return await get_user_by_topic_id(session, topic_id)
 
 
 @router.patch(
@@ -67,4 +67,4 @@ async def patch_user_telegram_properties_ep(
     body: TelegramProfilePatchBody,
     session: SessionDep,
 ) -> TelegramUserPropertiesUpdateResponse:
-    return patch_user_telegram_properties(session, telegram_id, body)
+    return await patch_user_telegram_properties(session, telegram_id, body)

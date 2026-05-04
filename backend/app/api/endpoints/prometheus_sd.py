@@ -43,4 +43,4 @@ async def prometheus_sd_node_exporter(session: ReadonlySessionDep):
     """
     Активные серверы из БД → targets для scrape (host:port как в PromQL).
     """
-    return prometheus_sd_service.node_exporter_targets(session, settings)
+    return await prometheus_sd_service.node_exporter_targets(session, settings)

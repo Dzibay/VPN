@@ -15,7 +15,7 @@ from typing import Literal, cast as type_cast
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.core.time import utc_today
@@ -43,7 +43,7 @@ def _normalize_account_role(raw: str | None) -> str:
     return "client"
 
 
-def _user_rows_with_traffic(session: Session) -> list[tuple[User, int, int]]:
+async def _user_rows_with_traffic(session: AsyncSession) -> list[tuple[User, int, int]]:
     """Список ``(user, total_bytes, devices_count)`` для админского экрана пользователей.
 
     Один запрос с outer-join'ами, чтобы не делать N+1 на каждого пользователя при подсчёте
@@ -79,22 +79,22 @@ def _user_rows_with_traffic(session: Session) -> list[tuple[User, int, int]]:
         .outerjoin(dev_agg, User.id == dev_agg.c.uid)
         .order_by(User.id.desc())
     )
-    return list(session.execute(stmt).all())
+    return list((await session.execute(stmt)).all())
 
 
-def users_count(session: Session) -> UsersCountResponse:
+async def users_count(session: AsyncSession) -> UsersCountResponse:
     """Общее число записей в ``users``."""
-    total = session.scalar(select(func.count()).select_from(User))
+    total = await session.scalar(select(func.count()).select_from(User))
     return UsersCountResponse(users_count=int(total or 0))
 
 
-def staff_list_users(session: Session, *, show_secrets: bool) -> list[UserListItem]:
+async def staff_list_users(session: AsyncSession, *, show_secrets: bool) -> list[UserListItem]:
     """Список пользователей для админ/менеджер интерфейса.
 
     ``show_secrets`` — раскрывать ли токен подписки и UUID VLESS (только для админа: для менеджера
     эти поля приходят как ``None``).
     """
-    rows = _user_rows_with_traffic(session)
+    rows = await _user_rows_with_traffic(session)
     out: list[UserListItem] = []
     for user, total_raw, dev_raw in rows:
         try:
@@ -130,7 +130,7 @@ def staff_list_users(session: Session, *, show_secrets: bool) -> list[UserListIt
     return out
 
 
-def create_staff_user(session: Session, body: UserCreate) -> User:
+async def create_staff_user(session: AsyncSession, body: UserCreate) -> User:
     """Создать пользователя из админки; токен подписки и VLESS UUID генерируются здесь."""
     user = User(
         telegram_id=body.telegram_id,
@@ -140,7 +140,7 @@ def create_staff_user(session: Session, body: UserCreate) -> User:
         vless_uuid=new_vless_uuid(),
     )
     try:
-        table_insert(session, user)
+        await table_insert(session, user)
     except IntegrityError as e:
         log.warning("create_user conflict: %s", e)
         raise ConflictError(
@@ -149,8 +149,8 @@ def create_staff_user(session: Session, body: UserCreate) -> User:
     return user
 
 
-def extend_active_subscriptions(
-    session: Session,
+async def extend_active_subscriptions(
+    session: AsyncSession,
     body: ExtendActiveSubscriptionsBody,
 ) -> ExtendActiveSubscriptionsResponse:
     """Продлить подписку всем пользователям с активной конечной датой на ``body.days`` дней.
@@ -166,26 +166,26 @@ def extend_active_subscriptions(
         )
         .values(subscription_until=User.subscription_until + days)
     )
-    result = session.execute(stmt)
+    result = await session.execute(stmt)
     n = int(result.rowcount or 0)
     return ExtendActiveSubscriptionsResponse(updated_count=n)
 
 
-def delete_staff_user(session: Session, user_id: int) -> None:
+async def delete_staff_user(session: AsyncSession, user_id: int) -> None:
     """Удалить пользователя; вызывающий код ставит синхронизацию Xray в ``BackgroundTasks``."""
-    user = session.get(User, user_id)
+    user = await session.get(User, user_id)
     if user is None:
         raise NotFoundError("Пользователь не найден")
-    session.delete(user)
+    await session.delete(user)
 
 
-def patch_staff_user(session: Session, user_id: int, body: UserUpdate) -> User:
+async def patch_staff_user(session: AsyncSession, user_id: int, body: UserUpdate) -> User:
     """Частичное обновление пользователя из админки.
 
     При попытке выставить ``account_role='admin'`` без ``password_hash`` отдаёт 400: вход
     в админку требует пароль на сайте.
     """
-    user = session.get(User, user_id)
+    user = await session.get(User, user_id)
     if user is None:
         raise NotFoundError("Пользователь не найден")
     data = body.model_dump(exclude_unset=True)
@@ -198,13 +198,13 @@ def patch_staff_user(session: Session, user_id: int, body: UserUpdate) -> User:
         )
     for key, value in data.items():
         setattr(user, key, value)
-    session.flush()
+    await session.flush()
     return user
 
 
-def require_user_exists(session: Session, user_id: int) -> User:
+async def require_user_exists(session: AsyncSession, user_id: int) -> User:
     """Проверка существования пользователя для эндпоинтов аналитики (404 на отсутствие)."""
-    user = session.get(User, user_id)
+    user = await session.get(User, user_id)
     if user is None:
         raise NotFoundError("Пользователь не найден")
     return user

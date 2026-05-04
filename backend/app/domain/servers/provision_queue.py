@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 
 from redis.exceptions import RedisError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, settings
 from app.core.exceptions import BadRequestError, ServiceUnavailableError
@@ -32,8 +32,8 @@ def provision_command_blocks_split_install(cfg: Settings) -> None:
         )
 
 
-def enqueue_software_job(
-    session: Session,
+async def enqueue_software_job(
+    session: AsyncSession,
     server: Server,
     *,
     component: str,
@@ -65,5 +65,5 @@ def enqueue_software_job(
     if clear_ready:
         server.provision_ready = False
     server.provision_job_id = job.id
-    session.flush()
+    await session.flush()
     return server

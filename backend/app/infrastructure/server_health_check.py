@@ -7,7 +7,7 @@ from __future__ import annotations
 import socket
 import time
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.infrastructure.persistence.models.server import Server
@@ -57,8 +57,8 @@ def run_tcp_probes(
     return out
 
 
-def build_server_health_read(
-    session: Session,
+async def build_server_health_read(
+    session: AsyncSession,
     server: Server,
     settings: Settings,
     *,
@@ -156,7 +156,7 @@ def build_server_health_read(
 
     if server.is_cascade_ru_entry and server.cascade_next_server_id is not None:
         eid = int(server.cascade_next_server_id)
-        ex = session.get(Server, eid)
+        ex = await session.get(Server, eid)
         cu = (server.cascade_egress_client_uuid or "").strip()
         c_ok = bool(cu) and ex is not None
         c_detail: str

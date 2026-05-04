@@ -80,7 +80,7 @@ async def subscription_open_page_data(
     if app is None:
         raise HTTPException(status_code=404, detail="unknown_client")
 
-    user = user_by_subscription_token(session, subscription_token)
+    user = await user_by_subscription_token(session, subscription_token)
     return subscription_build_open_page_data(
         user,
         app,
@@ -139,11 +139,13 @@ async def subscription_head_by_token(
     session: SessionDep,
     subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
 ) -> Response:
-    user = user_by_subscription_token(session, subscription_token)
+    user = await user_by_subscription_token(session, subscription_token)
     if user is None:
         raise HTTPException(status_code=404, detail="Неизвестный токен")
-    device_ok = subscription_maybe_register_device(session=session, request=request, user=user, cfg=settings)
-    headers = subscription_client_metadata_headers(
+    device_ok = await subscription_maybe_register_device(
+        session=session, request=request, user=user, cfg=settings,
+    )
+    headers = await subscription_client_metadata_headers(
         session,
         user,
         device_limit_rejected=not device_ok,
@@ -161,16 +163,18 @@ async def subscription_base64_by_token(
     session: SessionDep,
     subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
 ) -> Response:
-    user = user_by_subscription_token(session, subscription_token)
+    user = await user_by_subscription_token(session, subscription_token)
     if user is None:
         raise HTTPException(status_code=404, detail="Неизвестный токен")
-    device_ok = subscription_maybe_register_device(session=session, request=request, user=user, cfg=settings)
+    device_ok = await subscription_maybe_register_device(
+        session=session, request=request, user=user, cfg=settings,
+    )
     payload, user, _rows = await subscription_payload_rows_for_resolved_user(
         session,
         user,
         device_allowed=device_ok,
     )
-    headers = subscription_client_metadata_headers(
+    headers = await subscription_client_metadata_headers(
         session,
         user,
         device_limit_rejected=not device_ok,
@@ -192,11 +196,13 @@ async def subscription_clash_head_by_token(
     session: SessionDep,
     subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
 ) -> Response:
-    user = user_by_subscription_token(session, subscription_token)
+    user = await user_by_subscription_token(session, subscription_token)
     if user is None:
         raise HTTPException(status_code=404, detail="Неизвестный токен")
-    device_ok = subscription_maybe_register_device(session=session, request=request, user=user, cfg=settings)
-    headers = subscription_client_metadata_headers(
+    device_ok = await subscription_maybe_register_device(
+        session=session, request=request, user=user, cfg=settings,
+    )
+    headers = await subscription_client_metadata_headers(
         session,
         user,
         device_limit_rejected=not device_ok,
@@ -214,16 +220,18 @@ async def subscription_clash_yaml_by_token(
     session: SessionDep,
     subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
 ) -> Response:
-    user = user_by_subscription_token(session, subscription_token)
+    user = await user_by_subscription_token(session, subscription_token)
     if user is None:
         raise HTTPException(status_code=404, detail="Неизвестный токен")
-    device_ok = subscription_maybe_register_device(session=session, request=request, user=user, cfg=settings)
+    device_ok = await subscription_maybe_register_device(
+        session=session, request=request, user=user, cfg=settings,
+    )
     _payload, user, rows = await subscription_payload_rows_for_resolved_user(
         session,
         user,
         device_allowed=device_ok,
     )
-    headers = subscription_client_metadata_headers(
+    headers = await subscription_client_metadata_headers(
         session,
         user,
         device_limit_rejected=not device_ok,
@@ -247,19 +255,22 @@ async def subscription_json_by_token(
     session: SessionDep,
     subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
 ) -> SubscriptionPayload:
-    user = user_by_subscription_token(session, subscription_token)
+    user = await user_by_subscription_token(session, subscription_token)
     if user is None:
         raise HTTPException(status_code=404, detail="Неизвестный токен")
-    device_ok = subscription_maybe_register_device(session=session, request=request, user=user, cfg=settings)
+    device_ok = await subscription_maybe_register_device(
+        session=session, request=request, user=user, cfg=settings,
+    )
     payload, user, _rows = await subscription_payload_rows_for_resolved_user(
         session,
         user,
         device_allowed=device_ok,
     )
-    for key, val in subscription_client_metadata_headers(
+    headers = await subscription_client_metadata_headers(
         session,
         user,
         device_limit_rejected=not device_ok,
-    ).items():
+    )
+    for key, val in headers.items():
         response.headers[key] = val
     return payload

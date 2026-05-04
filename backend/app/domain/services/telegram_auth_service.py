@@ -7,9 +7,10 @@ import logging
 from typing import Any
 from urllib.parse import quote
 
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.core.auth_env import normalize_email
@@ -66,8 +67,8 @@ from app.infrastructure.persistence.models.user import User
 log = logging.getLogger("app.telegram_auth")
 
 
-def telegram_authenticate(
-    session: Session,
+async def telegram_authenticate(
+    session: AsyncSession,
     body: TelegramAuthBody,
     cfg: Settings,
 ) -> TelegramAuthTokenResponse:
@@ -80,7 +81,7 @@ def telegram_authenticate(
     tid = body.telegram_id
     profile = merge_telegram_auth_profile(body, None)
     stmt = select(User).where(User.telegram_id == tid).limit(1)
-    user = session.scalars(stmt).first()
+    user = (await session.scalars(stmt)).first()
     is_new_user = False
     if user is None:
         user = User(
@@ -93,11 +94,15 @@ def telegram_authenticate(
             vless_uuid=new_vless_uuid(),
         )
         try:
-            table_insert(session, user)
+            await table_insert(session, user)
         except IntegrityError as e:
             log.warning("telegram register conflict, refetch: %s", e)
-            session.rollback()
-            user = session.scalars(select(User).where(User.telegram_id == tid).limit(1)).first()
+            await session.rollback()
+            user = (
+                await session.scalars(
+                    select(User).where(User.telegram_id == tid).limit(1),
+                )
+            ).first()
             if user is None:
                 raise ConflictError(
                     "Не удалось создать или найти пользователя по telegram_id",
@@ -105,16 +110,20 @@ def telegram_authenticate(
         else:
             is_new_user = True
             if body.referral_token:
-                rstmt = select(ReferralLink).where(ReferralLink.token == body.referral_token).limit(1)
-                rlink = session.scalars(rstmt).first()
+                rstmt = (
+                    select(ReferralLink)
+                    .where(ReferralLink.token == body.referral_token)
+                    .limit(1)
+                )
+                rlink = (await session.scalars(rstmt)).first()
                 if rlink is not None:
                     user.referral_link_id = rlink.id
-                    increment_referral_counter(session, rlink.id, "clicks")
-                    increment_referral_counter(session, rlink.id, "registrations")
-                    session.flush()
+                    await increment_referral_counter(session, rlink.id, "clicks")
+                    await increment_referral_counter(session, rlink.id, "registrations")
+                    await session.flush()
     elif telegram_auth_has_profile_fields(body):
         user.telegram_properties = merge_telegram_auth_profile(body, user.telegram_properties)
-        session.flush()
+        await session.flush()
 
     jwt_role = jwt_role_for_user(user)
     token = issue_access_token_or_http_error(cfg, role=jwt_role, user_id=user.id)
@@ -125,8 +134,8 @@ def telegram_authenticate(
     )
 
 
-def telegram_link_web_account(
-    session: Session,
+async def telegram_link_web_account(
+    session: AsyncSession,
     body: TelegramWebLinkBody,
     redis_conn: object,
     cfg: Settings,
@@ -144,7 +153,7 @@ def telegram_link_web_account(
     if uid is None:
         raise BadRequestError("Неверный или истёкший токен привязки")
 
-    target = session.get(User, uid)
+    target = await session.get(User, uid)
     if target is None:
         raise BadRequestError("Пользователь по токену не найден")
     if target.telegram_id is not None:
@@ -160,7 +169,7 @@ def telegram_link_web_account(
     )
 
     stmt = select(User).where(User.telegram_id == tid).limit(1)
-    other = session.scalars(stmt).first()
+    other = (await session.scalars(stmt)).first()
 
     merged = False
     telegram_props_base: dict[str, Any] | None = None
@@ -174,14 +183,14 @@ def telegram_link_web_account(
                 "Целевой аккаунт не поддерживает объединение с дубликатом Telegram",
             )
         telegram_props_base = dict(other.telegram_properties) if other.telegram_properties else {}
-        merge_drop_user_into_keep(session, target, other)
+        await merge_drop_user_into_keep(session, target, other)
         merged = True
 
     profile = merge_telegram_auth_profile(auth_fragment, telegram_props_base)
 
     target.telegram_id = tid
     target.telegram_properties = profile
-    session.flush()
+    await session.flush()
 
     try:
         delete_telegram_link_token(redis_conn, key_part)
@@ -191,8 +200,8 @@ def telegram_link_web_account(
     return TelegramWebLinkResponse(status="merged" if merged else "linked", user_id=int(target.id))
 
 
-def telegram_site_link_start(
-    session: Session,
+async def telegram_site_link_start(
+    session: AsyncSession,
     body: TelegramSiteLinkStartBody,
     redis_conn: object,
     cfg: Settings,
@@ -204,7 +213,7 @@ def telegram_site_link_start(
     ввода email и пароля.
     """
     stmt = select(User).where(User.telegram_id == body.telegram_id).limit(1)
-    user = session.scalars(stmt).first()
+    user = (await session.scalars(stmt)).first()
     if user is None:
         raise NotFoundError(
             "Пользователь с таким Telegram не найден. Запустите бота и войдите в аккаунт.",
@@ -245,15 +254,15 @@ def telegram_site_link_start(
     return TelegramSiteLinkStartResponse(site_url=site_url, has_account=False)
 
 
-def telegram_site_link_preview_response(
-    session: Session,
+async def telegram_site_link_preview_response(
+    session: AsyncSession,
     redis_conn: object,
     raw_token: str,
     cfg: Settings,
 ) -> TelegramSiteLinkPreviewResponse:
     """Данные Telegram по одноразовому ``token`` из URL — нужны форме ещё до отправки."""
     uid, _ = resolve_site_cred_user_id(redis_conn, raw_token)
-    user = session.get(User, uid)
+    user = await session.get(User, uid)
     if user is None or user.telegram_id is None:
         raise NotFoundError("Пользователь не найден")
 
@@ -267,8 +276,8 @@ def telegram_site_link_preview_response(
     )
 
 
-def telegram_site_link_complete(
-    session: Session,
+async def telegram_site_link_complete(
+    session: AsyncSession,
     body: TelegramSiteLinkCompleteBody,
     redis_conn: object,
     cfg: Settings,
@@ -281,7 +290,7 @@ def telegram_site_link_complete(
     """
     uid, key_part = resolve_site_cred_user_id(redis_conn, body.link_token)
 
-    tg_user = session.get(User, uid)
+    tg_user = await session.get(User, uid)
     if tg_user is None:
         raise NotFoundError("Пользователь не найден")
 
@@ -291,7 +300,7 @@ def telegram_site_link_complete(
 
     email_norm = normalize_email(str(body.email))
     stmt_existing = select(User).where(User.email == email_norm).limit(1)
-    existing = session.scalars(stmt_existing).first()
+    existing = (await session.scalars(stmt_existing)).first()
 
     winner: User
     if existing is None:
@@ -300,11 +309,11 @@ def telegram_site_link_complete(
         if len(str(body.password)) < 8:
             raise BadRequestError("Пароль должен содержать не менее 8 символов")
         tg_user.email = email_norm
-        tg_user.password_hash = hash_password(body.password)
+        tg_user.password_hash = await run_in_threadpool(hash_password, body.password)
         try:
-            session.flush()
+            await session.flush()
         except IntegrityError as e:
-            session.rollback()
+            await session.rollback()
             log.warning("telegram site-link complete conflict: %s", e)
             raise ConflictError("Пользователь с таким email уже зарегистрирован") from e
         winner = tg_user
@@ -316,7 +325,8 @@ def telegram_site_link_complete(
                 "У аккаунта с этим email не задан пароль для входа на сайте. "
                 "Восстановите доступ или напишите в поддержку.",
             )
-        if not verify_password(body.password, existing.password_hash):
+        pw_ok = await run_in_threadpool(verify_password, body.password, existing.password_hash)
+        if not pw_ok:
             raise UnauthorizedError("Неверный email или пароль")
         if existing.telegram_id is not None:
             raise ConflictError(
@@ -330,12 +340,12 @@ def telegram_site_link_complete(
         tid = tg_user.telegram_id
         tprops = dict(tg_user.telegram_properties) if tg_user.telegram_properties else None
         try:
-            merge_drop_user_into_keep(session, existing, tg_user)
+            await merge_drop_user_into_keep(session, existing, tg_user)
             existing.telegram_id = tid
             existing.telegram_properties = tprops
-            session.flush()
+            await session.flush()
         except IntegrityError as e:
-            session.rollback()
+            await session.rollback()
             log.warning("telegram site-link merge integrity: %s", e)
             raise ConflictError(
                 "Не удалось объединить учётные записи (конфликт данных). Попробуйте позже или обратитесь в поддержку.",
@@ -352,8 +362,8 @@ def telegram_site_link_complete(
     return TokenResponse(access_token=jwt, role=jwt_role)
 
 
-def telegram_sync_start_link(
-    session: Session,
+async def telegram_sync_start_link(
+    session: AsyncSession,
     principal: BearerPrincipal,
     redis_conn: object,
     cfg: Settings,
@@ -361,7 +371,7 @@ def telegram_sync_start_link(
     """Одноразовая deep link-ссылка на бота для привязки Telegram (вызывается из кабинета)."""
     if principal.user_id is None:
         raise UnauthorizedError("Нужна авторизация под пользователем")
-    user = session.get(User, principal.user_id)
+    user = await session.get(User, principal.user_id)
     if user is None:
         raise UnauthorizedError("Пользователь не найден")
     if user.telegram_id is not None:

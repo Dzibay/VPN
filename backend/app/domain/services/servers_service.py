@@ -12,11 +12,12 @@ from __future__ import annotations
 import logging
 import uuid as uuid_lib
 
+from fastapi.concurrency import run_in_threadpool
 from redis.exceptions import RedisError
 from rq.job import Job
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, settings
 from app.core.exceptions import ConflictError, NotFoundError, ServiceUnavailableError
@@ -53,23 +54,22 @@ from app.infrastructure.server_health_check import run_tcp_probes
 log = logging.getLogger("app.servers_service")
 
 
-def servers_count(session: Session) -> ServersCountResponse:
+async def servers_count(session: AsyncSession) -> ServersCountResponse:
     """Общее число записей в таблице ``servers``."""
-    total = session.scalar(select(func.count()).select_from(Server))
+    total = await session.scalar(select(func.count()).select_from(Server))
     return ServersCountResponse(servers_count=int(total or 0))
 
 
-def list_servers(session: Session) -> list[Server]:
+async def list_servers(session: AsyncSession) -> list[Server]:
     """Список всех серверов; новейшие первыми (для админки)."""
     stmt = select(Server).order_by(Server.id.desc())
-    return list(session.scalars(stmt).all())
+    return list((await session.scalars(stmt)).all())
 
 
-def sync_load_from_prometheus_result(hours: int) -> ServerLoadSyncResultRead:
-    """Подтянуть текущую нагрузку узлов из Prometheus (среднее за последние ``hours`` часов).
+def _sync_load_from_prometheus_blocking(hours: int) -> ServerLoadSyncResultRead:
+    """Синхронная реализация: открывает свою sync-сессию и крутит httpx (запросы Prometheus).
 
-    Используется отдельная сессия БД (``SessionLocal``), потому что эту функцию вызывает
-    как HTTP-обработчик, так и фоновые задачи без готового ``Session`` под рукой.
+    Вызывать только из ``run_in_threadpool`` — внутри нет ``await`` точек.
     """
     db = SessionLocal()
     try:
@@ -93,7 +93,18 @@ def sync_load_from_prometheus_result(hours: int) -> ServerLoadSyncResultRead:
     )
 
 
-def create_server(session: Session, body: ServerCreate, cfg: Settings | None = None) -> Server:
+async def sync_load_from_prometheus_result(hours: int) -> ServerLoadSyncResultRead:
+    """Подтянуть текущую нагрузку узлов из Prometheus (среднее за последние ``hours`` часов).
+
+    Внутри: sync httpx + sync SQLAlchemy (см. ``infrastructure.prometheus.server_load_sync``);
+    обёрнуто в threadpool, чтобы не блокировать event loop API на время запросов.
+    """
+    return await run_in_threadpool(_sync_load_from_prometheus_blocking, hours)
+
+
+async def create_server(
+    session: AsyncSession, body: ServerCreate, cfg: Settings | None = None,
+) -> Server:
     """Создать запись сервера; недостающие REALITY/VLESS-поля заполняются дефолтами."""
     cfg = cfg or settings
     defaults = reality_defaults_for_create(body)
@@ -103,7 +114,7 @@ def create_server(session: Session, body: ServerCreate, cfg: Settings | None = N
         is_ru = True
     elif not is_ru:
         cnext = None
-    validate_cascade_pair(session, self_id=None, is_ru_entry=is_ru, cascade_next_id=cnext)
+    await validate_cascade_pair(session, self_id=None, is_ru_entry=is_ru, cascade_next_id=cnext)
     cascade_egress_uuid: str | None = str(uuid_lib.uuid4()) if cnext else None
     server = Server(
         name=body.name,
@@ -120,13 +131,13 @@ def create_server(session: Session, body: ServerCreate, cfg: Settings | None = N
         **defaults,
     )
     try:
-        table_insert(session, server)
+        await table_insert(session, server)
     except IntegrityError as e:
         log.warning("create_server conflict: %s", e)
         raise ConflictError(
             "Сервер с таким host и port уже существует",
         ) from e
-    try_enqueue_sync_xray_on_exit_for_cascade(session, cnext)
+    await try_enqueue_sync_xray_on_exit_for_cascade(session, cnext)
     return server
 
 
@@ -142,15 +153,15 @@ def enqueue_sync_xray_all(cfg: Settings | None = None) -> XrayClientsSyncResultR
     return XrayClientsSyncResultRead(job_id=job_id)
 
 
-def enqueue_sync_xray_one(
-    session: Session,
+async def enqueue_sync_xray_one(
+    session: AsyncSession,
     server_id: int,
     cfg: Settings | None = None,
 ) -> XrayClientsSyncOneResultRead:
     """Поставить точечную синхронизацию Xray-клиентов на одном узле."""
     cfg = cfg or settings
     provision_command_blocks_split_install(cfg)
-    server = session.get(Server, server_id)
+    server = await session.get(Server, server_id)
     if server is None:
         raise NotFoundError("Сервер не найден")
     if not server.provision_ready:
@@ -165,10 +176,12 @@ def enqueue_sync_xray_one(
     return XrayClientsSyncOneResultRead(server_id=server_id, job_id=job_id)
 
 
-def enqueue_full_provision(session: Session, server_id: int, cfg: Settings | None = None) -> Server:
+async def enqueue_full_provision(
+    session: AsyncSession, server_id: int, cfg: Settings | None = None,
+) -> Server:
     """Полная установка ПО узла с нуля (помечает его не готовым на время прогона)."""
     cfg = cfg or settings
-    server = session.get(Server, server_id)
+    server = await session.get(Server, server_id)
     if server is None:
         raise NotFoundError("Сервер не найден")
     if server.provision_status in ("queued", "running"):
@@ -177,7 +190,7 @@ def enqueue_full_provision(session: Session, server_id: int, cfg: Settings | Non
         raise ConflictError(
             "Узел уже помечен как готовый; сбросьте статус в БД для повторной установки",
         )
-    return enqueue_software_job(
+    return await enqueue_software_job(
         session,
         server,
         component="all",
@@ -187,14 +200,14 @@ def enqueue_full_provision(session: Session, server_id: int, cfg: Settings | Non
     )
 
 
-def reset_server_provision(session: Session, server_id: int) -> Server:
+async def reset_server_provision(session: AsyncSession, server_id: int) -> Server:
     """Сбросить «зависший» статус установки и попытаться отменить задачу в RQ.
 
     Используется когда задача установки висит ``queued/running`` дольше разумного: после
     сброса можно поставить новую задачу. Падение отмены RQ — не блокер, статус всё равно
     переключается в ``idle``.
     """
-    server = session.get(Server, server_id)
+    server = await session.get(Server, server_id)
     if server is None:
         raise NotFoundError("Сервер не найден")
     if server.provision_status not in ("queued", "running"):
@@ -209,19 +222,21 @@ def reset_server_provision(session: Session, server_id: int) -> Server:
     server.provision_status = "idle"
     server.provision_job_id = None
     server.provision_error = "Статус сброшен вручную; можно снова поставить задачу в очередь"
-    session.flush()
+    await session.flush()
     return server
 
 
-def enqueue_server_reconcile(session: Session, server_id: int, cfg: Settings | None = None) -> Server:
+async def enqueue_server_reconcile(
+    session: AsyncSession, server_id: int, cfg: Settings | None = None,
+) -> Server:
     """Прогнать reconcile (проверка/выравнивание) ПО узла без снятия флага ``provision_ready``."""
     cfg = cfg or settings
-    server = session.get(Server, server_id)
+    server = await session.get(Server, server_id)
     if server is None:
         raise NotFoundError("Сервер не найден")
     if server.provision_status in ("queued", "running"):
         raise ConflictError("Уже выполняется установка или синхронизация")
-    return enqueue_software_job(
+    return await enqueue_software_job(
         session,
         server,
         component="all",
@@ -231,8 +246,8 @@ def enqueue_server_reconcile(session: Session, server_id: int, cfg: Settings | N
     )
 
 
-def enqueue_component_install(
-    session: Session,
+async def enqueue_component_install(
+    session: AsyncSession,
     server_id: int,
     *,
     component: str,
@@ -241,21 +256,21 @@ def enqueue_component_install(
     """Установка/обновление одного компонента (например ``xray`` или ``nginx``)."""
     cfg = cfg or settings
     provision_command_blocks_split_install(cfg)
-    server = session.get(Server, server_id)
+    server = await session.get(Server, server_id)
     if server is None:
         raise NotFoundError("Сервер не найден")
     if server.provision_status in ("queued", "running"):
         raise ConflictError("Уже в очереди или выполняется")
-    return enqueue_software_job(session, server, component=component, cfg=cfg)
+    return await enqueue_software_job(session, server, component=component, cfg=cfg)
 
 
-def patch_server(session: Session, server_id: int, body: ServerUpdate) -> Server:
+async def patch_server(session: AsyncSession, server_id: int, body: ServerUpdate) -> Server:
     """Частичное обновление сервера; cascade-поля валидируются совместно.
 
     Замена ``reality_private_key`` обнуляет публичный ключ — он будет пересчитан воркером.
     Изменение cascade-связки порождает sync Xray на старом и новом exit-узлах.
     """
-    server = session.get(Server, server_id)
+    server = await session.get(Server, server_id)
     if server is None:
         raise NotFoundError("Сервер не найден")
     data = body.model_dump(exclude_unset=True)
@@ -274,7 +289,7 @@ def patch_server(session: Session, server_id: int, body: ServerUpdate) -> Server
         old_cnext = server.cascade_next_server_id
         old_cuuid = server.cascade_egress_client_uuid
         is_ru, cnext = merge_cascade_fields(server, data)
-        validate_cascade_pair(
+        await validate_cascade_pair(
             session,
             self_id=server_id,
             is_ru_entry=is_ru,
@@ -288,9 +303,9 @@ def patch_server(session: Session, server_id: int, body: ServerUpdate) -> Server
             data["cascade_egress_client_uuid"] = str(uuid_lib.uuid4())
     for key, value in data.items():
         setattr(server, key, value)
-    session.flush()
+    await session.flush()
     if cascade_touched:
-        try_enqueue_sync_xray_on_exit_for_cascade(
+        await try_enqueue_sync_xray_on_exit_for_cascade(
             session,
             old_cnext,
             server.cascade_next_server_id,
@@ -319,10 +334,10 @@ def tcp_probes_payload(
     )
 
 
-def delete_server(session: Session, server_id: int) -> None:
+async def delete_server(session: AsyncSession, server_id: int) -> None:
     """Удалить запись сервера; вызывающий код решает, нужен ли каскадный sync Xray."""
-    server = session.get(Server, server_id)
+    server = await session.get(Server, server_id)
     if server is None:
         raise NotFoundError("Сервер не найден")
-    session.delete(server)
-    session.flush()
+    await session.delete(server)
+    await session.flush()

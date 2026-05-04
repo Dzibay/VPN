@@ -12,7 +12,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import case, cast, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.types import Date
 
 from app.core.time import as_calendar_date
@@ -23,8 +23,8 @@ from app.infrastructure.persistence.models.user import User
 from app.infrastructure.persistence.models.user_server_traffic import UserServerTraffic
 
 
-def _traffic_active_count_by_date(
-    session: Session,
+async def _traffic_active_count_by_date(
+    session: AsyncSession,
     *,
     user_ids_filter: set[int] | None = None,
 ) -> dict[date, int]:
@@ -46,7 +46,7 @@ def _traffic_active_count_by_date(
             UserServerTraffic.traffic_date.asc(),
         )
     )
-    raw = session.execute(stmt).all()
+    raw = (await session.execute(stmt)).all()
     by_user: dict[int, dict[int, list[tuple[date, int]]]] = defaultdict(
         lambda: defaultdict(list),
     )
@@ -108,8 +108,8 @@ def _traffic_active_count_by_date(
     return result
 
 
-def _registration_counts_by_date(
-    session: Session,
+async def _registration_counts_by_date(
+    session: AsyncSession,
 ) -> dict[date | None, tuple[int, int]]:
     """День регистрации (UTC) → (всего регистраций, регистрации с зафиксированным трафиком).
 
@@ -144,7 +144,7 @@ def _registration_counts_by_date(
         .outerjoin(traffic_totals, User.id == traffic_totals.c.uid)
         .group_by(day_expr)
     )
-    rows = session.execute(stmt).all()
+    rows = (await session.execute(stmt)).all()
     out: dict[date | None, tuple[int, int]] = {}
     for rd_raw, cnt, wt_raw in rows:
         try:
@@ -161,7 +161,7 @@ def _registration_counts_by_date(
     return out
 
 
-def _first_subscription_device_users_by_utc_date(session: Session) -> dict[date, int]:
+async def _first_subscription_device_users_by_utc_date(session: AsyncSession) -> dict[date, int]:
     """День → число пользователей, у которых в этот день впервые появилось устройство подписки."""
     stmt = (
         select(
@@ -170,7 +170,7 @@ def _first_subscription_device_users_by_utc_date(session: Session) -> dict[date,
         )
         .group_by(SubscriptionDevice.user_id)
     )
-    raw = session.execute(stmt).all()
+    raw = (await session.execute(stmt)).all()
     by_day: dict[date, int] = defaultdict(int)
     for _uid, first_at in raw:
         if first_at is None:
@@ -188,15 +188,15 @@ def _first_subscription_device_users_by_utc_date(session: Session) -> dict[date,
     return dict(by_day)
 
 
-def stats_by_date_merged(session: Session) -> list[UserStatsByDateRow]:
+async def stats_by_date_merged(session: AsyncSession) -> list[UserStatsByDateRow]:
     """Объединение трёх метрик по дате (регистрации + активные + первые подписочные устройства).
 
     Дни без даты регистрации (``registered_at IS NULL``) собираются в одну итоговую строку
     с ``stats_date=None`` в конце списка.
     """
-    reg_map = _registration_counts_by_date(session)
-    active_map = _traffic_active_count_by_date(session)
-    dev_map = _first_subscription_device_users_by_utc_date(session)
+    reg_map = await _registration_counts_by_date(session)
+    active_map = await _traffic_active_count_by_date(session)
+    dev_map = await _first_subscription_device_users_by_utc_date(session)
     undated = reg_map.pop(None, None)
     date_keys = set(reg_map) | set(active_map) | set(dev_map)
     ordered = sorted(d for d in date_keys if d is not None)
@@ -228,13 +228,13 @@ def stats_by_date_merged(session: Session) -> list[UserStatsByDateRow]:
     return result
 
 
-def users_daily_stats(session: Session) -> UsersDailyStatsResponse:
+async def users_daily_stats(session: AsyncSession) -> UsersDailyStatsResponse:
     """Готовый response-объект с ежедневной сводкой (для эндпоинта ``/users/daily-stats``)."""
-    return UsersDailyStatsResponse(stats_by_date=stats_by_date_merged(session))
+    return UsersDailyStatsResponse(stats_by_date=await stats_by_date_merged(session))
 
 
-def count_users_with_subscription_device(
-    session: Session,
+async def count_users_with_subscription_device(
+    session: AsyncSession,
     referral_link_id: int | None,
 ) -> int:
     """Число пользователей с хотя бы одной записью в ``subscription_devices``.
@@ -246,11 +246,11 @@ def count_users_with_subscription_device(
     ).join(User, User.id == SubscriptionDevice.user_id)
     if referral_link_id is not None:
         stmt = stmt.where(User.referral_link_id == referral_link_id)
-    return int(session.scalar(stmt) or 0)
+    return int(await session.scalar(stmt) or 0)
 
 
-def active_users_count_for_utc_date(
-    session: Session,
+async def active_users_count_for_utc_date(
+    session: AsyncSession,
     cal_day: date,
     referral_link_id: int | None,
 ) -> int:
@@ -261,9 +261,11 @@ def active_users_count_for_utc_date(
     """
     filt: set[int] | None = None
     if referral_link_id is not None:
-        ids_raw = session.scalars(
-            select(User.id).where(User.referral_link_id == referral_link_id),
+        ids_raw = (
+            await session.scalars(
+                select(User.id).where(User.referral_link_id == referral_link_id),
+            )
         ).all()
         filt = {int(i) for i in ids_raw}
-    m = _traffic_active_count_by_date(session, user_ids_filter=filt)
+    m = await _traffic_active_count_by_date(session, user_ids_filter=filt)
     return int(m.get(cal_day, 0) or 0)

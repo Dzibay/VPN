@@ -13,8 +13,7 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy.orm import Session
-from starlette.concurrency import run_in_threadpool
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from app.config import Settings, settings
@@ -46,7 +45,7 @@ log = logging.getLogger("app.subscription_service")
 
 
 async def subscription_payload_rows_for_resolved_user(
-    session: Session,
+    session: AsyncSession,
     user: User,
     *,
     device_allowed: bool = True,
@@ -77,13 +76,13 @@ async def subscription_payload_rows_for_resolved_user(
             [],
         )
 
-    rows = await run_in_threadpool(subscription_servers_from_db)
+    rows = await subscription_servers_from_db(session)
     return build_subscription_payload(user, rows), user, rows
 
 
-def subscription_maybe_register_device(
+async def subscription_maybe_register_device(
     *,
-    session: Session,
+    session: AsyncSession,
     request: Request,
     user: User | None,
     cfg: Settings | None = None,
@@ -91,7 +90,7 @@ def subscription_maybe_register_device(
     cfg = cfg or settings
     if user is None:
         return True
-    return register_or_touch_subscription_device(
+    return await register_or_touch_subscription_device(
         session,
         settings=cfg,
         user=user,
@@ -99,13 +98,13 @@ def subscription_maybe_register_device(
     )
 
 
-def subscription_client_metadata_headers(
-    session: Session,
+async def subscription_client_metadata_headers(
+    session: AsyncSession,
     user: User,
     *,
     device_limit_rejected: bool = False,
 ) -> dict[str, str]:
-    up_b, down_b, _ = user_traffic_totals(session, int(user.id))
+    up_b, down_b, _ = await user_traffic_totals(session, int(user.id))
     userinfo = build_subscription_userinfo_header_value(
         valid_until=user.subscription_until,
         upload=up_b,

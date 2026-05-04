@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -21,31 +20,12 @@ log = logging.getLogger("app.main")
 async def lifespan(_app: FastAPI):
     from app.infrastructure.database.schema import ensure_schema
 
+    # Сами периодические корутины (Xray-сбор, Prometheus-load, ежедневный sync) переехали
+    # в отдельный процесс `python -m app.scheduler.run` — см. backend/app/scheduler/run.py.
+    # Здесь остался только ensure_schema (идемпотентно, быстро): запускается синхронно при
+    # старте процесса и не зависит от порядка запуска контейнеров.
     ensure_schema()
-    bg_tasks: list[asyncio.Task[None]] = []
-    if settings.xray_traffic_collect_schedule_enabled:
-        from app.infrastructure.xray.xray_traffic_scheduler import periodic_xray_traffic_collect_loop
-
-        bg_tasks.append(asyncio.create_task(periodic_xray_traffic_collect_loop()))
-    if settings.subscription_daily_xray_clients_sync_enabled:
-        from app.domain.subscription.scheduler import subscription_daily_xray_sync_loop
-
-        bg_tasks.append(asyncio.create_task(subscription_daily_xray_sync_loop()))
-    if settings.server_load_prometheus_sync_schedule_enabled and (
-        settings.prometheus_base_url or ""
-    ).strip():
-        from app.infrastructure.prometheus.server_load_scheduler import periodic_server_load_from_prometheus_loop
-
-        bg_tasks.append(asyncio.create_task(periodic_server_load_from_prometheus_loop()))
-    try:
-        yield
-    finally:
-        for sched_task in bg_tasks:
-            sched_task.cancel()
-            try:
-                await sched_task
-            except asyncio.CancelledError:
-                pass
+    yield
 
 
 def create_app() -> FastAPI:

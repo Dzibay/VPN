@@ -47,7 +47,7 @@ staff_router = APIRouter(
     summary="Перечень реферальных ссылок",
 )
 async def list_referral_links(session: ReadonlySessionDep) -> list[ReferralLinkOut]:
-    return list_staff_referral_links(session, settings)
+    return await list_staff_referral_links(session, settings)
 
 
 @staff_router.get(
@@ -68,7 +68,7 @@ async def referral_funnel_summary(
         ),
     ] = None,
 ) -> ReferralFunnelSummary:
-    return referral_funnel_compute(session, referral_link_id, settings)
+    return await referral_funnel_compute(session, referral_link_id, settings)
 
 
 @staff_router.post(
@@ -82,7 +82,7 @@ async def post_referral_link(
     session: SessionDep,
 ) -> ReferralLinkOut:
     try:
-        row = create_referral_link(
+        row = await create_referral_link(
             session,
             owner_kind=body.owner_kind,
             owner_user_id=body.owner_user_id,
@@ -110,7 +110,7 @@ async def patch_referral_link(
     link_id: Annotated[int, Path(ge=1, description="Первичный ключ referral_links.id")],
 ) -> ReferralLinkOut:
     try:
-        row = update_referral_link(
+        row = await update_referral_link(
             session,
             link_id,
             owner_kind=body.owner_kind,
@@ -139,7 +139,7 @@ async def delete_referral_link(
     session: SessionDep,
     link_id: Annotated[int, Path(ge=1, description="Первичный ключ referral_links.id")],
 ) -> Response:
-    delete_referral_link_row(session, link_id)
+    await delete_referral_link_row(session, link_id)
     return Response(status_code=204)
 
 
@@ -155,7 +155,7 @@ async def track_referral_click(
     body: ReferralTrackClickBody,
     session: SessionDep,
 ) -> Response:
-    increment_referral_counter_by_token(session, body.token, "clicks")
+    await increment_referral_counter_by_token(session, body.token, "clicks")
     return Response(status_code=204)
 
 
@@ -176,4 +176,4 @@ async def get_my_referral_link(
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
 ) -> ReferralMeResponse:
     uid = client_site_user_id(principal)
-    return referral_me_for_user(session, uid, settings)
+    return await referral_me_for_user(session, uid, settings)

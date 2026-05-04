@@ -6,10 +6,11 @@ import logging
 from datetime import datetime
 
 import httpx
+from fastapi.concurrency import run_in_threadpool
 from redis.exceptions import RedisError
 from rq.exceptions import NoSuchJobError
 from rq.job import Job, JobStatus
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, settings
 from app.core.exceptions import (
@@ -25,8 +26,8 @@ from app.domain.models.server_metrics import (
 )
 from app.domain.models.server_traffic import (
     ServerUserTrafficBundle,
-    UserTrafficCollectDetail,
     UserTrafficCollectAllEnqueueResponse,
+    UserTrafficCollectDetail,
     UserTrafficCollectEnqueueResponse,
     UserTrafficCollectPollResponse,
 )
@@ -108,15 +109,15 @@ def _merged_metrics_worker(
     return raw, step_used, axis, online_clients, online_from_cfg
 
 
-def resolve_prometheus_metrics_inputs(
-    session: Session,
+async def resolve_prometheus_metrics_inputs(
+    session: AsyncSession,
     server_id: int,
     hours: int,
     step: int,
     cfg: Settings | None = None,
 ) -> tuple[str, int, float | None]:
     cfg = cfg or settings
-    server = session.get(Server, server_id)
+    server = await session.get(Server, server_id)
     if server is None:
         raise NotFoundError("Сервер не найден")
 
@@ -134,7 +135,7 @@ def resolve_prometheus_metrics_inputs(
     return inst, adj_step, tariff_cap
 
 
-def fetch_merged_metrics_for_instance(
+async def fetch_merged_metrics_for_instance(
     inst: str,
     *,
     hours: int,
@@ -142,9 +143,11 @@ def fetch_merged_metrics_for_instance(
     tariff_cap: float | None,
     cfg: Settings | None = None,
 ) -> tuple[list[dict], int, ServerMetricsAxisHints, int | None, bool]:
+    """Запросы Prometheus делает sync httpx; обёрнуто в threadpool."""
     cfg = cfg or settings
     try:
-        return _merged_metrics_worker(
+        return await run_in_threadpool(
+            _merged_metrics_worker,
             inst,
             hours=hours,
             adj_step=adj_step,
@@ -195,13 +198,13 @@ def _rq_poll_status(job: Job) -> str:
     return "queued"
 
 
-def enqueue_user_traffic_collect_one(
-    session: Session,
+async def enqueue_user_traffic_collect_one(
+    session: AsyncSession,
     server_id: int,
     cfg: Settings | None = None,
 ) -> UserTrafficCollectEnqueueResponse:
     cfg = cfg or settings
-    if session.get(Server, server_id) is None:
+    if await session.get(Server, server_id) is None:
         raise NotFoundError("Сервер не найден")
     job_timeout = max(300, int(cfg.xray_stats_ssh_timeout_seconds) + 120)
     try:
@@ -217,7 +220,8 @@ def enqueue_user_traffic_collect_one(
     return UserTrafficCollectEnqueueResponse(server_id=server_id, job_id=job.id)
 
 
-def _bundle_from_result(server_id: int, result: dict | None) -> ServerUserTrafficBundle:
+def _bundle_from_result_blocking(server_id: int, result: dict | None) -> ServerUserTrafficBundle:
+    """Sync: открывает свою сессию, делает SQL — вызывать только из threadpool."""
     db = SessionLocal()
     try:
         detail = None
@@ -238,12 +242,12 @@ def _bundle_from_result(server_id: int, result: dict | None) -> ServerUserTraffi
         db.close()
 
 
-def poll_user_traffic_collect_job_sync(
-    session: Session,
+async def poll_user_traffic_collect_job_sync(
+    session: AsyncSession,
     server_id: int,
     job_id: str,
 ) -> UserTrafficCollectPollResponse:
-    if session.get(Server, server_id) is None:
+    if await session.get(Server, server_id) is None:
         raise NotFoundError("Сервер не найден")
     try:
         job = Job.fetch(job_id, connection=get_redis())
@@ -269,7 +273,7 @@ def poll_user_traffic_collect_job_sync(
             err_txt = (job.exc_info or str(job.result) or "Задача завершилась с ошибкой")[:8000]
         except Exception:
             err_txt = "Задача завершилась с ошибкой"
-        bundle = _bundle_from_result(server_id, None)
+        bundle = await run_in_threadpool(_bundle_from_result_blocking, server_id, None)
         return UserTrafficCollectPollResponse(
             server_id=server_id,
             job_id=job_id,
@@ -280,7 +284,7 @@ def poll_user_traffic_collect_job_sync(
 
     result = job.result
     if not isinstance(result, dict):
-        bundle = _bundle_from_result(server_id, None)
+        bundle = await run_in_threadpool(_bundle_from_result_blocking, server_id, None)
         return UserTrafficCollectPollResponse(
             server_id=server_id,
             job_id=job_id,
@@ -290,7 +294,7 @@ def poll_user_traffic_collect_job_sync(
             ),
             job_error=None,
         )
-    bundle = _bundle_from_result(server_id, result)
+    bundle = await run_in_threadpool(_bundle_from_result_blocking, server_id, result)
     return UserTrafficCollectPollResponse(
         server_id=server_id,
         job_id=job_id,
@@ -300,14 +304,8 @@ def poll_user_traffic_collect_job_sync(
     )
 
 
-def server_user_traffic_bundle_db_only(server_id: int, *, collect: bool) -> ServerUserTrafficBundle:
-    if collect:
-        raise BadRequestError(
-            "Сбор по SSH выполняет воркер RQ: "
-            "POST /api/servers/{id}/user-traffic/collect, затем GET "
-            "/api/servers/{id}/user-traffic/collect-jobs/{job_id}",
-        )
-
+def _server_user_traffic_bundle_db_only_blocking(server_id: int) -> ServerUserTrafficBundle:
+    """Sync: своя сессия, SQL-запросы. Вызывать из threadpool."""
     db = SessionLocal()
     try:
         srv = db.get(Server, server_id)
@@ -316,3 +314,15 @@ def server_user_traffic_bundle_db_only(server_id: int, *, collect: bool) -> Serv
         return load_user_traffic_bundle_rows(db, server_id)
     finally:
         db.close()
+
+
+async def server_user_traffic_bundle_db_only(
+    server_id: int, *, collect: bool,
+) -> ServerUserTrafficBundle:
+    if collect:
+        raise BadRequestError(
+            "Сбор по SSH выполняет воркер RQ: "
+            "POST /api/servers/{id}/user-traffic/collect, затем GET "
+            "/api/servers/{id}/user-traffic/collect-jobs/{job_id}",
+        )
+    return await run_in_threadpool(_server_user_traffic_bundle_db_only_blocking, server_id)

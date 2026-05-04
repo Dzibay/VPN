@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 
 from fastapi import Depends, Header
 from fastapi.security import HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.security_bearer import bearer_jwt
 from app.config import get_settings
@@ -12,8 +12,8 @@ from app.core.access_token import AccessClaims, decode_access_token, jwt_signing
 from app.core.exceptions import ForbiddenError, ServiceUnavailableError, UnauthorizedError
 from app.infrastructure.database.session import get_db, get_db_readonly
 
-SessionDep = Annotated[Session, Depends(get_db)]
-ReadonlySessionDep = Annotated[Session, Depends(get_db_readonly)]
+SessionDep = Annotated[AsyncSession, Depends(get_db)]
+ReadonlySessionDep = Annotated[AsyncSession, Depends(get_db_readonly)]
 
 
 def jwt_gate_active(settings=None) -> bool:

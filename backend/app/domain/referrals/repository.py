@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.referrals.tokens import (
     CounterKind,
@@ -29,20 +29,24 @@ def _is_one_owner_per_user_conflict(e: IntegrityError) -> bool:
     return "uq_referral_links_one_user_owner" in blob
 
 
-def get_user_owned_referral_link(session: Session, user_id: int) -> ReferralLink | None:
+async def get_user_owned_referral_link(
+    session: AsyncSession, user_id: int,
+) -> ReferralLink | None:
     """Личная ссылка пользователя (``owner_kind=user``); ``None`` — если ещё не создавалась."""
-    return session.scalars(
-        select(ReferralLink)
-        .where(
-            ReferralLink.owner_kind == "user",
-            ReferralLink.owner_user_id == user_id,
+    return (
+        await session.scalars(
+            select(ReferralLink)
+            .where(
+                ReferralLink.owner_kind == "user",
+                ReferralLink.owner_user_id == user_id,
+            )
+            .limit(1),
         )
-        .limit(1),
     ).first()
 
 
-def create_user_owned_referral_link(
-    session: Session,
+async def create_user_owned_referral_link(
+    session: AsyncSession,
     user_id: int,
     *,
     token: str | None,
@@ -51,9 +55,9 @@ def create_user_owned_referral_link(
 
     Если ``token=None`` — генерируем случайный, иначе используем переданный (после ``strip``).
     """
-    if get_user_owned_referral_link(session, user_id) is not None:
+    if await get_user_owned_referral_link(session, user_id) is not None:
         raise ValueError("У вас уже создана персональная реферальная ссылка")
-    exists = session.scalar(select(User.id).where(User.id == user_id).limit(1))
+    exists = await session.scalar(select(User.id).where(User.id == user_id).limit(1))
     if exists is None:
         raise ValueError("Пользователь не найден")
 
@@ -66,42 +70,44 @@ def create_user_owned_referral_link(
     )
     session.add(row)
     try:
-        session.flush()
+        await session.flush()
     except IntegrityError as e:
-        session.rollback()
+        await session.rollback()
         if _is_one_owner_per_user_conflict(e):
             raise ValueError("У вас уже создана персональная реферальная ссылка") from e
         raise ValueError("Токен уже занят") from e
     return row
 
 
-def get_or_create_user_owned_referral_link(session: Session, user_id: int) -> ReferralLink:
+async def get_or_create_user_owned_referral_link(
+    session: AsyncSession, user_id: int,
+) -> ReferralLink:
     """Идемпотентный getter: если ссылка уже есть — вернёт её, иначе создаст.
 
     При коллизии случайного токена пробует ещё раз (до 16 попыток); если конкурент успел
     создать ссылку первым — вернёт уже существующую.
     """
-    row = get_user_owned_referral_link(session, user_id)
+    row = await get_user_owned_referral_link(session, user_id)
     if row is not None:
         return row
     for _ in range(16):
         try:
-            return create_user_owned_referral_link(session, user_id, token=None)
+            return await create_user_owned_referral_link(session, user_id, token=None)
         except ValueError as e:
             msg = str(e)
             if msg == "Пользователь не найден":
                 raise
             if msg == "Токен уже занят":
                 continue
-            again = get_user_owned_referral_link(session, user_id)
+            again = await get_user_owned_referral_link(session, user_id)
             if again is not None:
                 return again
             raise
     raise RuntimeError("Не удалось сгенерировать уникальный реферальный токен")
 
 
-def create_referral_link(
-    session: Session,
+async def create_referral_link(
+    session: AsyncSession,
     *,
     owner_kind: str,
     owner_user_id: int | None,
@@ -112,7 +118,9 @@ def create_referral_link(
     if kind == "user":
         if owner_user_id is None:
             raise ValueError("Для owner_kind=user укажите owner_user_id")
-        exists = session.scalar(select(User.id).where(User.id == owner_user_id).limit(1))
+        exists = await session.scalar(
+            select(User.id).where(User.id == owner_user_id).limit(1),
+        )
         if exists is None:
             raise ValueError("Пользователь с таким id не найден")
     else:
@@ -129,9 +137,9 @@ def create_referral_link(
     )
     session.add(row)
     try:
-        session.flush()
+        await session.flush()
     except IntegrityError as e:
-        session.rollback()
+        await session.rollback()
         if _is_one_owner_per_user_conflict(e):
             raise ValueError(
                 "У этого пользователя уже есть персональная реферальная ссылка (не более одной)",
@@ -140,8 +148,8 @@ def create_referral_link(
     return row
 
 
-def update_referral_link(
-    session: Session,
+async def update_referral_link(
+    session: AsyncSession,
     link_id: int,
     *,
     owner_kind: str,
@@ -149,7 +157,7 @@ def update_referral_link(
     token: str,
 ) -> ReferralLink:
     """Полное обновление записи; новый токен проверяется на занятость до записи."""
-    row = session.get(ReferralLink, link_id)
+    row = await session.get(ReferralLink, link_id)
     if row is None:
         raise ValueError("Запись не найдена")
 
@@ -157,7 +165,9 @@ def update_referral_link(
     if kind == "user":
         if owner_user_id is None:
             raise ValueError("Для owner_kind=user укажите owner_user_id")
-        exists = session.scalar(select(User.id).where(User.id == owner_user_id).limit(1))
+        exists = await session.scalar(
+            select(User.id).where(User.id == owner_user_id).limit(1),
+        )
         if exists is None:
             raise ValueError("Пользователь с таким id не найден")
     else:
@@ -168,8 +178,10 @@ def update_referral_link(
     validate_token_shape(raw)
 
     if raw != row.token:
-        taken = session.scalar(
-            select(ReferralLink.id).where(ReferralLink.token == raw, ReferralLink.id != link_id).limit(1)
+        taken = await session.scalar(
+            select(ReferralLink.id)
+            .where(ReferralLink.token == raw, ReferralLink.id != link_id)
+            .limit(1),
         )
         if taken is not None:
             raise ValueError("Токен уже занят")
@@ -178,9 +190,9 @@ def update_referral_link(
     row.owner_kind = kind
     row.owner_user_id = owner_user_id if kind == "user" else None
     try:
-        session.flush()
+        await session.flush()
     except IntegrityError as e:
-        session.rollback()
+        await session.rollback()
         if _is_one_owner_per_user_conflict(e):
             raise ValueError(
                 "У этого пользователя уже есть персональная реферальная ссылка (не более одной)",
@@ -189,17 +201,17 @@ def update_referral_link(
     return row
 
 
-def delete_referral_link(session: Session, link_id: int) -> bool:
+async def delete_referral_link(session: AsyncSession, link_id: int) -> bool:
     """Удалить запись; ``True`` — если строка существовала."""
-    row = session.get(ReferralLink, link_id)
+    row = await session.get(ReferralLink, link_id)
     if row is None:
         return False
-    session.delete(row)
+    await session.delete(row)
     return True
 
 
-def increment_referral_counter(
-    session: Session,
+async def increment_referral_counter(
+    session: AsyncSession,
     link_id: int,
     kind: CounterKind,
 ) -> bool:
@@ -211,12 +223,12 @@ def increment_referral_counter(
         stmt = stmt.values(registrations_count=ReferralLink.registrations_count + 1)
     else:
         stmt = stmt.values(payments_count=ReferralLink.payments_count + 1)
-    res = session.execute(stmt)
+    res = await session.execute(stmt)
     return res.rowcount > 0
 
 
-def increment_referral_counter_by_token(
-    session: Session,
+async def increment_referral_counter_by_token(
+    session: AsyncSession,
     token: str,
     kind: CounterKind,
 ) -> bool:
@@ -224,7 +236,9 @@ def increment_referral_counter_by_token(
     t = token.strip()
     if not t:
         return False
-    row_id = session.scalar(select(ReferralLink.id).where(ReferralLink.token == t).limit(1))
+    row_id = await session.scalar(
+        select(ReferralLink.id).where(ReferralLink.token == t).limit(1),
+    )
     if row_id is None:
         return False
-    return increment_referral_counter(session, int(row_id), kind)
+    return await increment_referral_counter(session, int(row_id), kind)
