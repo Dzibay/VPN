@@ -21,7 +21,6 @@ const chartBottleneck = ref(null)
 const chartNet = ref(null)
 const chartTcp = ref(null)
 const chartLoad = ref(null)
-const chartTrafficUsers = ref(null)
 
 /** @type {import('vue').Ref<{ server_id: number, collected_at: string | null, collect_error: string | null, collect_detail?: object | null, users: Array<{ user_id: number, telegram_id: string | null, up_bytes: number, down_bytes: number, total_bytes: number }> } | null>} */
 const userTrafficBundle = ref(null)
@@ -50,16 +49,9 @@ function abortSignalAfterMs(ms) {
 
 /** @type {Chart[]} */
 let chartInstances = []
-/** @type {Chart | null} */
-let chartTrafficUsersInstance = null
-
 function destroyCharts() {
   chartInstances.forEach((c) => c.destroy())
   chartInstances = []
-  if (chartTrafficUsersInstance) {
-    chartTrafficUsersInstance.destroy()
-    chartTrafficUsersInstance = null
-  }
 }
 
 const metrics = computed(() => metricsBundle.value?.points ?? [])
@@ -271,72 +263,18 @@ function userTrafficLabel(u) {
   return `id ${u.user_id}`
 }
 
-function drawTrafficUserChart() {
-  if (chartTrafficUsers.value == null) return
-  if (chartTrafficUsersInstance) {
-    chartTrafficUsersInstance.destroy()
-    chartTrafficUsersInstance = null
-  }
-  const bundle = userTrafficBundle.value
-  if (!bundle?.users?.length) return
-  const users = [...bundle.users].sort((a, b) => b.total_bytes - a.total_bytes)
-  const mib = (b) => b / (1024 * 1024)
-  chartTrafficUsersInstance = new Chart(chartTrafficUsers.value, {
-    type: 'bar',
-    data: {
-      labels: users.map((u) => userTrafficLabel(u)),
-      datasets: [
-        {
-          label: 'Исходящий к клиенту (down), МиБ',
-          data: users.map((u) => mib(u.down_bytes)),
-          backgroundColor: 'rgba(88, 214, 141, 0.78)',
-        },
-        {
-          label: 'От клиента (up), МиБ',
-          data: users.map((u) => mib(u.up_bytes)),
-          backgroundColor: 'rgba(34, 197, 94, 0.78)',
-        },
-      ],
-    },
-    options: {
-      indexAxis: 'y',
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: 'top',
-          labels: {
-            color: tickColor(),
-            font: { family: 'var(--sans)', size: 12 },
-          },
-        },
-        tooltip: {
-          backgroundColor: 'rgba(4, 12, 9, 0.94)',
-          titleFont: { family: 'var(--sans)', size: 12 },
-          bodyFont: { family: 'var(--mono)', size: 12 },
-        },
-      },
-      scales: {
-        x: {
-          stacked: true,
-          min: 0,
-          ticks: { color: tickColor() },
-          grid: { color: gridColor(), drawBorder: false },
-          title: {
-            display: true,
-            text: 'МиБ',
-            color: tickColor(),
-            font: { size: 11, weight: '600' },
-          },
-        },
-        y: {
-          stacked: true,
-          ticks: { color: tickColor(), maxRotation: 0 },
-          grid: { color: gridColor(), drawBorder: false },
-        },
-      },
-    },
-  })
+const topTrafficUsers = computed(() => {
+  const users = userTrafficBundle.value?.users
+  if (!Array.isArray(users) || users.length === 0) return []
+  return [...users]
+    .sort((a, b) => Number(b.total_bytes || 0) - Number(a.total_bytes || 0))
+    .slice(0, 5)
+})
+
+function formatTrafficMib(v) {
+  const n = Number(v || 0)
+  const mib = n / (1024 * 1024)
+  return `${Math.round(mib * 100) / 100}`
 }
 
 /**
@@ -375,7 +313,6 @@ async function loadUserTraffic(collect = false) {
   }
   if (gen !== userTrafficFetchGen) return
   await nextTick()
-  drawTrafficUserChart()
 }
 
 async function loadUserTrafficFromNode() {
@@ -441,7 +378,6 @@ async function loadUserTrafficFromNode() {
   }
   if (gen !== userTrafficFetchGen) return
   await nextTick()
-  drawTrafficUserChart()
 }
 
 function labelsFor(m) {
@@ -1039,11 +975,28 @@ onBeforeUnmount(() => {
           </li>
         </ul>
       </div>
-      <div
-        v-else
-        class="chart-wrap chart-wrap-tall traffic-users-canvas-wrap"
-      >
-        <canvas ref="chartTrafficUsers" />
+      <div v-else class="traffic-users-table-wrap">
+        <table class="traffic-users-table">
+          <thead>
+            <tr>
+              <th>Пользователь</th>
+              <th class="num">Down, MiB</th>
+              <th class="num">Up, MiB</th>
+              <th class="num">Всего, MiB</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="u in topTrafficUsers" :key="u.user_id">
+              <td>{{ userTrafficLabel(u) }}</td>
+              <td class="num">{{ formatTrafficMib(u.down_bytes) }}</td>
+              <td class="num">{{ formatTrafficMib(u.up_bytes) }}</td>
+              <td class="num">{{ formatTrafficMib(u.total_bytes) }}</td>
+            </tr>
+            <tr v-if="topTrafficUsers.length === 0">
+              <td colspan="4" class="muted-cell">Нет данных по трафику</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
       <details
         v-if="userTrafficCollectDetail && !userTrafficLoading"
@@ -1359,8 +1312,40 @@ onBeforeUnmount(() => {
 .traffic-users-block {
   margin-bottom: 1.15rem;
 }
-.traffic-users-canvas-wrap {
-  min-height: 280px;
+.traffic-users-table-wrap {
+  margin-top: 0.35rem;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.traffic-users-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+.traffic-users-table th,
+.traffic-users-table td {
+  padding: 0.58rem 0.7rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--card-border) 80%, transparent);
+}
+.traffic-users-table th {
+  text-align: left;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  font-weight: 700;
+}
+.traffic-users-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.traffic-users-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.muted-cell {
+  color: var(--muted);
+  text-align: center;
 }
 .muted-hint {
   margin-top: 0.65rem;
