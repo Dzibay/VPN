@@ -13,6 +13,7 @@ from app.api.endpoints import (
     server_metrics,
     servers,
     status,
+    subscription_device_stats,
     telegram,
     users,
 )
@@ -31,4 +32,5 @@ api_router.include_router(http_audit_staff.router)
 api_router.include_router(referral_links.staff_router)
 api_router.include_router(servers.router)
 api_router.include_router(server_metrics.router)
+api_router.include_router(subscription_device_stats.router)
 api_router.include_router(prometheus_sd.router)

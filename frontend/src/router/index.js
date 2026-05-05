@@ -36,6 +36,8 @@ const UsersAnalyticsStaffView = () =>
 
 const AdminHttpRequestLogsView = () =>
   import('../views/AdminHttpRequestLogsView.vue')
+const AdminSubscriptionUserAgentStatsView = () =>
+  import('../views/AdminSubscriptionUserAgentStatsView.vue')
 
 const routes = [
   { path: '/', name: 'home', component: HomeView },
@@ -81,6 +83,11 @@ const routes = [
     path: '/admin/users/registrations-by-date',
     name: 'admin-users-registrations-by-date',
     component: RegistrationsByDateStaffView,
+  },
+  {
+    path: '/admin/users/subscription-user-agent-stats',
+    name: 'admin-subscription-user-agent-stats',
+    component: AdminSubscriptionUserAgentStatsView,
   },
   {
     path: '/admin/users/:userId/analytics',
