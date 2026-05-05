@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.persistence.models.user_http_request_trace import UserHttpRequestTrace
@@ -39,3 +39,18 @@ async def staff_list_http_request_traces(
     list_q = list_q.limit(limit).offset(offset)
     rows = list((await session.scalars(list_q)).all())
     return rows, total
+
+
+async def staff_delete_http_request_traces_by_ids(
+    session: AsyncSession,
+    *,
+    ids: list[int],
+) -> int:
+    uniq_ids = sorted({int(v) for v in ids if int(v) > 0})
+    if not uniq_ids:
+        return 0
+    res = await session.execute(
+        delete(UserHttpRequestTrace).where(UserHttpRequestTrace.id.in_(uniq_ids)),
+    )
+    await session.commit()
+    return int(res.rowcount or 0)

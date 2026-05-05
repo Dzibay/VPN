@@ -26,3 +26,14 @@ class HttpRequestTraceStaffPage(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class HttpRequestTraceBulkDeleteBody(BaseModel):
+    ids: list[int] = Field(
+        min_length=1,
+        description="ID логов для удаления",
+    )
+
+
+class HttpRequestTraceBulkDeleteResponse(BaseModel):
+    deleted_count: int

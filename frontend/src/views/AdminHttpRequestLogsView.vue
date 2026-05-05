@@ -5,6 +5,7 @@ import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
 import { fetchJson } from '../api/client.js'
+import { getSessionRole } from '../auth/session.js'
 import { useTableSort } from '../utils/adminTableSort.js'
 
 const route = useRoute()
@@ -18,6 +19,8 @@ const filterSubjectSource = ref('')
 
 const loading = ref(false)
 const error = ref(null)
+const deleting = ref(false)
+const selectedIds = ref([])
 const page = ref({
   items: [],
   total: 0,
@@ -170,6 +173,28 @@ function resetFilters() {
   router.replace({ path: '/admin/logs', query: {} })
 }
 
+async function deleteSelected() {
+  if (!canDeleteLogs.value || selectedIds.value.length === 0 || deleting.value) return
+  const ok = window.confirm(
+    `Удалить выбранные логи (${selectedIds.value.length})? Действие необратимо.`,
+  )
+  if (!ok) return
+  deleting.value = true
+  error.value = null
+  try {
+    await fetchJson('/api/admin/http-request-traces', {
+      method: 'DELETE',
+      body: JSON.stringify({ ids: selectedIds.value }),
+    })
+    selectedIds.value = []
+    await syncFromRoute()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    deleting.value = false
+  }
+}
+
 function goPrev() {
   const nextOff = Math.max(0, offset.value - limit.value)
   if (nextOff === offset.value) return
@@ -199,6 +224,22 @@ const rangeLabel = computed(() => {
 const canNext = computed(
   () => offset.value + page.value.items.length < page.value.total,
 )
+const rowIdsOnPage = computed(() => sortedRows.value.map((row) => Number(row.id)))
+const allSelectedOnPage = computed(() => {
+  if (rowIdsOnPage.value.length === 0) return false
+  return rowIdsOnPage.value.every((id) => selectedIds.value.includes(id))
+})
+
+function toggleSelectAllOnPage() {
+  if (allSelectedOnPage.value) {
+    const remove = new Set(rowIdsOnPage.value)
+    selectedIds.value = selectedIds.value.filter((id) => !remove.has(id))
+    return
+  }
+  selectedIds.value = Array.from(
+    new Set([...selectedIds.value, ...rowIdsOnPage.value]),
+  )
+}
 
 const sourceFilterOptions = computed(() => {
   const common = [
@@ -219,6 +260,7 @@ const sourceFilterOptions = computed(() => {
 })
 
 const logRows = computed(() => page.value.items)
+const canDeleteLogs = computed(() => getSessionRole() === 'admin')
 
 const httpTraceSortAccessors = {
   created_at: (r) => r.created_at,
@@ -241,6 +283,14 @@ watch(
     void syncFromRoute()
   },
   { immediate: true },
+)
+
+watch(
+  () => rowIdsOnPage.value,
+  (ids) => {
+    const keep = new Set(ids)
+    selectedIds.value = selectedIds.value.filter((id) => keep.has(id))
+  },
 )
 </script>
 
@@ -337,6 +387,15 @@ watch(
       <span class="muted">{{ rangeLabel }}</span>
       <div class="pager-btns">
         <button
+          v-if="canDeleteLogs"
+          type="button"
+          class="btn-danger"
+          :disabled="selectedIds.length === 0 || deleting"
+          @click="deleteSelected"
+        >
+          {{ deleting ? 'Удаление…' : `Удалить выбранные (${selectedIds.length})` }}
+        </button>
+        <button
           type="button"
           class="btn-secondary"
           :disabled="offset <= 0"
@@ -351,9 +410,17 @@ watch(
     </div>
 
     <AdminTableWrap aria-label="Таблица журнала HTTP">
-      <table class="admin-table http-trace-table">
+      <table class="admin-table http-trace-table" :class="{ 'http-trace-table--no-select': !canDeleteLogs }">
         <thead>
           <tr>
+            <th v-if="canDeleteLogs" class="th-select">
+              <input
+                type="checkbox"
+                :checked="allSelectedOnPage"
+                :disabled="rowIdsOnPage.length === 0"
+                @change="toggleSelectAllOnPage"
+              />
+            </th>
             <AdminSortTh
               label="Время"
               column-key="created_at"
@@ -410,9 +477,16 @@ watch(
         </thead>
         <tbody>
           <tr v-if="sortedRows.length === 0">
-            <td colspan="7" class="muted center">Нет строк</td>
+            <td :colspan="canDeleteLogs ? 8 : 7" class="muted center">Нет строк</td>
           </tr>
           <tr v-for="row in sortedRows" :key="row.id">
+            <td v-if="canDeleteLogs" class="td-select">
+              <input
+                v-model="selectedIds"
+                type="checkbox"
+                :value="row.id"
+              />
+            </td>
             <td
               class="mono nowrap"
               :title="formatHttpTraceFullDateTime(row.created_at)"
@@ -625,6 +699,49 @@ watch(
   gap: 0.35rem;
 }
 
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.55rem 1.15rem;
+  border-radius: var(--radius-lg);
+  border: none;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, #ef4444 92%, white) 0%,
+    color-mix(in srgb, #dc2626 94%, black) 100%
+  );
+  color: #fff;
+  box-shadow: var(--shadow-sm);
+  transition:
+    filter 0.2s ease,
+    transform 0.15s ease,
+    box-shadow 0.2s ease;
+}
+
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(1.06);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-danger:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-danger:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring), var(--shadow-sm);
+}
+
+.btn-danger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .muted {
   color: var(--muted);
 }
@@ -645,15 +762,38 @@ watch(
 .http-trace-table :is(th, td):nth-child(2),
 .http-trace-table :is(th, td):nth-child(3),
 .http-trace-table :is(th, td):nth-child(4),
-.http-trace-table :is(th, td):nth-child(6),
-.http-trace-table :is(th, td):nth-child(7) {
+.http-trace-table :is(th, td):nth-child(5),
+.http-trace-table :is(th, td):nth-child(7),
+.http-trace-table :is(th, td):nth-child(8) {
   white-space: nowrap;
   width: 1%;
 }
 
 /* Колонка "Путь" занимает оставшееся пространство таблицы */
-.http-trace-table :is(th, td):nth-child(5) {
+.http-trace-table :is(th, td):nth-child(6) {
   width: 100%;
+}
+
+/* Вариант без колонки выбора (manager): индексы колонок сдвинуты на -1 */
+.http-trace-table--no-select :is(th, td):nth-child(1),
+.http-trace-table--no-select :is(th, td):nth-child(2),
+.http-trace-table--no-select :is(th, td):nth-child(3),
+.http-trace-table--no-select :is(th, td):nth-child(4),
+.http-trace-table--no-select :is(th, td):nth-child(6),
+.http-trace-table--no-select :is(th, td):nth-child(7) {
+  white-space: nowrap;
+  width: 1%;
+}
+
+.http-trace-table--no-select :is(th, td):nth-child(5) {
+  width: 100%;
+}
+
+.th-select,
+.td-select {
+  width: 1%;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .path-cell-inner {

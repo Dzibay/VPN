@@ -6,10 +6,23 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from app.core.dependencies import ReadonlySessionDep, require_referrals_staff
+from app.core.dependencies import (
+    ReadonlySessionDep,
+    SessionDep,
+    require_admin,
+    require_referrals_staff,
+)
 from app.core.exceptions import BadRequestError
-from app.domain.models.http_audit_staff import HttpRequestTraceStaffItem, HttpRequestTraceStaffPage
-from app.domain.services.http_request_trace_staff_service import staff_list_http_request_traces
+from app.domain.models.http_audit_staff import (
+    HttpRequestTraceBulkDeleteBody,
+    HttpRequestTraceBulkDeleteResponse,
+    HttpRequestTraceStaffItem,
+    HttpRequestTraceStaffPage,
+)
+from app.domain.services.http_request_trace_staff_service import (
+    staff_delete_http_request_traces_by_ids,
+    staff_list_http_request_traces,
+)
 
 router = APIRouter(
     prefix="/admin/http-request-traces",
@@ -68,3 +81,22 @@ async def list_http_request_traces(
         limit=limit,
         offset=offset,
     )
+
+
+@router.delete(
+    "",
+    response_model=HttpRequestTraceBulkDeleteResponse,
+    summary="Удаление выбранных логов по списку id",
+)
+async def delete_http_request_traces(
+    body: HttpRequestTraceBulkDeleteBody,
+    session: SessionDep,
+    _: Annotated[None, Depends(require_admin)],
+) -> HttpRequestTraceBulkDeleteResponse:
+    if not body.ids:
+        raise BadRequestError("Нужно передать хотя бы один id")
+    deleted = await staff_delete_http_request_traces_by_ids(
+        session,
+        ids=body.ids,
+    )
+    return HttpRequestTraceBulkDeleteResponse(deleted_count=deleted)
