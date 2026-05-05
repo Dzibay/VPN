@@ -6,7 +6,7 @@ function publicApiUrl(path) {
   const p = path.startsWith('/') ? path : `/${path}`
   return base ? `${base}${p}` : p
 }
-/** Кэш: нужен ли Bearer для админ-API (проба GET /api/users/count без заголовка → 401). */
+/** Кэш: нужен ли Bearer для админ-API (GET /api/health → поле admin_api_requires_jwt). */
 let adminJwtRequiredCache = null
 
 export function invalidateAdminJwtProbe() {
@@ -14,17 +14,23 @@ export function invalidateAdminJwtProbe() {
 }
 
 /**
- * Нужен ли Bearer JWT для админ-API (проба GET /api/users/count без заголовка → 401).
+ * Нужен ли Bearer JWT для админ-API (тот же признак, что jwt_gate_active на бэкенде).
  */
 export async function isAdminJwtRequired() {
   if (adminJwtRequiredCache !== null) return adminJwtRequiredCache
   try {
-    const res = await fetch(publicApiUrl('/api/users/count'), {
+    const res = await fetch(publicApiUrl('/api/health'), {
       method: 'GET',
       headers: { Accept: 'application/json' },
       cache: 'no-store',
     })
-    adminJwtRequiredCache = res.status === 401
+    if (!res.ok) {
+      adminJwtRequiredCache = true
+      return true
+    }
+    const data = await res.json()
+    const flag = data?.admin_api_requires_jwt
+    adminJwtRequiredCache = flag !== false
     return adminJwtRequiredCache
   } catch {
     adminJwtRequiredCache = true
