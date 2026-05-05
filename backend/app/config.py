@@ -250,7 +250,7 @@ class Settings(BaseSettings):
         le=10_000,
         description=(
             "Максимум разных устройств (по x-hwid или по отпечатку заголовков), с которых можно "
-            "запрашивать подписку /sub/{token} и варианты /json, /clash. 0 — без ограничения. "
+            "запрашивать подписку /sub/{token} (в т. ч. YAML при User-Agent с clash), /json. 0 — без ограничения. "
             "Переменная окружения: SUBSCRIPTION_MAX_DEVICES."
         ),
     )

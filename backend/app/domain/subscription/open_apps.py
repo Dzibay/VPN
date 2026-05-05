@@ -8,7 +8,8 @@
 
 - happ: сырая ссылка в path — happ://add/https://…/sub/{token}
 - Stash, Clash Meta, flclashx, koala-clash, prizrak-box: в query url=… указывает на
-  ``GET /sub/{token}/clash`` (тело — YAML Clash Meta), не на Base64-подписку ``/sub/{token}``.
+  ``GET /sub/{token}`` (клиент запрашивает с User-Agent, содержащим ``clash`` — тело YAML Clash Meta;
+  иначе была бы Base64-подписка).
 - v2rayNG: url на ``/sub/{token}`` (Base64 со строками vless://); по UrlSchemeActivity
   читаются только query url и fragment (имя), не name=.
 - Shadowrocket: shadowrocket://add/sub://<base64(UTF-8 ссылки)>?remark=…
@@ -310,22 +311,22 @@ def _app(
 
 SUBSCRIPTION_OPEN_APPS: dict[str, SubscriptionOpenApp] = {
     "happ": _app("happ", "Happ", _happ_deeplink),
-    "stash": _app("stash", "Stash", _stash_deeplink, subscription_fetch_path_suffix="/clash"),
+    "stash": _app("stash", "Stash", _stash_deeplink),
     "shadowrocket": _app("shadowrocket", "Shadowrocket", _shadowrocket_deeplink),
     "streisand": _app("streisand", "Streisand", _streisand_deeplink),
     "flclashx": _app(
-        "flclashx", "FLClashX", _flclashx_deeplink, subscription_fetch_path_suffix="/clash"
+        "flclashx", "FLClashX", _flclashx_deeplink,
     ),
     "clashmeta": _app(
-        "clashmeta", "Clash Meta", _clashmeta_deeplink, subscription_fetch_path_suffix="/clash"
+        "clashmeta", "Clash Meta", _clashmeta_deeplink,
     ),
     "v2rayng": _app("v2rayng", "v2rayNG", _v2rayng_deeplink),
     "v2raytun": _app("v2raytun", "v2RayTun", _v2raytun_deeplink),
     "koala-clash": _app(
-        "koala-clash", "Koala Clash", _koala_clash_deeplink, subscription_fetch_path_suffix="/clash"
+        "koala-clash", "Koala Clash", _koala_clash_deeplink,
     ),
     "prizrak-box": _app(
-        "prizrak-box", "Prizrak Box", _prizrak_box_deeplink, subscription_fetch_path_suffix="/clash"
+        "prizrak-box", "Prizrak Box", _prizrak_box_deeplink,
     ),
 }
 

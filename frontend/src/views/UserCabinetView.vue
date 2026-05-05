@@ -5,7 +5,6 @@ import {
   detectStorePlatform,
   fetchJson,
   sitePublicUrl,
-  subscriptionClashPublicUrl,
   subscriptionOpenPath,
   subscriptionPublicUrl,
 } from '../api/client.js'
@@ -347,11 +346,6 @@ const subscriptionUrl = computed(() => {
   return t ? subscriptionPublicUrl(String(t)) : ''
 })
 
-const subscriptionClashUrl = computed(() => {
-  const t = me.value?.subscription_token
-  return t ? subscriptionClashPublicUrl(String(t)) : ''
-})
-
 /** Сколько уникальных приложений уже запрашивали подписку по ссылке (subscription_devices). */
 const subscriptionConnectionsDisplay = computed(() => {
   const m = me.value
@@ -608,10 +602,6 @@ onMounted(() => {
             >
               {{ subscriptionCopied ? 'Скопировано' : 'Скопировать ссылку подписки' }}
             </button>
-            <p class="hint hint-below-copy">
-              Для FlClashX, Clash Meta и других клиентов на Clash 
-              используйте специальную кнопку подключения ниже
-            </p>
           </div>
 
           <div
