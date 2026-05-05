@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.core.exceptions import ConflictError, NotFoundError, UnprocessableEntityError
+from app.core.request_subject import bind_request_subject_user
 from app.domain.models.auth import (
     TelegramAuthBody,
     TelegramProfilePatchBody,
@@ -43,7 +44,9 @@ async def get_user_by_topic_id(session: AsyncSession, topic_id: int) -> User:
         raise ConflictError(
             "Найдено несколько пользователей с таким topic_id; уточните данные в БД",
         )
-    return rows[0]
+    user = rows[0]
+    bind_request_subject_user(int(user.id), source="telegram_bot_topic_lookup")
+    return user
 
 
 async def patch_user_telegram_properties(
@@ -68,6 +71,7 @@ async def patch_user_telegram_properties(
         user.telegram_properties,
     )
     await session.flush()
+    bind_request_subject_user(int(user.id), source="telegram_bot_profile_patch")
 
     return TelegramUserPropertiesUpdateResponse(
         telegram_id=int(user.telegram_id or telegram_id),

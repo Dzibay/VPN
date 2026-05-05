@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
+from app.core.request_subject import bind_request_subject_user
 from app.core.auth_env import normalize_email
 from app.core.dependencies import BearerPrincipal
 from app.core.exceptions import BadRequestError, ConflictError, ForbiddenError, UnauthorizedError
@@ -67,6 +68,7 @@ async def login_with_password(
         raise UnauthorizedError("Неверный email или пароль")
     jwt_role = jwt_role_for_user(user)
     token = issue_access_token_or_http_error(cfg, role=jwt_role, user_id=user.id)
+    bind_request_subject_user(int(user.id), source="login_password")
     return TokenResponse(access_token=token, role=jwt_role)
 
 
@@ -104,6 +106,7 @@ async def register_with_email(
             await session.flush()
 
     token = issue_access_token_or_http_error(cfg, role="user", user_id=user.id)
+    bind_request_subject_user(int(user.id), source="register_email")
     return TokenResponse(access_token=token, role="user")
 
 

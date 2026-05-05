@@ -7,8 +7,7 @@ import {
   ref,
   watch,
 } from 'vue'
-import AdminPageHeader from '../components/AdminPageHeader.vue'
-import AdminPageShell from '../components/AdminPageShell.vue'
+import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
 import UserRolePill from '../components/UserRolePill.vue'
@@ -1160,64 +1159,13 @@ watch(formIsCascadeRuEntry, (v) => {
 </script>
 
 <template>
-  <AdminPageShell>
-    <AdminPageHeader
-      title="Управление данными"
-      back-to="/"
-      back-label="← На главную"
-      tabs-aria-label="Таблицы"
-    >
-      <template #tabs>
-        <RouterLink
-          class="tab"
-          :class="{ 'tab-active': route.name === 'admin-users' }"
-          :to="{ path: '/admin/users' }"
-        >
-          Пользователи
-        </RouterLink>
-        <RouterLink
-          class="tab"
-          :class="{ 'tab-active': route.name === 'admin-servers' }"
-          :to="{ path: '/admin/servers' }"
-        >
-          Серверы
-        </RouterLink>
-        <RouterLink
-          class="tab"
-          :class="{ 'tab-active': route.name === 'admin-users-staff-analytics' }"
-          :to="{ path: '/admin/users/analytics' }"
-        >
-          Клиенты
-        </RouterLink>
-        <RouterLink
-          class="tab"
-          :class="{ 'tab-active': route.name === 'admin-users-registrations-by-date' }"
-          :to="{ path: '/admin/users/registrations-by-date' }"
-        >
-          Статистика по дням
-        </RouterLink>
-        <RouterLink
-          class="tab"
-          :class="{ 'tab-active': route.name === 'admin-analytics' }"
-          :to="{ path: '/admin/analytics' }"
-        >
-          Нагрузка
-        </RouterLink>
-        <RouterLink
-          class="tab"
-          :class="{ 'tab-active': route.name === 'admin-funnel' }"
-          :to="{ path: '/admin/funnel' }"
-        >
-          Воронка
-        </RouterLink>
-        <RouterLink
-          class="tab"
-          :class="{ 'tab-active': route.name === 'admin-referrals' }"
-          :to="{ path: '/admin/referrals' }"
-        >
-          Реферальные токены
-        </RouterLink>
-      </template>
+  <AdminStaffShell
+    title="Управление данными"
+    tabs-aria-label="Таблицы"
+    back-to="/"
+    back-label="← На главную"
+  >
+    <template #headerExtras>
       <div class="head-row">
         <h2 class="section-heading">{{ sectionTitle }}</h2>
         <div class="head-actions">
@@ -1276,7 +1224,7 @@ watch(formIsCascadeRuEntry, (v) => {
           </button>
         </div>
       </div>
-    </AdminPageHeader>
+    </template>
 
     <section class="stats" aria-live="polite">
       <p
@@ -2259,7 +2207,7 @@ watch(formIsCascadeRuEntry, (v) => {
         </div>
       </div>
     </Teleport>
-  </AdminPageShell>
+  </AdminStaffShell>
 </template>
 
 <style scoped>

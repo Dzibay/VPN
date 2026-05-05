@@ -34,6 +34,9 @@ const UserAnalyticsView = () => import('../views/UserAnalyticsView.vue')
 const UsersAnalyticsStaffView = () =>
   import('../views/UsersAnalyticsStaffView.vue')
 
+const AdminHttpRequestLogsView = () =>
+  import('../views/AdminHttpRequestLogsView.vue')
+
 const routes = [
   { path: '/', name: 'home', component: HomeView },
   { path: '/login', name: 'login', component: UserLoginView },
@@ -53,6 +56,11 @@ const routes = [
     path: '/sub/:token/open/:client',
     name: 'subscription-open',
     component: SubscriptionOpenView,
+  },
+  {
+    path: '/admin/logs',
+    name: 'admin-http-logs',
+    component: AdminHttpRequestLogsView,
   },
   {
     path: '/admin/referrals',
@@ -153,11 +161,13 @@ router.beforeEach(async (to, _from, next) => {
       const isUsersAnalyticsStaff = to.name === 'admin-users-staff-analytics'
       const isMarketingFunnel = to.name === 'admin-funnel'
       const isRegistrationsByDate = to.name === 'admin-users-registrations-by-date'
+      const isHttpLogsStaff = to.name === 'admin-http-logs'
       if (
         isReferralsRoute ||
         isUsersAnalyticsStaff ||
         isMarketingFunnel ||
-        isRegistrationsByDate
+        isRegistrationsByDate ||
+        isHttpLogsStaff
       ) {
         if (!canAccessReferralsAdmin(role)) {
           return next({ path: '/cabinet' })

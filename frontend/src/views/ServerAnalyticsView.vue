@@ -1,9 +1,8 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import Chart from '../utils/chartSetup.js'
-import AdminPageHeader from '../components/AdminPageHeader.vue'
-import AdminPageShell from '../components/AdminPageShell.vue'
+import AdminStaffShell from '../components/AdminStaffShell.vue'
 import { fetchJson } from '../api/client.js'
 
 const route = useRoute()
@@ -909,65 +908,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <AdminPageShell>
-    <AdminPageHeader
-      title="Аналитика нагрузки"
-      back-to="/"
-      back-label="← На главную"
-      tabs-aria-label="Разделы админки"
-    >
-      <template #tabs>
-        <RouterLink
-          class="tab"
-          :class="{ 'tab-active': route.name === 'admin-users' }"
-          :to="{ path: '/admin/users' }"
-        >
-          Пользователи
-        </RouterLink>
-        <RouterLink
-          class="tab"
-          :class="{ 'tab-active': route.name === 'admin-servers' }"
-          :to="{ path: '/admin/servers' }"
-        >
-          Серверы
-        </RouterLink>
-        <RouterLink
-          class="tab"
-          :class="{ 'tab-active': route.name === 'admin-users-staff-analytics' }"
-          :to="{ path: '/admin/users/analytics' }"
-        >
-          Клиенты
-        </RouterLink>
-        <RouterLink
-          class="tab"
-          :class="{ 'tab-active': route.name === 'admin-users-registrations-by-date' }"
-          :to="{ path: '/admin/users/registrations-by-date' }"
-        >
-          Статистика по дням
-        </RouterLink>
-        <RouterLink
-          class="tab"
-          :class="{ 'tab-active': route.name === 'admin-analytics' }"
-          :to="{ path: '/admin/analytics' }"
-        >
-          Нагрузка
-        </RouterLink>
-        <RouterLink
-          class="tab"
-          :class="{ 'tab-active': route.name === 'admin-funnel' }"
-          :to="{ path: '/admin/funnel' }"
-        >
-          Воронка
-        </RouterLink>
-        <RouterLink
-          class="tab"
-          :class="{ 'tab-active': route.name === 'admin-referrals' }"
-          :to="{ path: '/admin/referrals' }"
-        >
-          Реферальные токены
-        </RouterLink>
-      </template>
-    </AdminPageHeader>
+  <AdminStaffShell
+    title="Аналитика нагрузки"
+    tabs-aria-label="Разделы админки"
+    back-to="/"
+    back-label="← На главную"
+  >
 
     <div class="toolbar glass">
       <label class="field-inline">
@@ -1277,7 +1223,7 @@ onBeforeUnmount(() => {
     </div>
 
     <p v-if="loading" class="loading-line">Загрузка…</p>
-  </AdminPageShell>
+  </AdminStaffShell>
 </template>
 
 <style scoped>

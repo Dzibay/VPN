@@ -24,12 +24,16 @@ Stash / Clash Verge / v2rayNG. Подробнее: ``app.domain.subscription.use
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Path, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
 from fastapi.responses import RedirectResponse
 from starlette.requests import Request
 
 from app.config import settings
-from app.core.dependencies import ReadonlySessionDep, SessionDep
+from app.core.dependencies import (
+    ReadonlySessionDep,
+    SessionDep,
+    apply_request_subject_from_bearer_optional,
+)
 from app.domain.models.subscription import SubscriptionOpenPageData, SubscriptionPayload
 from app.domain.services.subscription_service import (
     subscription_build_open_page_data,
@@ -50,7 +54,10 @@ from app.domain.subscription.open_apps import (
     list_subscription_open_app_codes,
 )
 
-router = APIRouter(tags=["public"])
+router = APIRouter(
+    tags=["public"],
+    dependencies=[Depends(apply_request_subject_from_bearer_optional)],
+)
 
 _SUBSCRIPTION_TOKEN_OPENAPI_EXAMPLE = "R7k4mN9pQ2sT5vX8yZ1aB3cD6eF0gH2j"
 _SUBSCRIPTION_TOKEN_PATH = Path(

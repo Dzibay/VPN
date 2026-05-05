@@ -9,6 +9,7 @@ from starlette.datastructures import URL as StarletteURL
 from starlette.requests import Request
 
 from app.config import Settings, settings
+from app.core.request_subject import bind_request_subject_from_subscription_user
 from app.domain.subscription.public_base import site_address_to_public_origin
 from app.infrastructure.database.operations import table_select_one
 from app.infrastructure.persistence.models.user import User
@@ -49,7 +50,9 @@ def subscription_public_base_url(cfg: Settings | None = None) -> str:
 
 
 async def user_by_subscription_token(session: AsyncSession, subscription_token: str) -> User | None:
-    return await table_select_one(session, User, filters={"token": subscription_token})
+    user = await table_select_one(session, User, filters={"token": subscription_token})
+    bind_request_subject_from_subscription_user(user)
+    return user
 
 
 def subscription_open_spa_url(

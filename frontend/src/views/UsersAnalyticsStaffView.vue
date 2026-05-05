@@ -1,12 +1,9 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import AdminPageHeader from '../components/AdminPageHeader.vue'
-import AdminPageShell from '../components/AdminPageShell.vue'
+import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
-import { isAdminRole } from '../auth/permissions.js'
-import { getSessionRole } from '../auth/session.js'
 import { fetchJson } from '../api/client.js'
 import { formatTrafficBytes } from '../utils/formatTraffic.js'
 import { useTableSort } from '../utils/adminTableSort.js'
@@ -29,6 +26,13 @@ const selectedUser = computed(() => {
   return sortedRows.value.find((u) => u.id === id) ?? null
 })
 
+const selectedSubscriptionDevices = computed(() => {
+  const u = selectedUser.value
+  if (!u) return []
+  const list = u.subscription_devices
+  return Array.isArray(list) ? list : []
+})
+
 function clientHighlightFromRoute() {
   const raw = route.query.highlight
   const s = raw == null ? '' : Array.isArray(raw) ? raw[0] : raw
@@ -36,8 +40,6 @@ function clientHighlightFromRoute() {
   const n = Number(s)
   return Number.isFinite(n) && n >= 1 ? Math.floor(n) : null
 }
-
-const isFullAdmin = computed(() => isAdminRole(getSessionRole()))
 
 /** Календарный день UTC как одно число для сравнения. */
 function utcCalendarDayKey(d) {
@@ -245,6 +247,20 @@ function formatTelegramPropDisplay(key, val) {
   return s
 }
 
+function formatConnectionOs(raw) {
+  if (raw == null || String(raw).trim() === '') return '—'
+  return String(raw).trim()
+}
+
+/** Часть User-Agent до первого «/» (напр. Happ из Happ/2.9.1/…). */
+function formatConnectionUserAgentHead(raw) {
+  if (raw == null || String(raw).trim() === '') return '—'
+  const s = String(raw).trim()
+  const i = s.indexOf('/')
+  const head = i === -1 ? s : s.slice(0, i).trim()
+  return head || '—'
+}
+
 const clientSortAccessors = {
   email: (u) => String(u.email ?? '').toLowerCase(),
   telegram: (u) => u.telegram_id ?? -1,
@@ -307,96 +323,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <AdminPageShell>
-    <AdminPageHeader
-      title="Аналитика пользователей"
-      :tabs-aria-label="isFullAdmin ? 'Разделы админки' : 'Раздел менеджера'"
-    >
-      <template #back>
-        <RouterLink v-if="isFullAdmin" class="back" to="/admin/users">
-          ← Управление данными
-        </RouterLink>
-        <RouterLink v-else class="back" to="/cabinet">← Личный кабинет</RouterLink>
-      </template>
-      <template #tabs>
-        <template v-if="isFullAdmin">
-          <RouterLink
-            class="tab"
-            :class="{ 'tab-active': route.name === 'admin-users' }"
-            :to="{ path: '/admin/users' }"
-          >
-            Пользователи
-          </RouterLink>
-          <RouterLink
-            class="tab"
-            :class="{ 'tab-active': route.name === 'admin-servers' }"
-            :to="{ path: '/admin/servers' }"
-          >
-            Серверы
-          </RouterLink>
-          <RouterLink
-            class="tab"
-            :class="{ 'tab-active': route.name === 'admin-users-staff-analytics' }"
-            :to="{ path: '/admin/users/analytics' }"
-          >
-            Клиенты
-          </RouterLink>
-          <RouterLink
-            class="tab"
-            :class="{ 'tab-active': route.name === 'admin-users-registrations-by-date' }"
-            :to="{ path: '/admin/users/registrations-by-date' }"
-          >
-            Статистика по дням
-          </RouterLink>
-          <RouterLink
-            class="tab"
-            :class="{ 'tab-active': route.name === 'admin-analytics' }"
-            :to="{ path: '/admin/analytics' }"
-          >
-            Нагрузка
-          </RouterLink>
-          <RouterLink
-            class="tab"
-            :class="{ 'tab-active': route.name === 'admin-funnel' }"
-            :to="{ path: '/admin/funnel' }"
-          >
-            Воронка
-          </RouterLink>
-          <RouterLink class="tab" :to="{ path: '/admin/referrals' }">
-            Реферальные токены
-          </RouterLink>
-        </template>
-        <template v-else>
-          <RouterLink
-            class="tab"
-            :class="{ 'tab-active': route.name === 'admin-users-staff-analytics' }"
-            :to="{ path: '/admin/users/analytics' }"
-          >
-            Клиенты
-          </RouterLink>
-          <RouterLink
-            class="tab"
-            :class="{ 'tab-active': route.name === 'admin-users-registrations-by-date' }"
-            :to="{ path: '/admin/users/registrations-by-date' }"
-          >
-            Статистика по дням
-          </RouterLink>
-          <RouterLink
-            class="tab"
-            :class="{ 'tab-active': route.name === 'admin-funnel' }"
-            :to="{ path: '/admin/funnel' }"
-          >
-            Воронка
-          </RouterLink>
-          <RouterLink
-            class="tab"
-            :class="{ 'tab-active': route.name === 'admin-referrals' }"
-            :to="{ path: '/admin/referrals' }"
-          >
-            Реферальные токены
-          </RouterLink>
-        </template>
-      </template>
+  <AdminStaffShell title="Аналитика пользователей">
+    <template #headerExtras>
       <div class="head-row">
         <h2 class="section-heading">Сводка по учётным записям и трафику</h2>
         <div class="head-actions">
@@ -410,7 +338,7 @@ onMounted(() => {
           </button>
         </div>
       </div>
-    </AdminPageHeader>
+    </template>
 
     <section class="stats widgets-row" aria-live="polite">
       <div class="widgets-grid">
@@ -660,11 +588,42 @@ onMounted(() => {
               </li>
               <li class="tg-props-item">
                 <div class="tg-props-item__grid">
-                  <span class="tg-props-label">Устройства</span>
-                  <div class="tg-props-value-wrap">
+                  <span class="tg-props-label">Подключения</span>
+                  <div class="tg-props-value-wrap tg-props-value-wrap--devices-col">
                     <span class="tg-props-value mono-num">{{
                       selectedUser.subscription_devices_count ?? 0
                     }}</span>
+                    <details
+                      v-if="selectedSubscriptionDevices.length"
+                      class="connections-expand panel-subscription-devices"
+                    >
+                      <summary class="connections-expand__summary">
+                        Устройства
+                      </summary>
+                      <ul
+                        class="connections-expand__list"
+                        role="list"
+                      >
+                        <li
+                          v-for="conn in selectedSubscriptionDevices"
+                          :key="conn.id"
+                          class="connections-expand__item connections-expand__item--readonly"
+                        >
+                          <div class="connections-expand__line mono">
+                            <span class="connections-expand__os">{{
+                              formatConnectionOs(conn.os)
+                            }}</span>
+                            <span
+                              class="connections-expand__dot"
+                              aria-hidden="true"
+                            > · </span>
+                            <span class="connections-expand__ua">{{
+                              formatConnectionUserAgentHead(conn.user_agent)
+                            }}</span>
+                          </div>
+                        </li>
+                      </ul>
+                    </details>
                   </div>
                 </div>
               </li>
@@ -694,10 +653,23 @@ onMounted(() => {
               </li>
             </ul>
           </section>
+
+          <div class="user-detail-panel__logs-footer">
+            <RouterLink
+              class="user-detail-panel__logs-link"
+              :to="{
+                path: '/admin/logs',
+                query: { user_id: String(selectedUser.id) },
+              }"
+              title="Логи с фильтром по этому пользователю"
+            >
+              Логи
+            </RouterLink>
+          </div>
         </div>
       </aside>
     </div>
-  </AdminPageShell>
+  </AdminStaffShell>
 </template>
 
 <style scoped>
@@ -960,6 +932,24 @@ onMounted(() => {
   border-color: var(--accent-border, var(--border));
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
+.user-detail-panel__logs-footer {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+.user-detail-panel__logs-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--accent, #2563eb);
+  text-decoration: none;
+}
+.user-detail-panel__logs-link:hover {
+  color: var(--accent-hover, var(--text-h));
+  text-decoration: underline;
+}
 .user-detail-panel .user-detail-block {
   margin: 0 0 0.5rem;
 }
@@ -1009,6 +999,65 @@ onMounted(() => {
   align-items: center;
   gap: 0.35rem 0.5rem;
 }
+.tg-props-value-wrap--devices-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+.user-detail-panel .connections-expand {
+  width: 100%;
+  margin: 0;
+}
+.user-detail-panel .connections-expand__summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent);
+  line-height: 1.35;
+  list-style: none;
+}
+.user-detail-panel .connections-expand__summary::-webkit-details-marker {
+  display: none;
+}
+.user-detail-panel .connections-expand__summary::before {
+  content: '';
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-right: 0.38em;
+  border-style: solid;
+  border-width: 0.28em 0 0.28em 0.42em;
+  border-color: transparent transparent transparent currentColor;
+  vertical-align: 0.12em;
+  transition: transform 0.15s ease;
+}
+.user-detail-panel .connections-expand[open] .connections-expand__summary::before {
+  transform: rotate(90deg);
+}
+.user-detail-panel .connections-expand__list {
+  margin: 0.4rem 0 0;
+  padding: 0.35rem 0 0 1rem;
+  list-style: disc;
+  font-size: 0.82rem;
+  border-top: 1px dashed color-mix(in srgb, var(--muted) 40%, transparent);
+}
+.user-detail-panel .connections-expand__item {
+  margin: 0.22rem 0;
+  padding: 0;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.user-detail-panel .connections-expand__item--readonly {
+  display: block;
+}
+.user-detail-panel .connections-expand__line {
+  min-width: 0;
+}
+.user-detail-panel .connections-expand__dot {
+  color: color-mix(in srgb, var(--muted) 65%, transparent);
+  font-weight: 400;
+}
 .ref-open-in-list--panel {
   margin-left: 0;
 }
@@ -1048,6 +1097,9 @@ onMounted(() => {
 .user-detail-panel .tg-props-list > .tg-props-item--telegram-prop .tg-props-item__grid {
   padding-top: 0.35rem;
   padding-bottom: 0.35rem;
+}
+.user-detail-panel .tg-props-list > .tg-props-item:last-child {
+  border-bottom: none;
 }
 /* Email: ограничение ширины, длинные адреса — с многоточием (полный текст в title) */
 .email-cell {

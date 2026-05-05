@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     api_version: str = Field(default="1.0.0", description="Версия API в OpenAPI / Swagger")
     debug: bool = False
     log_level: str = "INFO"
+
+    http_audit_db_log_level: str = Field(
+        default="OFF",
+        description=(
+            "Логи в БД (user_http_request_traces), по смыслу как уровни логирования консоли. "
+            "OFF — отключено; INFO — только запросы, где уже известен user_id (JWT или /sub/…); "
+            "DEBUG — все запросы, в том числе без пользователя (аналог «подробного» режима). "
+            "Строки WARNING/ERROR/CRITICAL трактуются как INFO. Env: HTTP_AUDIT_DB_LOG_LEVEL."
+        ),
+    )
     api_prefix: str = "/api"
 
     database_url: str | None = Field(

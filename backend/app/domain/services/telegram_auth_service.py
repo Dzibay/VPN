@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
+from app.core.request_subject import bind_request_subject_user
 from app.core.auth_env import normalize_email
 from app.core.dependencies import BearerPrincipal
 from app.core.exceptions import (
@@ -127,6 +128,7 @@ async def telegram_authenticate(
 
     jwt_role = jwt_role_for_user(user)
     token = issue_access_token_or_http_error(cfg, role=jwt_role, user_id=user.id)
+    bind_request_subject_user(int(user.id), source="telegram_bot_auth")
     return TelegramAuthTokenResponse(
         access_token=token,
         role=jwt_role,
@@ -197,6 +199,7 @@ async def telegram_link_web_account(
     except TelegramSyncRedisError:
         log.warning("telegram link: не удалось удалить одноразовый токен из Redis")
 
+    bind_request_subject_user(int(target.id), source="telegram_web_link")
     return TelegramWebLinkResponse(status="merged" if merged else "linked", user_id=int(target.id))
 
 
@@ -232,6 +235,7 @@ async def telegram_site_link_start(
         jwt_role = jwt_role_for_user(user)
         token = issue_access_token_or_http_error(cfg, role=jwt_role, user_id=user.id)
         site_url = f"{base}/cabinet#tg_sso_token={token}"
+        bind_request_subject_user(int(user.id), source="telegram_site_link_start_sso")
         return TelegramSiteLinkStartResponse(site_url=site_url, has_account=True)
 
     ok, reason = user_can_add_credentials_from_site(user)
@@ -251,6 +255,7 @@ async def telegram_site_link_start(
         raise ServiceUnavailableError("Redis недоступен") from None
 
     site_url = f"{base}/link-from-telegram?token={quote(token_val, safe='')}"
+    bind_request_subject_user(int(user.id), source="telegram_site_link_start_form")
     return TelegramSiteLinkStartResponse(site_url=site_url, has_account=False)
 
 
@@ -267,6 +272,7 @@ async def telegram_site_link_preview_response(
         raise NotFoundError("Пользователь не найден")
 
     ok, _ = user_can_add_credentials_from_site(user)
+    bind_request_subject_user(int(user.id), source="telegram_site_link_preview")
     return TelegramSiteLinkPreviewResponse(
         telegram_id=int(user.telegram_id),
         telegram_properties=user.telegram_properties,
@@ -359,6 +365,7 @@ async def telegram_site_link_complete(
 
     jwt_role = jwt_role_for_user(winner)
     jwt = issue_access_token_or_http_error(cfg, role=jwt_role, user_id=winner.id)
+    bind_request_subject_user(int(winner.id), source="telegram_site_link_complete")
     return TokenResponse(access_token=jwt, role=jwt_role)
 
 
@@ -389,4 +396,5 @@ async def telegram_sync_start_link(
 
     payload = sync_start_payload(token_val)
     deep = f"{base}?start={quote(payload, safe='')}"
+    bind_request_subject_user(int(user.id), source="telegram_sync_start")
     return TelegramSyncStartResponse(telegram_deep_link=deep)

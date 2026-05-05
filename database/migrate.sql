@@ -119,3 +119,24 @@ CREATE TABLE IF NOT EXISTS subscription_devices (
 
 CREATE INDEX IF NOT EXISTS idx_subscription_devices_user_updated_at
     ON subscription_devices (user_id, updated_at DESC);
+
+-- Аудит HTTP: «цепочка» запросов по user_id + источник субъекта (jwt_* / subscription_token / anonymous).
+CREATE TABLE IF NOT EXISTS user_http_request_traces (
+    id BIGSERIAL PRIMARY KEY,
+    request_id TEXT NOT NULL,
+    user_id BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    subject_source TEXT NOT NULL DEFAULT 'anonymous',
+    http_method TEXT NOT NULL,
+    path TEXT NOT NULL,
+    status_code INTEGER NOT NULL,
+    duration_ms DOUBLE PRECISION NOT NULL,
+    client_ip TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_http_request_traces_user_created_at
+    ON user_http_request_traces (user_id, created_at DESC NULLS LAST)
+    WHERE user_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_user_http_request_traces_created_at
+    ON user_http_request_traces (created_at DESC);

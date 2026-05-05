@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.core.time import utc_today
+from app.domain.models.auth import SubscriptionConnectionItem
 from app.domain.models.users import (
     ExtendActiveSubscriptionsBody,
     ExtendActiveSubscriptionsResponse,
@@ -27,6 +28,7 @@ from app.domain.models.users import (
     UsersCountResponse,
     UserUpdate,
 )
+from app.domain.subscription.devices import list_subscription_connection_records_for_users
 from app.domain.user_traffic import user_server_traffic_latest_subquery
 from app.domain.users.identifiers import new_subscription_token, new_vless_uuid
 from app.infrastructure.database.operations import table_insert
@@ -95,6 +97,8 @@ async def staff_list_users(session: AsyncSession, *, show_secrets: bool) -> list
     эти поля приходят как ``None``).
     """
     rows = await _user_rows_with_traffic(session)
+    user_ids = [int(user.id) for user, _, _ in rows]
+    devices_map = await list_subscription_connection_records_for_users(session, user_ids)
     out: list[UserListItem] = []
     for user, total_raw, dev_raw in rows:
         try:
@@ -111,6 +115,8 @@ async def staff_list_users(session: AsyncSession, *, show_secrets: bool) -> list
             dev_n = 0
         role = _normalize_account_role(user.account_role)
         role_lit = type_cast(Literal["client", "manager", "admin"], role)
+        raw_devs = devices_map.get(int(user.id), [])
+        subs_devices = [SubscriptionConnectionItem(**r) for r in raw_devs]
         out.append(
             UserListItem(
                 id=user.id,
@@ -122,6 +128,7 @@ async def staff_list_users(session: AsyncSession, *, show_secrets: bool) -> list
                 subscription_until=user.subscription_until,
                 total_traffic_bytes=total,
                 subscription_devices_count=dev_n,
+                subscription_devices=subs_devices,
                 referral_link_id=user.referral_link_id,
                 token=(user.token if show_secrets else None),
                 vless_uuid=(user.vless_uuid if show_secrets else None),

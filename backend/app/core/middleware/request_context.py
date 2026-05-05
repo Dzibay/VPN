@@ -14,6 +14,8 @@ import uuid
 from typing import Any, Awaitable, Callable, MutableMapping
 
 from app.core.logging_config import request_id_ctx
+from app.core.request_subject import reset_request_subject
+from app.domain.audit.http_trace import persist_http_request_trace_if_configured
 
 log = logging.getLogger("app.http")
 
@@ -118,4 +120,17 @@ class RequestContextMiddleware:
                 _client_host(scope),
             )
         finally:
+            try:
+                audit_ms = (time.perf_counter() - start) * 1000
+                await persist_http_request_trace_if_configured(
+                    request_id=rid,
+                    scope_path_with_query=_path_with_query(scope),
+                    http_method=str(scope.get("method", "?")),
+                    status_code=status_code,
+                    duration_ms=audit_ms,
+                    client_ip=_client_host(scope),
+                )
+            except Exception:
+                log.exception("Не удалось завершить запись аудита HTTP")
+            reset_request_subject()
             request_id_ctx.reset(token)

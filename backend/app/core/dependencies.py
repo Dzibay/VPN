@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.security_bearer import bearer_jwt
 from app.config import get_settings
 from app.core.access_token import AccessClaims, decode_access_token, jwt_signing_secret
+from app.core.request_subject import bind_request_subject_user
 from app.core.exceptions import ForbiddenError, ServiceUnavailableError, UnauthorizedError
 from app.infrastructure.database.session import get_db, get_db_readonly
 
@@ -41,6 +42,22 @@ def _claims_to_principal(claims: AccessClaims) -> BearerPrincipal:
     return BearerPrincipal(role=claims.role, user_id=claims.user_id)
 
 
+async def apply_request_subject_from_bearer_optional(
+    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_jwt)] = None,
+) -> None:
+    """Без ошибок: если в запросе валидный Bearer JWT — сохраняем user_id и роль в контексте запроса."""
+    settings = get_settings()
+    if not jwt_gate_active(settings):
+        return
+    token = _token_strict(creds)
+    if not token:
+        return
+    claims = decode_access_token(token, settings)
+    if claims is None or claims.user_id is None:
+        return
+    bind_request_subject_user(claims.user_id, source=f"jwt_{claims.role}")
+
+
 def _token_strict(creds: HTTPAuthorizationCredentials | None) -> str | None:
     if creds is None or not creds.credentials:
         return None
@@ -55,8 +72,9 @@ def require_roles(
     Фабрика зависимостей FastAPI: JWT обязателен (если включён jwt_gate_active),
     роль из токена должна входить в allowed_roles.
     - admin — полный доступ к админ-API и страницам /admin (кроме только рефералов).
-    - manager — API реферальных ссылок, GET /users (сводка без токенов), UI /admin/referrals,
-      /admin/users/analytics, /admin/users/registrations-by-date (GET /api/users/daily-stats, stats_by_date), /admin/funnel.
+    - manager — API реферальных ссылок и журнала HTTP-запросов, GET /users (сводка без токенов),
+      UI /admin/referrals, /admin/logs, /admin/users/analytics, /admin/users/registrations-by-date
+      (GET /api/users/daily-stats, stats_by_date), /admin/funnel.
     - user — клиентский JWT (для эндпоинтов, где явно разрешён просмотр своих данных).
     """
     allowed = frozenset(allowed_roles)

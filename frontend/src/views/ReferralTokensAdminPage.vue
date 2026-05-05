@@ -1,13 +1,10 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import AdminPageHeader from '../components/AdminPageHeader.vue'
-import AdminPageShell from '../components/AdminPageShell.vue'
+import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
 import RowActionsDropdown from '../components/RowActionsDropdown.vue'
-import { isAdminRole } from '../auth/permissions.js'
-import { getSessionRole } from '../auth/session.js'
 import { fetchJson, sitePublicUrl } from '../api/client.js'
 import { useTableSort } from '../utils/adminTableSort.js'
 
@@ -33,8 +30,6 @@ const statsLine = computed(() => {
   if (error.value) return 'Ошибка загрузки'
   return `${rows.value.length} записей`
 })
-
-const isFullAdmin = computed(() => isAdminRole(getSessionRole()))
 
 const modalTitle = computed(() =>
   editingId.value != null ? 'Редактировать токен' : 'Новый реферальный токен',
@@ -270,92 +265,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <AdminPageShell>
-    <AdminPageHeader
-      title="Реферальные токены"
-      :tabs-aria-label="isFullAdmin ? 'Разделы админки' : 'Раздел менеджера'"
-    >
-      <template #back>
-        <RouterLink v-if="isFullAdmin" class="back" to="/admin/users">
-          ← Управление данными
-        </RouterLink>
-        <RouterLink v-else class="back" to="/cabinet">← Личный кабинет</RouterLink>
-      </template>
-      <template #tabs>
-        <template v-if="isFullAdmin">
-          <RouterLink
-            class="tab"
-            :class="{ 'tab-active': route.name === 'admin-users' }"
-            :to="{ path: '/admin/users' }"
-          >
-            Пользователи
-          </RouterLink>
-          <RouterLink
-            class="tab"
-            :class="{ 'tab-active': route.name === 'admin-servers' }"
-            :to="{ path: '/admin/servers' }"
-          >
-            Серверы
-          </RouterLink>
-          <RouterLink
-            class="tab"
-            :class="{ 'tab-active': route.name === 'admin-users-staff-analytics' }"
-            :to="{ path: '/admin/users/analytics' }"
-          >
-            Клиенты
-          </RouterLink>
-          <RouterLink
-            class="tab"
-            :class="{ 'tab-active': route.name === 'admin-users-registrations-by-date' }"
-            :to="{ path: '/admin/users/registrations-by-date' }"
-          >
-            Статистика по дням
-          </RouterLink>
-          <RouterLink
-            class="tab"
-            :class="{ 'tab-active': route.name === 'admin-analytics' }"
-            :to="{ path: '/admin/analytics' }"
-          >
-            Нагрузка
-          </RouterLink>
-          <RouterLink
-            class="tab"
-            :class="{ 'tab-active': route.name === 'admin-funnel' }"
-            :to="{ path: '/admin/funnel' }"
-          >
-            Воронка
-          </RouterLink>
-          <RouterLink class="tab tab-active" :to="{ path: '/admin/referrals' }">
-            Реферальные токены
-          </RouterLink>
-        </template>
-        <template v-else>
-          <RouterLink
-            class="tab"
-            :class="{ 'tab-active': route.name === 'admin-users-staff-analytics' }"
-            :to="{ path: '/admin/users/analytics' }"
-          >
-            Клиенты
-          </RouterLink>
-          <RouterLink
-            class="tab"
-            :class="{ 'tab-active': route.name === 'admin-users-registrations-by-date' }"
-            :to="{ path: '/admin/users/registrations-by-date' }"
-          >
-            Статистика по дням
-          </RouterLink>
-          <RouterLink
-            class="tab"
-            :class="{ 'tab-active': route.name === 'admin-funnel' }"
-            :to="{ path: '/admin/funnel' }"
-          >
-            Воронка
-          </RouterLink>
-          <RouterLink class="tab tab-active" :to="{ path: '/admin/referrals' }">
-            Реферальные токены
-          </RouterLink>
-        </template>
-      </template>
+  <AdminStaffShell title="Реферальные токены">
+    <template #headerExtras>
       <div class="head-row">
         <h2 class="section-heading">Конверсия по токенам</h2>
         <div class="head-actions">
@@ -372,7 +283,7 @@ onMounted(() => {
           </button>
         </div>
       </div>
-    </AdminPageHeader>
+    </template>
 
     <section class="stats" aria-live="polite">
       <p class="stats-value">{{ statsLine }}</p>
@@ -655,7 +566,7 @@ onMounted(() => {
         </div>
       </div>
     </Teleport>
-  </AdminPageShell>
+  </AdminStaffShell>
 </template>
 
 <style scoped>

@@ -4,6 +4,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.constants import BIGINT_MAX
+from app.domain.models.auth import SubscriptionConnectionItem
 
 
 class UsersCountResponse(BaseModel):
@@ -149,6 +150,13 @@ class UserListItem(BaseModel):
     subscription_devices_count: int = Field(
         ge=0,
         description="Число записей subscription_devices (подключённых устройств по подписке)",
+    )
+    subscription_devices: list[SubscriptionConnectionItem] = Field(
+        default_factory=list,
+        description=(
+            "Список подключений по подписке (как subscription_connections в ЛК): "
+            "по убыванию updated_at"
+        ),
     )
     referral_link_id: int | None = None
     token: str | None = Field(

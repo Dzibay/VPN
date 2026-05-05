@@ -144,6 +144,33 @@ async def list_subscription_connection_records(
     return [{"id": int(r[0]), "os": r[1], "user_agent": r[2]} for r in rows]
 
 
+async def list_subscription_connection_records_for_users(
+    session: AsyncSession,
+    user_ids: list[int],
+) -> dict[int, list[dict[str, int | str | None]]]:
+    """Те же поля, что у ``list_subscription_connection_records``, одним запросом по многим user_id."""
+    if not user_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(
+                SubscriptionDevice.user_id,
+                SubscriptionDevice.id,
+                SubscriptionDevice.os,
+                SubscriptionDevice.user_agent,
+            )
+            .where(SubscriptionDevice.user_id.in_(user_ids))
+            .order_by(SubscriptionDevice.user_id, SubscriptionDevice.updated_at.desc()),
+        )
+    ).all()
+    out: dict[int, list[dict[str, int | str | None]]] = {}
+    for uid, did, os_val, ua in rows:
+        uid_i = int(uid)
+        bucket = out.setdefault(uid_i, [])
+        bucket.append({"id": int(did), "os": os_val, "user_agent": ua})
+    return out
+
+
 async def count_subscription_devices_for_user(session: AsyncSession, user_id: int) -> int:
     n = (
         await session.execute(
