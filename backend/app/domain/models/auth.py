@@ -197,6 +197,14 @@ class TelegramUserPropertiesUpdateResponse(BaseModel):
     telegram_properties: dict[str, Any] | None
 
 
+class TelegramKnownUserIdsResponse(BaseModel):
+    """Ответ GET /api/telegram/users: все непустые telegram_id из таблицы users."""
+
+    telegram_ids: list[int] = Field(
+        description="Числовые id в Telegram по возрастанию (только строки с заполненным users.telegram_id).",
+    )
+
+
 def merge_telegram_auth_profile(
     body: "TelegramAuthBody",
     existing: dict[str, Any] | None,

@@ -74,7 +74,7 @@ class Settings(BaseSettings):
         default="",
         description=(
             "Секрет для POST /api/auth/telegram, POST /api/auth/telegram/site-link/start, "
-            "GET /api/telegram/users/{topic_id}, "
+            "GET /api/telegram/users, GET /api/telegram/users/{topic_id}, "
             "PATCH /api/telegram/users/{telegram_id} и GET /api/telegram/subscription-open-clients: "
             "заголовок X-Telegram-Bot-Secret (вызывает только бэкенд бота, не Telegram-клиент). "
             "Пусто — эндпоинты отвечают 503."

@@ -12,6 +12,7 @@ from app.core.dependencies import (
     require_telegram_bot_api_secret,
 )
 from app.domain.models.auth import (
+    TelegramKnownUserIdsResponse,
     TelegramProfilePatchBody,
     TelegramSubscriptionOpenClientsResponse,
     TelegramUserPropertiesUpdateResponse,
@@ -19,6 +20,7 @@ from app.domain.models.auth import (
 from app.domain.models.users import UserRead
 from app.domain.services.telegram_service import (
     get_user_by_topic_id,
+    list_telegram_user_ids,
     patch_user_telegram_properties,
     subscription_open_clients_payload,
 )
@@ -34,6 +36,17 @@ router = APIRouter(prefix="/telegram", tags=["telegram"])
 )
 async def subscription_open_clients() -> TelegramSubscriptionOpenClientsResponse:
     return subscription_open_clients_payload(settings)
+
+
+@router.get(
+    "/users",
+    response_model=TelegramKnownUserIdsResponse,
+    dependencies=[Depends(require_telegram_bot_api_secret)],
+    summary="Все известные telegram_id пользователей (users.telegram_id IS NOT NULL)",
+)
+async def list_telegram_users_ep(session: ReadonlySessionDep) -> TelegramKnownUserIdsResponse:
+    ids = await list_telegram_user_ids(session)
+    return TelegramKnownUserIdsResponse(telegram_ids=ids)
 
 
 @router.get(
