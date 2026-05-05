@@ -14,6 +14,30 @@ log = logging.getLogger("app.audit.http")
 _UNKNOWN_AUDIT_LEVEL_LOGGED = False
 
 
+def _normalized_route_path(path_with_query: str) -> str:
+    """Путь без query и без завершающего слэша (кроме корня "")."""
+    p = (path_with_query or "").split("?", 1)[0].strip()
+    if not p:
+        return "/"
+    return p.rstrip("/") or "/"
+
+
+def http_audit_skip_persist_for_path(path_with_query: str, *, api_prefix: str) -> bool:
+    """Не писать в БД высокочастотные служебные эндпоинты (пробы, SD Prometheus)."""
+    normalized = _normalized_route_path(path_with_query)
+    pfx = (api_prefix or "/api").strip()
+    if not pfx.startswith("/"):
+        pfx = "/" + pfx.lstrip("/")
+    pfx = pfx.rstrip("/")
+    health = f"{pfx}/health"
+    if normalized == health:
+        return True
+    prom_root = f"{pfx}/prometheus"
+    if normalized == prom_root or normalized.startswith(prom_root + "/"):
+        return True
+    return False
+
+
 def http_audit_should_persist_row(*, resolved_user_id: int | None, level_raw: str) -> bool:
     """
     OFF — не писать; INFO (и WARNING/ERROR/CRITICAL) — только при известном user_id;
@@ -47,6 +71,12 @@ async def persist_http_request_trace_if_configured(
     client_ip: str,
 ) -> None:
     cfg = get_settings()
+
+    if http_audit_skip_persist_for_path(
+        scope_path_with_query,
+        api_prefix=cfg.api_prefix,
+    ):
+        return
 
     user_id, subject_source = get_request_subject()
 
