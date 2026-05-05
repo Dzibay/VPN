@@ -62,22 +62,22 @@ const pctClickToReg = computed(() => {
   return (registrations.value / clicks.value) * 100
 })
 
-/** Регистрации / пользователи в БД → пользователи с трафиком */
-const pctRegToTrafficHint = computed(() => {
+/** Регистрации / пользователи в БД → с подключённым устройством */
+const pctRegToDevices = computed(() => {
   if (!registrations.value) return null
-  return (trafficUsers.value / registrations.value) * 100
+  return (deviceUsers.value / registrations.value) * 100
 })
 
-/** С трафиком → с подключённым устройством (запись в subscription_devices) */
-const pctTrafficToDevices = computed(() => {
-  if (!trafficUsers.value) return null
-  return (deviceUsers.value / trafficUsers.value) * 100
-})
-
-/** С устройством → активные за текущий день UTC */
-const pctDevicesToActive = computed(() => {
+/** С устройством → пользователи с ненулевым трафиком */
+const pctDevicesToTraffic = computed(() => {
   if (!deviceUsers.value) return null
-  return (activeToday.value / deviceUsers.value) * 100
+  return (trafficUsers.value / deviceUsers.value) * 100
+})
+
+/** С трафиком → активные за текущий день UTC */
+const pctTrafficToActive = computed(() => {
+  if (!trafficUsers.value) return null
+  return (activeToday.value / trafficUsers.value) * 100
 })
 
 function fmtPct(x) {
@@ -215,35 +215,15 @@ onMounted(async () => {
 
           <div class="funnel-connector funnel-connector--soft" aria-hidden="true">
             <span class="connector-pct">{{
-              pctRegToTrafficHint != null ? fmtPct(pctRegToTrafficHint) : '—'
+              pctRegToDevices != null ? fmtPct(pctRegToDevices) : '—'
             }}</span>
             <span class="connector-caption">
               {{
                 hasLinkFilter
-                  ? 'регистрации → пользователи с трафиком'
-                  : 'доля с трафиком'
+                  ? 'регистрации → с устройством'
+                  : 'доля с устройством'
               }}
             </span>
-          </div>
-
-          <div class="funnel-step">
-            <div class="funnel-label-row">
-              <span class="funnel-label">Пользователей с трафиком ≠ 0</span>
-              <span class="funnel-num">{{ trafficUsers.toLocaleString('ru-RU') }}</span>
-            </div>
-            <div class="funnel-track">
-              <div
-                class="funnel-fill funnel-fill--c"
-                :style="{ width: barPct(trafficUsers) + '%' }"
-              />
-            </div>
-          </div>
-
-          <div class="funnel-connector funnel-connector--soft" aria-hidden="true">
-            <span class="connector-pct">{{
-              pctTrafficToDevices != null ? fmtPct(pctTrafficToDevices) : '—'
-            }}</span>
-            <span class="connector-caption">трафик → устройства</span>
           </div>
 
           <div class="funnel-step">
@@ -263,10 +243,30 @@ onMounted(async () => {
 
           <div class="funnel-connector funnel-connector--soft" aria-hidden="true">
             <span class="connector-pct">{{
-              pctDevicesToActive != null ? fmtPct(pctDevicesToActive) : '—'
+              pctDevicesToTraffic != null ? fmtPct(pctDevicesToTraffic) : '—'
+            }}</span>
+            <span class="connector-caption">устройства → трафик</span>
+          </div>
+
+          <div class="funnel-step">
+            <div class="funnel-label-row">
+              <span class="funnel-label">Пользователей с трафиком ≠ 0</span>
+              <span class="funnel-num">{{ trafficUsers.toLocaleString('ru-RU') }}</span>
+            </div>
+            <div class="funnel-track">
+              <div
+                class="funnel-fill funnel-fill--c"
+                :style="{ width: barPct(trafficUsers) + '%' }"
+              />
+            </div>
+          </div>
+
+          <div class="funnel-connector funnel-connector--soft" aria-hidden="true">
+            <span class="connector-pct">{{
+              pctTrafficToActive != null ? fmtPct(pctTrafficToActive) : '—'
             }}</span>
             <span class="connector-caption"
-              >устройства → активные
+              >трафик → активные
               <span class="connector-hint"
                 >({{ formatDayShort(utcTodayIso()) }} UTC)</span
               ></span
