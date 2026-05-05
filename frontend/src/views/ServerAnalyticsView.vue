@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import Chart from '../utils/chartSetup.js'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import { fetchJson } from '../api/client.js'
@@ -979,7 +979,7 @@ onBeforeUnmount(() => {
         <table class="traffic-users-table">
           <thead>
             <tr>
-              <th>Пользователь</th>
+              <th>User ID</th>
               <th class="num">Down, MiB</th>
               <th class="num">Up, MiB</th>
               <th class="num">Всего, MiB</th>
@@ -987,7 +987,28 @@ onBeforeUnmount(() => {
           </thead>
           <tbody>
             <tr v-for="u in topTrafficUsers" :key="u.user_id">
-              <td>{{ userTrafficLabel(u) }}</td>
+              <td>
+                <span class="traffic-user-id-cell">
+                  <span class="traffic-user-id-num">{{ u.user_id }}</span>
+                  <RouterLink
+                    class="ref-open-in-list"
+                    :to="{
+                      path: '/admin/users/analytics',
+                      query: { highlight: String(u.user_id) },
+                    }"
+                    title="Открыть пользователя в таблице клиентов"
+                    aria-label="Перейти к пользователю в таблице клиентов"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" x2="21" y1="14" y2="3" /></svg>
+                  </RouterLink>
+                  <span
+                    v-if="u.telegram_id && String(u.telegram_id).trim()"
+                    class="traffic-user-meta"
+                    :title="`Telegram ID: ${u.telegram_id}`"
+                    >tg: {{ u.telegram_id }}</span
+                  >
+                </span>
+              </td>
               <td class="num">{{ formatTrafficMib(u.down_bytes) }}</td>
               <td class="num">{{ formatTrafficMib(u.up_bytes) }}</td>
               <td class="num">{{ formatTrafficMib(u.total_bytes) }}</td>
@@ -1338,6 +1359,42 @@ onBeforeUnmount(() => {
 }
 .traffic-users-table .num {
   text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.traffic-user-id-cell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.12rem 0.35rem;
+}
+.traffic-user-id-num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.ref-open-in-list {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-left: 0.1rem;
+  padding: 0.12rem;
+  border-radius: 6px;
+  color: var(--accent);
+  line-height: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.ref-open-in-list:hover {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--text-h);
+}
+.ref-open-in-list:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.traffic-user-meta {
+  flex-basis: 100%;
+  font-size: 0.72rem;
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 .traffic-users-table tbody tr:last-child td {
