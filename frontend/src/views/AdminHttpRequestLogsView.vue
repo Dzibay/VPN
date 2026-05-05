@@ -13,6 +13,8 @@ const limit = ref(50)
 const offset = ref(0)
 const filterUserId = ref('')
 const onlyWithoutUser = ref(false)
+const filterStatusCode = ref('')
+const filterSubjectSource = ref('')
 
 const loading = ref(false)
 const error = ref(null)
@@ -75,6 +77,14 @@ function buildQueryForUrl(overrides = {}) {
   if (onlyWithoutUser.value) {
     q.only_without_user = '1'
   }
+  const status = String(filterStatusCode.value ?? '').trim()
+  if (status) {
+    q.status_code = status
+  }
+  const source = String(filterSubjectSource.value ?? '').trim()
+  if (source) {
+    q.subject_source = source
+  }
   return q
 }
 
@@ -95,6 +105,16 @@ async function syncFromRoute() {
     q.only_without_user === '1' ||
     q.only_without_user === 'true' ||
     q.only_without_user === true
+  const statusCodeRaw = q.status_code
+  if (statusCodeRaw != null && String(statusCodeRaw).trim() !== '') {
+    const n = Number.parseInt(String(statusCodeRaw), 10)
+    filterStatusCode.value =
+      Number.isFinite(n) && n >= 100 && n <= 599 ? String(n) : ''
+  } else {
+    filterStatusCode.value = ''
+  }
+  const sourceRaw = q.subject_source
+  filterSubjectSource.value = sourceRaw != null ? String(sourceRaw).trim() : ''
   const lim = q.limit != null ? Number.parseInt(String(q.limit), 10) : 50
   limit.value =
     Number.isFinite(lim) && lim >= 1 && lim <= 200 ? lim : 50
@@ -112,6 +132,14 @@ async function syncFromRoute() {
   }
   if (onlyWithoutUser.value) {
     params.set('only_without_user', 'true')
+  }
+  const statusTrim = String(filterStatusCode.value ?? '').trim()
+  if (statusTrim) {
+    params.set('status_code', statusTrim)
+  }
+  const sourceTrim = String(filterSubjectSource.value ?? '').trim()
+  if (sourceTrim) {
+    params.set('subject_source', sourceTrim)
   }
   try {
     const data = await fetchJson(
@@ -136,6 +164,8 @@ function applyFilters() {
 function resetFilters() {
   filterUserId.value = ''
   onlyWithoutUser.value = false
+  filterStatusCode.value = ''
+  filterSubjectSource.value = ''
   limit.value = 50
   router.replace({ path: '/admin/logs', query: {} })
 }
@@ -169,6 +199,24 @@ const rangeLabel = computed(() => {
 const canNext = computed(
   () => offset.value + page.value.items.length < page.value.total,
 )
+
+const sourceFilterOptions = computed(() => {
+  const common = [
+    'subscription_token',
+    'anonymous',
+    'jwt_admin',
+    'jwt_manager',
+    'jwt_user',
+    'login_password',
+    'register_email',
+    'telegram_bot_topic_lookup',
+    'telegram_bot_profile_patch',
+  ]
+  const dynamic = page.value.items
+    .map((r) => String(r.subject_source ?? '').trim())
+    .filter((v) => v.length > 0)
+  return Array.from(new Set([...common, ...dynamic]))
+})
 
 const logRows = computed(() => page.value.items)
 
@@ -231,6 +279,38 @@ watch(
             <span class="f-switch-title">Только анонимные</span>
             <span class="f-switch-hint">Строки без user_id в журнале</span>
           </span>
+        </label>
+        <label class="f-label narrow">
+          <span>Статус</span>
+          <select v-model="filterStatusCode" class="f-select">
+            <option value="">любой</option>
+            <option value="200">200</option>
+            <option value="201">201</option>
+            <option value="204">204</option>
+            <option value="301">301</option>
+            <option value="302">302</option>
+            <option value="400">400</option>
+            <option value="401">401</option>
+            <option value="403">403</option>
+            <option value="404">404</option>
+            <option value="422">422</option>
+            <option value="500">500</option>
+            <option value="502">502</option>
+            <option value="503">503</option>
+          </select>
+        </label>
+        <label class="f-label">
+          <span>Источник</span>
+          <select v-model="filterSubjectSource" class="f-select">
+            <option value="">любой</option>
+            <option
+              v-for="source in sourceFilterOptions"
+              :key="source"
+              :value="source"
+            >
+              {{ source }}
+            </option>
+          </select>
         </label>
         <label class="f-label narrow">
           <span>Строк на странице</span>

@@ -220,6 +220,40 @@ async def subscription_base64_by_token(
 
 
 @router.get(
+    "/sub/{subscription_token}/clash",
+    summary="Подписка в формате Clash YAML (явный путь); метаданные в заголовках",
+    response_class=Response,
+)
+async def subscription_clash_by_token(
+    request: Request,
+    session: SessionDep,
+    subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
+) -> Response:
+    user = await user_by_subscription_token(session, subscription_token)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Неизвестный токен")
+    device_ok = await subscription_maybe_register_device(
+        session=session, request=request, user=user, cfg=settings,
+    )
+    _payload, user, rows = await subscription_payload_rows_for_resolved_user(
+        session,
+        user,
+        device_allowed=device_ok,
+    )
+    headers = await subscription_client_metadata_headers(
+        session,
+        user,
+        device_limit_rejected=not device_ok,
+    )
+    yaml_body = build_clash_subscription_yaml(user, rows)
+    return Response(
+        content=yaml_body,
+        media_type="text/yaml; charset=utf-8",
+        headers=headers,
+    )
+
+
+@router.get(
     "/sub/{subscription_token}/json",
     response_model=SubscriptionPayload,
     summary="Подписка в формате JSON; метаданные дублируются в заголовках ответа",

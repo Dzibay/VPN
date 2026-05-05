@@ -21,7 +21,7 @@ router = APIRouter(
 @router.get(
     "",
     response_model=HttpRequestTraceStaffPage,
-    summary="Логи (пагинация, фильтр по user_id или только без пользователя)",
+    summary="Логи (пагинация, фильтры: user_id, анонимные, status_code, subject_source)",
 )
 async def list_http_request_traces(
     session: ReadonlySessionDep,
@@ -35,6 +35,18 @@ async def list_http_request_traces(
         bool,
         Query(description="Только строки без user_id (анонимные / не привязанные)"),
     ] = False,
+    status_code: Annotated[
+        int | None,
+        Query(ge=100, le=599, description="Фильтр по HTTP status code"),
+    ] = None,
+    subject_source: Annotated[
+        str | None,
+        Query(
+            min_length=1,
+            max_length=64,
+            description="Фильтр по источнику определения user_id (subject_source)",
+        ),
+    ] = None,
 ) -> HttpRequestTraceStaffPage:
     if user_id is not None and only_without_user:
         raise BadRequestError(
@@ -47,6 +59,8 @@ async def list_http_request_traces(
         offset=offset,
         user_id=user_id,
         only_without_user=only_without_user,
+        status_code=status_code,
+        subject_source=subject_source,
     )
     return HttpRequestTraceStaffPage(
         items=[HttpRequestTraceStaffItem.model_validate(r) for r in rows],
