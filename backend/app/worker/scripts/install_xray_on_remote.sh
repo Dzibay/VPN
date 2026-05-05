@@ -88,6 +88,7 @@ port = int(os.environ["VPN_SERVER_PORT"])
 api_port = int(os.environ.get("VPN_XRAY_API_PORT") or "10085")
 fallback_uid = os.environ["VPN_VLESS_UUID"].strip()
 flow_def = os.environ.get("VPN_VLESS_FLOW", "xtls-rprx-vision")
+inbound_tag = (os.environ.get("VPN_VLESS_INBOUND_TAG") or "vpn-vless-in").strip() or "vpn-vless-in"
 
 b64 = (os.environ.get("VPN_VLESS_CLIENTS_B64") or "").strip()
 clients = []
@@ -154,6 +155,7 @@ cfg = {
     },
     "inbounds": [
         {
+            "tag": inbound_tag,
             "listen": "0.0.0.0",
             "port": port,
             "protocol": "vless",

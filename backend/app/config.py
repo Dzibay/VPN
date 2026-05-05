@@ -195,6 +195,32 @@ class Settings(BaseSettings):
         default="/usr/local/bin/xray",
         description="Путь к бинарнику xray на удалённом узле (команда api statsquery).",
     )
+    xray_vless_inbound_tag: str = Field(
+        default="vpn-vless-in",
+        description=(
+            "Тег основного VLESS inbound в config.json на узле; используется ``xray api inbounduser/adu/rmu``. "
+            "Должен совпадать с тем, что пишет провижининг (VPN_VLESS_INBOUND_TAG)."
+        ),
+    )
+    xray_dynamic_client_sync_enabled: bool = Field(
+        default=True,
+        description=(
+            "Сначала выравнивать список клиентов через ``xray api`` (inbounduser → rmu/adu) без рестарта; "
+            "при ошибке в лог пишется причина и выполняется полный sync_clients (как раньше)."
+        ),
+    )
+    xray_api_operation_timeout_seconds: int = Field(
+        default=120,
+        ge=5,
+        le=900,
+        description="Таймаут (-timeout) одного вызова ``xray api`` на узле (inbounduser, adu, rmu).",
+    )
+    xray_sync_all_servers_parallelism: int = Field(
+        default=4,
+        ge=1,
+        le=32,
+        description="Параллельных узлов в одной RQ-задаче sync_xray_clients_all_servers (разные server_id).",
+    )
     xray_stats_ssh_timeout_seconds: float = Field(
         default=120.0,
         ge=5.0,
@@ -239,7 +265,8 @@ class Settings(BaseSettings):
         default=True,
         description=(
             "Планировщик API: раз в сутки (локальное время процесса) ставить в очередь RQ "
-            "полную синхронизацию списка клиентов Xray на всех узлах (активные подписки из БД)."
+            "синхронизацию клиентов Xray на всех узлах: перебор узлов через тот же путь, что и при регистрации "
+            "(динамический diff без рестарта при возможности и полная перезапись config для согласованности)."
         ),
     )
     subscription_daily_xray_clients_sync_hour_local: int = Field(

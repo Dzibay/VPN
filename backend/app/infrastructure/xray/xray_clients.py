@@ -70,10 +70,11 @@ def vless_client_uuids_csv_for_server(session: Session, server: Server) -> str:
     return ",".join(uuids)
 
 
-def vless_clients_b64_for_server(session: Session, server: Server) -> str:
+def vless_client_entries_for_server(session: Session, server: Server) -> list[dict[str, object]]:
     """
-    Base64 JSON массива клиентов: id (uuid), email u{id}@vpn, flow, level 0.
-    Для Stats API Xray нужен email на клиенте.
+    Клиенты VLESS для inbound: активные подписки + UUID каскадных входов на exit + fallback узла.
+
+    Поля совместимы с Xray API ``adu`` / внутренним JSON clients.
     """
     flow = (server.vless_flow or "xtls-rprx-vision").strip() or "xtls-rprx-vision"
     entries: list[dict[str, object]] = []
@@ -125,5 +126,14 @@ def vless_clients_b64_for_server(session: Session, server: Server) -> str:
                     "level": 0,
                 }
             )
+    return entries
+
+
+def vless_clients_b64_for_server(session: Session, server: Server) -> str:
+    """
+    Base64 JSON массива клиентов: id (uuid), email u{id}@vpn, flow, level 0.
+    Для Stats API Xray нужен email на клиенте.
+    """
+    entries = vless_client_entries_for_server(session, server)
     raw = json.dumps(entries, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return base64.b64encode(raw).decode("ascii")

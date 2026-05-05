@@ -11,6 +11,7 @@ import os
 import shlex
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -26,6 +27,7 @@ from app.infrastructure.xray.xray_clients import (
     vless_client_uuids_csv_for_server,
     vless_clients_b64_for_server,
 )
+from app.infrastructure.xray.xray_dynamic_sync import try_dynamic_xray_client_sync
 from app.infrastructure.xray.xray_stats_collect import collect_xray_traffic_for_server
 
 log = logging.getLogger("worker.provision")
@@ -118,11 +120,13 @@ def _node_exporter_env_lines(*, force_install: bool | None) -> str:
 def _xray_env_lines(db: Session, server: Server) -> str:
     uuids_csv = vless_client_uuids_csv_for_server(db, server)
     clients_b64 = vless_clients_b64_for_server(db, server)
+    inbound_tag = (settings.xray_vless_inbound_tag or "vpn-vless-in").strip() or "vpn-vless-in"
     remote_env = (
         f"export VPN_SERVER_PORT={server.port}\n"
         f"export VPN_SERVER_ID={server.id}\n"
         f"export VPN_XRAY_INSTALLER_URL={shlex.quote(settings.provision_xray_installer_url)}\n"
         f"export VPN_VLESS_UUID={shlex.quote(server.vless_uuid)}\n"
+        f"export VPN_VLESS_INBOUND_TAG={shlex.quote(inbound_tag)}\n"
         f"export VPN_VLESS_CLIENT_UUIDS={shlex.quote(uuids_csv)}\n"
         f"export VPN_VLESS_CLIENTS_B64={shlex.quote(clients_b64)}\n"
         f"export VPN_XRAY_API_PORT={int(settings.xray_remote_api_port)}\n"
@@ -335,8 +339,10 @@ def install_server_software(
 
 def sync_xray_clients_to_server(server_id: int) -> None:
     """
-    Перезаписать inbound Xray на узле: список UUID = активные подписки (или fallback UUID узла).
-    Не трогает provision_status и не требует очереди провижининга.
+    Синхронизировать клиентов VLESS на узле с БД.
+
+    По умолчанию: динамически через ``xray api`` (rmu/adu), без рестарта; при недоступности API,
+    большом диффе или отключении в настройках — полная перезапись config и restart.
     """
     db: Session = SessionLocal()
     try:
@@ -360,6 +366,14 @@ def sync_xray_clients_to_server(server_id: int) -> None:
             raise RuntimeError(
                 "Задан provision_command: SSH-синхронизация списка клиентов Xray недоступна",
             )
+        dyn_ok, dyn_err = try_dynamic_xray_client_sync(db, server)
+        if dyn_ok:
+            return
+        if dyn_err:
+            log.error(
+                "sync_xray_clients: динамическое обновление не удалось — %s. Выполняется полное (config + restart).",
+                dyn_err,
+            )
         _run_ssh_remote_provision(db, server, component="sync_clients")
     finally:
         db.close()
@@ -369,8 +383,8 @@ def sync_xray_clients_all_servers() -> None:
     """
     Обновить inbound на всех узлах с provision_ready.
 
-    При очень большом числе пользователей узкое место — выборка всех UUID в память
-    и размер конфига на узле; коалесцинг задач в очереди см. ``app.domain.users.xray_sync_queue``.
+    На узлах как у ``sync_xray_clients_to_server`` (динамика → при сбое полный sync). Разным server_id можно
+    идти параллельно (``xray_sync_all_servers_parallelism``).
     """
     db = SessionLocal()
     try:
@@ -379,12 +393,30 @@ def sync_xray_clients_all_servers() -> None:
     finally:
         db.close()
     errors: list[str] = []
-    for sid in ids:
-        try:
-            sync_xray_clients_to_server(sid)
-        except Exception as e:
-            errors.append(f"{sid}: {e!s}")
-            log.exception("sync_xray_clients_all: server_id=%s", sid)
+    if not ids:
+        return
+    workers = max(1, min(int(settings.xray_sync_all_servers_parallelism), len(ids)))
+
+    def _run_one(sid: int) -> None:
+        sync_xray_clients_to_server(sid)
+
+    if workers <= 1:
+        for sid in ids:
+            try:
+                _run_one(sid)
+            except Exception as e:
+                errors.append(f"{sid}: {e!s}")
+                log.exception("sync_xray_clients_all: server_id=%s", sid)
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            fut_map = {pool.submit(_run_one, sid): sid for sid in ids}
+            for fut in as_completed(fut_map):
+                sid = fut_map[fut]
+                try:
+                    fut.result()
+                except Exception as e:
+                    errors.append(f"{sid}: {e!s}")
+                    log.exception("sync_xray_clients_all: server_id=%s", sid)
     if errors:
         raise RuntimeError("; ".join(errors[:24]))
 

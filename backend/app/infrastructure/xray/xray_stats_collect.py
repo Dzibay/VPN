@@ -48,7 +48,15 @@ def _ssh_key_file_hint() -> str | None:
     if not key:
         return None
     p = Path(key).expanduser()
-    if not p.is_file():
+    try:
+        is_reg = p.is_file()
+    except OSError as exc:
+        return (
+            f"Не удалось открыть ключ SSH по PROVISION_SSH_KEY_PATH «{key}»: {exc}. "
+            "В Docker воркер обычно UID 10001 — на хосте: chown -R 10001:10001 каталога с ключом, "
+            "chmod 0700 на каталоге и 0600 на файле ключа (см. комментарий к сервису worker в deploy/docker-compose.yml)."
+        )
+    if not is_reg:
         return (
             f"PROVISION_SSH_KEY_PATH указывает на отсутствующий файл «{key}». "
             "Укажите тот же путь к приватному ключу, что на машине воркера (где работает SSH к узлам)."
