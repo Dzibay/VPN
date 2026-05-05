@@ -18,7 +18,6 @@ class HttpRequestTraceStaffItem(BaseModel):
     path: str
     status_code: int
     duration_ms: float = Field(description="Длительность запроса, мс")
-    client_ip: str
     created_at: datetime
 
 

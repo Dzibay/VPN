@@ -180,7 +180,6 @@ const httpTraceSortAccessors = {
   path: (r) => String(r.path ?? '').toLowerCase(),
   status_code: (r) => Number(r.status_code) || 0,
   duration_ms: (r) => Number(r.duration_ms) || 0,
-  client_ip: (r) => String(r.client_ip ?? '').toLowerCase(),
   request_id: (r) => String(r.request_id ?? '').toLowerCase(),
 }
 
@@ -330,13 +329,6 @@ watch(
               @sort="toggleSort"
             />
             <AdminSortTh
-              label="IP"
-              column-key="client_ip"
-              :sort-key="sortKey"
-              :sort-dir="sortDir"
-              @sort="toggleSort"
-            />
-            <AdminSortTh
               label="RID"
               column-key="request_id"
               :sort-key="sortKey"
@@ -347,7 +339,7 @@ watch(
         </thead>
         <tbody>
           <tr v-if="sortedRows.length === 0">
-            <td colspan="9" class="muted center">Нет строк</td>
+            <td colspan="8" class="muted center">Нет строк</td>
           </tr>
           <tr v-for="row in sortedRows" :key="row.id">
             <td
@@ -372,7 +364,6 @@ watch(
             </td>
             <td class="mono num">{{ row.status_code }}</td>
             <td class="mono num">{{ Number(row.duration_ms).toFixed(1) }}</td>
-            <td class="mono ip-cell">{{ row.client_ip }}</td>
             <td class="mono rid-cell" :title="row.request_id">
               {{
                 row.request_id.length > 12
@@ -596,12 +587,6 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.ip-cell {
-  max-width: 7rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .rid-cell {

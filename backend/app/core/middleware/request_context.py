@@ -128,7 +128,6 @@ class RequestContextMiddleware:
                     http_method=str(scope.get("method", "?")),
                     status_code=status_code,
                     duration_ms=audit_ms,
-                    client_ip=_client_host(scope),
                 )
             except Exception:
                 log.exception("Не удалось завершить запись аудита HTTP")

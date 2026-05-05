@@ -130,7 +130,6 @@ CREATE TABLE IF NOT EXISTS user_http_request_traces (
     path TEXT NOT NULL,
     status_code INTEGER NOT NULL,
     duration_ms DOUBLE PRECISION NOT NULL,
-    client_ip TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -140,3 +139,6 @@ CREATE INDEX IF NOT EXISTS idx_user_http_request_traces_user_created_at
 
 CREATE INDEX IF NOT EXISTS idx_user_http_request_traces_created_at
     ON user_http_request_traces (created_at DESC);
+
+-- Удаление client_ip у старых инстансов (за прокси колонка не информативна)
+ALTER TABLE user_http_request_traces DROP COLUMN IF EXISTS client_ip;
