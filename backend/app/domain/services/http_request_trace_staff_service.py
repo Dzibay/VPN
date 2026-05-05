@@ -15,19 +15,18 @@ async def staff_list_http_request_traces(
     offset: int,
     user_id: int | None,
     only_without_user: bool,
-    status_code: int | None,
-    subject_source: str | None,
+    status_codes: list[int] | None,
+    subject_sources: list[str] | None,
 ) -> tuple[list[UserHttpRequestTrace], int]:
     filters: list = []
     if user_id is not None:
         filters.append(UserHttpRequestTrace.user_id == user_id)
     elif only_without_user:
         filters.append(UserHttpRequestTrace.user_id.is_(None))
-    if status_code is not None:
-        filters.append(UserHttpRequestTrace.status_code == status_code)
-    src = (subject_source or "").strip()
-    if src:
-        filters.append(UserHttpRequestTrace.subject_source == src)
+    if status_codes:
+        filters.append(UserHttpRequestTrace.status_code.in_(status_codes))
+    if subject_sources:
+        filters.append(UserHttpRequestTrace.subject_source.in_(subject_sources))
 
     cnt_q = select(func.count(UserHttpRequestTrace.id))
     list_q = select(UserHttpRequestTrace).order_by(UserHttpRequestTrace.created_at.desc())

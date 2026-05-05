@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
+import MultiSelectDropdown from '../components/MultiSelectDropdown.vue'
 import { fetchJson } from '../api/client.js'
 import { getSessionRole } from '../auth/session.js'
 import { useTableSort } from '../utils/adminTableSort.js'
@@ -13,9 +14,8 @@ const router = useRouter()
 const limit = ref(50)
 const offset = ref(0)
 const filterUserId = ref('')
-const onlyWithoutUser = ref(false)
-const filterStatusCode = ref('')
-const filterSubjectSource = ref('')
+const filterStatusCodes = ref([])
+const filterSubjectSources = ref([])
 
 const loading = ref(false)
 const error = ref(null)
@@ -77,18 +77,20 @@ function buildQueryForUrl(overrides = {}) {
   if (uid) {
     q.user_id = uid
   }
-  if (onlyWithoutUser.value) {
-    q.only_without_user = '1'
+  if (filterStatusCodes.value.length > 0) {
+    q.status_code = [...filterStatusCodes.value]
   }
-  const status = String(filterStatusCode.value ?? '').trim()
-  if (status) {
-    q.status_code = status
-  }
-  const source = String(filterSubjectSource.value ?? '').trim()
-  if (source) {
-    q.subject_source = source
+  if (filterSubjectSources.value.length > 0) {
+    q.subject_source = [...filterSubjectSources.value]
   }
   return q
+}
+
+function queryValues(raw) {
+  if (Array.isArray(raw)) return raw.map((v) => String(v).trim()).filter(Boolean)
+  if (raw == null) return []
+  const s = String(raw).trim()
+  return s ? [s] : []
 }
 
 async function syncFromRoute() {
@@ -104,20 +106,11 @@ async function syncFromRoute() {
   } else {
     filterUserId.value = ''
   }
-  onlyWithoutUser.value =
-    q.only_without_user === '1' ||
-    q.only_without_user === 'true' ||
-    q.only_without_user === true
-  const statusCodeRaw = q.status_code
-  if (statusCodeRaw != null && String(statusCodeRaw).trim() !== '') {
-    const n = Number.parseInt(String(statusCodeRaw), 10)
-    filterStatusCode.value =
-      Number.isFinite(n) && n >= 100 && n <= 599 ? String(n) : ''
-  } else {
-    filterStatusCode.value = ''
-  }
-  const sourceRaw = q.subject_source
-  filterSubjectSource.value = sourceRaw != null ? String(sourceRaw).trim() : ''
+  filterStatusCodes.value = queryValues(q.status_code).filter((v) => {
+    const n = Number.parseInt(v, 10)
+    return Number.isFinite(n) && n >= 100 && n <= 599
+  })
+  filterSubjectSources.value = queryValues(q.subject_source).slice(0, 20)
   const lim = q.limit != null ? Number.parseInt(String(q.limit), 10) : 50
   limit.value =
     Number.isFinite(lim) && lim >= 1 && lim <= 200 ? lim : 50
@@ -133,17 +126,8 @@ async function syncFromRoute() {
   if (uidTrim) {
     params.set('user_id', uidTrim)
   }
-  if (onlyWithoutUser.value) {
-    params.set('only_without_user', 'true')
-  }
-  const statusTrim = String(filterStatusCode.value ?? '').trim()
-  if (statusTrim) {
-    params.set('status_code', statusTrim)
-  }
-  const sourceTrim = String(filterSubjectSource.value ?? '').trim()
-  if (sourceTrim) {
-    params.set('subject_source', sourceTrim)
-  }
+  for (const status of filterStatusCodes.value) params.append('status_code', status)
+  for (const source of filterSubjectSources.value) params.append('subject_source', source)
   try {
     const data = await fetchJson(
       `/api/admin/http-request-traces?${params.toString()}`,
@@ -166,9 +150,8 @@ function applyFilters() {
 
 function resetFilters() {
   filterUserId.value = ''
-  onlyWithoutUser.value = false
-  filterStatusCode.value = ''
-  filterSubjectSource.value = ''
+  filterStatusCodes.value = []
+  filterSubjectSources.value = []
   limit.value = 50
   router.replace({ path: '/admin/logs', query: {} })
 }
@@ -258,6 +241,21 @@ const sourceFilterOptions = computed(() => {
     .filter((v) => v.length > 0)
   return Array.from(new Set([...common, ...dynamic]))
 })
+const statusFilterOptions = [
+  '200',
+  '201',
+  '204',
+  '301',
+  '302',
+  '400',
+  '401',
+  '403',
+  '404',
+  '422',
+  '500',
+  '502',
+  '503',
+]
 
 const logRows = computed(() => page.value.items)
 const canDeleteLogs = computed(() => getSessionRole() === 'admin')
@@ -310,57 +308,23 @@ watch(
             autocomplete="off"
             class="f-input"
             placeholder="любой"
-            :disabled="onlyWithoutUser"
           />
-        </label>
-        <label
-          class="f-switch"
-          :class="{ 'f-switch--on': onlyWithoutUser }"
-        >
-          <input
-            v-model="onlyWithoutUser"
-            type="checkbox"
-            class="f-switch-native"
-          />
-          <span class="f-switch-track" aria-hidden="true">
-            <span class="f-switch-thumb" />
-          </span>
-          <span class="f-switch-text">
-            <span class="f-switch-title">Только анонимные</span>
-            <span class="f-switch-hint">Строки без user_id в журнале</span>
-          </span>
         </label>
         <label class="f-label narrow">
           <span>Статус</span>
-          <select v-model="filterStatusCode" class="f-select">
-            <option value="">любой</option>
-            <option value="200">200</option>
-            <option value="201">201</option>
-            <option value="204">204</option>
-            <option value="301">301</option>
-            <option value="302">302</option>
-            <option value="400">400</option>
-            <option value="401">401</option>
-            <option value="403">403</option>
-            <option value="404">404</option>
-            <option value="422">422</option>
-            <option value="500">500</option>
-            <option value="502">502</option>
-            <option value="503">503</option>
-          </select>
+          <MultiSelectDropdown
+            v-model="filterStatusCodes"
+            :options="statusFilterOptions"
+            all-label="любой"
+          />
         </label>
         <label class="f-label">
           <span>Источник</span>
-          <select v-model="filterSubjectSource" class="f-select">
-            <option value="">любой</option>
-            <option
-              v-for="source in sourceFilterOptions"
-              :key="source"
-              :value="source"
-            >
-              {{ source }}
-            </option>
-          </select>
+          <MultiSelectDropdown
+            v-model="filterSubjectSources"
+            :options="sourceFilterOptions"
+            all-label="любой"
+          />
         </label>
         <label class="f-label narrow">
           <span>Строк на странице</span>
@@ -552,137 +516,6 @@ watch(
 
 .f-input {
   width: 7rem;
-}
-
-/* Переключатель «без user_id»: switch + текст */
-.f-switch {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.65rem;
-  margin: 0;
-  cursor: pointer;
-  user-select: none;
-  padding: 0.4rem 0.75rem 0.45rem;
-  border-radius: 999px;
-  border: 1px solid var(--card-border);
-  background: linear-gradient(
-    165deg,
-    color-mix(in srgb, var(--surface) 92%, transparent) 0%,
-    color-mix(in srgb, var(--card-bg) 88%, transparent) 100%
-  );
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
-  transition:
-    border-color 0.2s ease,
-    background 0.2s ease,
-    box-shadow 0.2s ease;
-}
-
-.f-switch:hover {
-  border-color: var(--accent-border, var(--accent));
-}
-
-.f-switch--on {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--card-border));
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.05),
-    0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
-}
-
-.f-switch-native {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.f-switch-track {
-  position: relative;
-  flex-shrink: 0;
-  width: 2.65rem;
-  height: 1.45rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--muted) 28%, var(--surface));
-  border: 1px solid var(--card-border);
-  transition:
-    background 0.2s ease,
-    border-color 0.2s ease;
-}
-
-.f-switch--on .f-switch-track {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--accent-hover) 90%, transparent),
-    color-mix(in srgb, var(--accent) 94%, transparent)
-  );
-  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
-}
-
-.f-switch:focus-visible {
-  outline: none;
-}
-
-.f-switch:focus-visible .f-switch-track {
-  box-shadow:
-    0 0 0 2px var(--surface),
-    0 0 0 4px var(--accent);
-}
-
-.f-switch-thumb {
-  position: absolute;
-  top: 50%;
-  left: 0.12rem;
-  width: 1.06rem;
-  height: 1.06rem;
-  border-radius: 50%;
-  background: linear-gradient(
-    180deg,
-    var(--surface) 0%,
-    color-mix(in srgb, var(--surface) 78%, rgb(220 220 230)) 100%
-  );
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 0.2),
-    0 0 1px rgb(0 0 0 / 0.12);
-  transform: translateY(-50%);
-  transition: left 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.f-switch--on .f-switch-thumb {
-  left: calc(100% - 0.12rem - 1.06rem);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .f-switch-track,
-  .f-switch-thumb,
-  .f-switch {
-    transition: none;
-  }
-}
-
-.f-switch-text {
-  display: flex;
-  flex-direction: column;
-  gap: 0.08rem;
-  line-height: 1.22;
-}
-
-.f-switch-title {
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--text-h);
-  letter-spacing: -0.015em;
-}
-
-.f-switch-hint {
-  font-size: 0.68rem;
-  font-weight: 500;
-  color: var(--muted);
-  letter-spacing: 0.02em;
 }
 
 .pager-top {

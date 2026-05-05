@@ -34,7 +34,7 @@ router = APIRouter(
 @router.get(
     "",
     response_model=HttpRequestTraceStaffPage,
-    summary="Логи (пагинация, фильтры: user_id, анонимные, status_code, subject_source)",
+    summary="Логи (пагинация, фильтры: user_id, анонимные, status_code[], subject_source[])",
 )
 async def list_http_request_traces(
     session: ReadonlySessionDep,
@@ -49,16 +49,12 @@ async def list_http_request_traces(
         Query(description="Только строки без user_id (анонимные / не привязанные)"),
     ] = False,
     status_code: Annotated[
-        int | None,
-        Query(ge=100, le=599, description="Фильтр по HTTP status code"),
+        list[int] | None,
+        Query(description="Фильтр по HTTP status code (можно несколько значений)"),
     ] = None,
     subject_source: Annotated[
-        str | None,
-        Query(
-            min_length=1,
-            max_length=64,
-            description="Фильтр по источнику определения user_id (subject_source)",
-        ),
+        list[str] | None,
+        Query(description="Фильтр по источнику определения user_id (можно несколько)"),
     ] = None,
 ) -> HttpRequestTraceStaffPage:
     if user_id is not None and only_without_user:
@@ -66,14 +62,27 @@ async def list_http_request_traces(
             "Нельзя одновременно указывать user_id и only_without_user",
         )
 
+    status_codes = sorted({v for v in (status_code or []) if 100 <= int(v) <= 599})
+    if (status_code or []) and not status_codes:
+        raise BadRequestError("Некорректный status_code")
+    subject_sources = []
+    for raw in subject_source or []:
+        s = str(raw).strip()
+        if not s:
+            continue
+        if len(s) > 64:
+            raise BadRequestError("subject_source должен быть не длиннее 64 символов")
+        subject_sources.append(s)
+    subject_sources = sorted(set(subject_sources))
+
     rows, total = await staff_list_http_request_traces(
         session,
         limit=limit,
         offset=offset,
         user_id=user_id,
         only_without_user=only_without_user,
-        status_code=status_code,
-        subject_source=subject_source,
+        status_codes=status_codes or None,
+        subject_sources=subject_sources or None,
     )
     return HttpRequestTraceStaffPage(
         items=[HttpRequestTraceStaffItem.model_validate(r) for r in rows],
