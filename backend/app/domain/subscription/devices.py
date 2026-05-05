@@ -84,6 +84,10 @@ async def register_or_touch_subscription_device(
 
     :returns: ``True``, если клиенту можно выдавать узлы (известное устройство или успешная регистрация).
     """
+    # Без User-Agent не фиксируем устройство (превью ссылки, скрейперы и т.п.).
+    if _norm_header(request.headers, "user-agent") is None:
+        return True
+
     fingerprint = subscription_device_fingerprint(request)
     limit = effective_subscription_device_limit(settings)
 
