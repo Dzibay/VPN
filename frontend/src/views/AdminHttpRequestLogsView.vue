@@ -180,7 +180,6 @@ const httpTraceSortAccessors = {
   path: (r) => String(r.path ?? '').toLowerCase(),
   status_code: (r) => Number(r.status_code) || 0,
   duration_ms: (r) => Number(r.duration_ms) || 0,
-  request_id: (r) => String(r.request_id ?? '').toLowerCase(),
 }
 
 const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(
@@ -200,7 +199,6 @@ watch(
 <template>
   <AdminStaffShell
     title="Логи"
-    shell-class="admin-http-logs-shell"
   >
     <template #headerExtras>
       <div class="filters glass">
@@ -328,18 +326,11 @@ watch(
               :sort-dir="sortDir"
               @sort="toggleSort"
             />
-            <AdminSortTh
-              label="RID"
-              column-key="request_id"
-              :sort-key="sortKey"
-              :sort-dir="sortDir"
-              @sort="toggleSort"
-            />
           </tr>
         </thead>
         <tbody>
           <tr v-if="sortedRows.length === 0">
-            <td colspan="8" class="muted center">Нет строк</td>
+            <td colspan="7" class="muted center">Нет строк</td>
           </tr>
           <tr v-for="row in sortedRows" :key="row.id">
             <td
@@ -357,20 +348,13 @@ watch(
             </td>
             <td>{{ row.subject_source }}</td>
             <td class="mono">{{ row.http_method }}</td>
-            <td class="path-cell mono">
+            <td class="mono">
               <span class="path-cell-inner" :title="fullHttpTracePath(row.path)">{{
                 row.path
               }}</span>
             </td>
             <td class="mono num">{{ row.status_code }}</td>
             <td class="mono num">{{ Number(row.duration_ms).toFixed(1) }}</td>
-            <td class="mono rid-cell" :title="row.request_id">
-              {{
-                row.request_id.length > 12
-                  ? `${row.request_id.slice(0, 8)}…`
-                  : row.request_id
-              }}
-            </td>
           </tr>
         </tbody>
       </table>
@@ -379,10 +363,6 @@ watch(
 </template>
 
 <style scoped>
-.admin-http-logs-shell {
-  max-width: min(100%, 1680px);
-}
-
 .filters {
   display: flex;
   flex-wrap: wrap;
@@ -576,83 +556,24 @@ watch(
 
 .http-trace-table {
   font-size: 0.82rem;
-  table-layout: fixed;
   width: 100%;
+  max-width: 100%;
 }
 
-/* Узкие служебные колонки — больше места под путь */
-.http-trace-table th:nth-child(1),
-.http-trace-table td:nth-child(1) {
-  width: 5rem;
-  box-sizing: border-box;
-}
-
-.http-trace-table th:nth-child(2),
-.http-trace-table td:nth-child(2) {
-  width: 3.25rem;
-  box-sizing: border-box;
-}
-
-.http-trace-table th:nth-child(3),
-.http-trace-table td:nth-child(3) {
-  width: 6.5rem;
-  max-width: 6.5rem;
-  box-sizing: border-box;
-}
-
-.http-trace-table td:nth-child(3) {
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* Короткие колонки — без переноса, ширина по содержимому */
+.http-trace-table :is(th, td):nth-child(1),
+.http-trace-table :is(th, td):nth-child(2),
+.http-trace-table :is(th, td):nth-child(3),
+.http-trace-table :is(th, td):nth-child(4),
+.http-trace-table :is(th, td):nth-child(6),
+.http-trace-table :is(th, td):nth-child(7) {
   white-space: nowrap;
+  width: 1%;
 }
 
-.http-trace-table th:nth-child(4),
-.http-trace-table td:nth-child(4) {
-  width: 4.25rem;
-  box-sizing: border-box;
-}
-
-.http-trace-table th:nth-child(4),
-.http-trace-table td:nth-child(4),
-.http-trace-table th:nth-child(2),
-.http-trace-table td:nth-child(2) {
-  white-space: nowrap;
-}
-
-/* Путь: полный текст, перенос на следующие строки при необходимости */
-.http-trace-table th:nth-child(5),
-.http-trace-table td:nth-child(5) {
-  width: 50%;
-  min-width: 0;
-  box-sizing: border-box;
-}
-
-.http-trace-table th:nth-child(6),
-.http-trace-table td:nth-child(6) {
-  width: 2.75rem;
-  box-sizing: border-box;
-}
-
-.http-trace-table th:nth-child(7),
-.http-trace-table td:nth-child(7) {
-  width: 3.25rem;
-  box-sizing: border-box;
-}
-
-.http-trace-table th:nth-child(8),
-.http-trace-table td:nth-child(8) {
-  width: 4.5rem;
-  box-sizing: border-box;
-}
-
-.http-trace-table th,
-.http-trace-table td {
-  padding-left: 0.45rem;
-  padding-right: 0.45rem;
-}
-
-.path-cell {
-  min-width: 0;
+/* Колонка "Путь" занимает оставшееся пространство таблицы */
+.http-trace-table :is(th, td):nth-child(5) {
+  width: 100%;
 }
 
 .path-cell-inner {
@@ -661,10 +582,6 @@ watch(
   overflow-wrap: anywhere;
   word-break: break-word;
   line-height: 1.35;
-}
-
-.rid-cell {
-  max-width: 4.5rem;
 }
 
 .nowrap {
