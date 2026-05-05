@@ -82,10 +82,16 @@ async def register_or_touch_subscription_device(
     не регистрируется — возвращается ``False``; обработчик /sub отдаёт пустой список узлов и
     текст в заголовке ``announce``.
 
+    Запись не создаётся и не обновляется, если нет заголовков ``User-Agent`` или ``x-device-os``
+    (подписку при этом всё равно можно отдать — возвращается ``True``).
+
     :returns: ``True``, если клиенту можно выдавать узлы (известное устройство или успешная регистрация).
     """
     # Без User-Agent не фиксируем устройство (превью ссылки, скрейперы и т.п.).
     if _norm_header(request.headers, "user-agent") is None:
+        return True
+    # Без x-device-os не фиксируем (открытие /sub в браузере и клиенты без метки ОС приложения).
+    if _norm_header(request.headers, "x-device-os") is None:
         return True
 
     fingerprint = subscription_device_fingerprint(request)
