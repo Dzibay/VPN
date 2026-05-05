@@ -102,20 +102,14 @@ export function useUsersDailyStatsChart() {
       ),
   )
 
-  /** Пик «активных за день» на графике и значение за текущий календарный день UTC. */
+  /** Значение «активных за день» для текущего календарного дня UTC (как последняя точка серии на графике). */
   const activeUsersWidget = computed(() => {
     if (loading.value || error.value) {
-      return { peak: '—', today: '—' }
+      return { today: '—' }
     }
     const row = rows.value.find((r) => String(r.stats_date) === utcTodayIso())
     const todayVal = row ? Number(row.active_users_count) || 0 : 0
-    let peakVal = 0
-    for (const p of chartPoints.value) {
-      const a = Number(p.dayActive) || 0
-      if (a > peakVal) peakVal = a
-    }
     return {
-      peak: peakVal.toLocaleString('ru-RU'),
       today: todayVal.toLocaleString('ru-RU'),
     }
   })

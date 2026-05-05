@@ -72,9 +72,9 @@ onMounted(() => {
           </dd>
         </div>
         <div class="stats-card">
-          <dt class="stats-label">Активные за день</dt>
+          <dt class="stats-label">Активные сегодня (UTC)</dt>
           <dd class="stats-value stats-value--active">
-            {{ activeUsersWidget.peak }}
+            {{ activeUsersWidget.today }}
           </dd>
         </div>
         <div class="stats-card">
