@@ -6,10 +6,15 @@ from pydantic import BaseModel, Field
 
 
 class SubscriptionDeviceUserAgentStatsItem(BaseModel):
-    user_agent: str = Field(description="Значение User-Agent с устройства (как в subscription_devices)")
+    user_agent: str = Field(
+        description="User-Agent до первого «/» (например Happ из Happ/2.9/Windows)",
+    )
+    os: str = Field(
+        description="x-device-os с устройства; пустая строка, если не передавался",
+    )
     connected_users: int = Field(
         ge=0,
-        description="Число разных пользователей, у которых есть устройство с этим User-Agent",
+        description="Число разных пользователей, у которых есть устройство с этой парой UA+OS",
     )
     users_with_traffic: int = Field(
         ge=0,

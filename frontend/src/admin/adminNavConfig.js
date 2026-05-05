@@ -26,7 +26,7 @@ export const ADMIN_NAV_DEFINITION = [
     routeName: 'admin-subscription-user-agent-stats',
     label: 'Подключения',
     path: '/admin/users/subscription-user-agent-stats',
-    access: 'admin_only',
+    access: 'staff',
   },
   {
     routeName: 'admin-users-staff-analytics',

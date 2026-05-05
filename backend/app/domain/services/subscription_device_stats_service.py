@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.persistence.models.subscription_device import SubscriptionDevice
@@ -13,8 +13,9 @@ async def admin_stats_subscription_devices_by_user_agent(
     session: AsyncSession,
 ) -> list[dict[str, int | str]]:
     """
-    По каждому непустому user_agent: число пользователей с таким устройством и число из них
-    с суммарным VPN-трафиком (up_bytes + down_bytes) > 0 по всем строкам user_server_traffic.
+    По каждой паре (префикс User-Agent до первого «/», ОС из x-device-os): число пользователей
+    с таким устройством и число из них с суммарным VPN-трафиком (up_bytes + down_bytes) > 0
+    по всем строкам user_server_traffic.
     """
     traffic_users = (
         select(UserServerTraffic.user_id.label("uid"))
@@ -28,15 +29,23 @@ async def admin_stats_subscription_devices_by_user_agent(
         func.distinct(case((traffic_match, SubscriptionDevice.user_id), else_=None)),
     )
 
+    ua_prefix = func.split_part(func.trim(SubscriptionDevice.user_agent), "/", 1)
+    os_bucket = func.coalesce(
+        func.nullif(func.trim(SubscriptionDevice.os), literal("")),
+        literal(""),
+    )
+
     stmt = (
         select(
-            SubscriptionDevice.user_agent,
+            ua_prefix.label("user_agent"),
+            os_bucket.label("os"),
             func.count(func.distinct(SubscriptionDevice.user_id)).label("connected_users"),
             users_with_traffic_expr.label("users_with_traffic"),
         )
         .where(SubscriptionDevice.user_agent.is_not(None))
         .where(func.trim(SubscriptionDevice.user_agent) != "")
-        .group_by(SubscriptionDevice.user_agent)
+        .where(ua_prefix != "")
+        .group_by(ua_prefix, os_bucket)
         .order_by(func.count(func.distinct(SubscriptionDevice.user_id)).desc())
     )
 
@@ -44,8 +53,9 @@ async def admin_stats_subscription_devices_by_user_agent(
     return [
         {
             "user_agent": str(ua),
+            "os": str(os_val or ""),
             "connected_users": int(n_users or 0),
             "users_with_traffic": int(n_traffic or 0),
         }
-        for ua, n_users, n_traffic in rows
+        for ua, os_val, n_users, n_traffic in rows
     ]

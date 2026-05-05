@@ -8,11 +8,12 @@ import { useTableSort } from '../utils/adminTableSort.js'
 
 const loading = ref(false)
 const error = ref(null)
-/** @type {import('vue').Ref<Array<{ user_agent: string, connected_users: number, users_with_traffic: number }>>} */
+/** @type {import('vue').Ref<Array<{ user_agent: string, os: string, connected_users: number, users_with_traffic: number }>>} */
 const items = ref([])
 
 const sortAccessors = {
   user_agent: (r) => String(r.user_agent ?? '').toLowerCase(),
+  os: (r) => String(r.os ?? '').toLowerCase(),
   connected_users: (r) => Number(r.connected_users) || 0,
   users_with_traffic: (r) => Number(r.users_with_traffic) || 0,
 }
@@ -30,6 +31,7 @@ async function load() {
     const list = Array.isArray(data?.items) ? data.items : []
     items.value = list.map((r) => ({
       user_agent: String(r.user_agent ?? ''),
+      os: String(r.os ?? ''),
       connected_users: Number(r.connected_users) || 0,
       users_with_traffic: Number(r.users_with_traffic) || 0,
     }))
@@ -75,6 +77,13 @@ onMounted(() => {
                 @sort="toggleSort"
               />
               <AdminSortTh
+                label="ОС"
+                column-key="os"
+                :sort-key="sortKey"
+                :sort-dir="sortDir"
+                @sort="toggleSort"
+              />
+              <AdminSortTh
                 label="Пользователей с подключением"
                 column-key="connected_users"
                 align="right"
@@ -93,9 +102,15 @@ onMounted(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(row, idx) in sortedRows" :key="idx">
+            <tr
+              v-for="row in sortedRows"
+              :key="`${row.user_agent}\u0000${row.os}`"
+            >
               <td class="ua-cell" :title="row.user_agent">
                 {{ row.user_agent }}
+              </td>
+              <td class="os-cell">
+                {{ row.os.trim() ? row.os : '—' }}
               </td>
               <td class="num">
                 {{ row.connected_users.toLocaleString('ru-RU') }}

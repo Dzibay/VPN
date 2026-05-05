@@ -169,12 +169,15 @@ router.beforeEach(async (to, _from, next) => {
       const isMarketingFunnel = to.name === 'admin-funnel'
       const isRegistrationsByDate = to.name === 'admin-users-registrations-by-date'
       const isHttpLogsStaff = to.name === 'admin-http-logs'
+      const isSubscriptionUaStatsStaff =
+        to.name === 'admin-subscription-user-agent-stats'
       if (
         isReferralsRoute ||
         isUsersAnalyticsStaff ||
         isMarketingFunnel ||
         isRegistrationsByDate ||
-        isHttpLogsStaff
+        isHttpLogsStaff ||
+        isSubscriptionUaStatsStaff
       ) {
         if (!canAccessReferralsAdmin(role)) {
           return next({ path: '/cabinet' })
