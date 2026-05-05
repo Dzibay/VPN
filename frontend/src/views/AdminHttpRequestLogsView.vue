@@ -380,7 +380,7 @@ watch(
 
 <style scoped>
 .admin-http-logs-shell {
-  max-width: 1400px;
+  max-width: min(100%, 1680px);
 }
 
 .filters {
@@ -576,17 +576,91 @@ watch(
 
 .http-trace-table {
   font-size: 0.82rem;
+  table-layout: fixed;
+  width: 100%;
+}
+
+/* Узкие служебные колонки — больше места под путь */
+.http-trace-table th:nth-child(1),
+.http-trace-table td:nth-child(1) {
+  width: 5rem;
+  box-sizing: border-box;
+}
+
+.http-trace-table th:nth-child(2),
+.http-trace-table td:nth-child(2) {
+  width: 3.25rem;
+  box-sizing: border-box;
+}
+
+.http-trace-table th:nth-child(3),
+.http-trace-table td:nth-child(3) {
+  width: 6.5rem;
+  max-width: 6.5rem;
+  box-sizing: border-box;
+}
+
+.http-trace-table td:nth-child(3) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.http-trace-table th:nth-child(4),
+.http-trace-table td:nth-child(4) {
+  width: 4.25rem;
+  box-sizing: border-box;
+}
+
+.http-trace-table th:nth-child(4),
+.http-trace-table td:nth-child(4),
+.http-trace-table th:nth-child(2),
+.http-trace-table td:nth-child(2) {
+  white-space: nowrap;
+}
+
+/* Путь: полный текст, перенос на следующие строки при необходимости */
+.http-trace-table th:nth-child(5),
+.http-trace-table td:nth-child(5) {
+  width: 50%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.http-trace-table th:nth-child(6),
+.http-trace-table td:nth-child(6) {
+  width: 2.75rem;
+  box-sizing: border-box;
+}
+
+.http-trace-table th:nth-child(7),
+.http-trace-table td:nth-child(7) {
+  width: 3.25rem;
+  box-sizing: border-box;
+}
+
+.http-trace-table th:nth-child(8),
+.http-trace-table td:nth-child(8) {
+  width: 4.5rem;
+  box-sizing: border-box;
+}
+
+.http-trace-table th,
+.http-trace-table td {
+  padding-left: 0.45rem;
+  padding-right: 0.45rem;
 }
 
 .path-cell {
-  max-width: 9rem;
+  min-width: 0;
 }
 
 .path-cell-inner {
   display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.35;
 }
 
 .rid-cell {
