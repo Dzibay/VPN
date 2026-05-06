@@ -1,6 +1,6 @@
 """
 Диплинки для открытия подписки во внешних клиентах (GET /sub/{token}/open/{client}/data; UI: открытие — /sub/…/open/…, скачивание — /apps/{code}, см. GET /api/public/client-apps/{code});
-список клиентов для ЛК — GET /api/auth/me (subscription_open_clients).
+список клиентов для ЛК — GET /api/me (subscription_open_clients).
 
 Метаданные срока и трафика при запросе URL подписки: заголовки Happ
 (``subscription-userinfo``, ``profile-update-interval``, …) на ``GET/HEAD /sub/{token}``

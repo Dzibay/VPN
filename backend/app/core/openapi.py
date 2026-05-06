@@ -22,7 +22,7 @@ def attach_openapi(application: FastAPI) -> None:
         if isinstance(bearer, dict):
             bearer["description"] = (
                 "Выпуск JWT: POST /api/auth/login, POST /api/auth/register или POST /api/auth/telegram "
-                "(для последнего требуется заголовок с секретом бота). Профиль: GET /api/auth/me. "
+                "(для последнего требуется заголовок с секретом бота). Профиль: GET /api/me. "
                 "В форме Authorize укажите только значение токена access_token; префикс «Bearer » подставляется автоматически."
             )
         application.openapi_schema = schema

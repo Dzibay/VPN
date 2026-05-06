@@ -15,7 +15,7 @@ async def resolve_authenticated_user(
 ) -> tuple[User, str]:
     """Текущий пользователь по JWT и его API-роль (``admin``/``manager``/``user``).
 
-    Эта проверка переиспользуется ``GET /api/auth/me`` и ``POST /api/auth/me/change-password``:
+    Эта проверка переиспользуется ``GET /api/me`` и ``POST /api/me/change-password``:
     шаги одинаковые — найти пользователя по ``user_id`` из токена и убедиться в согласованности
     роли с фактической ``account_role`` в БД.
     """

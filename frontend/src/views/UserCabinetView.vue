@@ -201,7 +201,7 @@ async function load() {
   error.value = null
   subscriptionConnectionDeleteError.value = null
   try {
-    me.value = await fetchJson('/api/auth/me')
+    me.value = await fetchJson('/api/me')
   } catch (e) {
     if (e.status === 401) {
       router.replace({ name: 'login', query: { redirect: '/cabinet' } })
@@ -221,7 +221,7 @@ async function openTelegramSyncLink() {
   telegramSyncBusy.value = true
   telegramSyncError.value = null
   try {
-    const data = await fetchJson('/api/auth/me/telegram-sync-start', {
+    const data = await fetchJson('/api/me/telegram-sync-start', {
       method: 'POST',
       body: '{}',
     })
@@ -264,7 +264,7 @@ async function submitPasswordChange() {
   }
   pwdBusy.value = true
   try {
-    await fetchJson('/api/auth/me/change-password', {
+    await fetchJson('/api/me/change-password', {
       method: 'POST',
       body: JSON.stringify({
         current_password: pwdCurrent.value,

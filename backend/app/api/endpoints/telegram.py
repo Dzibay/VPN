@@ -32,7 +32,7 @@ router = APIRouter(prefix="/telegram", tags=["telegram"])
     "/subscription-open-clients",
     response_model=TelegramSubscriptionOpenClientsResponse,
     dependencies=[Depends(require_telegram_bot_api_secret)],
-    summary="Список VPN-клиентов для кнопок в интерфейсе бота (источник данных совпадает с GET /api/auth/me)",
+    summary="Список VPN-клиентов для кнопок в интерфейсе бота (источник данных совпадает с GET /api/me)",
 )
 async def subscription_open_clients() -> TelegramSubscriptionOpenClientsResponse:
     return subscription_open_clients_payload(settings)

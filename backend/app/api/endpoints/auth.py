@@ -1,20 +1,15 @@
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 
 from app.config import settings
 from app.core.dependencies import (
-    BearerPrincipal,
     ReadonlySessionDep,
     SessionDep,
-    get_bearer_principal_dep,
     require_telegram_bot_api_secret,
 )
 from app.domain.models.auth import (
-    AccountChangePasswordBody,
     AccountLoginBody,
-    AccountMeResponse,
     AccountRegisterBody,
     TelegramAuthBody,
     TelegramAuthTokenResponse,
@@ -22,97 +17,22 @@ from app.domain.models.auth import (
     TelegramSiteLinkPreviewResponse,
     TelegramSiteLinkStartBody,
     TelegramSiteLinkStartResponse,
-    TelegramSyncStartResponse,
     TelegramWebLinkBody,
     TelegramWebLinkResponse,
     TokenResponse,
 )
-from app.domain.services.auth_service import (
-    account_me,
-    change_account_password,
-    login_with_password,
-    register_with_email,
-)
+from app.domain.services.auth_service import login_with_password, register_with_email
 from app.domain.services.telegram_auth_service import (
     telegram_authenticate,
     telegram_link_web_account,
     telegram_site_link_complete,
     telegram_site_link_preview_response,
     telegram_site_link_start,
-    telegram_sync_start_link,
 )
 from app.domain.users.xray_sync_queue import enqueue_sync_xray_clients_all_servers
 from app.infrastructure.cache import get_redis
 
 log = logging.getLogger("app.auth")
-
-_AUTH_ME_OPENAPI_EXAMPLES: dict = {
-    "user_with_email": {
-        "summary": "Клиентская учётная запись (email и Telegram)",
-        "description": "Типичный ответ после регистрации на сайте и привязки Telegram.",
-        "value": {
-            "role": "user",
-            "id": 42,
-            "email": "user@example.com",
-            "telegram_id": 123456789,
-            "telegram_properties": {
-                "username": "ivan_dev",
-                "first_name": "Ivan",
-                "last_name": "Petrov",
-                "topic_id": 2,
-            },
-            "subscription_until": "2026-12-31",
-            "subscription_active": True,
-            "subscription_token": "subscription-token-example",
-            "subscription_open_clients": [
-                {
-                    "client_code": "happ",
-                    "display_name": "Happ",
-                    "store_platforms": ["android", "ios", "windows", "macos", "linux"],
-                },
-            ],
-            "subscription_connections_count": 2,
-            "subscription_connections_limit": None,
-            "subscription_connections": [
-                {"id": 1, "os": "Windows", "user_agent": "Happ/2.9.1/Windows/example"},
-                {"id": 2, "os": "Windows", "user_agent": "v2raytun/windows"},
-            ],
-            "traffic_up_bytes": 1073741824,
-            "traffic_down_bytes": 5368709120,
-            "traffic_total_bytes": 6442450944,
-            "registered_at": "2026-03-01T10:30:00+00:00",
-            "has_site_password": True,
-        },
-    },
-    "user_telegram_only": {
-        "summary": "Учётная запись только через Telegram",
-        "value": {
-            "role": "user",
-            "id": 7,
-            "telegram_id": 998877665,
-            "telegram_properties": {
-                "username": "daria_vpn",
-                "first_name": "Daria",
-            },
-            "subscription_active": False,
-            "subscription_token": "subscription-token-telegram",
-            "subscription_open_clients": [],
-            "has_site_password": False,
-        },
-    },
-    "admin": {
-        "summary": "Администратор",
-        "description": "Часть полей отсутствует или равна null; полный перечень см. в схеме ответа.",
-        "value": {
-            "role": "admin",
-            "email": "admin@example.com",
-            "registered_at": "2025-01-15T08:00:00+00:00",
-            "subscription_active": False,
-            "subscription_token": "",
-            "has_site_password": True,
-        },
-    },
-}
 
 router = APIRouter(prefix="/auth")
 
@@ -229,54 +149,3 @@ async def telegram_site_link_complete_ep(
     resp = await telegram_site_link_complete(session, body, get_redis(), settings)
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return resp
-
-
-@router.post(
-    "/me/telegram-sync-start",
-    response_model=TelegramSyncStartResponse,
-    tags=["user"],
-    summary="Одноразовая deep link-ссылка на бота (t.me/…?start=…) для привязки Telegram",
-)
-async def telegram_sync_start(
-    session: ReadonlySessionDep,
-    principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
-) -> TelegramSyncStartResponse:
-    return await telegram_sync_start_link(session, principal, get_redis(), settings)
-
-
-@router.get(
-    "/me",
-    response_model=AccountMeResponse,
-    tags=["user"],
-    summary="Профиль текущего пользователя по JWT",
-    responses={
-        200: {
-            "description": "Данные учётной записи",
-            "content": {
-                "application/json": {
-                    "examples": _AUTH_ME_OPENAPI_EXAMPLES,
-                }
-            },
-        }
-    },
-)
-async def me(
-    session: ReadonlySessionDep,
-    principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
-) -> AccountMeResponse:
-    return await account_me(session, principal, settings)
-
-
-@router.post(
-    "/me/change-password",
-    status_code=204,
-    tags=["user"],
-    summary="Смена пароля: текущий и новый (JWT)",
-)
-async def change_password(
-    body: AccountChangePasswordBody,
-    session: SessionDep,
-    principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
-) -> Response:
-    await change_account_password(session, principal, body)
-    return Response(status_code=204)

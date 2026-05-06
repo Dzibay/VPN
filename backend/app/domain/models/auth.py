@@ -38,7 +38,7 @@ class SubscriptionOpenClientItem(BaseModel):
 
 
 def build_subscription_open_client_items() -> list[SubscriptionOpenClientItem]:
-    """Один список клиентов из app.domain.subscription.open_apps (как в GET /api/auth/me)."""
+    """Один список клиентов из app.domain.subscription.open_apps (как в GET /api/me)."""
     from app.domain.subscription.open_apps import list_subscription_open_apps, store_platform_tags
 
     return [
@@ -52,7 +52,7 @@ def build_subscription_open_client_items() -> list[SubscriptionOpenClientItem]:
 
 
 class TelegramSubscriptionOpenClientsResponse(BaseModel):
-    """Список клиентов и шаблон ссылок для бота; данные совпадают с subscription_open_clients в /api/auth/me."""
+    """Список клиентов и шаблон ссылок для бота; данные совпадают с subscription_open_clients в /api/me."""
 
     clients: list[SubscriptionOpenClientItem] = Field(
         description="Те же client_code/display_name/store_platforms, что отдаётся пользователю в ЛК.",
@@ -240,7 +240,7 @@ def telegram_auth_has_profile_fields(body: "TelegramAuthBody") -> bool:
 
 
 class TelegramSyncStartResponse(BaseModel):
-    """Ответ POST /api/auth/me/telegram-sync-start: ссылка с одноразовым токеном в ?start=."""
+    """Ответ POST /api/me/telegram-sync-start: ссылка с одноразовым токеном в ?start=."""
 
     telegram_deep_link: str = Field(
         description="Открыть в Telegram; параметр start вида link_<секрет> (до 64 символов, только A–Z, a–z, 0–9, _).",
@@ -382,7 +382,7 @@ class SubscriptionConnectionItem(BaseModel):
 
 
 class AccountMeResponse(BaseModel):
-    """Схема ответа GET /api/auth/me; в Swagger смотрите примеры у этой операции."""
+    """Схема ответа GET /api/me; в Swagger смотрите примеры у этой операции."""
 
     role: str = Field(description="`user` | `admin` | `manager`")
     id: int | None = Field(
