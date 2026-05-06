@@ -2,7 +2,7 @@
 -- period_start_utc — начало каждого часа в Москве (как абсолютный момент времени).
 -- Метрики накопительные на конец часа (все пользователи / данные строго до конца часа).
 -- Пользователи без registered_at учитываются во всех часах (как в дневной сводке).
-DROP FUNCTION rpc_users_hourly_stats(date);
+
 CREATE OR REPLACE FUNCTION rpc_users_hourly_stats (p_day date)
 RETURNS TABLE (
     period_start_utc timestamptz,

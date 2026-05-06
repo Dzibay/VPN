@@ -274,11 +274,6 @@ onMounted(() => {
       <h3 id="chart-events-heading" class="chart-events-title">
         События на шкале
       </h3>
-      <p class="chart-events-sub muted">
-        Дата и время вводятся в локальном поясе браузера; в API сохраняется момент времени, в ответах он приходит в Москве (МСК).
-        Отметки привязаны к колонкам UTC-дня или UTC-часа графика; в подсказке при наведении
-        на точку добавляется текст события.
-      </p>
 
       <form class="chart-events-form" @submit.prevent="addChartEvent">
         <label class="cef-field">
