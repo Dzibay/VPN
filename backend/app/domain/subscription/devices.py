@@ -13,11 +13,6 @@ from app.config import Settings
 from app.infrastructure.persistence.models.subscription_device import SubscriptionDevice
 from app.infrastructure.persistence.models.user import User
 
-SUBSCRIPTION_DEVICE_LIMIT_ANNOUNCE = (
-    "Достигнуто максимальное количество подключений (устройств). "
-    "Освободите слот в личном кабинете или обратитесь в поддержку."
-)
-
 
 def _norm_header(headers: Request.headers, key: str) -> str | None:
     raw = headers.get(key)

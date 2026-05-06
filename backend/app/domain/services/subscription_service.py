@@ -24,7 +24,6 @@ from app.domain.subscription.build import (
     subscription_servers_from_db,
 )
 from app.domain.subscription.devices import (
-    SUBSCRIPTION_DEVICE_LIMIT_ANNOUNCE,
     register_or_touch_subscription_device,
 )
 from app.domain.subscription.links import (
@@ -43,6 +42,10 @@ from app.infrastructure.persistence.models.user import User
 
 log = logging.getLogger("app.subscription_service")
 
+
+ANNOUNCE_RAW = "Нужна помощь? Поддержка всегда на связи"
+ANNOUNCE_RAW_DEVICE_LIMIT_REJECTED = "Достигнуто максимальное количество подключений (устройств). Освободите слот в личном кабинете или обратитесь в поддержку."
+ANNOUNCE_RAW_SUBSCRIPTION_EXPIRED = "Подписка истекла — продлите подписку в личном кабинете или боте"
 
 async def subscription_payload_rows_for_resolved_user(
     session: AsyncSession,
@@ -113,19 +116,19 @@ async def subscription_client_metadata_headers(
     )
     active = user_has_active_subscription(user)
     if device_limit_rejected and active:
-        announce_raw = SUBSCRIPTION_DEVICE_LIMIT_ANNOUNCE
+        announce_raw = ANNOUNCE_RAW_DEVICE_LIMIT_REJECTED
     elif not active:
-        announce_raw = "Подписка истекла — продлите подписку в личном кабинете или боте."
+        announce_raw = ANNOUNCE_RAW_SUBSCRIPTION_EXPIRED
     else:
-        announce_raw = ""
+        announce_raw = ANNOUNCE_RAW
     return {
         "subscription-userinfo": userinfo,
         "profile-update-interval": "2",
         "profile-title": BRAND_NAME_ASCII,
-        "support-url": "",
-        "profile-web-page-url": "",
+        "support-url": "https://t.me/Podoroznik_Support",
+        "profile-web-page-url": "https://cool-vpn.ru",
         "announce": subscription_announce_header_value(announce_raw),
-        "announce-url": "",
+        "announce-url": "https://t.me/Podoroznik_Support",
     }
 
 
