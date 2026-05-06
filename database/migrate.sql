@@ -140,5 +140,14 @@ CREATE INDEX IF NOT EXISTS idx_user_http_request_traces_user_created_at
 CREATE INDEX IF NOT EXISTS idx_user_http_request_traces_created_at
     ON user_http_request_traces (created_at DESC);
 
--- Удаление client_ip у старых инстансов (за прокси колонка не информативна)
-ALTER TABLE user_http_request_traces DROP COLUMN IF EXISTS client_ip;
+-- События на временной шкале графика статистики (staff: админ и менеджер)
+CREATE TABLE IF NOT EXISTS staff_chart_events (
+    id BIGSERIAL PRIMARY KEY,
+    event_at TIMESTAMPTZ NOT NULL,
+    title TEXT NOT NULL,
+    color TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_staff_chart_events_event_at
+    ON staff_chart_events (event_at ASC);

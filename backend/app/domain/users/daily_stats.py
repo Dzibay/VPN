@@ -1,9 +1,7 @@
 """Системные дневные метрики: регистрации, активные пользователи, первые подписочные устройства.
 
-Все агрегаты группируются по календарной дате UTC (``traffic_date`` хранится как DATE,
-``registered_at`` — как TIMESTAMP, явный ``timezone('UTC', …)`` снимает зависимость от настроек
-сессии). «Активный пользователь за день» — у которого хотя бы по одному из узлов суммарный
-трафик увеличился по сравнению с концом предыдущего дня.
+Все агрегаты — по календарным дням UTC (см. ``rpc_users_daily_stats()``). В JSON ответов поля
+``datetime`` сериализуются в московском времени (см. ``app.core.moscow_api_time``).
 """
 
 from __future__ import annotations
@@ -114,7 +112,8 @@ def _naive_utc(dt: datetime) -> datetime:
 
 
 def _with_day_period_start(rows: list[UserStatsByDateRow]) -> list[UserStatsByDateRow]:
-    """Для дневного режима заполняет ``period_start_utc`` полуночью UTC для строк с ``stats_date``."""
+    """Для дневного режима задаёт ``period_start_utc`` полуночью UTC для строк с ``stats_date``."""
+
     out: list[UserStatsByDateRow] = []
     for r in rows:
         if r.stats_date is None:
@@ -152,7 +151,8 @@ async def stats_by_date_merged(session: AsyncSession) -> list[UserStatsByDateRow
 
 
 async def stats_by_hour_merged(session: AsyncSession, hour_day: date) -> list[UserStatsByDateRow]:
-    """Почасовая сводка за один календарный день UTC через ``rpc_users_hourly_stats(p_day)``."""
+    """Почасовая сводка за сутки UTC: на каждый час — накопительные метрики на конец часа (не только выбранный день)."""
+
     stmt = text(
         """
         SELECT period_start_utc, users_count, users_with_traffic_count,
@@ -186,6 +186,7 @@ async def users_daily_stats(
     hour_day: date | None = None,
 ) -> UsersDailyStatsResponse:
     """Сводка для эндпоинта ``/users/daily-stats`` (дни или часы UTC внутри ``hour_day``)."""
+
     if granularity == "hour":
         if hour_day is None:
             raise ValueError("hour_day обязателен при granularity=hour")

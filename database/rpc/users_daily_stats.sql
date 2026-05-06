@@ -1,6 +1,7 @@
--- RPC: дневная сводка UTC для /api/users/daily-stats (регистрации, трафик, активные, первые устройства).
--- Логика совпадает с прежним Python (daily_stats.py): «активный» = суммарный накопленный трафик по всем узлам
--- вырос относительно предыдущего календарного дня (последний снимок на узел с traffic_date <= день).
+DROP FUNCTION IF EXISTS rpc_users_daily_stats ();
+DROP FUNCTION IF EXISTS rpc_users_daily_stats (text);
+
+-- Дневная сводка по календарным дням UTC (registered_at, traffic_date, subscription_devices).
 
 CREATE OR REPLACE FUNCTION rpc_users_daily_stats ()
 RETURNS TABLE (
@@ -30,37 +31,43 @@ user_traffic_total AS (
 ),
 reg AS (
     SELECT
-        (timezone('UTC', u.registered_at))::date AS sd,
+        (u.registered_at AT TIME ZONE 'UTC')::date AS sd,
         COUNT(*)::bigint AS users_count,
         SUM(
             CASE WHEN COALESCE(utt.total_bytes, 0) > 0 THEN 1 ELSE 0 END
         )::bigint AS users_with_traffic_count
     FROM users u
     LEFT JOIN user_traffic_total utt ON utt.user_id = u.id
-    GROUP BY (timezone('UTC', u.registered_at))::date
+    GROUP BY (u.registered_at AT TIME ZONE 'UTC')::date
 ),
-bounds AS (
+traffic_local AS (
     SELECT
-        MIN(traffic_date)::date AS dmin,
-        MAX(traffic_date)::date AS dmax
+        user_id,
+        server_id,
+        traffic_date,
+        up_bytes + down_bytes AS bytes,
+        traffic_date AS local_d
     FROM user_server_traffic
 ),
+bounds AS (
+    SELECT MIN(local_d) AS dmin, MAX(local_d) AS dmax
+    FROM traffic_local
+),
 days AS (
-    SELECT day::date AS cal_day
-    FROM bounds b,
-        LATERAL generate_series(b.dmin, b.dmax, '1 day'::interval) AS day
+    SELECT generate_series(b.dmin, b.dmax, '1 day'::interval)::date AS cal_day
+    FROM bounds b
     WHERE b.dmin IS NOT NULL
       AND b.dmax IS NOT NULL
 ),
 latest_per_day AS (
-    SELECT DISTINCT ON (d.cal_day, t.user_id, t.server_id)
+    SELECT DISTINCT ON (d.cal_day, tl.user_id, tl.server_id)
         d.cal_day,
-        t.user_id,
-        t.server_id,
-        t.up_bytes + t.down_bytes AS bytes
+        tl.user_id,
+        tl.server_id,
+        tl.bytes
     FROM days d
-    INNER JOIN user_server_traffic t ON t.traffic_date <= d.cal_day
-    ORDER BY d.cal_day, t.user_id, t.server_id, t.traffic_date DESC
+    INNER JOIN traffic_local tl ON tl.local_d <= d.cal_day
+    ORDER BY d.cal_day, tl.user_id, tl.server_id, tl.traffic_date DESC
 ),
 user_total_by_day AS (
     SELECT cal_day, user_id, SUM(bytes)::bigint AS total
@@ -94,9 +101,9 @@ first_dev AS (
 ),
 dev AS (
     SELECT
-        (timezone('UTC', first_at))::date AS sd,
+        (fd.first_at AT TIME ZONE 'UTC')::date AS sd,
         COUNT(*)::bigint AS cnt
-    FROM first_dev
+    FROM first_dev fd
     GROUP BY 1
 ),
 dated_keys AS (

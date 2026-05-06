@@ -75,7 +75,7 @@ async def list_users(
     "/daily-stats",
     response_model=UsersDailyStatsResponse,
     dependencies=[Depends(require_referrals_staff)],
-    summary="Статистика по UTC: по календарным дням или по часам (granularity)",
+    summary="Статистика по UTC: по календарным дням или по часам (granularity); время в JSON — Москва",
 )
 async def users_daily_stats_ep(
     session: ReadonlySessionDep,
@@ -83,7 +83,7 @@ async def users_daily_stats_ep(
         Literal["day", "hour"],
         Query(
             description=(
-                "day — по датам; hour — 24 часа UTC внутри календарного дня hour_day (обязателен)"
+                "day — по датам UTC; hour — 24 часа UTC внутри календарного дня hour_day (обязателен)"
             ),
         ),
     ] = "day",
@@ -99,7 +99,14 @@ async def users_daily_stats_ep(
             status_code=422,
             detail="Укажите hour_day (календарный день UTC, YYYY-MM-DD) для granularity=hour",
         )
-    return await users_daily_stats(session, granularity=granularity, hour_day=hour_day)
+    try:
+        return await users_daily_stats(
+            session,
+            granularity=granularity,
+            hour_day=hour_day,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
 
 @router.post(

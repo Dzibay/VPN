@@ -1,9 +1,9 @@
-DROP FUNCTION IF EXISTS rpc_users_hourly_stats ();
+DROP FUNCTION IF EXISTS rpc_users_hourly_stats (date);
+DROP FUNCTION IF EXISTS rpc_users_hourly_stats (date, text);
 
--- RPC: почасовая сводка UTC только за один календарный день UTC (p_day): ровно 24 строки (часы 0–23).
--- Регистрации и первые subscription_devices — по часу UTC внутри этого дня.
--- users_with_traffic_count — среди зарегистрировавшихся в этом часу этого дня (последний снимок на узел).
--- active_users_count — 0. Строк «без даты регистрации» нет.
+-- 24 часа UTC внутри календарного дня ``p_day`` (UTC).
+-- users_count / users_with_traffic_count / subscription_devices_users_count —
+-- накопительные значения на конец каждого часа (учитываются все данные до этого момента, не только выбранный день).
 
 CREATE OR REPLACE FUNCTION rpc_users_hourly_stats (p_day date)
 RETURNS TABLE (
@@ -17,7 +17,7 @@ LANGUAGE sql
 STABLE
 AS $$
 WITH bounds AS (
-    SELECT (p_day::timestamp AT TIME ZONE 'UTC') AS day_start
+    SELECT ((p_day::timestamp AT TIME ZONE 'UTC')) AS day_start
 ),
 hours AS (
     SELECT generate_series(
@@ -41,41 +41,33 @@ user_traffic_total AS (
         COALESCE(SUM(bytes), 0)::bigint AS total_bytes
     FROM latest_traffic
     GROUP BY user_id
-),
-reg AS (
-    SELECT
-        date_trunc('hour', timezone('UTC', u.registered_at)) AS ph,
-        COUNT(*)::bigint AS users_count,
-        SUM(
-            CASE WHEN COALESCE(utt.total_bytes, 0) > 0 THEN 1 ELSE 0 END
-        )::bigint AS users_with_traffic_count
-    FROM users u
-    LEFT JOIN user_traffic_total utt ON utt.user_id = u.id
-    WHERE u.registered_at IS NOT NULL
-      AND (timezone('UTC', u.registered_at))::date = p_day
-    GROUP BY date_trunc('hour', timezone('UTC', u.registered_at))
-),
-first_dev AS (
-    SELECT user_id, MIN(created_at) AS first_at
-    FROM subscription_devices
-    GROUP BY user_id
-),
-dev AS (
-    SELECT
-        date_trunc('hour', timezone('UTC', fd.first_at)) AS ph,
-        COUNT(*)::bigint AS cnt
-    FROM first_dev fd
-    WHERE (timezone('UTC', fd.first_at))::date = p_day
-    GROUP BY date_trunc('hour', timezone('UTC', fd.first_at))
 )
 SELECT
     h.period_start_utc,
-    COALESCE(r.users_count, 0)::bigint AS users_count,
-    COALESCE(r.users_with_traffic_count, 0)::bigint AS users_with_traffic_count,
+    (
+        SELECT COUNT(*)::bigint
+        FROM users u
+        WHERE u.registered_at IS NOT NULL
+          AND u.registered_at < h.period_start_utc + interval '1 hour'
+    ) AS users_count,
+    (
+        SELECT COUNT(*)::bigint
+        FROM users u
+        LEFT JOIN user_traffic_total utt ON utt.user_id = u.id
+        WHERE u.registered_at IS NOT NULL
+          AND u.registered_at < h.period_start_utc + interval '1 hour'
+          AND COALESCE(utt.total_bytes, 0) > 0
+    ) AS users_with_traffic_count,
     0::bigint AS active_users_count,
-    COALESCE(d.cnt, 0)::bigint AS subscription_devices_users_count
+    (
+        SELECT COUNT(*)::bigint
+        FROM (
+            SELECT user_id, MIN(created_at) AS first_at
+            FROM subscription_devices
+            GROUP BY user_id
+        ) fd
+        WHERE fd.first_at < h.period_start_utc + interval '1 hour'
+    ) AS subscription_devices_users_count
 FROM hours h
-LEFT JOIN reg r ON r.ph = h.period_start_utc
-LEFT JOIN dev d ON d.ph = h.period_start_utc
 ORDER BY h.period_start_utc;
 $$;

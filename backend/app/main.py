@@ -8,6 +8,7 @@ from app.api.endpoints.subscription import router as subscription_router
 from app.api.router import api_router
 from app.config import settings
 from app.core.error_handlers import register_exception_handlers
+from app.core.moscow_api_time import install_moscow_json_encoder
 from app.core.logging_config import setup_logging
 from app.core.middleware.request_context import RequestContextMiddleware
 from app.core.openapi import attach_openapi
@@ -29,6 +30,7 @@ async def lifespan(_app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    install_moscow_json_encoder()
     application = FastAPI(
         title=settings.app_name,
         version=settings.api_version,

@@ -14,7 +14,7 @@ class UsersCountResponse(BaseModel):
 
 
 class UserStatsByDateRow(BaseModel):
-    """Показатели за календарный день UTC или за час UTC (регистрации и метрики по выбранной гранулярности)."""
+    """Показатели по гранулярности: день UTC — счётчики за календарный день; час UTC — накопление до конца часа."""
 
     stats_date: date | None = Field(
         description=(
@@ -26,22 +26,28 @@ class UserStatsByDateRow(BaseModel):
     period_start_utc: datetime | None = Field(
         default=None,
         description=(
-            "Начало периода UTC: при day — 00:00:00 этого календарного дня (для строк с датой); "
-            "при hour — начало часа; для строки без даты регистрации — null."
+            "Начало периода в UTC; в JSON сериализуется в московском времени. "
+            "При day — полночь этого календарного дня UTC; при hour — начало часа UTC."
         ),
     )
-    users_count: int = Field(ge=0)
+    users_count: int = Field(
+        ge=0,
+        description=(
+            "При granularity=day — пользователей с этим календарным днём регистрации (UTC). "
+            "При hour — всего пользователей с известным registered_at строго до конца этого часа UTC."
+        ),
+    )
     users_with_traffic_count: int = Field(
         ge=0,
         description=(
-            "Сколько пользователей с этим днём регистрации имеют ненулевой суммарный трафик "
-            "(последний снимок на узел, user_server_traffic)"
+            "При day — с этим днём регистрации и ненулевым суммарным трафиком (последний снимок на узел). "
+            "При hour — таких пользователей среди уже зарегистрированных до конца часа."
         ),
     )
     active_users_count: int = Field(
         ge=0,
         description=(
-            "При granularity=day — число пользователей, у которых на этот календарный день "
+            "При granularity=day — число пользователей, у которых на этот календарный день UTC "
             "(по traffic_date) суммарный накопленный трафик вырос относительно предыдущего дня. "
             "При granularity=hour всегда 0 (в БД нет почасовых снимков трафика)."
         ),
@@ -49,18 +55,18 @@ class UserStatsByDateRow(BaseModel):
     subscription_devices_users_count: int = Field(
         ge=0,
         description=(
-            "Сколько пользователей впервые получили строку в subscription_devices в этот период UTC "
-            "(по минимальному created_at на пользователя): день при granularity=day, начало часа при hour"
+            "При day — впервые получили запись subscription_devices в этот календарный день UTC "
+            "(min created_at по пользователю). При hour — пользователей, у кого это минимальное время строго до конца часа UTC."
         ),
     )
 
 
 class UsersDailyStatsResponse(BaseModel):
-    """Сводка пользовательской статистики по UTC: по дням или по часам."""
+    """Сводка пользовательской статистики по UTC: по дням или по часам (поля времени в JSON — Москва)."""
 
     granularity: StatsGranularity = Field(
         default="day",
-        description="day — календарные дни; hour — 24 часа внутри одного календарного дня UTC",
+        description="day — календарные дни UTC; hour — 24 часа UTC внутри календарного дня hour_day",
     )
     hour_day: date | None = Field(
         default=None,

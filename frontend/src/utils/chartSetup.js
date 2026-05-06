@@ -23,6 +23,8 @@ import {
   Tooltip,
 } from 'chart.js'
 
+import { staffChartMarkersPlugin } from './chartStaffMarkersPlugin.js'
+
 let registered = false
 
 function registerCharts() {
@@ -39,6 +41,7 @@ function registerCharts() {
     Tooltip,
     Legend,
     Title,
+    staffChartMarkersPlugin,
   )
   registered = true
 }

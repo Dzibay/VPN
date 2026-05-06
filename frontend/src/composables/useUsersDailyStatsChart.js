@@ -7,6 +7,7 @@ import { fetchJson } from '../api/client.js'
  * @typedef {{ stats_date: string | null; period_start_utc?: string | null; users_count: number; users_with_traffic_count?: number; active_users_count?: number; subscription_devices_users_count?: number }} DailyStatsRow
  */
 
+/** Полночь текущего календарного дня UTC (YYYY-MM-DD). */
 export function utcTodayIso() {
   const d = new Date()
   const y = d.getUTCFullYear()
@@ -15,10 +16,12 @@ export function utcTodayIso() {
   return `${y}-${m}-${day}`
 }
 
+/** Подпись календарного дня UTC (YYYY-MM-DD). */
 export function formatDayShort(iso) {
   if (iso == null || iso === '') return '—'
   try {
-    return new Date(iso + 'T12:00:00Z').toLocaleDateString('ru-RU', {
+    const s = String(iso).slice(0, 10)
+    return new Date(s + 'T12:00:00Z').toLocaleDateString('ru-RU', {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -28,25 +31,27 @@ export function formatDayShort(iso) {
   }
 }
 
-/** Подпись оси для почасового режима (UTC). */
-export function formatHourShortUtc(isoOrTs) {
+/** Почасовая метка: значение из API (UTC), подпись в Москве (как в JSON ответа). */
+export function formatHourShortMsk(isoOrTs) {
   if (isoOrTs == null || isoOrTs === '') return '—'
   try {
-    const d = new Date(isoOrTs)
     return (
-      d.toLocaleString('ru-RU', {
-        timeZone: 'UTC',
+      new Date(isoOrTs).toLocaleString('ru-RU', {
+        timeZone: 'Europe/Moscow',
         day: '2-digit',
         month: 'short',
         hour: '2-digit',
         minute: '2-digit',
         hourCycle: 'h23',
-      }) + ' UTC'
+      }) + ' МСК'
     )
   } catch {
     return String(isoOrTs)
   }
 }
+
+/** @deprecated используйте formatHourShortMsk */
+export const formatHourShortUtc = formatHourShortMsk
 
 function isUndatedRow(r) {
   const noDate = r.stats_date == null || r.stats_date === ''
@@ -106,7 +111,7 @@ function utcHourFloorMs(ms) {
 }
 
 /**
- * Достраивает календарные дни UTC между первым и последним бакетом (нули для метрик).
+ * Достраивает календарные дни UTC между первым и последним бакетом.
  * @param {Array<{ iso: string; periodStart: string | null; dayUsers: number; dayTraffic: number; dayActive: number; dayDevices: number }>} sortedRows
  */
 function densifyUtcDays(sortedRows) {
@@ -127,38 +132,6 @@ function densifyUtcDays(sortedRows) {
       row ?? {
         iso,
         periodStart: null,
-        dayUsers: 0,
-        dayTraffic: 0,
-        dayActive: 0,
-        dayDevices: 0,
-      },
-    )
-  }
-  return out
-}
-
-/**
- * Достраивает часы UTC между первым и последним бакетом.
- * @param {Array<{ iso: string; periodStart: string | null; dayUsers: number; dayTraffic: number; dayActive: number; dayDevices: number }>} sortedRows
- */
-function densifyUtcHours(sortedRows) {
-  if (!sortedRows.length) return sortedRows
-  const map = new Map(sortedRows.map((r) => [r.iso, r]))
-  const t0 = utcHourFloorMs(Date.parse(sortedRows[0].iso))
-  const t1 = utcHourFloorMs(
-    Date.parse(sortedRows[sortedRows.length - 1].iso),
-  )
-  if (!Number.isFinite(t0) || !Number.isFinite(t1) || t0 > t1) {
-    return sortedRows
-  }
-  const out = []
-  for (let t = t0; t <= t1; t += 3600000) {
-    const iso = new Date(t).toISOString()
-    const row = map.get(iso)
-    out.push(
-      row ?? {
-        iso,
-        periodStart: iso,
         dayUsers: 0,
         dayTraffic: 0,
         dayActive: 0,
@@ -226,9 +199,25 @@ export function useUsersDailyStatsChart() {
       .sort((a, b) => String(a.iso).localeCompare(String(b.iso)))
 
     const dense =
-      gran === 'hour'
-        ? densifyUtcHours(sorted)
-        : densifyUtcDays(sorted)
+      gran === 'hour' ? sorted : densifyUtcDays(sorted)
+
+    /* Почасовой API отдаёт уже накопительные итоги на конец часа (все пользователи до этого момента). */
+    if (gran === 'hour') {
+      return dense.map((row) => ({
+        iso: row.iso,
+        periodStart: row.periodStart,
+        dayUsers: row.dayUsers,
+        dayTraffic: row.dayTraffic,
+        dayActive: row.dayActive,
+        dayDevices: row.dayDevices,
+        cumDatedUsers: row.dayUsers,
+        cumDatedTraffic: row.dayTraffic,
+        cumDatedDevices: row.dayDevices,
+        totalUsers: row.dayUsers + extraUsers,
+        totalTraffic: row.dayTraffic + extraTraffic,
+        totalDevices: row.dayDevices,
+      }))
+    }
 
     let cumDatedUsers = 0
     let cumDatedTraffic = 0
@@ -254,25 +243,49 @@ export function useUsersDailyStatsChart() {
     })
   })
 
-  const totalUsers = computed(() =>
-    rows.value.reduce((acc, r) => acc + (Number(r.users_count) || 0), 0),
-  )
+  const totalUsers = computed(() => {
+    if (granularity.value === 'hour') {
+      let mx = 0
+      for (const r of rows.value) {
+        if (!hasChartBucket(r, 'hour')) continue
+        mx = Math.max(mx, Number(r.users_count) || 0)
+      }
+      return mx + undatedCount.value
+    }
+    return rows.value.reduce((acc, r) => acc + (Number(r.users_count) || 0), 0)
+  })
 
-  const totalWithTraffic = computed(() =>
-    rows.value.reduce(
+  const totalWithTraffic = computed(() => {
+    if (granularity.value === 'hour') {
+      let mx = 0
+      for (const r of rows.value) {
+        if (!hasChartBucket(r, 'hour')) continue
+        mx = Math.max(mx, Number(r.users_with_traffic_count) || 0)
+      }
+      return mx + undatedTrafficCount.value
+    }
+    return rows.value.reduce(
       (acc, r) => acc + (Number(r.users_with_traffic_count) || 0),
       0,
-    ),
-  )
+    )
+  })
 
-  const totalWithSubscriptionDevices = computed(() =>
-    rows.value
+  const totalWithSubscriptionDevices = computed(() => {
+    if (granularity.value === 'hour') {
+      let mx = 0
+      for (const r of rows.value) {
+        if (!hasChartBucket(r, 'hour')) continue
+        mx = Math.max(mx, Number(r.subscription_devices_users_count) || 0)
+      }
+      return mx
+    }
+    return rows.value
       .filter((r) => hasChartBucket(r, granularity.value))
       .reduce(
         (acc, r) => acc + (Number(r.subscription_devices_users_count) || 0),
         0,
-      ),
-  )
+      )
+  })
 
   /** Значение «активных за день» для текущего календарного дня UTC (только режим по дням). */
   const activeUsersWidget = computed(() => {
@@ -314,7 +327,7 @@ export function useUsersDailyStatsChart() {
 
   const chartAriaLabel = computed(() =>
     granularity.value === 'hour'
-      ? `По часам UTC за ${formatDayShort(hourDayUtc.value)}: накопление регистраций и первых подключений устройств`
+      ? `По часам UTC за ${formatDayShort(hourDayUtc.value)} (подписи времени — МСК): накопление регистраций и первых подключений устройств`
       : 'По дням UTC: накопление регистраций и клиентов с устройствами, активные по трафику',
   )
 
@@ -332,7 +345,7 @@ export function useUsersDailyStatsChart() {
   const registrationChartLabels = computed(() =>
     chartPoints.value.map((p) =>
       granularity.value === 'hour'
-        ? formatHourShortUtc(p.periodStart || p.iso)
+        ? formatHourShortMsk(p.periodStart || p.iso)
         : formatDayShort(p.iso),
     ),
   )
@@ -379,7 +392,7 @@ export function useUsersDailyStatsChart() {
     const p = chartPoints.value[i]
     if (!p) return ''
     return granularity.value === 'hour'
-      ? formatHourShortUtc(p.periodStart || p.iso)
+      ? formatHourShortMsk(p.periodStart || p.iso)
       : formatDayShort(p.iso)
   }
 

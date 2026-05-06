@@ -29,6 +29,11 @@ const props = defineProps({
   getTooltipLabel: { type: Function, default: null },
   /** Подписи делений оси Y */
   formatYTick: { type: Function, default: null },
+  /**
+   * Вертикальные отметки: индекс точки по оси X + подпись для подсказки + цвет линии.
+   * @type {import('vue').PropType<Array<{ index: number; title: string; color: string }>>}
+   */
+  eventMarkers: { type: Array, default: () => [] },
 })
 
 const canvasEl = ref(null)
@@ -130,6 +135,9 @@ function drawChart() {
         },
       },
       plugins: {
+        staffChartMarkers: {
+          markers: Array.isArray(props.eventMarkers) ? [...props.eventMarkers] : [],
+        },
         legend: {
           position: 'top',
           align: 'start',
@@ -173,6 +181,18 @@ function drawChart() {
                   ? props.formatYTick(raw)
                   : Number(raw).toLocaleString('ru-RU')
               return `${ctx.dataset.label}: ${v}`
+            },
+            afterBody(items) {
+              if (!items?.length || !props.eventMarkers?.length) return []
+              const i = items[0]?.dataIndex
+              if (i == null) return []
+              const lines = []
+              for (const m of props.eventMarkers) {
+                if (m.index === i && m.title) {
+                  lines.push(`Событие: ${m.title}`)
+                }
+              }
+              return lines
             },
           },
         },
@@ -232,6 +252,7 @@ watch(
     props.datasets,
     props.yTitle,
     props.yGrace,
+    props.eventMarkers,
   ],
   async () => {
     await nextTick()
