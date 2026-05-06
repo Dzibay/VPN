@@ -36,7 +36,7 @@ export const ADMIN_NAV_DEFINITION = [
   },
   {
     routeName: 'admin-users-registrations-by-date',
-    label: 'Статистика по дням',
+    label: 'Статистика по периодам',
     path: '/admin/users/registrations-by-date',
     access: 'staff',
   },

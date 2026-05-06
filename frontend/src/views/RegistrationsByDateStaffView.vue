@@ -1,25 +1,34 @@
 <script setup>
-import { onMounted } from 'vue'
+import { onMounted, toRefs } from 'vue'
 import AdminLineChartPanel from '../components/AdminLineChartPanel.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
-import { useUsersDailyStatsChart } from '../composables/useUsersDailyStatsChart.js'
+import {
+  utcTodayIso,
+  useUsersDailyStatsChart,
+} from '../composables/useUsersDailyStatsChart.js'
 
+const chart = useUsersDailyStatsChart()
 const {
+  granularity,
+  hourDayUtc,
   loading,
   error,
-  load,
-  undatedCount,
   chartPoints,
   totalUsers,
   totalWithTraffic,
   totalWithSubscriptionDevices,
   activeUsersWidget,
-  pluralRuDays,
+  pluralRuBuckets,
+  bucketAxisLabel,
+  chartAriaLabel,
   registrationChartLabels,
   registrationChartDatasets,
   registrationTooltipTitle,
   registrationTooltipLabel,
-} = useUsersDailyStatsChart()
+  undatedCount,
+} = toRefs(chart)
+
+const { setGranularity, load } = chart
 
 onMounted(() => {
   void load()
@@ -27,13 +36,47 @@ onMounted(() => {
 </script>
 
 <template>
-  <AdminStaffShell title="Статистика по дням">
+  <AdminStaffShell title="Статистика по периодам">
     <template #headerExtras>
       <div class="head-row">
         <div class="head-text">
-          <h2 class="section-heading">Статистика по дням</h2>
+          <h2 class="section-heading">Статистика по периодам</h2>
         </div>
         <div class="head-actions">
+          <div
+            class="granularity-toggle"
+            role="group"
+            aria-label="Шаг временной шкалы UTC"
+          >
+            <button
+              type="button"
+              class="granularity-btn"
+              :class="{ 'granularity-btn--active': granularity === 'day' }"
+              :disabled="loading"
+              @click="setGranularity('day')"
+            >
+              По дням
+            </button>
+            <button
+              type="button"
+              class="granularity-btn"
+              :class="{ 'granularity-btn--active': granularity === 'hour' }"
+              :disabled="loading"
+              @click="setGranularity('hour')"
+            >
+              По часам
+            </button>
+          </div>
+          <label v-if="granularity === 'hour'" class="hour-day-field">
+            <span class="hour-day-label-text">День (UTC)</span>
+            <input
+              v-model="hourDayUtc"
+              class="hour-day-input"
+              type="date"
+              :max="utcTodayIso()"
+              required
+            />
+          </label>
           <button
             type="button"
             class="btn-secondary"
@@ -53,10 +96,12 @@ onMounted(() => {
       </p>
       <dl v-else class="stats-grid">
         <div class="stats-card">
-          <dt class="stats-label">Дней на графике</dt>
+          <dt class="stats-label">{{ bucketAxisLabel }}</dt>
           <dd class="stats-value">
             {{ chartPoints.length.toLocaleString('ru-RU') }}
-            <span class="stats-unit">{{ pluralRuDays(chartPoints.length) }}</span>
+            <span class="stats-unit">{{
+              pluralRuBuckets(chartPoints.length, granularity)
+            }}</span>
           </dd>
         </div>
         <div class="stats-card">
@@ -65,13 +110,13 @@ onMounted(() => {
             {{ totalUsers.toLocaleString('ru-RU') }}
           </dd>
         </div>
-        <div class="stats-card">
+        <div v-if="granularity === 'day'" class="stats-card">
           <dt class="stats-label">С ненулевым трафиком</dt>
           <dd class="stats-value stats-value--traffic">
             {{ totalWithTraffic.toLocaleString('ru-RU') }}
           </dd>
         </div>
-        <div class="stats-card">
+        <div v-if="granularity === 'day'" class="stats-card">
           <dt class="stats-label">Активные сегодня (UTC)</dt>
           <dd class="stats-value stats-value--active">
             {{ activeUsersWidget.today }}
@@ -86,8 +131,13 @@ onMounted(() => {
       </dl>
     </section>
 
+    <p v-if="granularity === 'hour'" class="stats-hint">
+      Почасовой график за выбранный календарный день UTC (24 часа): накопительные регистрации и
+      первые подключения устройств. Серии про трафик не показываются.
+    </p>
+
     <AdminLineChartPanel
-      aria-label="По дням UTC: накопление регистраций и клиентов с устройствами, активные по трафику"
+      :aria-label="chartAriaLabel"
       :loading="loading"
       :error="error"
       :has-data="chartPoints.length > 0"
@@ -106,7 +156,7 @@ onMounted(() => {
           даты:
           <strong>{{ undatedCount.toLocaleString('ru-RU') }}</strong>
           . Добавить их к точкам по дням нельзя — появится график после появления
-          записей с датой.
+          записей с датой или временем.
         </p>
         <p v-else class="empty-hint">Нет данных для графика.</p>
       </template>
@@ -150,7 +200,67 @@ onMounted(() => {
 .head-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.5rem;
+}
+
+.granularity-toggle {
+  display: inline-flex;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.granularity-btn {
+  margin: 0;
+  padding: 0.45rem 0.75rem;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.granularity-btn:hover:not(:disabled) {
+  color: var(--text-h);
+  background: rgba(127, 127, 127, 0.08);
+}
+
+.granularity-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.granularity-btn--active {
+  color: var(--text-h);
+  background: rgba(88, 214, 141, 0.14);
+}
+
+.hour-day-field {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.hour-day-label-text {
+  white-space: nowrap;
+}
+
+.hour-day-input {
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 0.85rem;
 }
 
 .stats {

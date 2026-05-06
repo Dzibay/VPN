@@ -3,6 +3,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+StatsGranularity = Literal["day", "hour"]
+
 from app.constants import BIGINT_MAX
 from app.domain.models.auth import SubscriptionConnectionItem
 
@@ -12,12 +14,20 @@ class UsersCountResponse(BaseModel):
 
 
 class UserStatsByDateRow(BaseModel):
-    """Показатели за календарный день UTC (регистрации и активность по трафику)."""
+    """Показатели за календарный день UTC или за час UTC (регистрации и метрики по выбранной гранулярности)."""
 
     stats_date: date | None = Field(
         description=(
-            "Календарный день UTC: по registered_at для счётчиков пользователей; "
-            "null — агрегат по записям без даты регистрации (только users_*, active = 0)"
+            "Календарный день UTC при granularity=day (по registered_at); "
+            "при granularity=hour — всегда null (используйте period_start_utc). "
+            "null также означает агрегат по пользователям без registered_at."
+        ),
+    )
+    period_start_utc: datetime | None = Field(
+        default=None,
+        description=(
+            "Начало периода UTC: при day — 00:00:00 этого календарного дня (для строк с датой); "
+            "при hour — начало часа; для строки без даты регистрации — null."
         ),
     )
     users_count: int = Field(ge=0)
@@ -31,26 +41,37 @@ class UserStatsByDateRow(BaseModel):
     active_users_count: int = Field(
         ge=0,
         description=(
-            "Число пользователей, у которых на этот календарный день (по traffic_date) "
-            "суммарный накопленный трафик вырос относительно предыдущего дня"
+            "При granularity=day — число пользователей, у которых на этот календарный день "
+            "(по traffic_date) суммарный накопленный трафик вырос относительно предыдущего дня. "
+            "При granularity=hour всегда 0 (в БД нет почасовых снимков трафика)."
         ),
     )
     subscription_devices_users_count: int = Field(
         ge=0,
         description=(
-            "Сколько пользователей впервые получили строку в subscription_devices в этот календарный день UTC "
-            "(по минимальному created_at на пользователя)"
+            "Сколько пользователей впервые получили строку в subscription_devices в этот период UTC "
+            "(по минимальному created_at на пользователя): день при granularity=day, начало часа при hour"
         ),
     )
 
 
 class UsersDailyStatsResponse(BaseModel):
-    """Дневная сводка (UTC): регистрации и активные по трафику в одном списке по дате."""
+    """Сводка пользовательской статистики по UTC: по дням или по часам."""
 
+    granularity: StatsGranularity = Field(
+        default="day",
+        description="day — календарные дни; hour — 24 часа внутри одного календарного дня UTC",
+    )
+    hour_day: date | None = Field(
+        default=None,
+        description=(
+            "При granularity=hour — выбранный календарный день UTC (те же сутки, что и в запросе hour_day)"
+        ),
+    )
     stats_by_date: list[UserStatsByDateRow] = Field(
         description=(
-            "Исторические дни по возрастанию stats_date; при наличии записей без даты регистрации "
-            "в конце может быть строка с stats_date = null"
+            "При granularity=day — дни по возрастанию stats_date; строка без даты — в конце. "
+            "При granularity=hour — ровно 24 строки (часы 00–23 UTC выбранного hour_day)."
         ),
     )
 

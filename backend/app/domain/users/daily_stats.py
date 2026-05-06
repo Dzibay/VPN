@@ -9,7 +9,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
+from typing import Literal
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -106,6 +107,24 @@ async def _traffic_active_count_by_date(
     return result
 
 
+def _naive_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _with_day_period_start(rows: list[UserStatsByDateRow]) -> list[UserStatsByDateRow]:
+    """Для дневного режима заполняет ``period_start_utc`` полуночью UTC для строк с ``stats_date``."""
+    out: list[UserStatsByDateRow] = []
+    for r in rows:
+        if r.stats_date is None:
+            out.append(r)
+            continue
+        start = datetime.combine(r.stats_date, time.min, tzinfo=timezone.utc)
+        out.append(r.model_copy(update={"period_start_utc": start}))
+    return out
+
+
 async def stats_by_date_merged(session: AsyncSession) -> list[UserStatsByDateRow]:
     """Сводка по датам через PostgreSQL ``rpc_users_daily_stats()`` (см. ``database/rpc/users_daily_stats.sql``).
 
@@ -122,6 +141,7 @@ async def stats_by_date_merged(session: AsyncSession) -> list[UserStatsByDateRow
     return [
         UserStatsByDateRow(
             stats_date=row[0],
+            period_start_utc=None,
             users_count=int(row[1] or 0),
             users_with_traffic_count=int(row[2] or 0),
             active_users_count=int(row[3] or 0),
@@ -131,9 +151,55 @@ async def stats_by_date_merged(session: AsyncSession) -> list[UserStatsByDateRow
     ]
 
 
-async def users_daily_stats(session: AsyncSession) -> UsersDailyStatsResponse:
-    """Готовый response-объект с ежедневной сводкой (для эндпоинта ``/users/daily-stats``)."""
-    return UsersDailyStatsResponse(stats_by_date=await stats_by_date_merged(session))
+async def stats_by_hour_merged(session: AsyncSession, hour_day: date) -> list[UserStatsByDateRow]:
+    """Почасовая сводка за один календарный день UTC через ``rpc_users_hourly_stats(p_day)``."""
+    stmt = text(
+        """
+        SELECT period_start_utc, users_count, users_with_traffic_count,
+               active_users_count, subscription_devices_users_count
+        FROM rpc_users_hourly_stats(:hour_day)
+        """,
+    )
+    rows = (await session.execute(stmt, {"hour_day": hour_day})).all()
+    result: list[UserStatsByDateRow] = []
+    for row in rows:
+        ps = row[0]
+        if ps is not None:
+            ps = _naive_utc(ps)
+        result.append(
+            UserStatsByDateRow(
+                stats_date=None,
+                period_start_utc=ps,
+                users_count=int(row[1] or 0),
+                users_with_traffic_count=int(row[2] or 0),
+                active_users_count=int(row[3] or 0),
+                subscription_devices_users_count=int(row[4] or 0),
+            ),
+        )
+    return result
+
+
+async def users_daily_stats(
+    session: AsyncSession,
+    *,
+    granularity: Literal["day", "hour"] = "day",
+    hour_day: date | None = None,
+) -> UsersDailyStatsResponse:
+    """Сводка для эндпоинта ``/users/daily-stats`` (дни или часы UTC внутри ``hour_day``)."""
+    if granularity == "hour":
+        if hour_day is None:
+            raise ValueError("hour_day обязателен при granularity=hour")
+        return UsersDailyStatsResponse(
+            granularity="hour",
+            hour_day=hour_day,
+            stats_by_date=await stats_by_hour_merged(session, hour_day),
+        )
+    dated = await stats_by_date_merged(session)
+    return UsersDailyStatsResponse(
+        granularity="day",
+        hour_day=None,
+        stats_by_date=_with_day_period_start(dated),
+    )
 
 
 async def count_users_with_subscription_device(
