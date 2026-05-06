@@ -42,7 +42,7 @@ from app.domain.auth.sync_tokens import (
 )
 from app.domain.models.auth import (
     TelegramAuthBody,
-    TelegramAuthTokenResponse,
+    TelegramAuthUserResponse,
     TelegramSiteLinkCompleteBody,
     TelegramSiteLinkPreviewResponse,
     TelegramSiteLinkStartBody,
@@ -54,6 +54,7 @@ from app.domain.models.auth import (
     merge_telegram_auth_profile,
     telegram_auth_has_profile_fields,
 )
+from app.domain.services.auth_service import account_me_from_user
 from app.domain.public_urls import public_spa_base_url, telegram_bot_public_page_url
 from app.domain.referrals.repository import increment_referral_counter
 from app.domain.users.identifiers import new_subscription_token, new_vless_uuid
@@ -72,7 +73,7 @@ async def telegram_authenticate(
     session: AsyncSession,
     body: TelegramAuthBody,
     cfg: Settings,
-) -> TelegramAuthTokenResponse:
+) -> TelegramAuthUserResponse:
     """Аутентификация и регистрация по ``telegram_id`` (вызывается ботом).
 
     Если такого ``telegram_id`` ещё нет — создаём нового пользователя с триал-подпиской и
@@ -126,14 +127,9 @@ async def telegram_authenticate(
         user.telegram_properties = merge_telegram_auth_profile(body, user.telegram_properties)
         await session.flush()
 
-    jwt_role = jwt_role_for_user(user)
-    token = issue_access_token_or_http_error(cfg, role=jwt_role, user_id=user.id)
     bind_request_subject_user(int(user.id), source="telegram_bot_auth")
-    return TelegramAuthTokenResponse(
-        access_token=token,
-        role=jwt_role,
-        is_new_user=is_new_user,
-    )
+    me = await account_me_from_user(session, user, cfg)
+    return TelegramAuthUserResponse(**me.model_dump(), is_new_user=is_new_user)
 
 
 async def telegram_link_web_account(

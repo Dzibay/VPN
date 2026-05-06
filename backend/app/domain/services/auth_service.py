@@ -110,12 +110,15 @@ async def register_with_email(
     return TokenResponse(access_token=token, role="user")
 
 
-async def account_me(
-    session: AsyncSession, principal: BearerPrincipal, cfg: Settings,
+async def account_me_from_user(
+    session: AsyncSession,
+    user: User,
+    cfg: Settings,
+    *,
+    api_role: str | None = None,
 ) -> AccountMeResponse:
-    """Профиль текущего пользователя по JWT (включая трафик и активные подписочные устройства)."""
-    user, role = await resolve_authenticated_user(session, principal)
-
+    """Сборка ответа профиля по строке пользователя (роль из JWT или из ``jwt_role_for_user``)."""
+    role = api_role if api_role is not None else jwt_role_for_user(user)
     up_b, down_b, total_b = await user_traffic_totals(session, user.id)
     raw_conns = await list_subscription_connection_records(session, user.id)
     subs_dev_limit = effective_subscription_device_limit(cfg)
@@ -141,6 +144,14 @@ async def account_me(
         traffic_total_bytes=total_b,
         has_site_password=bool(user.password_hash),
     )
+
+
+async def account_me(
+    session: AsyncSession, principal: BearerPrincipal, cfg: Settings,
+) -> AccountMeResponse:
+    """Профиль текущего пользователя по JWT (включая трафик и активные подписочные устройства)."""
+    user, role = await resolve_authenticated_user(session, principal)
+    return await account_me_from_user(session, user, cfg, api_role=role)
 
 
 async def change_account_password(

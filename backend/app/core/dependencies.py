@@ -164,8 +164,9 @@ def require_telegram_bot_api_secret(
     x_telegram_bot_secret: Annotated[str | None, Header()] = None,
 ) -> None:
     """
-    Тот же секрет, что и для POST /api/auth/telegram, POST /api/auth/telegram/site-link/start,
-    GET /api/telegram/users, GET /api/telegram/users/{topic_id}, PATCH /api/telegram/users/{telegram_id} и
+    Тот же секрет, что и для POST /api/auth/telegram, POST /api/telegram/link, POST /api/telegram/site-link/start,
+    GET /api/telegram/referral/me, DELETE /api/telegram/subscription-devices/{device_id},
+    GET /api/telegram/users, GET /api/telegram/users/{topic_id} и
     GET /api/telegram/subscription-open-clients (заголовок X-Telegram-Bot-Secret).
     TELEGRAM_BOT_API_SECRET в env; пусто — 503.
     """

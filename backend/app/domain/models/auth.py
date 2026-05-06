@@ -13,14 +13,6 @@ class TokenResponse(BaseModel):
     )
 
 
-class TelegramAuthTokenResponse(TokenResponse):
-    is_new_user: bool = Field(
-        description=(
-            "True, если в этом запросе создана новая учётная запись по telegram_id "
-            "(первая регистрация). False — пользователь уже существовал или повтор после гонки вставки."
-        ),
-    )
-
 class SubscriptionOpenClientItem(BaseModel):
     """Элемент списка клиентов для кнопок «Подключить» в личном кабинете."""
 
@@ -160,41 +152,6 @@ class TelegramAuthBody(BaseModel):
             s = v.strip()
             return s or None
         return v
-
-
-class TelegramProfilePatchBody(BaseModel):
-    """Часть профиля Telegram для PATCH (без telegram_id в теле — id в пути)."""
-
-    username: str | None = Field(
-        default=None,
-        max_length=255,
-        description=(
-            "Ник в Telegram (без @); сохраняется в users.telegram_properties.username."
-        ),
-    )
-    first_name: str | None = Field(
-        default=None,
-        max_length=255,
-        description="Имя; в users.telegram_properties.first_name.",
-    )
-    last_name: str | None = Field(
-        default=None,
-        max_length=255,
-        description="Фамилия; в users.telegram_properties.last_name.",
-    )
-    topic_id: int | None = Field(
-        default=None,
-        ge=1,
-        le=BIGINT_MAX,
-        description="Id топика; в users.telegram_properties.topic_id.",
-    )
-
-
-class TelegramUserPropertiesUpdateResponse(BaseModel):
-    """Ответ после изменения users.telegram_properties через бота."""
-
-    telegram_id: int
-    telegram_properties: dict[str, Any] | None
 
 
 class TelegramKnownUserIdsResponse(BaseModel):
@@ -471,6 +428,17 @@ class AccountMeResponse(BaseModel):
     has_site_password: bool = Field(
         default=False,
         description="True, если задан пароль для входа на сайте (смена пароля в ЛК доступна).",
+    )
+
+
+class TelegramAuthUserResponse(AccountMeResponse):
+    """Ответ POST /api/auth/telegram: те же поля, что GET /api/me, и признак первой регистрации."""
+
+    is_new_user: bool = Field(
+        description=(
+            "True, если в этом запросе создана новая учётная запись по telegram_id "
+            "(первая регистрация). False — пользователь уже существовал или повтор после гонки вставки."
+        ),
     )
 
 

@@ -2,30 +2,118 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, BackgroundTasks, Depends, Path, Query
 
 from app.config import settings
 from app.constants import BIGINT_MAX
 from app.core.dependencies import (
+    BearerPrincipal,
     ReadonlySessionDep,
     SessionDep,
     require_telegram_bot_api_secret,
 )
+from app.domain.auth.jwt import jwt_role_for_user
 from app.domain.models.auth import (
     TelegramKnownUserIdsResponse,
-    TelegramProfilePatchBody,
+    TelegramSiteLinkStartBody,
+    TelegramSiteLinkStartResponse,
     TelegramSubscriptionOpenClientsResponse,
-    TelegramUserPropertiesUpdateResponse,
+    TelegramWebLinkBody,
+    TelegramWebLinkResponse,
 )
+from app.domain.models.referral_links import ReferralMeResponse
 from app.domain.models.users import UserRead
+from app.domain.services.telegram_auth_service import (
+    telegram_link_web_account,
+    telegram_site_link_start,
+)
+from app.domain.services.me_service import delete_subscription_device
+from app.domain.services.referral_links_service import client_site_user_id, referral_me_for_user
 from app.domain.services.telegram_service import (
     get_user_by_topic_id,
     list_telegram_user_ids,
-    patch_user_telegram_properties,
+    require_user_by_telegram_id,
     subscription_open_clients_payload,
 )
+from app.domain.users.xray_sync_queue import enqueue_sync_xray_clients_all_servers
+from app.infrastructure.cache import get_redis
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
+
+
+@router.post(
+    "/link",
+    response_model=TelegramWebLinkResponse,
+    dependencies=[Depends(require_telegram_bot_api_secret)],
+    summary="Привязка Telegram к учётной записи по одноразовому токену из личного кабинета",
+)
+async def telegram_link_web_account_ep(
+    body: TelegramWebLinkBody,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+) -> TelegramWebLinkResponse:
+    resp = await telegram_link_web_account(session, body, get_redis(), settings)
+    background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
+    return resp
+
+
+@router.post(
+    "/site-link/start",
+    response_model=TelegramSiteLinkStartResponse,
+    dependencies=[Depends(require_telegram_bot_api_secret)],
+    summary="Ссылка на сайт: форма привязки email/пароля или вход в кабинет по JWT (поля site_url и has_account)",
+)
+async def telegram_site_link_start_ep(
+    body: TelegramSiteLinkStartBody,
+    session: ReadonlySessionDep,
+) -> TelegramSiteLinkStartResponse:
+    return await telegram_site_link_start(session, body, get_redis(), settings)
+
+
+@router.get(
+    "/referral/me",
+    response_model=ReferralMeResponse,
+    dependencies=[Depends(require_telegram_bot_api_secret)],
+    summary="Персональная реферальная ссылка (как GET /api/referral/me), по telegram_id и секрету бота",
+    description="Только для клиентской роли (как в кабинете); manager/admin — 403.",
+)
+async def telegram_referral_me(
+    session: SessionDep,
+    telegram_id: Annotated[
+        int,
+        Query(
+            ge=1,
+            le=BIGINT_MAX,
+            description="Telegram user id (Bot API)",
+        ),
+    ],
+) -> ReferralMeResponse:
+    user = await require_user_by_telegram_id(session, telegram_id)
+    principal = BearerPrincipal(role=jwt_role_for_user(user), user_id=user.id)
+    uid = client_site_user_id(principal)
+    return await referral_me_for_user(session, uid, settings)
+
+
+@router.delete(
+    "/subscription-devices/{device_id}",
+    status_code=204,
+    dependencies=[Depends(require_telegram_bot_api_secret)],
+    summary="Удалить подключение (как DELETE /api/me/subscription-devices/{device_id}), по telegram_id и секрету бота",
+)
+async def telegram_delete_subscription_device_ep(
+    session: SessionDep,
+    device_id: Annotated[int, Path(ge=1, description="Идентификатор строки subscription_devices")],
+    telegram_id: Annotated[
+        int,
+        Query(
+            ge=1,
+            le=BIGINT_MAX,
+            description="Telegram user id (Bot API)",
+        ),
+    ],
+) -> None:
+    user = await require_user_by_telegram_id(session, telegram_id)
+    await delete_subscription_device(session, user_id=int(user.id), device_id=device_id)
 
 
 @router.get(
@@ -67,17 +155,3 @@ async def get_user_by_topic_id_ep(
     session: ReadonlySessionDep,
 ) -> UserRead:
     return await get_user_by_topic_id(session, topic_id)
-
-
-@router.patch(
-    "/users/{telegram_id}",
-    response_model=TelegramUserPropertiesUpdateResponse,
-    dependencies=[Depends(require_telegram_bot_api_secret)],
-    summary="Частичное обновление telegram_properties (правила слияния совпадают с POST /api/auth/telegram)",
-)
-async def patch_user_telegram_properties_ep(
-    telegram_id: int,
-    body: TelegramProfilePatchBody,
-    session: SessionDep,
-) -> TelegramUserPropertiesUpdateResponse:
-    return await patch_user_telegram_properties(session, telegram_id, body)
