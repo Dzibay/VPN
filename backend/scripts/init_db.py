@@ -1,5 +1,6 @@
 """
-Применяет database/init.sql и database/migrate.sql к БД (app.infrastructure.database.session).
+Применяет database/init.sql, database/migrate.sql и все ``database/rpc/*.sql`` к БД
+(app.infrastructure.database.session.ensure_schema).
 
 Переменные подключения — из backend/.env: DATABASE_URL или DB_HOST / DB_USER / DB_PASSWORD / DB_NAME (см. app.config).
 
@@ -58,7 +59,22 @@ def main() -> None:
         sys.exit(1)
 
     root = _repo_root()
-    print("Схема применена:", root / "database" / "init.sql", "+", root / "database" / "migrate.sql")
+    try:
+        from app.infrastructure.database.schema import resolve_rpc_sql_paths
+
+        rpc = resolve_rpc_sql_paths()
+    except Exception:
+        rpc = []
+    rpc_suffix = ""
+    if rpc:
+        rpc_suffix = " + database/rpc: " + ", ".join(p.name for p in rpc)
+    print(
+        "Схема применена:",
+        root / "database" / "init.sql",
+        "+",
+        root / "database" / "migrate.sql",
+        rpc_suffix,
+    )
 
 
 if __name__ == "__main__":

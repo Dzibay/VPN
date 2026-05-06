@@ -1,5 +1,6 @@
 """
-Идемпотентное приведение схемы PostgreSQL: database/init.sql, затем database/migrate.sql.
+Идемпотентное приведение схемы PostgreSQL: database/init.sql, затем database/migrate.sql,
+затем все ``database/rpc/*.sql`` (функции RPC, например ``rpc_users_daily_stats``).
 
 docker-entrypoint-initdb.d выполняется только при пустом data directory; старые БД
 догоняются при старте приложения через ensure_schema().
@@ -17,6 +18,7 @@ log = logging.getLogger(__name__)
 
 _INIT_NAME = "init.sql"
 _MIGRATE_NAME = "migrate.sql"
+_RPC_DIR_NAME = "rpc"
 
 
 def _repo_root_candidates() -> list[Path]:
@@ -43,6 +45,15 @@ def resolve_schema_sql_paths() -> tuple[Path, Path]:
         f"Нужны database/{_INIT_NAME} и database/{_MIGRATE_NAME} "
         "(рядом с корнем репозитория или в /app/database/).",
     )
+
+
+def resolve_rpc_sql_paths() -> list[Path]:
+    """Файлы ``database/rpc/*.sql`` в алфавитном порядке (CREATE OR REPLACE FUNCTION и т.п.)."""
+    init_path, _migrate_path = resolve_schema_sql_paths()
+    rpc_dir = init_path.parent / _RPC_DIR_NAME
+    if not rpc_dir.is_dir():
+        return []
+    return sorted(p for p in rpc_dir.glob("*.sql") if p.is_file())
 
 
 def _strip_line_comments(sql: str) -> str:
@@ -100,18 +111,27 @@ def _execute_sql_file(conn, path: Path) -> None:
 
 
 def ensure_schema(engine: Engine | None = None) -> None:
-    """init.sql → migrate.sql в одной транзакции."""
+    """init.sql → migrate.sql → database/rpc/*.sql в одной транзакции."""
     from app.infrastructure.database.session import engine as default_engine
 
     eng = engine or default_engine
     init_path, migrate_path = resolve_schema_sql_paths()
+    rpc_paths = resolve_rpc_sql_paths()
 
     try:
         with eng.begin() as conn:
             _execute_sql_file(conn, init_path)
             _execute_sql_file(conn, migrate_path)
+            for rpc_path in rpc_paths:
+                _execute_sql_file(conn, rpc_path)
     except SQLAlchemyError:
         log.exception("Ошибка применения схемы (%s, %s)", init_path, migrate_path)
         raise
 
-    log.info("Схема БД синхронизирована (%s + %s)", init_path.name, migrate_path.name)
+    rpc_names = ", ".join(p.name for p in rpc_paths) or "—"
+    log.info(
+        "Схема БД синхронизирована (%s + %s; rpc: %s)",
+        init_path.name,
+        migrate_path.name,
+        rpc_names,
+    )

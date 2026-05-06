@@ -9,15 +9,13 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta, timezone
 
-from sqlalchemy import case, cast, func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.types import Date
 
 from app.core.time import as_calendar_date
 from app.domain.models.users import UserStatsByDateRow, UsersDailyStatsResponse
-from app.domain.user_traffic import user_server_traffic_latest_subquery
 from app.infrastructure.persistence.models.subscription_device import SubscriptionDevice
 from app.infrastructure.persistence.models.user import User
 from app.infrastructure.persistence.models.user_server_traffic import UserServerTraffic
@@ -108,124 +106,29 @@ async def _traffic_active_count_by_date(
     return result
 
 
-async def _registration_counts_by_date(
-    session: AsyncSession,
-) -> dict[date | None, tuple[int, int]]:
-    """День регистрации (UTC) → (всего регистраций, регистрации с зафиксированным трафиком).
+async def stats_by_date_merged(session: AsyncSession) -> list[UserStatsByDateRow]:
+    """Сводка по датам через PostgreSQL ``rpc_users_daily_stats()`` (см. ``database/rpc/users_daily_stats.sql``).
 
-    Ключ ``None`` собирает строки без ``registered_at`` (например, импортированные данные).
+    Строка без даты регистрации (``stats_date IS NULL``) — в конце набора, если есть такие пользователи.
     """
-    latest = user_server_traffic_latest_subquery()
-    traffic_totals = (
-        select(
-            latest.c.user_id.label("uid"),
-            func.coalesce(
-                func.sum(latest.c.up_bytes + latest.c.down_bytes),
-                0,
-            ).label("total_bytes"),
-        )
-        .group_by(latest.c.user_id)
-        .subquery()
-    )
-    day_expr = cast(func.timezone("UTC", User.registered_at), Date)
-    with_traffic_expr = func.sum(
-        case(
-            (func.coalesce(traffic_totals.c.total_bytes, 0) > 0, 1),
-            else_=0,
-        ),
-    ).label("with_traffic_cnt")
-    stmt = (
-        select(
-            day_expr.label("day_raw"),
-            func.count().label("cnt"),
-            with_traffic_expr,
-        )
-        .select_from(User)
-        .outerjoin(traffic_totals, User.id == traffic_totals.c.uid)
-        .group_by(day_expr)
+    stmt = text(
+        """
+        SELECT stats_date, users_count, users_with_traffic_count,
+               active_users_count, subscription_devices_users_count
+        FROM rpc_users_daily_stats()
+        """,
     )
     rows = (await session.execute(stmt)).all()
-    out: dict[date | None, tuple[int, int]] = {}
-    for rd_raw, cnt, wt_raw in rows:
-        try:
-            n = int(cnt or 0)
-        except (TypeError, ValueError):
-            n = 0
-        try:
-            wt = int(wt_raw or 0)
-        except (TypeError, ValueError):
-            wt = 0
-        wt = max(0, min(wt, n))
-        rd = as_calendar_date(rd_raw)
-        out[rd] = (max(0, n), wt)
-    return out
-
-
-async def _first_subscription_device_users_by_utc_date(session: AsyncSession) -> dict[date, int]:
-    """День → число пользователей, у которых в этот день впервые появилось устройство подписки."""
-    stmt = (
-        select(
-            SubscriptionDevice.user_id,
-            func.min(SubscriptionDevice.created_at).label("first_at"),
+    return [
+        UserStatsByDateRow(
+            stats_date=row[0],
+            users_count=int(row[1] or 0),
+            users_with_traffic_count=int(row[2] or 0),
+            active_users_count=int(row[3] or 0),
+            subscription_devices_users_count=int(row[4] or 0),
         )
-        .group_by(SubscriptionDevice.user_id)
-    )
-    raw = (await session.execute(stmt)).all()
-    by_day: dict[date, int] = defaultdict(int)
-    for _uid, first_at in raw:
-        if first_at is None:
-            continue
-        if isinstance(first_at, datetime):
-            if first_at.tzinfo is None:
-                cal = first_at.replace(tzinfo=timezone.utc).date()
-            else:
-                cal = first_at.astimezone(timezone.utc).date()
-        elif isinstance(first_at, date):
-            cal = first_at
-        else:
-            continue
-        by_day[cal] += 1
-    return dict(by_day)
-
-
-async def stats_by_date_merged(session: AsyncSession) -> list[UserStatsByDateRow]:
-    """Объединение трёх метрик по дате (регистрации + активные + первые подписочные устройства).
-
-    Дни без даты регистрации (``registered_at IS NULL``) собираются в одну итоговую строку
-    с ``stats_date=None`` в конце списка.
-    """
-    reg_map = await _registration_counts_by_date(session)
-    active_map = await _traffic_active_count_by_date(session)
-    dev_map = await _first_subscription_device_users_by_utc_date(session)
-    undated = reg_map.pop(None, None)
-    date_keys = set(reg_map) | set(active_map) | set(dev_map)
-    ordered = sorted(d for d in date_keys if d is not None)
-    result: list[UserStatsByDateRow] = []
-    for d in ordered:
-        u, wt = reg_map.get(d, (0, 0))
-        a = active_map.get(d, 0)
-        dev_u = int(dev_map.get(d, 0) or 0)
-        result.append(
-            UserStatsByDateRow(
-                stats_date=d,
-                users_count=u,
-                users_with_traffic_count=wt,
-                active_users_count=a,
-                subscription_devices_users_count=dev_u,
-            ),
-        )
-    if undated is not None:
-        u, wt = undated
-        result.append(
-            UserStatsByDateRow(
-                stats_date=None,
-                users_count=u,
-                users_with_traffic_count=wt,
-                active_users_count=0,
-                subscription_devices_users_count=0,
-            ),
-        )
-    return result
+        for row in rows
+    ]
 
 
 async def users_daily_stats(session: AsyncSession) -> UsersDailyStatsResponse:

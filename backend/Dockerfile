@@ -25,6 +25,7 @@ COPY backend/app ./app
 COPY backend/worker ./worker
 COPY database/init.sql ./database/init.sql
 COPY database/migrate.sql ./database/migrate.sql
+COPY database/rpc ./database/rpc
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
