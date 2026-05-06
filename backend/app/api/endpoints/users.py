@@ -75,7 +75,7 @@ async def list_users(
     "/daily-stats",
     response_model=UsersDailyStatsResponse,
     dependencies=[Depends(require_referrals_staff)],
-    summary="Статистика по UTC: по календарным дням или по часам (granularity); время в JSON — Москва",
+    summary="Статистика: по UTC-дням или по часам суток Москвы (granularity); время в JSON — Москва",
 )
 async def users_daily_stats_ep(
     session: ReadonlySessionDep,
@@ -83,21 +83,21 @@ async def users_daily_stats_ep(
         Literal["day", "hour"],
         Query(
             description=(
-                "day — по датам UTC; hour — 24 часа UTC внутри календарного дня hour_day (обязателен)"
+                "day — по календарным дням UTC; hour — 24 часа календарного дня Europe/Moscow (hour_day обязателен)"
             ),
         ),
     ] = "day",
     hour_day: Annotated[
         date | None,
         Query(
-            description="Календарный день UTC для granularity=hour (YYYY-MM-DD)",
+            description="При granularity=hour — календарная дата суток по Москве YYYY-MM-DD",
         ),
     ] = None,
 ) -> UsersDailyStatsResponse:
     if granularity == "hour" and hour_day is None:
         raise HTTPException(
             status_code=422,
-            detail="Укажите hour_day (календарный день UTC, YYYY-MM-DD) для granularity=hour",
+            detail="Укажите hour_day (календарный день по Москве, YYYY-MM-DD) для granularity=hour",
         )
     try:
         return await users_daily_stats(

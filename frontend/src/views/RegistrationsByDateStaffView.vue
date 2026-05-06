@@ -5,6 +5,7 @@ import AdminStaffShell from '../components/AdminStaffShell.vue'
 import { fetchJson } from '../api/client.js'
 import { mapStaffChartEventsToMarkers } from '../utils/chartStaffMarkersPlugin.js'
 import {
+  mskTodayIso,
   utcTodayIso,
   useUsersDailyStatsChart,
 } from '../composables/useUsersDailyStatsChart.js'
@@ -107,7 +108,7 @@ async function removeChartEvent(id) {
 const chart = useUsersDailyStatsChart()
 const {
   granularity,
-  hourDayUtc,
+  hourDayMsk,
   loading,
   error,
   chartPoints,
@@ -152,7 +153,7 @@ onMounted(() => {
           <div
             class="granularity-toggle"
             role="group"
-            aria-label="Шаг временной шкалы UTC"
+            aria-label="Шаг временной шкалы: дни по UTC, часы по Москве"
           >
             <button
               type="button"
@@ -174,12 +175,12 @@ onMounted(() => {
             </button>
           </div>
           <label v-if="granularity === 'hour'" class="hour-day-field">
-            <span class="hour-day-label-text">День (UTC)</span>
+            <span class="hour-day-label-text">День (МСК)</span>
             <input
-              v-model="hourDayUtc"
+              v-model="hourDayMsk"
               class="hour-day-input"
               type="date"
-              :max="utcTodayIso()"
+              :max="mskTodayIso()"
               required
             />
           </label>

@@ -1,6 +1,3 @@
-DROP FUNCTION IF EXISTS rpc_users_daily_stats ();
-DROP FUNCTION IF EXISTS rpc_users_daily_stats (text);
-
 -- Дневная сводка по календарным дням UTC (registered_at, traffic_date, subscription_devices).
 
 CREATE OR REPLACE FUNCTION rpc_users_daily_stats ()

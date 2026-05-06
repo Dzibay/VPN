@@ -49,7 +49,7 @@ function dataPointCenterX(chart, dataIndex) {
 }
 
 /**
- * Сопоставляет события индексам точек графика (день или час UTC — как у данных после возврата к UTC-RPC).
+ * Сопоставляет события индексам точек графика (день UTC или час по Москве — как у данных RPC).
  * event_at в ответе API приходит в московском ISO; сравнение через абсолютный момент (UTC).
  * @param {Array<{ iso: string }>} chartPoints
  * @param {'day'|'hour'} granularity

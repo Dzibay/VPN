@@ -1,7 +1,7 @@
 """Системные дневные метрики: регистрации, активные пользователи, первые подписочные устройства.
 
-Все агрегаты — по календарным дням UTC (см. ``rpc_users_daily_stats()``). В JSON ответов поля
-``datetime`` сериализуются в московском времени (см. ``app.core.moscow_api_time``).
+Дневной режим — календарные дни UTC (``rpc_users_daily_stats()``). Почасовой — сутки по календарю
+Москвы (``rpc_users_hourly_stats``). Поля ``datetime`` в JSON — Москва (``app.core.moscow_api_time``).
 """
 
 from __future__ import annotations
@@ -150,33 +150,17 @@ async def stats_by_date_merged(session: AsyncSession) -> list[UserStatsByDateRow
     ]
 
 
-async def stats_by_hour_merged(session: AsyncSession, hour_day: date) -> list[UserStatsByDateRow]:
-    """Почасовая сводка за сутки UTC: на каждый час — накопительные метрики на конец часа (не только выбранный день)."""
+def _hour_extras_from_first_rpc_row(row: object | None) -> tuple[int, int, int, int]:
+    """Дублирующиеся поля RPC на каждой строке — достаточно первой."""
 
-    stmt = text(
-        """
-        SELECT period_start_utc, users_count, users_with_traffic_count,
-               active_users_count, subscription_devices_users_count
-        FROM rpc_users_hourly_stats(:hour_day)
-        """,
+    if row is None or len(row) < 9:
+        return (0, 0, 0, 0)
+    return (
+        int(row[5] or 0),
+        int(row[6] or 0),
+        int(row[7] or 0),
+        int(row[8] or 0),
     )
-    rows = (await session.execute(stmt, {"hour_day": hour_day})).all()
-    result: list[UserStatsByDateRow] = []
-    for row in rows:
-        ps = row[0]
-        if ps is not None:
-            ps = _naive_utc(ps)
-        result.append(
-            UserStatsByDateRow(
-                stats_date=None,
-                period_start_utc=ps,
-                users_count=int(row[1] or 0),
-                users_with_traffic_count=int(row[2] or 0),
-                active_users_count=int(row[3] or 0),
-                subscription_devices_users_count=int(row[4] or 0),
-            ),
-        )
-    return result
 
 
 async def users_daily_stats(
@@ -185,15 +169,47 @@ async def users_daily_stats(
     granularity: Literal["day", "hour"] = "day",
     hour_day: date | None = None,
 ) -> UsersDailyStatsResponse:
-    """Сводка для эндпоинта ``/users/daily-stats`` (дни или часы UTC внутри ``hour_day``)."""
+    """Сводка для эндпоинта ``/users/daily-stats`` (дни UTC или 24 часа календарного дня МСК)."""
 
     if granularity == "hour":
         if hour_day is None:
             raise ValueError("hour_day обязателен при granularity=hour")
+        stmt = text(
+            """
+            SELECT period_start_utc, users_count, users_with_traffic_count,
+                   active_users_count, subscription_devices_users_count,
+                   baseline_users_count, baseline_users_with_traffic_count,
+                   baseline_subscription_devices_users_count, undated_users_count
+            FROM rpc_users_hourly_stats(:hour_day)
+            """,
+        )
+        raw_rows = (await session.execute(stmt, {"hour_day": hour_day})).all()
+        hb_users, hb_traffic, hb_devices, undated_n = _hour_extras_from_first_rpc_row(
+            raw_rows[0] if raw_rows else None,
+        )
+        stats_rows: list[UserStatsByDateRow] = []
+        for row in raw_rows:
+            ps = row[0]
+            if ps is not None:
+                ps = _naive_utc(ps)
+            stats_rows.append(
+                UserStatsByDateRow(
+                    stats_date=None,
+                    period_start_utc=ps,
+                    users_count=int(row[1] or 0),
+                    users_with_traffic_count=int(row[2] or 0),
+                    active_users_count=int(row[3] or 0),
+                    subscription_devices_users_count=int(row[4] or 0),
+                ),
+            )
         return UsersDailyStatsResponse(
             granularity="hour",
             hour_day=hour_day,
-            stats_by_date=await stats_by_hour_merged(session, hour_day),
+            stats_by_date=stats_rows,
+            hour_baseline_users_count=hb_users,
+            hour_baseline_users_with_traffic_count=hb_traffic,
+            hour_baseline_subscription_devices_users_count=hb_devices,
+            hour_undated_users_count=undated_n,
         )
     dated = await stats_by_date_merged(session)
     return UsersDailyStatsResponse(

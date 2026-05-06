@@ -16,6 +16,27 @@ export function utcTodayIso() {
   return `${y}-${m}-${day}`
 }
 
+/** Текущий календарный день Europe/Moscow в форме YYYY-MM-DD (для hour_day и type=\"date\"). */
+export function mskTodayIso() {
+  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Moscow' })
+}
+
+/** Подпись календарной даты, интерпретированной как день по Москве (YYYY-MM-DD). */
+export function formatMskCalendarDayShort(iso) {
+  if (iso == null || iso === '') return '—'
+  try {
+    const s = String(iso).slice(0, 10)
+    return new Date(`${s}T12:00:00+03:00`).toLocaleDateString('ru-RU', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      timeZone: 'Europe/Moscow',
+    })
+  } catch {
+    return String(iso)
+  }
+}
+
 /** Подпись календарного дня UTC (YYYY-MM-DD). */
 export function formatDayShort(iso) {
   if (iso == null || iso === '') return '—'
@@ -40,6 +61,23 @@ export function formatHourShortMsk(isoOrTs) {
         timeZone: 'Europe/Moscow',
         day: '2-digit',
         month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+      }) + ' МСК'
+    )
+  } catch {
+    return String(isoOrTs)
+  }
+}
+
+/** Короткая подпись часа по Москве для оси X (одни сутки — без повтора даты). */
+export function formatHourAxisMsk(isoOrTs) {
+  if (isoOrTs == null || isoOrTs === '') return '—'
+  try {
+    return (
+      new Date(isoOrTs).toLocaleTimeString('ru-RU', {
+        timeZone: 'Europe/Moscow',
         hour: '2-digit',
         minute: '2-digit',
         hourCycle: 'h23',
@@ -150,8 +188,14 @@ export function useUsersDailyStatsChart() {
   /** @type {import('vue').Ref<StatsGranularity>} */
   const granularity = ref('day')
 
-  /** Календарный день UTC для почасового графика (YYYY-MM-DD). */
-  const hourDayUtc = ref(utcTodayIso())
+  /** Календарный день Москвы для почасового графика (YYYY-MM-DD в запросе hour_day). */
+  const hourDayMsk = ref(mskTodayIso())
+
+  /** На начало выбранных суток МСК (для прироста относительно 00:00). */
+  const hourBaselineUsers = ref(0)
+  const hourBaselineTraffic = ref(0)
+  const hourBaselineDevices = ref(0)
+  const hourUndatedUsers = ref(0)
 
   /** @type {import('vue').Ref<DailyStatsRow[]>} */
   const rows = ref([])
@@ -162,7 +206,7 @@ export function useUsersDailyStatsChart() {
     void load()
   })
 
-  watch(hourDayUtc, () => {
+  watch(hourDayMsk, () => {
     if (granularity.value === 'hour') void load()
   })
 
@@ -203,6 +247,7 @@ export function useUsersDailyStatsChart() {
 
     /* Почасовой API отдаёт уже накопительные итоги на конец часа (все пользователи до этого момента). */
     if (gran === 'hour') {
+      /* Почасовой API уже включает пользователей без registered_at; baseline не дублируем. */
       return dense.map((row) => ({
         iso: row.iso,
         periodStart: row.periodStart,
@@ -213,8 +258,8 @@ export function useUsersDailyStatsChart() {
         cumDatedUsers: row.dayUsers,
         cumDatedTraffic: row.dayTraffic,
         cumDatedDevices: row.dayDevices,
-        totalUsers: row.dayUsers + extraUsers,
-        totalTraffic: row.dayTraffic + extraTraffic,
+        totalUsers: row.dayUsers,
+        totalTraffic: row.dayTraffic,
         totalDevices: row.dayDevices,
       }))
     }
@@ -250,7 +295,7 @@ export function useUsersDailyStatsChart() {
         if (!hasChartBucket(r, 'hour')) continue
         mx = Math.max(mx, Number(r.users_count) || 0)
       }
-      return mx + undatedCount.value
+      return mx
     }
     return rows.value.reduce((acc, r) => acc + (Number(r.users_count) || 0), 0)
   })
@@ -262,7 +307,7 @@ export function useUsersDailyStatsChart() {
         if (!hasChartBucket(r, 'hour')) continue
         mx = Math.max(mx, Number(r.users_with_traffic_count) || 0)
       }
-      return mx + undatedTrafficCount.value
+      return mx
     }
     return rows.value.reduce(
       (acc, r) => acc + (Number(r.users_with_traffic_count) || 0),
@@ -327,7 +372,7 @@ export function useUsersDailyStatsChart() {
 
   const chartAriaLabel = computed(() =>
     granularity.value === 'hour'
-      ? `По часам UTC за ${formatDayShort(hourDayUtc.value)} (подписи времени — МСК): накопление регистраций и первых подключений устройств`
+      ? `По часам за ${formatMskCalendarDayShort(hourDayMsk.value)} (МСК): накопление пользователей и первых подключений устройств`
       : 'По дням UTC: накопление регистраций и клиентов с устройствами, активные по трафику',
   )
 
@@ -345,7 +390,7 @@ export function useUsersDailyStatsChart() {
   const registrationChartLabels = computed(() =>
     chartPoints.value.map((p) =>
       granularity.value === 'hour'
-        ? formatHourShortMsk(p.periodStart || p.iso)
+        ? formatHourAxisMsk(p.periodStart || p.iso)
         : formatDayShort(p.iso),
     ),
   )
@@ -408,16 +453,19 @@ export function useUsersDailyStatsChart() {
 
     if (gran === 'hour') {
       if (ctx.datasetIndex === 0) {
-        const prevUsers = i > 0 ? pts[i - 1].totalUsers : und
+        const prevUsers =
+          i > 0 ? pts[i - 1].totalUsers : hourBaselineUsers.value
         const dUsers = p.totalUsers - prevUsers
+        const undMsk = hourUndatedUsers.value
         return [
           `Пользователи: ${fmtRu(p.totalUsers)}`,
-          `Без даты регистрации: ${fmtRu(und)}`,
+          `Без даты регистрации (учтены в сумме): ${fmtRu(undMsk)}`,
           `Прирост с предыдущего ${stepWord}: ${fmtDeltaRu(dUsers)}`,
         ]
       }
       if (ctx.datasetIndex === 1) {
-        const prevDev = i > 0 ? pts[i - 1].totalDevices : 0
+        const prevDev =
+          i > 0 ? pts[i - 1].totalDevices : hourBaselineDevices.value
         const dDev = p.totalDevices - prevDev
         return [
           `С подключением (записи устройств): ${fmtRu(p.totalDevices)}`,
@@ -469,18 +517,36 @@ export function useUsersDailyStatsChart() {
       const g = granularity.value
       let url = `/api/users/daily-stats?granularity=${encodeURIComponent(g)}`
       if (g === 'hour') {
-        let day = String(hourDayUtc.value ?? '').trim().slice(0, 10)
+        let day = String(hourDayMsk.value ?? '').trim().slice(0, 10)
         if (!day) {
-          day = utcTodayIso()
-          hourDayUtc.value = day
+          day = mskTodayIso()
+          hourDayMsk.value = day
         }
         url += `&hour_day=${encodeURIComponent(day)}`
       }
       const data = await fetchJson(url)
       rows.value = Array.isArray(data.stats_by_date) ? data.stats_by_date : []
+      if (g === 'hour') {
+        hourBaselineUsers.value =
+          Number(data.hour_baseline_users_count) || 0
+        hourBaselineTraffic.value =
+          Number(data.hour_baseline_users_with_traffic_count) || 0
+        hourBaselineDevices.value =
+          Number(data.hour_baseline_subscription_devices_users_count) || 0
+        hourUndatedUsers.value = Number(data.hour_undated_users_count) || 0
+      } else {
+        hourBaselineUsers.value = 0
+        hourBaselineTraffic.value = 0
+        hourBaselineDevices.value = 0
+        hourUndatedUsers.value = 0
+      }
     } catch (e) {
       error.value = e.message || String(e)
       rows.value = []
+      hourBaselineUsers.value = 0
+      hourBaselineTraffic.value = 0
+      hourBaselineDevices.value = 0
+      hourUndatedUsers.value = 0
     } finally {
       loading.value = false
     }
@@ -489,7 +555,7 @@ export function useUsersDailyStatsChart() {
 
   return reactive({
     granularity,
-    hourDayUtc,
+    hourDayMsk,
     setGranularity,
     rows,
     loading,
