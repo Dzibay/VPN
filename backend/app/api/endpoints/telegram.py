@@ -21,6 +21,16 @@ from app.domain.models.auth import (
     TelegramWebLinkBody,
     TelegramWebLinkResponse,
 )
+from app.domain.models.payments import (
+    TelegramPaymentCreateBody,
+    TelegramPaymentRead,
+    TelegramPaymentSetStatusBody,
+)
+from app.domain.models.telegram_notification_tasks import (
+    TelegramNotificationTasksListResponse,
+    TelegramTasksAckBody,
+    TelegramTasksAckResponse,
+)
 from app.domain.models.referral_links import ReferralMeResponse
 from app.domain.models.users import UserRead
 from app.domain.services.telegram_auth_service import (
@@ -29,6 +39,14 @@ from app.domain.services.telegram_auth_service import (
 )
 from app.domain.services.me_service import delete_subscription_device
 from app.domain.services.referral_links_service import client_site_user_id, referral_me_for_user
+from app.domain.services.telegram_notification_tasks_service import (
+    acknowledge_notification_tasks,
+    list_pending_notification_tasks,
+)
+from app.domain.services.telegram_payments_service import (
+    create_pending_payment_for_telegram_user,
+    set_payment_terminal_status_for_telegram_user,
+)
 from app.domain.services.telegram_service import (
     get_user_by_topic_id,
     list_telegram_user_ids,
@@ -155,3 +173,80 @@ async def get_user_by_topic_id_ep(
     session: ReadonlySessionDep,
 ) -> UserRead:
     return await get_user_by_topic_id(session, topic_id)
+
+
+@router.post(
+    "/payments",
+    response_model=TelegramPaymentRead,
+    dependencies=[Depends(require_telegram_bot_api_secret)],
+    summary="Создать платёж со статусом pending",
+    description="По telegram_id находится users.id; запись в payments со статусом pending.",
+)
+async def telegram_create_payment_ep(
+    session: SessionDep,
+    body: TelegramPaymentCreateBody,
+) -> TelegramPaymentRead:
+    row = await create_pending_payment_for_telegram_user(
+        session,
+        telegram_id=body.telegram_id,
+        amount=body.amount,
+        months=body.months,
+    )
+    return TelegramPaymentRead.model_validate(row)
+
+
+@router.patch(
+    "/payments/{payment_id}",
+    response_model=TelegramPaymentRead,
+    dependencies=[Depends(require_telegram_bot_api_secret)],
+    summary="Завершить платёж: completed или failed",
+    description="Меняет статус только с pending; payment_id должен принадлежать пользователю с данным telegram_id.",
+)
+async def telegram_set_payment_status_ep(
+    session: SessionDep,
+    payment_id: Annotated[int, Path(ge=1, description="Идентификатор строки payments")],
+    telegram_id: Annotated[
+        int,
+        Query(
+            ge=1,
+            le=BIGINT_MAX,
+            description="Telegram user id (Bot API); должен совпадать с владельцем платежа",
+        ),
+    ],
+    body: TelegramPaymentSetStatusBody,
+) -> TelegramPaymentRead:
+    row = await set_payment_terminal_status_for_telegram_user(
+        session,
+        telegram_id=telegram_id,
+        payment_id=payment_id,
+        status=body.status,
+    )
+    return TelegramPaymentRead.model_validate(row)
+
+
+@router.get(
+    "/notification-tasks",
+    response_model=TelegramNotificationTasksListResponse,
+    dependencies=[Depends(require_telegram_bot_api_secret)],
+    summary="Невыполненные задачи оповещения (notify_reg, notify_payment)",
+    description="С joined telegram_id получателя и реферала (если есть в users).",
+)
+async def telegram_list_notification_tasks_ep(
+    session: ReadonlySessionDep,
+) -> TelegramNotificationTasksListResponse:
+    return await list_pending_notification_tasks(session)
+
+
+@router.post(
+    "/notification-tasks/completed",
+    response_model=TelegramTasksAckResponse,
+    dependencies=[Depends(require_telegram_bot_api_secret)],
+    summary="Отметить задачи оповещения выполненными",
+    description="По переданным id проставляется done_at (только pending и типы notify_reg / notify_payment).",
+)
+async def telegram_complete_notification_tasks_ep(
+    session: SessionDep,
+    body: TelegramTasksAckBody,
+) -> TelegramTasksAckResponse:
+    ids = await acknowledge_notification_tasks(session, body.task_ids)
+    return TelegramTasksAckResponse(completed_task_ids=ids)

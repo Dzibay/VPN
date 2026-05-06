@@ -32,6 +32,7 @@ from app.domain.models.auth import (
     build_subscription_open_client_items,
 )
 from app.domain.public_urls import telegram_bot_public_page_url
+from app.domain.referrals.registration_tasks import create_notify_reg_task_if_applicable
 from app.domain.referrals.repository import increment_referral_counter
 from app.domain.users.identifiers import new_subscription_token, new_vless_uuid
 from app.domain.subscription.devices import (
@@ -104,6 +105,11 @@ async def register_with_email(
             user.referral_link_id = rlink.id
             await increment_referral_counter(session, rlink.id, "registrations")
             await session.flush()
+            await create_notify_reg_task_if_applicable(
+                session,
+                referral_link=rlink,
+                referee_user_id=int(user.id),
+            )
 
     token = issue_access_token_or_http_error(cfg, role="user", user_id=user.id)
     bind_request_subject_user(int(user.id), source="register_email")

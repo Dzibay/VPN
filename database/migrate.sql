@@ -151,3 +151,43 @@ CREATE TABLE IF NOT EXISTS staff_chart_events (
 
 CREATE INDEX IF NOT EXISTS idx_staff_chart_events_event_at
     ON staff_chart_events (event_at ASC);
+
+-- Платежи пользователей
+CREATE TABLE IF NOT EXISTS payments (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    amount NUMERIC(14, 2) NOT NULL CHECK (amount >= 0),
+    months INTEGER NOT NULL CHECK (months >= 1),
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT payments_status_check CHECK (
+        status IN ('pending', 'completed', 'failed')
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_payments_user_created_at
+    ON payments (user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_payments_status
+    ON payments (status);
+
+-- Очередь задач (уведомления / бонусы по рефералам и т.п.)
+CREATE TABLE IF NOT EXISTS tasks (
+    id BIGSERIAL PRIMARY KEY,
+    type TEXT NOT NULL,
+    user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    referee_id BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    bonus_days INTEGER CHECK (bonus_days IS NULL OR bonus_days >= 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    done_at TIMESTAMPTZ,
+    CONSTRAINT tasks_type_check CHECK (
+        type IN ('notify_reg', 'notify_payment', 'add_bonus')
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_user_created_at
+    ON tasks (user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_pending
+    ON tasks (created_at ASC)
+    WHERE done_at IS NULL;

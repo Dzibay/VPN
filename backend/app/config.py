@@ -75,6 +75,8 @@ class Settings(BaseSettings):
         description=(
             "Секрет для POST /api/auth/telegram, POST /api/telegram/link, POST /api/telegram/site-link/start, "
             "GET /api/telegram/referral/me, DELETE /api/telegram/subscription-devices/{device_id}, "
+            "POST /api/telegram/payments, PATCH /api/telegram/payments/{payment_id}, "
+            "GET /api/telegram/notification-tasks, POST /api/telegram/notification-tasks/completed, "
             "GET /api/telegram/users, GET /api/telegram/users/{topic_id} и "
             "GET /api/telegram/subscription-open-clients: "
             "заголовок X-Telegram-Bot-Secret (вызывает только бэкенд бота, не Telegram-клиент). "
