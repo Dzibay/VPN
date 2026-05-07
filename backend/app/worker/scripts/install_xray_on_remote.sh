@@ -13,6 +13,8 @@
 # Справедливость uplink (между TCP/UDP-потоками, не «на UUID Xray»):
 #   VPN_INSTALL_FAIR_EGRESS — для all/xray: 1 (по умолчанию) ставит CAKE или fq_codel на интерфейс default route.
 #   fair_egress — только перенастроить очередь (systemd vpn-egress-fairness).
+# Сеть (sysctl), см. _vps_net_sysctl_install — /etc/sysctl.d/99-vpn-vps-optimize.conf:
+#   VPN_INSTALL_NET_SYSCTL — 1 (по умолчанию): ip_local_port_range, tcp_tw_reuse, somaxconn, netdev_max_backlog, tcp_fastopen.
 # Настройки в /etc/default/vpn-egress-fairness:
 #   VPN_EGRESS_IFACE — явный интерфейс (иначе авто по ip route)
 #   VPN_EGRESS_BANDWIDTH — для CAKE, напр. 900mbit (≈95% от лимита VPS — уменьшает буферизацию)
@@ -503,6 +505,34 @@ _xray_install() {
     systemctl enable xray 2>/dev/null || true
   fi
   _xray_test_config_and_restart "$CFG" "$XRAY_BIN" || exit 1
+  _vps_net_sysctl_install || true
+}
+
+# Лимиты ядра под нагрузку Xray + CAKE: ephemeral-порты, очереди accept, TFO (согласовано с inbound sockopt).
+_vps_net_sysctl_install() {
+  if [[ "${VPN_INSTALL_NET_SYSCTL:-1}" == "0" || "${VPN_INSTALL_NET_SYSCTL:-}" == "false" ]]; then
+    echo "[net_sysctl] пропуск (VPN_INSTALL_NET_SYSCTL отключён)"
+    return 0
+  fi
+  if [[ "$(uname -s)" != "Linux" ]]; then
+    echo "[net_sysctl] не Linux — пропуск"
+    return 0
+  fi
+  install -d /etc/sysctl.d 2>/dev/null || mkdir -p /etc/sysctl.d
+  cat > /etc/sysctl.d/99-vpn-vps-optimize.conf <<'SYSCTL_EOF'
+# VPN / Xray: снижает риск исчерпания ephemeral-портов и отвалов сокетов под нагрузкой.
+# Применяется при провижининге xray / fair_egress / all (sysctl --system).
+net.ipv4.ip_local_port_range = 10000 65000
+net.ipv4.tcp_tw_reuse = 1
+net.core.somaxconn = 4096
+net.core.netdev_max_backlog = 10000
+net.ipv4.tcp_fastopen = 3
+SYSCTL_EOF
+  chmod 644 /etc/sysctl.d/99-vpn-vps-optimize.conf
+  if command -v sysctl >/dev/null 2>&1; then
+    sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-vpn-vps-optimize.conf 2>/dev/null || true
+  fi
+  echo "[net_sysctl] записан /etc/sysctl.d/99-vpn-vps-optimize.conf (sysctl применён при возможности)"
 }
 
 _ne_install() {
@@ -579,6 +609,7 @@ _egress_fairness_install() {
     echo "[egress_fairness] пропуск (VPN_INSTALL_FAIR_EGRESS отключён)"
     return 0
   fi
+  _vps_net_sysctl_install || true
   if ! command -v tc >/dev/null 2>&1; then
     echo "[egress_fairness] нет tc (пакет iproute2) — apt-get install -y iproute2" >&2
     return 1
@@ -844,6 +875,11 @@ UNIT
 }
 
 _egress_fairness_purge() {
+  echo "[cleanup] sysctl 99-vpn-vps-optimize…"
+  rm -f /etc/sysctl.d/99-vpn-vps-optimize.conf
+  if command -v sysctl >/dev/null 2>&1; then
+    sysctl --system >/dev/null 2>&1 || true
+  fi
   echo "[cleanup] vpn-egress-fairness: остановка и снятие qdisc…"
   if command -v systemctl >/dev/null 2>&1; then
     systemctl stop vpn-egress-fairness.service 2>/dev/null || true
