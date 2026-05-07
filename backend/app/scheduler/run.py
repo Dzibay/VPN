@@ -1,6 +1,7 @@
-"""Отдельный процесс с периодическими корутинами (Prometheus-load, Xray-сбор, daily sync).
+"""Отдельный процесс с периодическими корутинами (Prometheus-load, Xray-сбор, daily sync,
+TCP-доступность узлов в Redis).
 
-До рефакторинга эти три фоновые задачи жили в ``lifespan`` API. Они работают через
+До рефакторинга часть этих задач жила в ``lifespan`` API. Они работают через
 ``run_in_threadpool`` поверх sync ``SessionLocal`` / sync httpx, и при горизонтальном
 масштабировании API дублировали бы работу. Здесь один процесс на весь стек.
 
@@ -119,6 +120,16 @@ async def main() -> None:
         log.info("scheduler: включён sync servers.load_percent из Prometheus")
     else:
         log.info("scheduler: server load из Prometheus выключен (или нет PROMETHEUS_BASE_URL)")
+
+    if settings.server_reachability_schedule_enabled:
+        from app.infrastructure.server_reachability_scheduler import (
+            periodic_server_reachability_loop,
+        )
+
+        factories.append(periodic_server_reachability_loop)
+        log.info("scheduler: включён фоновый TCP-опрос узлов и история в Redis")
+    else:
+        log.info("scheduler: фоновый опрос доступности узлов выключен")
 
     await _run_until_stopped(factories)
 

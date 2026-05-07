@@ -365,6 +365,44 @@ class Settings(BaseSettings):
         ),
     )
 
+    server_reachability_schedule_enabled: bool = Field(
+        default=True,
+        description=(
+            "Планировщик: периодический TCP-опрос активных provision_ready узлов (порт VPN, каскад, "
+            "node_exporter) и запись снимков в Redis на SERVER_REACHABILITY_HISTORY_RETENTION_SECONDS."
+        ),
+    )
+    server_reachability_interval_seconds: int = Field(
+        default=60,
+        ge=30,
+        le=86400,
+        description="Интервал между циклами опроса доступности узлов (секунды). Минимум 30.",
+    )
+    server_reachability_initial_delay_seconds: int = Field(
+        default=40,
+        ge=0,
+        le=3600,
+        description="Задержка перед первым циклом после старта процесса scheduler.",
+    )
+    server_reachability_tcp_timeout_seconds: float = Field(
+        default=5.0,
+        ge=0.5,
+        le=30.0,
+        description="Таймаут TCP connect при фоновом опросе (секунды).",
+    )
+    server_reachability_history_retention_seconds: int = Field(
+        default=86400,
+        ge=3600,
+        le=86400 * 14,
+        description="Сколько секунд истории держать в Redis на узел (окно скользящее).",
+    )
+    server_reachability_parallelism: int = Field(
+        default=8,
+        ge=1,
+        le=32,
+        description="Параллельных TCP-проб в одном цикле (каждый поток со своей sync-сессией БД).",
+    )
+
     @computed_field
     def sqlalchemy_database_url(self) -> str:
         raw = (self.database_url or "").strip()

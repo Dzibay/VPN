@@ -7,7 +7,9 @@ from app.domain.models.servers import (
     ServerCreate,
     ServerLoadSyncResultRead,
     ServerPingRead,
+    ServerReachabilityHistoryRead,
     ServerRead,
+    ServersReachabilitySummaryRead,
     ServerUpdate,
     ServersCountResponse,
     XrayClientsSyncOneResultRead,
@@ -24,7 +26,9 @@ from app.domain.services.servers_service import (
     list_servers,
     patch_server,
     reset_server_provision,
+    server_reachability_history,
     servers_count,
+    servers_reachability_summary,
     sync_load_from_prometheus_result,
     tcp_probes_payload,
 )
@@ -46,6 +50,23 @@ router = APIRouter(
 )
 async def servers_count_ep(session: ReadonlySessionDep) -> ServersCountResponse:
     return await servers_count(session)
+
+
+@router.get(
+    "/reachability-summary",
+    response_model=ServersReachabilitySummaryRead,
+    summary="Сводка фонового TCP-опроса по всем серверам (данные в Redis)",
+)
+async def servers_reachability_summary_ep(
+    session: ReadonlySessionDep,
+    hours: float = Query(
+        24.0,
+        ge=1.0,
+        le=168.0,
+        description="Глубина окна агрегации, часов",
+    ),
+) -> ServersReachabilitySummaryRead:
+    return await servers_reachability_summary(session, hours=hours)
 
 
 @router.get(
@@ -233,6 +254,26 @@ async def ping_server_reachable(
         timeout_sec=timeout_sec,
         tcp=tcp,
     )
+
+
+@router.get(
+    "/{server_id}/reachability-history",
+    response_model=ServerReachabilityHistoryRead,
+    summary=(
+        "История фонового TCP-опроса узла (Redis): VPN-порт, при наличии — node_exporter и exit каскада"
+    ),
+)
+async def server_reachability_history_ep(
+    server_id: int,
+    session: ReadonlySessionDep,
+    hours: float = Query(
+        24.0,
+        ge=1.0,
+        le=168.0,
+        description="Глубина выборки, часов (не больше окна retention в Redis)",
+    ),
+) -> ServerReachabilityHistoryRead:
+    return await server_reachability_history(session, server_id, hours=hours)
 
 
 @router.delete(

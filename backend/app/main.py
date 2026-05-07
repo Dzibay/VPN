@@ -23,8 +23,8 @@ log = logging.getLogger("app.main")
 async def lifespan(_app: FastAPI):
     from app.infrastructure.database.schema import ensure_schema
 
-    # Сами периодические корутины (Xray-сбор, Prometheus-load, ежедневный sync) переехали
-    # в отдельный процесс `python -m app.scheduler.run` — см. backend/app/scheduler/run.py.
+    # Сами периодические корутины (Xray-сбор, Prometheus-load, ежедневный sync, TCP-доступность → Redis)
+    # переехали в отдельный процесс `python -m app.scheduler.run` — см. backend/app/scheduler/run.py.
     # Здесь остался только ensure_schema (идемпотентно, быстро): запускается синхронно при
     # старте процесса и не зависит от порядка запуска контейнеров.
     ensure_schema()

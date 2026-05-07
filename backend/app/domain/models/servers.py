@@ -462,3 +462,62 @@ class ServerPingRead(BaseModel):
         default_factory=list,
         description="подробные пункты в порядке важности",
     )
+
+
+class ServerReachabilitySampleRead(BaseModel):
+    """Один снимок фонового TCP-опроса (источник — Redis, планировщик scheduler)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    ts: float = Field(description="Unix time записи снимка")
+    vpn_ok: bool = Field(default=False, description="TCP к inbound VPN-порту узла")
+    vpn_ms: float | None = None
+    vpn_err: str = ""
+    ne_ok: bool | None = Field(default=None, description="TCP к node_exporter, если пробовалось")
+    ne_ms: float | None = None
+    ne_err: str = ""
+    exit_ok: bool | None = Field(default=None, description="TCP к exit каскада, если есть")
+    exit_ms: float | None = None
+    exit_err: str = ""
+
+
+class ServerReachabilityHistoryRead(BaseModel):
+    """GET /servers/{id}/reachability-history — скользящее окно из Redis."""
+
+    server_id: int
+    samples: list[ServerReachabilitySampleRead] = Field(default_factory=list)
+
+
+class ServerReachabilitySummaryRowRead(BaseModel):
+    """Одна строка сводки GET /servers/reachability-summary."""
+
+    server_id: int
+    name: str | None = None
+    host: str
+    port: int
+    is_active: bool
+    provision_ready: bool
+    samples_total: int = Field(ge=0, description="Число снимков в окне")
+    vpn_ok_count: int = Field(ge=0)
+    vpn_ok_percent: float = Field(ge=0, le=100, description="Доля успешных TCP к VPN-порту")
+    last_probe_ts: float | None = Field(default=None, description="Unix time последнего снимка")
+    last_vpn_ok: bool | None = Field(default=None)
+    avg_vpn_latency_ms: float | None = None
+    ne_ok_percent: float | None = Field(
+        default=None,
+        description="Среди снимков с ne_ok — процент успешных TCP к node_exporter",
+    )
+    exit_ok_percent: float | None = Field(
+        default=None,
+        description="Среди снимков с exit_ok — процент успешных TCP к exit каскада",
+    )
+
+
+class ServersReachabilitySummaryRead(BaseModel):
+    """Сводка доступности по всем серверам из Redis + метаданные из БД."""
+
+    hours_window: float
+    probe_interval_seconds_hint: int = Field(
+        description="Интервал цикла фонового опроса из настроек планировщика (сек)",
+    )
+    servers: list[ServerReachabilitySummaryRowRead] = Field(default_factory=list)

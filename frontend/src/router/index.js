@@ -38,6 +38,8 @@ const AdminHttpRequestLogsView = () =>
   import('../views/AdminHttpRequestLogsView.vue')
 const AdminSubscriptionUserAgentStatsView = () =>
   import('../views/AdminSubscriptionUserAgentStatsView.vue')
+const AdminServersReachabilityView = () =>
+  import('../views/AdminServersReachabilityView.vue')
 
 const routes = [
   { path: '/', name: 'home', component: HomeView },
@@ -103,6 +105,11 @@ const routes = [
     path: '/admin/servers',
     name: 'admin-servers',
     component: AdminTablesPage,
+  },
+  {
+    path: '/admin/servers/reachability',
+    name: 'admin-servers-reachability',
+    component: AdminServersReachabilityView,
   },
   {
     path: '/admin/analytics',
