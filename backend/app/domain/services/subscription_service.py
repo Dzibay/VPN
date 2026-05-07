@@ -70,10 +70,11 @@ def _routing_profile_happ(cfg: Settings | None = None) -> dict[str, object]:
             "cloudflare-dns.com": "1.1.1.1",
             "dns.google": "8.8.8.8",
         },
-        # Нужны полные geoip.dat / geosite.dat с тегами ru (напр. Loyalsoldier v2ray-rules-dat).
+        # Loyalsoldier geosite.dat не содержит списка «ru» — есть category-ru и tld-ru (см. domain-list-community).
         "DirectSites": [
             "geosite:private",
-            "geosite:ru",
+            "geosite:category-ru",
+            "geosite:tld-ru",
             "regexp:.*\\.ru$",
             "regexp:.*\\.su$",
             "regexp:.*\\.xn--p1ai$",
@@ -120,7 +121,8 @@ def _v2raytun_routing_header_value(cfg: Settings | None = None) -> str:
                 "outboundTag": "direct",
                 "domain": [
                     "geosite:private",
-                    "geosite:ru",
+                    "geosite:category-ru",
+                    "geosite:tld-ru",
                     "regexp:.*\\.ru$",
                     "regexp:.*\\.su$",
                     "regexp:.*\\.xn--p1ai$",
