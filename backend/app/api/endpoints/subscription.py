@@ -68,7 +68,11 @@ _SUBSCRIPTION_TOKEN_PATH = Path(
 )
 
 _OPEN_APPS_DOC = ", ".join(list_subscription_open_app_codes())
-_GEO_DIR = FilePath(__file__).resolve().parents[3] / "geo"
+_BACKEND_ROOT = FilePath(__file__).resolve().parents[3]
+if _BACKEND_ROOT.name == "backend":
+    _GEO_DIR = _BACKEND_ROOT / "geo"
+else:
+    _GEO_DIR = _BACKEND_ROOT / "backend" / "geo"
 _LOCAL_GEOIP_PATH = _GEO_DIR / "geoip.dat"
 _LOCAL_GEOSITE_PATH = _GEO_DIR / "geosite.dat"
 
