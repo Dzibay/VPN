@@ -70,16 +70,17 @@ def _routing_profile_happ(cfg: Settings | None = None) -> dict[str, object]:
             "cloudflare-dns.com": "1.1.1.1",
             "dns.google": "8.8.8.8",
         },
-        # Без geosite:ru / geoip:ru: в урезанных dat нет секции RU → ядро падает при старте.
-        # Split по доменам: private + TLD; по IP — только private и RFC1918 (без geoip:ru).
+        # Нужны полные geoip.dat / geosite.dat с тегами ru (напр. Loyalsoldier v2ray-rules-dat).
         "DirectSites": [
             "geosite:private",
+            "geosite:ru",
             "regexp:.*\\.ru$",
             "regexp:.*\\.su$",
             "regexp:.*\\.xn--p1ai$",
         ],
         "DirectIp": [
             "geoip:private",
+            "geoip:ru",
             "10.0.0.0/8",
             "172.16.0.0/12",
             "192.168.0.0/16",
@@ -119,11 +120,12 @@ def _v2raytun_routing_header_value(cfg: Settings | None = None) -> str:
                 "outboundTag": "direct",
                 "domain": [
                     "geosite:private",
+                    "geosite:ru",
                     "regexp:.*\\.ru$",
                     "regexp:.*\\.su$",
                     "regexp:.*\\.xn--p1ai$",
                 ],
-                "ip": ["geoip:private"],
+                "ip": ["geoip:ru", "geoip:private"],
             }
         ],
     }
