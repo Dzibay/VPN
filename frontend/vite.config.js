@@ -166,14 +166,6 @@ export default defineConfig(({ mode }) => {
           target: API_TARGET,
           changeOrigin: true,
         },
-        '/redoc': {
-          target: API_TARGET,
-          changeOrigin: true,
-        },
-        '/openapi.json': {
-          target: API_TARGET,
-          changeOrigin: true,
-        },
       },
     },
   }

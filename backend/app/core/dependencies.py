@@ -1,8 +1,9 @@
 import secrets
 from dataclasses import dataclass
 from typing import Annotated, Literal
+from urllib.parse import unquote_plus
 
-from fastapi import Depends, Header
+from fastapi import Cookie, Depends, Header
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -108,6 +109,28 @@ def require_roles(
 # Частые комбинации (удобный импорт Depends(require_admin) и т.д.)
 require_admin = require_roles("admin")
 require_referrals_staff = require_roles("admin", "manager")
+
+# GET /swagger: только cookie (кнопка в админке выставляет Path=/swagger, без Bearer в браузере).
+SWAGGER_STAFF_JWT_COOKIE = "SwaggerStaffJwt"
+
+
+async def require_swagger_staff_cookie(
+    swagger_staff_jwt: Annotated[str | None, Cookie(alias=SWAGGER_STAFF_JWT_COOKIE)] = None,
+) -> None:
+    settings = get_settings()
+    if not jwt_gate_active(settings):
+        return
+    if not swagger_staff_jwt:
+        raise UnauthorizedError(detail="Доступ запрещен")
+    token = unquote_plus(swagger_staff_jwt.strip()) or None
+    if not token:
+        raise UnauthorizedError(detail="Доступ запрещен")
+    claims = decode_access_token(token, settings)
+    if claims is None:
+        raise UnauthorizedError(detail="Недействительный или просроченный токен")
+    if claims.role not in frozenset(("admin", "manager")):
+        raise ForbiddenError(detail="Недостаточно прав")
+
 
 StaffUserListMode = Literal["open", "admin", "manager"]
 

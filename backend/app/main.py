@@ -1,13 +1,15 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.endpoints.subscription import router as subscription_router
 from app.api.router import api_router
 from app.config import settings
+from app.core.dependencies import require_swagger_staff_cookie
 from app.core.error_handlers import register_exception_handlers
+from app.core.staff_swagger_html import staff_swagger_ui_html
 from app.core.moscow_api_time import install_moscow_json_encoder
 from app.core.logging_config import setup_logging
 from app.core.middleware.request_context import RequestContextMiddleware
@@ -36,10 +38,9 @@ def create_app() -> FastAPI:
         version=settings.api_version,
         debug=settings.debug,
         lifespan=lifespan,
-        docs_url="/swagger",
-        redoc_url="/redoc",
-        openapi_url="/openapi.json",
-        swagger_ui_parameters={"persistAuthorization": True},
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
         openapi_tags=[
             {
                 "name": "public",
@@ -69,13 +70,23 @@ def create_app() -> FastAPI:
     application.include_router(api_router, prefix=settings.api_prefix)
     application.include_router(subscription_router)
 
+    @application.get(
+        "/swagger",
+        include_in_schema=False,
+        dependencies=[Depends(require_swagger_staff_cookie)],
+    )
+    async def staff_swagger():
+        return staff_swagger_ui_html(
+            application=application,
+            title=f"{settings.app_name} · Swagger UI",
+            swagger_ui_parameters={"persistAuthorization": True},
+        )
+
     @application.get("/", include_in_schema=False)
     async def root() -> dict[str, str]:
         return {
             "service": settings.app_name,
             "swagger": "/swagger",
-            "redoc": "/redoc",
-            "openapi": "/openapi.json",
         }
 
     return application

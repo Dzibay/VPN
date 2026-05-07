@@ -1,3 +1,5 @@
+import { clearStaffSwaggerCookie } from './swaggerStaffCookie.js'
+
 const TOKEN_KEY = 'vpn_access_token'
 const ROLE_KEY = 'vpn_session_role'
 
@@ -59,6 +61,7 @@ export function setSession(token, role) {
 }
 
 export function clearSession() {
+  clearStaffSwaggerCookie()
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(ROLE_KEY)
   invalidateAdminJwtProbe()
