@@ -172,11 +172,17 @@ cfg = {
         "listen": "127.0.0.1:%d" % api_port,
         "services": ["StatsService", "HandlerService"],
     },
+    # Level 0: таймауты мягче «агрессивных» 30s у конкурентов; bufferSize 16 (КБ) — ровнее видео при CAKE.
     "policy": {
         "levels": {
             "0": {
                 "statsUserUplink": True,
                 "statsUserDownlink": True,
+                "handshake": 4,
+                "connIdle": 300,
+                "uplinkOnly": 2,
+                "downlinkOnly": 5,
+                "bufferSize": 16,
             }
         }
     },
@@ -236,11 +242,12 @@ cfg["dns"] = {
 
 cascade = (os.environ.get("VPN_CASCADE_ENABLED") or "").strip() == "1"
 ru_direct = cascade and (os.environ.get("VPN_CASCADE_RU_DIRECT") or "1").strip() == "1"
-# routeOnly=False: подмена dest после sniff (лучше HTTP/3 и вызовы без SNI); при RU split теоретически хуже edge cases.
+# routeOnly=True: домен из sniff только для routing (RU/не-RU, Gemini); целевой адрес пакета не подменяется —
+# меньше поломок push/банков при обращении по IP или чувствительных TLS. Каскаду нужен стабильный match по домену.
 cfg["inbounds"][0]["sniffing"] = {
     "enabled": True,
     "destOverride": ["http", "tls", "quic"],
-    "routeOnly": False,
+    "routeOnly": True,
 }
 
 gemini_domains = [
