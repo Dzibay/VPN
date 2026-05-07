@@ -16,6 +16,7 @@
 # Настройки в /etc/default/vpn-egress-fairness:
 #   VPN_EGRESS_IFACE — явный интерфейс (иначе авто по ip route)
 #   VPN_EGRESS_BANDWIDTH — для CAKE, напр. 900mbit (≈95% от лимита VPS — уменьшает буферизацию)
+# REALITY spiderX (путь к ресурсу на dest): VPN_REALITY_SPIDER_X (по умолчанию /); каскад — VPN_CASCADE_EGRESS_SPIDER_X.
 
 set -euo pipefail
 
@@ -148,6 +149,11 @@ priv = os.environ["VPN_REALITY_PRIVATE_KEY"]
 
 short_ids = ["", short_id] if short_id else [""]
 
+_reality_spider_x = (os.environ.get("VPN_REALITY_SPIDER_X") or "/").strip() or "/"
+if not _reality_spider_x.startswith("/"):
+    _reality_spider_x = "/" + _reality_spider_x.lstrip("/")
+_reality_spider_x = _reality_spider_x[:256]
+
 for c in clients:
     if "flow" not in c:
         c["flow"] = flow
@@ -190,6 +196,7 @@ cfg = {
                     "privateKey": priv,
                     "shortIds": short_ids,
                     "fingerprint": fp,
+                    "spiderX": _reality_spider_x,
                 },
                 "sockopt": {
                     "tcpFastOpen": True,
@@ -279,6 +286,10 @@ if cascade:
     esid = os.environ.get("VPN_CASCADE_EGRESS_SHORT_ID", "").strip() or "ab"
     efp = os.environ.get("VPN_CASCADE_EGRESS_FINGERPRINT", "chrome").strip() or "chrome"
     eflow = os.environ.get("VPN_CASCADE_EGRESS_FLOW", "xtls-rprx-vision").strip() or "xtls-rprx-vision"
+    _eg_spider = (os.environ.get("VPN_CASCADE_EGRESS_SPIDER_X") or "/").strip() or "/"
+    if not _eg_spider.startswith("/"):
+        _eg_spider = "/" + _eg_spider.lstrip("/")
+    _eg_spider = _eg_spider[:256]
     vless_to_exit = {
         "tag": "egress-cascade",
         "protocol": "vless",
@@ -306,7 +317,7 @@ if cascade:
                 "serverName": sn0,
                 "publicKey": epbk,
                 "shortId": esid,
-                "spiderX": "/",
+                "spiderX": _eg_spider,
             },
             "sockopt": {
                 "tcpFastOpen": True,

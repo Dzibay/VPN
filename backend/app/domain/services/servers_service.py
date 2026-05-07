@@ -287,6 +287,8 @@ async def patch_server(session: AsyncSession, server_id: int, body: ServerUpdate
     data = body.model_dump(exclude_unset=True)
     if not data:
         return server
+    if data.get("reality_spider_x") is None and "reality_spider_x" in data:
+        data["reality_spider_x"] = "/"
     priv_in = data.get("reality_private_key")
     if priv_in:
         new_priv = str(priv_in).strip()

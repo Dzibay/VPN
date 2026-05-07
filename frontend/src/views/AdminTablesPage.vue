@@ -145,6 +145,7 @@ const formNetworkCapMbps = ref('')
 const formRealityDest = ref('')
 const formRealityServerNames = ref('')
 const formRealityFingerprint = ref('')
+const formRealitySpiderX = ref('')
 const formVlessFlow = ref('')
 const formRealityShortId = ref('')
 const formVlessUuid = ref('')
@@ -162,6 +163,7 @@ const editingServerId = ref(null)
 const DEFAULT_REALITY_DEST = 'www.amazon.com:443'
 const DEFAULT_REALITY_SERVER_NAMES = 'www.amazon.com,amazon.com'
 const DEFAULT_REALITY_FINGERPRINT = 'chrome'
+const DEFAULT_REALITY_SPIDER_X = '/'
 const DEFAULT_VLESS_FLOW = 'xtls-rprx-vision'
 
 function randomShortIdHex() {
@@ -174,6 +176,7 @@ function applyDefaultProxyFields() {
   formRealityDest.value = DEFAULT_REALITY_DEST
   formRealityServerNames.value = DEFAULT_REALITY_SERVER_NAMES
   formRealityFingerprint.value = DEFAULT_REALITY_FINGERPRINT
+  formRealitySpiderX.value = DEFAULT_REALITY_SPIDER_X
   formVlessFlow.value = DEFAULT_VLESS_FLOW
   formRealityShortId.value = randomShortIdHex()
   formRealityPrivateKey.value = ''
@@ -435,6 +438,9 @@ function openEditServer(s) {
   formRealityFingerprint.value =
     (s.reality_fingerprint && String(s.reality_fingerprint).trim()) ||
     DEFAULT_REALITY_FINGERPRINT
+  formRealitySpiderX.value =
+    (s.reality_spider_x && String(s.reality_spider_x).trim()) ||
+    DEFAULT_REALITY_SPIDER_X
   formVlessFlow.value =
     (s.vless_flow && String(s.vless_flow).trim()) || DEFAULT_VLESS_FLOW
   formRealityShortId.value =
@@ -785,6 +791,8 @@ async function submitSaveServer() {
       if (rsn) patch.reality_server_names = rsn
       const rfp = String(formRealityFingerprint.value ?? '').trim()
       if (rfp) patch.reality_fingerprint = rfp
+      patch.reality_spider_x =
+        String(formRealitySpiderX.value ?? '').trim() || DEFAULT_REALITY_SPIDER_X
       const vf = String(formVlessFlow.value ?? '').trim()
       if (vf) patch.vless_flow = vf
       const rsid = String(formRealityShortId.value ?? '').trim().toLowerCase()
@@ -818,6 +826,8 @@ async function submitSaveServer() {
       if (rsn) createBody.reality_server_names = rsn
       const rfp = String(formRealityFingerprint.value ?? '').trim()
       if (rfp) createBody.reality_fingerprint = rfp
+      const rspx = String(formRealitySpiderX.value ?? '').trim()
+      if (rspx) createBody.reality_spider_x = rspx
       const vf = String(formVlessFlow.value ?? '').trim()
       if (vf) createBody.vless_flow = vf
       const rsid = String(formRealityShortId.value ?? '').trim().toLowerCase()
@@ -2161,6 +2171,15 @@ watch(formIsCascadeRuEntry, (v) => {
                   v-model="formRealityFingerprint"
                   type="text"
                   autocomplete="off"
+                />
+              </label>
+              <label class="field">
+                <span>REALITY spiderX (путь к dest)</span>
+                <input
+                  v-model="formRealitySpiderX"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="/"
                 />
               </label>
               <label class="field">

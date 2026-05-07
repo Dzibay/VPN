@@ -35,6 +35,12 @@ class Server(Base):
     reality_fingerprint: Mapped[str] = mapped_column(
         Text, nullable=False, default="chrome"
     )
+    reality_spider_x: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="/",
+        doc="REALITY spiderX: HTTP-путь к ресурсу на dest (напр. / или /favicon.ico).",
+    )
     vless_flow: Mapped[str] = mapped_column(
         Text, nullable=False, default="xtls-rprx-vision"
     )

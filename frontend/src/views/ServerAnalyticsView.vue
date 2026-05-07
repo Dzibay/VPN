@@ -99,6 +99,7 @@ const serverParamRows = computed(() => {
     { label: 'VLESS UUID', value: t(s.vless_uuid) },
     { label: 'VLESS flow', value: t(s.vless_flow) },
     { label: 'REALITY dest', value: t(s.reality_dest) },
+    { label: 'REALITY spiderX', value: t(s.reality_spider_x) },
     { label: 'REALITY serverNames', value: t(s.reality_server_names) },
     { label: 'REALITY shortId', value: t(s.reality_short_id) },
     { label: 'REALITY fingerprint', value: t(s.reality_fingerprint) },

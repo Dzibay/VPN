@@ -15,8 +15,17 @@ from app.domain.models.servers import ServerCreate
 REALITY_DEFAULT_DEST = "www.amazon.com:443"
 REALITY_DEFAULT_SERVER_NAMES = "www.amazon.com,amazon.com"
 REALITY_DEFAULT_FINGERPRINT = "chrome"
+REALITY_DEFAULT_SPIDER_X = "/"
 VLESS_DEFAULT_FLOW = "xtls-rprx-vision"
 REALITY_SHORT_ID_BYTES = 4
+
+
+def normalize_reality_spider_x(raw: str | None) -> str:
+    """Путь REALITY spiderX: ведущий «/», длина до 256 (как в Xray)."""
+    s = (raw or "").strip() or REALITY_DEFAULT_SPIDER_X
+    if not s.startswith("/"):
+        s = "/" + s.lstrip("/")
+    return s[:256]
 
 
 def reality_defaults_for_create(body: ServerCreate) -> dict[str, str]:
@@ -27,5 +36,6 @@ def reality_defaults_for_create(body: ServerCreate) -> dict[str, str]:
         "reality_dest": body.reality_dest or REALITY_DEFAULT_DEST,
         "reality_server_names": body.reality_server_names or REALITY_DEFAULT_SERVER_NAMES,
         "reality_fingerprint": body.reality_fingerprint or REALITY_DEFAULT_FINGERPRINT,
+        "reality_spider_x": normalize_reality_spider_x(body.reality_spider_x),
         "vless_flow": body.vless_flow or VLESS_DEFAULT_FLOW,
     }

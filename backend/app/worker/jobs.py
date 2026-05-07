@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.domain.servers.reality_defaults import normalize_reality_spider_x
 from app.infrastructure.database.session import SessionLocal
 from app.infrastructure.persistence.models.server import Server
 from app.infrastructure.ssh.provision_ssh import ssh_run_script_with_user_fallback
@@ -134,6 +135,7 @@ def _xray_env_lines(db: Session, server: Server) -> str:
         f"export VPN_REALITY_DEST={shlex.quote(server.reality_dest)}\n"
         f"export VPN_REALITY_SERVER_NAMES={shlex.quote(server.reality_server_names)}\n"
         f"export VPN_REALITY_FINGERPRINT={shlex.quote(server.reality_fingerprint)}\n"
+        f"export VPN_REALITY_SPIDER_X={shlex.quote(normalize_reality_spider_x(server.reality_spider_x))}\n"
         f"export VPN_VLESS_FLOW={shlex.quote(server.vless_flow)}\n"
     )
     pk = (server.reality_private_key or "").strip()
@@ -171,6 +173,7 @@ def _cascade_xray_env_for_ru_entry(db: Session, server: Server) -> str:
     efp = (ex.reality_fingerprint or "chrome").strip() or "chrome"
     e_short = (ex.reality_short_id or "").strip() or "0123456789abcdef"
     e_names = (ex.reality_server_names or "").strip() or "www.amazon.com,amazon.com"
+    e_spider = normalize_reality_spider_x(ex.reality_spider_x)
     ru_direct = "1" if settings.cascade_ru_split_routing else "0"
     return (
         "export VPN_CASCADE_ENABLED=1\n"
@@ -183,6 +186,7 @@ def _cascade_xray_env_for_ru_entry(db: Session, server: Server) -> str:
         f"export VPN_CASCADE_EGRESS_SHORT_ID={shlex.quote(e_short)}\n"
         f"export VPN_CASCADE_EGRESS_FINGERPRINT={shlex.quote(efp)}\n"
         f"export VPN_CASCADE_EGRESS_FLOW={shlex.quote(eflow)}\n"
+        f"export VPN_CASCADE_EGRESS_SPIDER_X={shlex.quote(e_spider)}\n"
     )
 
 

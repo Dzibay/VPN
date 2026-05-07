@@ -67,6 +67,11 @@ class ServerCreate(BaseModel):
         max_length=64,
         description="uTLS fingerprint, по умолчанию chrome",
     )
+    reality_spider_x: str | None = Field(
+        default=None,
+        max_length=256,
+        description="REALITY spiderX — путь к ресурсу на dest (напр. / или /favicon.ico); пусто — /",
+    )
     vless_flow: str | None = Field(
         default=None,
         max_length=64,
@@ -161,6 +166,18 @@ class ServerCreate(BaseModel):
         s = str(v).strip()
         return s if s else None
 
+    @field_validator("reality_spider_x", mode="before")
+    @classmethod
+    def normalize_reality_spider_x_create(cls, v: Any) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip()
+        if not s:
+            return None
+        from app.domain.servers.reality_defaults import normalize_reality_spider_x
+
+        return normalize_reality_spider_x(s)
+
     @field_validator("prometheus_instance", mode="before")
     @classmethod
     def normalize_prom_instance(cls, v: Any) -> str | None:
@@ -210,6 +227,11 @@ class ServerUpdate(BaseModel):
     reality_dest: str | None = Field(default=None, max_length=256)
     reality_server_names: str | None = Field(default=None, max_length=512)
     reality_fingerprint: str | None = Field(default=None, max_length=64)
+    reality_spider_x: str | None = Field(
+        default=None,
+        max_length=256,
+        description="REALITY spiderX; пустая строка сбрасывает к / на сервере при следующем провижининге",
+    )
     vless_flow: str | None = Field(default=None, max_length=64)
     reality_short_id: str | None = Field(default=None, max_length=32)
     reality_private_key: str | None = Field(
@@ -268,6 +290,18 @@ class ServerUpdate(BaseModel):
             return None
         s = str(v).strip()
         return s if s else None
+
+    @field_validator("reality_spider_x", mode="before")
+    @classmethod
+    def normalize_reality_spider_x_update(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip()
+        if not s:
+            return "/"
+        from app.domain.servers.reality_defaults import normalize_reality_spider_x
+
+        return normalize_reality_spider_x(s)
 
     @field_validator("reality_short_id", mode="before")
     @classmethod
@@ -355,6 +389,10 @@ class ServerRead(BaseModel):
     reality_dest: str
     reality_server_names: str
     reality_fingerprint: str
+    reality_spider_x: str = Field(
+        default="/",
+        description="REALITY spiderX (путь к dest для имитации запроса к сайту)",
+    )
     vless_flow: str
     prometheus_instance: str | None = Field(
         default=None,

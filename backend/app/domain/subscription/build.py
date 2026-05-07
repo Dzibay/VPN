@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import BRAND_NAME
 from app.domain.models.subscription import SubscriptionPayload
+from app.domain.servers.reality_defaults import normalize_reality_spider_x
 from app.infrastructure.persistence.models.server import Server
 from app.infrastructure.persistence.models.user import User
 
@@ -149,6 +150,7 @@ def _vless_reality_share_uri(
         log.warning("Пропуск узла id=%s: не удалось вывести SNI", s.id)
         return None
 
+    spx = normalize_reality_spider_x(s.reality_spider_x)
     params = {
         "encryption": "none",
         "security": "reality",
@@ -159,6 +161,7 @@ def _vless_reality_share_uri(
         "fp": fp,
         "pbk": pbk,
         "sid": sid,
+        "spx": spx,
     }
     query = urlencode(params, quote_via=quote, safe="")
     remark = (
@@ -206,6 +209,7 @@ def _server_to_subscription_dict(
         "short_id": s.reality_short_id,
         "dest": s.reality_dest,
         "server_names": s.reality_server_names,
+        "reality_spider_x": normalize_reality_spider_x(s.reality_spider_x),
         "stream_settings": dict(_XRAY_VLESS_STREAM_SETTINGS_SOCKOPT),
     }
 
@@ -291,6 +295,7 @@ def _append_clash_vless_proxy(
     fp = (client_fingerprint or "").strip() or "chrome"
     sni = _primary_sni(s.reality_server_names, s.reality_dest)
     host = (s.host or "").strip()
+    spx = normalize_reality_spider_x(s.reality_spider_x)
     proxies.append(
         {
             "name": clash_name,
@@ -306,6 +311,7 @@ def _append_clash_vless_proxy(
             "reality-opts": {
                 "public-key": pbk,
                 "short-id": sid,
+                "spider-x": spx,
             },
             "client-fingerprint": fp,
             "tfo": True,
