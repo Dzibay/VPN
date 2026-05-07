@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,6 +48,82 @@ log = logging.getLogger("app.subscription_service")
 ANNOUNCE_RAW = "Нужна помощь? Поддержка всегда на связи"
 ANNOUNCE_RAW_DEVICE_LIMIT_REJECTED = "Достигнуто максимальное количество подключений (устройств). Освободите слот в личном кабинете или обратитесь в поддержку."
 ANNOUNCE_RAW_SUBSCRIPTION_EXPIRED = "Подписка истекла — продлите подписку в личном кабинете или боте"
+
+
+def _routing_profile_happ(cfg: Settings | None = None) -> dict[str, object]:
+    cfg = cfg or settings
+    if not cfg.cascade_ru_split_routing:
+        return {}
+    base = subscription_public_base_url().rstrip("/")
+    return {
+        "Name": "Pdoroznik-RU-Direct",
+        "GlobalProxy": "true",
+        "RemoteDNSType": "DoH",
+        "RemoteDNSDomain": "https://cloudflare-dns.com/dns-query",
+        "RemoteDNSIP": "1.1.1.1",
+        "DomesticDNSType": "DoH",
+        "DomesticDNSDomain": "https://dns.google/dns-query",
+        "DomesticDNSIP": "8.8.8.8",
+        "Geoipurl": f"{base}/sub/geoip.dat",
+        "Geositeurl": f"{base}/sub/geosite.dat",
+        "DnsHosts": {
+            "cloudflare-dns.com": "1.1.1.1",
+            "dns.google": "8.8.8.8",
+        },
+        # RU split: private и РФ-ресурсы идут в direct, остальное — через proxy.
+        "DirectSites": ["geosite:private", "geosite:ru"],
+        "DirectIp": [
+            "geoip:private",
+            "geoip:ru",
+            "10.0.0.0/8",
+            "172.16.0.0/12",
+            "192.168.0.0/16",
+            "169.254.0.0/16",
+            "224.0.0.0/4",
+            "255.255.255.255",
+        ],
+        "ProxySites": [],
+        "ProxyIp": [],
+        "BlockSites": [],
+        "BlockIp": [],
+        "DomainStrategy": "IPIfNonMatch",
+        "FakeDNS": "false",
+    }
+
+
+def _happ_routing_header_value(cfg: Settings | None = None) -> str:
+    profile = _routing_profile_happ(cfg)
+    if not profile:
+        return ""
+    raw = json.dumps(profile, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    payload = base64.b64encode(raw).decode("ascii")
+    return f"happ://routing/onadd/{payload}"
+
+
+def _v2raytun_routing_header_value(cfg: Settings | None = None) -> str:
+    cfg = cfg or settings
+    if not cfg.cascade_ru_split_routing:
+        return ""
+    routing = {
+        "name": "Pdoroznik RU Direct",
+        "domainStrategy": "IPIfNonMatch",
+        "domainMatcher": "hybrid",
+        "rules": [
+            {
+                "type": "field",
+                "outboundTag": "direct",
+                "domain": [
+                    "geosite:private",
+                    "regexp:.*\\.ru$",
+                    "regexp:.*\\.su$",
+                    "regexp:.*\\.xn--p1ai$",
+                ],
+                "ip": ["geoip:ru", "geoip:private"],
+            }
+        ],
+    }
+    raw = json.dumps(routing, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return base64.b64encode(raw).decode("ascii")
 
 async def subscription_payload_rows_for_resolved_user(
     session: AsyncSession,
@@ -105,6 +183,7 @@ async def subscription_client_metadata_headers(
     session: AsyncSession,
     user: User,
     *,
+    request: Request | None = None,
     device_limit_rejected: bool = False,
 ) -> dict[str, str]:
     up_b, down_b, _ = await user_traffic_totals(session, int(user.id))
@@ -121,6 +200,8 @@ async def subscription_client_metadata_headers(
         announce_raw = ANNOUNCE_RAW_SUBSCRIPTION_EXPIRED
     else:
         announce_raw = ANNOUNCE_RAW
+    ua = ((request.headers.get("user-agent") or "") if request is not None else "").lower()
+    routing_header = _v2raytun_routing_header_value() if "v2raytun" in ua else _happ_routing_header_value()
     return {
         "subscription-userinfo": userinfo,
         "profile-update-interval": "1",
@@ -129,6 +210,7 @@ async def subscription_client_metadata_headers(
         "profile-web-page-url": "https://cool-vpn.ru",
         "announce": subscription_announce_header_value(announce_raw),
         "announce-url": "https://t.me/Podoroznik_Support",
+        "routing": routing_header,
     }
 
 

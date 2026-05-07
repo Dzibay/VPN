@@ -24,6 +24,7 @@ Stash / Clash Verge / v2rayNG. Подробнее: ``app.domain.subscription.use
 
 from __future__ import annotations
 
+from pathlib import Path as FilePath
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
 from fastapi.responses import RedirectResponse
 from starlette.requests import Request
@@ -67,11 +68,60 @@ _SUBSCRIPTION_TOKEN_PATH = Path(
 )
 
 _OPEN_APPS_DOC = ", ".join(list_subscription_open_app_codes())
+_GEO_DIR = FilePath(__file__).resolve().parents[3] / "geo"
+_LOCAL_GEOIP_PATH = _GEO_DIR / "geoip.dat"
+_LOCAL_GEOSITE_PATH = _GEO_DIR / "geosite.dat"
 
 
 def _user_agent_requests_clash_yaml(request: Request) -> bool:
     ua = (request.headers.get("user-agent") or "").lower()
     return "clash" in ua
+
+
+def _read_local_geo_dat_or_503(path: FilePath, name: str) -> bytes:
+    if not path.exists():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"Локальный файл {name} не найден. "
+                f"Положите его в {_GEO_DIR.as_posix()}/"
+            ),
+        )
+    try:
+        return path.read_bytes()
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail=f"Не удалось прочитать {name}") from exc
+
+
+def _geo_response(body: bytes, filename: str) -> Response:
+    return Response(
+        content=body,
+        media_type="application/octet-stream",
+        headers={
+            "cache-control": "public, max-age=21600",
+            "content-disposition": f'attachment; filename="{filename}"',
+        },
+    )
+
+
+@router.get(
+    "/sub/geoip.dat",
+    summary="Локальный geoip.dat с домена подписки для Happ routing",
+    response_class=Response,
+)
+async def subscription_geoip_dat() -> Response:
+    body = _read_local_geo_dat_or_503(_LOCAL_GEOIP_PATH, "geoip.dat")
+    return _geo_response(body, "geoip.dat")
+
+
+@router.get(
+    "/sub/geosite.dat",
+    summary="Локальный geosite.dat с домена подписки для Happ routing",
+    response_class=Response,
+)
+async def subscription_geosite_dat() -> Response:
+    body = _read_local_geo_dat_or_503(_LOCAL_GEOSITE_PATH, "geosite.dat")
+    return _geo_response(body, "geosite.dat")
 
 
 @router.get(
@@ -163,6 +213,7 @@ async def subscription_head_by_token(
     headers = await subscription_client_metadata_headers(
         session,
         user,
+        request=request,
         device_limit_rejected=not device_ok,
     )
     media = (
@@ -193,6 +244,7 @@ async def subscription_base64_by_token(
     headers = await subscription_client_metadata_headers(
         session,
         user,
+        request=request,
         device_limit_rejected=not device_ok,
     )
     if want_yaml:
@@ -243,6 +295,7 @@ async def subscription_clash_by_token(
     headers = await subscription_client_metadata_headers(
         session,
         user,
+        request=request,
         device_limit_rejected=not device_ok,
     )
     yaml_body = build_clash_subscription_yaml(user, rows)
@@ -278,6 +331,7 @@ async def subscription_json_by_token(
     headers = await subscription_client_metadata_headers(
         session,
         user,
+        request=request,
         device_limit_rejected=not device_ok,
     )
     for key, val in headers.items():
