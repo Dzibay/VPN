@@ -14,6 +14,7 @@ const router = useRouter()
 const limit = ref(50)
 const offset = ref(0)
 const filterUserId = ref('')
+const filterPathContains = ref('')
 const filterStatusCodes = ref([])
 const filterSubjectSources = ref([])
 
@@ -77,6 +78,10 @@ function buildQueryForUrl(overrides = {}) {
   if (uid) {
     q.user_id = uid
   }
+  const pathTrim = String(filterPathContains.value ?? '').trim()
+  if (pathTrim) {
+    q.path_contains = pathTrim
+  }
   if (filterStatusCodes.value.length > 0) {
     q.status_code = [...filterStatusCodes.value]
   }
@@ -111,6 +116,9 @@ async function syncFromRoute() {
     return Number.isFinite(n) && n >= 100 && n <= 599
   })
   filterSubjectSources.value = queryValues(q.subject_source).slice(0, 20)
+  const pcf = q.path_contains
+  filterPathContains.value =
+    pcf != null && String(pcf).trim() !== '' ? String(pcf).trim() : ''
   const lim = q.limit != null ? Number.parseInt(String(q.limit), 10) : 50
   limit.value =
     Number.isFinite(lim) && lim >= 1 && lim <= 200 ? lim : 50
@@ -128,6 +136,10 @@ async function syncFromRoute() {
   }
   for (const status of filterStatusCodes.value) params.append('status_code', status)
   for (const source of filterSubjectSources.value) params.append('subject_source', source)
+  const pathTrimSync = String(filterPathContains.value ?? '').trim()
+  if (pathTrimSync) {
+    params.set('path_contains', pathTrimSync)
+  }
   try {
     const data = await fetchJson(
       `/api/admin/http-request-traces?${params.toString()}`,
@@ -150,6 +162,7 @@ function applyFilters() {
 
 function resetFilters() {
   filterUserId.value = ''
+  filterPathContains.value = ''
   filterStatusCodes.value = []
   filterSubjectSources.value = []
   limit.value = 50
@@ -308,6 +321,17 @@ watch(
             autocomplete="off"
             class="f-input"
             placeholder="любой"
+          />
+        </label>
+        <label class="f-label f-label--path">
+          <span>Путь содержит</span>
+          <input
+            v-model="filterPathContains"
+            type="text"
+            class="f-input f-input--path"
+            autocomplete="off"
+            placeholder="например /login"
+            spellcheck="false"
           />
         </label>
         <label class="f-label narrow">
@@ -504,6 +528,11 @@ watch(
   width: auto;
 }
 
+.f-label--path {
+  flex: 1 1 14rem;
+  min-width: 10rem;
+}
+
 .f-input,
 .f-select {
   min-height: 2rem;
@@ -516,6 +545,11 @@ watch(
 
 .f-input {
   width: 7rem;
+}
+
+.f-input--path {
+  width: 100%;
+  min-width: 12rem;
 }
 
 .pager-top {

@@ -34,7 +34,7 @@ router = APIRouter(
 @router.get(
     "",
     response_model=HttpRequestTraceStaffPage,
-    summary="Логи (пагинация, фильтры: user_id, анонимные, status_code[], subject_source[])",
+    summary="Логи (пагинация, фильтры: user_id, анонимные, status_code[], subject_source[], path_contains)",
 )
 async def list_http_request_traces(
     session: ReadonlySessionDep,
@@ -56,6 +56,13 @@ async def list_http_request_traces(
         list[str] | None,
         Query(description="Фильтр по источнику определения user_id (можно несколько)"),
     ] = None,
+    path_contains: Annotated[
+        str | None,
+        Query(
+            description="Подстрока пути запроса (path содержит это значение, без шаблонов)",
+            max_length=512,
+        ),
+    ] = None,
 ) -> HttpRequestTraceStaffPage:
     if user_id is not None and only_without_user:
         raise BadRequestError(
@@ -75,6 +82,9 @@ async def list_http_request_traces(
         subject_sources.append(s)
     subject_sources = sorted(set(subject_sources))
 
+    path_sub = str(path_contains).strip() if path_contains is not None else ""
+    path_filter = path_sub or None
+
     rows, total = await staff_list_http_request_traces(
         session,
         limit=limit,
@@ -83,6 +93,7 @@ async def list_http_request_traces(
         only_without_user=only_without_user,
         status_codes=status_codes or None,
         subject_sources=subject_sources or None,
+        path_contains=path_filter,
     )
     return HttpRequestTraceStaffPage(
         items=[HttpRequestTraceStaffItem.model_validate(r) for r in rows],
