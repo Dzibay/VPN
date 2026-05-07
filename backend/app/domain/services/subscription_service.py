@@ -45,7 +45,7 @@ from app.infrastructure.persistence.models.user import User
 log = logging.getLogger("app.subscription_service")
 
 
-ANNOUNCE_RAW = "Нужна помощь? Поддержка всегда на связи"
+ANNOUNCE_RAW = "⚠️ При возникновении проблем попробуйте 🔁 обновить конфигурацию. Если проблема сохраняется — обратитесь в поддержку"
 ANNOUNCE_RAW_DEVICE_LIMIT_REJECTED = "Достигнуто максимальное количество подключений (устройств). Освободите слот в личном кабинете или обратитесь в поддержку."
 ANNOUNCE_RAW_SUBSCRIPTION_EXPIRED = "Подписка истекла — продлите подписку в личном кабинете или боте"
 
