@@ -3,7 +3,8 @@
 
 Список узлов строится из БД и сортируется по ``servers.load_percent`` (актуализация из Prometheus —
 фоновый планировщик в процессе API, по умолчанию каждые 5 минут, см. настройки
-``SERVER_LOAD_PROMETHEUS_SYNC_*``).
+``SERVER_LOAD_PROMETHEUS_SYNC_*``). В начале списка дублируется первый узел с именем
+``⚡ Auto (рекомендуемый)`` — тот же endpoint, что у узла с минимальной ``load_percent``.
 
 Ответы ``GET/HEAD /sub/{token}``, ``GET /sub/{token}/json`` отдают метаданные в HTTP-заголовках
 в форме Happ (``subscription-userinfo``, ``profile-update-interval``, ``profile-title``, …;

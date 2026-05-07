@@ -18,6 +18,9 @@ from app.infrastructure.persistence.models.user import User
 
 log = logging.getLogger("app.subscription.build")
 
+# Дубликат первого узла по load_percent (после фильтрации каскада) с тем же endpoint.
+SUBSCRIPTION_AUTO_RECOMMENDED_LABEL = "⚡ Auto (рекомендуемый)"
+
 
 def subscription_servers_for_delivery(rows: list[Server]) -> list[Server]:
     """
@@ -92,6 +95,7 @@ def _vless_reality_share_uri(
     *,
     client_uuid: str,
     exit_ids_referenced: set[int],
+    fragment_override: str | None = None,
 ) -> str | None:
     pbk = (s.reality_public_key or "").strip()
     if not pbk or "(" in pbk:
@@ -123,7 +127,11 @@ def _vless_reality_share_uri(
         "sid": sid,
     }
     query = urlencode(params, quote_via=quote, safe="")
-    remark = _node_subscription_label(s, exit_ids_referenced=exit_ids_referenced)
+    remark = (
+        fragment_override
+        if fragment_override is not None
+        else _node_subscription_label(s, exit_ids_referenced=exit_ids_referenced)
+    )
     fragment = quote(remark, safe="")
     uuid = (client_uuid or "").strip()
     host = (s.host or "").strip()
@@ -137,10 +145,15 @@ def _server_to_subscription_dict(
     *,
     client_uuid: str,
     exit_ids_referenced: set[int],
+    name_override: str | None = None,
 ) -> dict[str, Any]:
     sni = _primary_sni(s.reality_server_names, s.reality_dest)
     uid = (client_uuid or "").strip()
-    display_name = _node_subscription_label(s, exit_ids_referenced=exit_ids_referenced)
+    display_name = (
+        name_override
+        if name_override is not None
+        else _node_subscription_label(s, exit_ids_referenced=exit_ids_referenced)
+    )
     return {
         "id": s.id,
         "name": display_name,
@@ -159,6 +172,25 @@ def _server_to_subscription_dict(
         "dest": s.reality_dest,
         "server_names": s.reality_server_names,
     }
+
+
+def _first_subscription_eligible_server(
+    rows: list[Server],
+    *,
+    client_uuid: str,
+    exit_ids_referenced: set[int],
+) -> Server | None:
+    for s in rows:
+        if (
+            _vless_reality_share_uri(
+                s,
+                client_uuid=client_uuid,
+                exit_ids_referenced=exit_ids_referenced,
+            )
+            is not None
+        ):
+            return s
+    return None
 
 
 def _unique_clash_proxy_name(base_label: str, seen: dict[str, int]) -> str:
@@ -181,6 +213,39 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
     }
     proxies: list[dict[str, Any]] = []
     names_seen: dict[str, int] = {}
+    auto_src = _first_subscription_eligible_server(
+        rows,
+        client_uuid=client_uuid,
+        exit_ids_referenced=exit_ids_referenced,
+    )
+    if auto_src is not None:
+        label_auto = SUBSCRIPTION_AUTO_RECOMMENDED_LABEL
+        name = _unique_clash_proxy_name(label_auto, names_seen)
+        pbk = (auto_src.reality_public_key or "").strip()
+        sid = (auto_src.reality_short_id or "").strip()
+        flow = (auto_src.vless_flow or "").strip() or "xtls-rprx-vision"
+        fp = (auto_src.reality_fingerprint or "").strip() or "chrome"
+        sni = _primary_sni(auto_src.reality_server_names, auto_src.reality_dest)
+        host = (auto_src.host or "").strip()
+        proxies.append(
+            {
+                "name": name,
+                "type": "vless",
+                "server": host,
+                "port": int(auto_src.port),
+                "uuid": client_uuid,
+                "network": "tcp",
+                "tls": True,
+                "udp": True,
+                "flow": flow,
+                "servername": sni,
+                "reality-opts": {
+                    "public-key": pbk,
+                    "short-id": sid,
+                },
+                "client-fingerprint": fp,
+            }
+        )
     for s in rows:
         if (
             _vless_reality_share_uri(
@@ -252,6 +317,28 @@ def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPa
     }
     servers_out: list[dict[str, Any]] = []
     uris: list[str] = []
+    auto_src = _first_subscription_eligible_server(
+        rows,
+        client_uuid=client_uuid,
+        exit_ids_referenced=exit_ids_referenced,
+    )
+    if auto_src is not None:
+        servers_out.append(
+            _server_to_subscription_dict(
+                auto_src,
+                client_uuid=client_uuid,
+                exit_ids_referenced=exit_ids_referenced,
+                name_override=SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
+            )
+        )
+        auto_uri = _vless_reality_share_uri(
+            auto_src,
+            client_uuid=client_uuid,
+            exit_ids_referenced=exit_ids_referenced,
+            fragment_override=SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
+        )
+        if auto_uri:
+            uris.append(auto_uri)
     for s in rows:
         servers_out.append(
             _server_to_subscription_dict(
