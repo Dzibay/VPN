@@ -42,6 +42,10 @@
           "publicKey": "REPLACE_WITH_REALITY_PUBLIC_KEY",
           "shortId": "REPLACE_WITH_SHORT_ID",
           "spiderX": "/"
+        },
+        "sockopt": {
+          "tcpFastOpen": true,
+          "tcpcongestion": "bbr"
         }
       }
     },

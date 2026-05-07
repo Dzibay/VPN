@@ -49,7 +49,8 @@ class SubscriptionPayload(BaseModel):
     )
     servers: list[dict[str, Any]] = Field(
         default_factory=list,
-        description="Активные узлы: address, port, uuid, flow, sni, public_key, short_id, dest, server_names",
+        description="Активные узлы: address, port, uuid, flow, sni, public_key, short_id, dest, server_names; "
+        "stream_settings — фрагмент для Xray streamSettings (sockopt: TFO + bbr), как на серверном inbound.",
     )
     vless_uris: list[str] = Field(
         default_factory=list,

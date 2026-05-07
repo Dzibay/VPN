@@ -129,6 +129,10 @@ def _client_config(
                         "shortId": sid,
                         "spiderX": "/",
                     },
+                    "sockopt": {
+                        "tcpFastOpen": True,
+                        "tcpcongestion": "bbr",
+                    },
                 },
             },
             {"protocol": "freedom", "tag": "direct"},

@@ -191,6 +191,10 @@ cfg = {
                     "shortIds": short_ids,
                     "fingerprint": fp,
                 },
+                "sockopt": {
+                    "tcpFastOpen": True,
+                    "tcpcongestion": "bbr",
+                },
             },
         },
     ],
@@ -202,7 +206,15 @@ cfg = {
 cfg["dns"] = {
     "servers": [
         "https://1.1.1.1/dns-query",
-        "https://1.0.0.1/dns-query",
+        {
+            "address": "77.88.8.8",
+            "domains": [
+                "geosite:ru",
+                "regexp:.*\\.ru$",
+                "regexp:.*\\.su$",
+                "regexp:.*\\.xn--p1ai$"
+            ]
+        }
     ],
     "queryStrategy": "UseIPv4",
 }
@@ -295,6 +307,10 @@ if cascade:
                 "publicKey": epbk,
                 "shortId": esid,
                 "spiderX": "/",
+            },
+            "sockopt": {
+                "tcpFastOpen": True,
+                "tcpcongestion": "bbr",
             },
         },
     }

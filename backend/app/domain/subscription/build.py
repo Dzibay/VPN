@@ -34,6 +34,14 @@ log = logging.getLogger("app.subscription.build")
 SUBSCRIPTION_AUTO_RECOMMENDED_LABEL = "🔥 Auto (рекомендуемый)"
 SUBSCRIPTION_AUTO_WHITELIST_LABEL = "📄 Auto (белый список)"
 
+# Совпадает с install_xray_on_remote.sh (inbound sockopt); для сборки Xray JSON на клиенте.
+_XRAY_VLESS_STREAM_SETTINGS_SOCKOPT: dict[str, Any] = {
+    "sockopt": {
+        "tcpFastOpen": True,
+        "tcpcongestion": "bbr",
+    }
+}
+
 
 def subscription_servers_for_delivery(rows: list[Server]) -> list[Server]:
     """
@@ -184,6 +192,7 @@ def _server_to_subscription_dict(
         "short_id": s.reality_short_id,
         "dest": s.reality_dest,
         "server_names": s.reality_server_names,
+        "stream_settings": dict(_XRAY_VLESS_STREAM_SETTINGS_SOCKOPT),
     }
 
 
@@ -280,6 +289,7 @@ def _append_clash_vless_proxy(
                 "short-id": sid,
             },
             "client-fingerprint": fp,
+            "tfo": True,
         }
     )
 
