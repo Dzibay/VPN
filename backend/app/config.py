@@ -184,7 +184,7 @@ class Settings(BaseSettings):
     cascade_ru_split_routing: bool = Field(
         default=True,
         description=(
-            "Каскадный РФ-вход: geosite:ru+geoip:ru в direct, остальное на внешний exit. "
+            "Каскадный РФ-вход: geosite:category-ru + *.ru/.su/.рф (regexp), geosite:private, geoip:ru → direct; остальное на exit. "
             "False — весь трафик через exit, как раньше."
         ),
     )
