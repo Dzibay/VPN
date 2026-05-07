@@ -70,8 +70,14 @@ def _routing_profile_happ(cfg: Settings | None = None) -> dict[str, object]:
             "cloudflare-dns.com": "1.1.1.1",
             "dns.google": "8.8.8.8",
         },
-        # RU split: private и РФ-ресурсы идут в direct, остальное — через proxy.
-        "DirectSites": ["geosite:private", "geosite:ru"],
+        # Без geosite:ru: в части geosite.dat нет секции RU → Happ/Xray падают при старте.
+        # Как на входном Xray: geosite:private + TLD regexp + geoip:ru (см. install_xray_on_remote.sh).
+        "DirectSites": [
+            "geosite:private",
+            "regexp:.*\\.ru$",
+            "regexp:.*\\.su$",
+            "regexp:.*\\.xn--p1ai$",
+        ],
         "DirectIp": [
             "geoip:private",
             "geoip:ru",
