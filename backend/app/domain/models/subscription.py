@@ -51,7 +51,7 @@ class SubscriptionPayload(BaseModel):
         default_factory=list,
         description="Активные узлы: address, port, uuid, flow, sni, fingerprint (случайный uTLS fp на выдачу), "
         "public_key, short_id, dest, server_names, reality_spider_x (REALITY spiderX / spx в URI); "
-        "stream_settings — фрагмент для Xray streamSettings (sockopt).",
+        "stream_settings — фрагмент для Xray streamSettings (sockopt: TFO, bbr, happyEyeballs).",
     )
     vless_uris: list[str] = Field(
         default_factory=list,

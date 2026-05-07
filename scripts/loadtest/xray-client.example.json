@@ -45,7 +45,13 @@
         },
         "sockopt": {
           "tcpFastOpen": true,
-          "tcpcongestion": "bbr"
+          "tcpcongestion": "bbr",
+          "happyEyeballs": {
+            "interleave": 1,
+            "tryDelayMs": 250,
+            "prioritizeIPv6": false,
+            "maxConcurrentTry": 4
+          }
         }
       }
     },

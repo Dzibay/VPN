@@ -52,6 +52,12 @@ _XRAY_VLESS_STREAM_SETTINGS_SOCKOPT: dict[str, Any] = {
     "sockopt": {
         "tcpFastOpen": True,
         "tcpcongestion": "bbr",
+        "happyEyeballs": {
+            "interleave": 1,
+            "tryDelayMs": 250,
+            "prioritizeIPv6": False,
+            "maxConcurrentTry": 4,
+        },
     }
 }
 

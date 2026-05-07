@@ -132,6 +132,12 @@ def _client_config(
                     "sockopt": {
                         "tcpFastOpen": True,
                         "tcpcongestion": "bbr",
+                        "happyEyeballs": {
+                            "interleave": 1,
+                            "tryDelayMs": 250,
+                            "prioritizeIPv6": False,
+                            "maxConcurrentTry": 4,
+                        },
                     },
                 },
             },

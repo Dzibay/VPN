@@ -203,6 +203,12 @@ cfg = {
                 "sockopt": {
                     "tcpFastOpen": True,
                     "tcpcongestion": "bbr",
+                    "happyEyeballs": {
+                        "interleave": 1,
+                        "tryDelayMs": 250,
+                        "prioritizeIPv6": False,
+                        "maxConcurrentTry": 4,
+                    },
                 },
             },
         },
@@ -324,6 +330,12 @@ if cascade:
             "sockopt": {
                 "tcpFastOpen": True,
                 "tcpcongestion": "bbr",
+                "happyEyeballs": {
+                    "interleave": 1,
+                    "tryDelayMs": 250,
+                    "prioritizeIPv6": False,
+                    "maxConcurrentTry": 4,
+                },
             },
         },
     }
