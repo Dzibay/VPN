@@ -162,6 +162,14 @@ class Settings(BaseSettings):
         default="https://github.com/XTLS/Xray-install/raw/main/install-release.sh",
         description="URL install-release.sh на удалённом хосте (curl/wget).",
     )
+    provision_geo_download_base_url: str = Field(
+        default="",
+        description=(
+            "Публичный origin без завершающего / для загрузки geo на РФ-вход каскада: "
+            "{origin}/sub/geoip.dat и {origin}/sub/geosite.dat (как у клиентов). "
+            "Пусто — используется SITE_ADDRESS (см. subscription_public_base_url)."
+        ),
+    )
     provision_install_node_exporter: bool = Field(
         default=True,
         description="При провижининге ставить node_exporter (systemd) для Prometheus.",
@@ -184,8 +192,8 @@ class Settings(BaseSettings):
     cascade_ru_split_routing: bool = Field(
         default=True,
         description=(
-            "Каскадный РФ-вход: geosite:ru+geoip:ru в direct, остальное на внешний exit. "
-            "False — весь трафик через exit, как раньше."
+            "Каскадный РФ-вход: geosite:private+category-ru+tld-ru, regexp .su/.рф, geoip:ru в direct; "
+            "geo с API /sub/*.dat при провижининге. False — весь трафик через exit."
         ),
     )
     xray_remote_api_port: int = Field(

@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.domain.subscription.links import subscription_public_base_url
 from app.infrastructure.database.session import SessionLocal
 from app.infrastructure.persistence.models.server import Server
 from app.infrastructure.ssh.provision_ssh import ssh_run_script_with_user_fallback
@@ -139,6 +140,12 @@ def _xray_env_lines(db: Session, server: Server) -> str:
     pk = (server.reality_private_key or "").strip()
     if pk:
         remote_env += f"export VPN_REALITY_PRIVATE_KEY={shlex.quote(pk)}\n"
+    geo_base = (
+        (settings.provision_geo_download_base_url or "").strip().rstrip("/")
+        or subscription_public_base_url().strip().rstrip("/")
+    )
+    if geo_base:
+        remote_env += f"export VPN_GEO_DOWNLOAD_BASE={shlex.quote(geo_base)}\n"
     remote_env += _cascade_xray_env_for_ru_entry(db, server)
     return remote_env
 
