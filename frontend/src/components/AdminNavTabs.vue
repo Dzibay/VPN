@@ -42,6 +42,5 @@ function openSwagger() {
 <style scoped>
 .swagger-menu-btn {
   cursor: pointer;
-  font: inherit;
 }
 </style>

@@ -83,6 +83,12 @@ const hasTabs = computed(() => Boolean(slots.tabs))
   border-color: var(--accent-border);
 }
 
+/* UA: у <button> часто font-weight: bold — перебивает визуально ссылки-табы */
+:deep(button.tab) {
+  font-weight: 600;
+  font-family: inherit;
+}
+
 :deep(.tab-active) {
   color: var(--on-accent);
   background: var(--accent);
