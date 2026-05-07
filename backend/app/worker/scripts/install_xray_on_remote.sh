@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Удалённый хост: root. Режим: VPN_PROVISION_COMPONENT = all | xray | sync_clients | prometheus | fair_egress | cleanup
-# Каскад РФ: при VPN_CASCADE_RU_DIRECT=1 — direct для geosite:private+category-ru+tld-ru, *.su,*.рф, geoip:ru/private; geo с VPN_GEO_DOWNLOAD_BASE/sub/*.dat.
+# Каскад РФ: при VPN_CASCADE_RU_DIRECT=1 — direct для private / *.ru,*.su,*.рф (punycode) / geoip:ru, остальное → egress.
 # Доп. RU-сервисы вне .ru/.su:
 #   1) файл VPN_CASCADE_RU_DIRECT_DOMAINS_FILE (по умолчанию рядом со скриптом: ru_direct_extra_domains.txt),
 #      формат: один элемент Xray на строку (комментарии с #; без префикса => domain:<host>);
 #   2) fallback: VPN_CASCADE_RU_DIRECT_EXTRA_DOMAINS (CSV/space/semicolon), если файл отсутствует/пустой.
-# geosite:ru в Loyalsoldier часто отсутствует — используем geosite:category-ru + geosite:tld-ru (как у клиентов).
+# geosite:ru в Xray 26.2+ часто падает (code RU not found) — не используем, см. inline regexp в config.
 # Gemini / мультимодальные сервисы Google: внутренний DNS (DoH) + sniffing (вкл. QUIC) + правила доменов первыми;
 #   при каскаде Gemini → egress-cascade (не direct на РФ-входе). См. https://habr.com/ru/articles/992380/
 # all/xray: curl/wget, python3. prometheus: curl, systemctl. cleanup: curl/wget для uninstall xray.
@@ -307,12 +307,11 @@ if cascade:
     cfg["inbounds"][0]["tag"] = "vless-in"
     # РФ-ресурсы: прямой выход; остальное (иностранные) — через VLESS к exit
     if ru_direct:
-        # Как клиенты (Happ/v2raytun): category-ru + tld-ru; regexp для .su и .рф; RU-IP — geoip:ru
+        # Без geosite:ru: в Xray 26.2+ несовпадение кода RU/ru в geosite.dat. Замена: TLD-регэксп + geoip:ru
+        # (Loyalsoldier geosite:ru тоже может не находиться). Инофисные .com и т.д. пойдут в каскад, RU-IP — через geoip:ru
         _ru_domains = [
             "geosite:private",
             *extra_ru_domains,
-            "geosite:category-ru",
-            "geosite:tld-ru",
             "regexp:.*\\.ru$",
             "regexp:.*\\.su$",
             "regexp:.*\\.xn--p1ai$",  # .рф
@@ -365,22 +364,7 @@ with open(path, "w", encoding="utf-8") as f:
 PY
 }
 
-# Geo: с публичного API тех же файлов, что отдаются клиентам (/sub/geoip.dat, /sub/geosite.dat)
-_xray_download_geo_to() {
-  local url="$1"
-  local out="$2"
-  local tmp="${out}.tmp"
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --connect-timeout 30 --max-time 600 -o "$tmp" "$url"
-  elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$tmp" "$url"
-  else
-    echo "[xray] geo: нужен curl или wget для загрузки $url" >&2
-    return 1
-  fi
-  mv -f "$tmp" "$out"
-}
-
+# Каталог для dat (кладутся install-release); split RU использует geosite:private+regexp+geoip:ru из дефолтных файлов
 _xray_ensure_geo_dats() {
   if [[ "${VPN_CASCADE_RU_DIRECT:-1}" == "0" ]]; then
     echo "[xray] geo: VPN_CASCADE_RU_DIRECT=0 — dat для split RU не обязателен"
@@ -389,15 +373,7 @@ _xray_ensure_geo_dats() {
   local dir
   dir="${VPN_XRAY_GEO_DIR:-/usr/local/share/xray}"
   mkdir -p "$dir"
-  local base="${VPN_GEO_DOWNLOAD_BASE:-}"
-  base="${base%/}"
-  if [[ -z "$base" ]]; then
-    echo "[xray] geo: VPN_GEO_DOWNLOAD_BASE пуст — задайте SITE_ADDRESS на воркере или PROVISION_GEO_DOWNLOAD_BASE_URL" >&2
-    return 1
-  fi
-  echo "[xray] geo: загрузка ${base}/sub/geoip.dat и .../geosite.dat → $dir"
-  _xray_download_geo_to "${base}/sub/geoip.dat" "${dir}/geoip.dat" || return 1
-  _xray_download_geo_to "${base}/sub/geosite.dat" "${dir}/geosite.dat" || return 1
+  echo "[xray] geo: split RU — используются geosite.dat/geoip.dat из XTLS install (без geosite:ru, см. regexp в config)"
   return 0
 }
 
