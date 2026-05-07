@@ -70,8 +70,8 @@ def _routing_profile_happ(cfg: Settings | None = None) -> dict[str, object]:
             "cloudflare-dns.com": "1.1.1.1",
             "dns.google": "8.8.8.8",
         },
-        # Без geosite:ru: в части geosite.dat нет секции RU → Happ/Xray падают при старте.
-        # Как на входном Xray: geosite:private + TLD regexp + geoip:ru (см. install_xray_on_remote.sh).
+        # Без geosite:ru / geoip:ru: в урезанных dat нет секции RU → ядро падает при старте.
+        # Split по доменам: private + TLD; по IP — только private и RFC1918 (без geoip:ru).
         "DirectSites": [
             "geosite:private",
             "regexp:.*\\.ru$",
@@ -80,7 +80,6 @@ def _routing_profile_happ(cfg: Settings | None = None) -> dict[str, object]:
         ],
         "DirectIp": [
             "geoip:private",
-            "geoip:ru",
             "10.0.0.0/8",
             "172.16.0.0/12",
             "192.168.0.0/16",
@@ -124,7 +123,7 @@ def _v2raytun_routing_header_value(cfg: Settings | None = None) -> str:
                     "regexp:.*\\.su$",
                     "regexp:.*\\.xn--p1ai$",
                 ],
-                "ip": ["geoip:ru", "geoip:private"],
+                "ip": ["geoip:private"],
             }
         ],
     }
