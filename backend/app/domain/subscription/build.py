@@ -31,8 +31,8 @@ from app.infrastructure.persistence.models.user import User
 
 log = logging.getLogger("app.subscription.build")
 
-SUBSCRIPTION_AUTO_RECOMMENDED_LABEL = "⚡ Auto (рекомендуемый)"
-SUBSCRIPTION_AUTO_WHITELIST_LABEL = "⚡ Auto (белый список)"
+SUBSCRIPTION_AUTO_RECOMMENDED_LABEL = "🔥 Auto (рекомендуемый)"
+SUBSCRIPTION_AUTO_WHITELIST_LABEL = "📄 Auto (белый список)"
 
 
 def subscription_servers_for_delivery(rows: list[Server]) -> list[Server]:
