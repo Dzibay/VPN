@@ -194,3 +194,6 @@ CREATE INDEX IF NOT EXISTS idx_tasks_pending
 
 -- Сервер помечен для белого списка (логика фильтрации в подписке — отдельно)
 ALTER TABLE servers ADD COLUMN IF NOT EXISTS whitelist BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- REALITY spiderX (путь к dest для «паучка»); подписка / провижн
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS reality_spider_x TEXT NOT NULL DEFAULT '/';

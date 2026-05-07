@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS servers (
     reality_dest TEXT NOT NULL DEFAULT 'www.amazon.com:443',
     reality_server_names TEXT NOT NULL DEFAULT 'www.amazon.com,amazon.com',
     reality_fingerprint TEXT NOT NULL DEFAULT 'chrome',
+    reality_spider_x TEXT NOT NULL DEFAULT '/',
     vless_flow TEXT NOT NULL DEFAULT 'xtls-rprx-vision',
     prometheus_instance TEXT,
     network_cap_mbps INTEGER CHECK (
