@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Удалённый хост: root. Режим: VPN_PROVISION_COMPONENT = all | xray | sync_clients | prometheus | fair_egress | cleanup
 # Каскад РФ: при VPN_CASCADE_RU_DIRECT=1 — direct для private / *.ru,*.su,*.рф (punycode) / geoip:ru, остальное → egress.
+# Доп. RU-сервисы вне .ru/.su:
+#   1) файл VPN_CASCADE_RU_DIRECT_DOMAINS_FILE (по умолчанию рядом со скриптом: ru_direct_extra_domains.txt),
+#      формат: один элемент Xray на строку (комментарии с #; без префикса => domain:<host>);
+#   2) fallback: VPN_CASCADE_RU_DIRECT_EXTRA_DOMAINS (CSV/space/semicolon), если файл отсутствует/пустой.
 # geosite:ru в Xray 26.2+ часто падает (code RU not found) — не используем, см. inline regexp в config.
 # Gemini / мультимодальные сервисы Google: внутренний DNS (DoH) + sniffing (вкл. QUIC) + правила доменов первыми;
 #   при каскаде Gemini → egress-cascade (не direct на РФ-входе). См. https://habr.com/ru/articles/992380/
@@ -20,6 +24,7 @@ export TERM="${TERM:-xterm-256color}"
 
 INSTALLER_URL="${VPN_XRAY_INSTALLER_URL:-https://github.com/XTLS/Xray-install/raw/main/install-release.sh}"
 COMPONENT="${VPN_PROVISION_COMPONENT:-all}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "[provision] component=${COMPONENT} host=$(hostname) id=${VPN_SERVER_ID:-?}"
 
@@ -79,10 +84,24 @@ _x25519_pick_public() {
 # Stats API: упрощённый режим Xray (api.listen), без dokodemo-door + routing.
 # См. https://xtls.github.io/en/config/api.html — иначе `xray api statsquery` даёт failed to dial.
 _write_xray_config() {
+  local file_path raw=""
+  file_path="${VPN_CASCADE_RU_DIRECT_DOMAINS_FILE:-${SCRIPT_DIR}/ru_direct_extra_domains.txt}"
+  if [[ -f "$file_path" ]]; then
+    # Файл: по одному домену/правилу на строку; пустые строки и комментарии игнорируются.
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      line="$(echo "$line" | sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//')"
+      [[ -n "$line" ]] || continue
+      raw+="${raw:+,}${line}"
+    done < "$file_path"
+  fi
+  if [[ -n "$raw" ]]; then
+    export VPN_CASCADE_RU_DIRECT_EXTRA_DOMAINS="$raw"
+  fi
   python3 - << 'PY'
 import base64
 import json
 import os
+import re
 
 port = int(os.environ["VPN_SERVER_PORT"])
 api_port = int(os.environ.get("VPN_XRAY_API_PORT") or "10085")
@@ -220,6 +239,21 @@ gemini_google_ip_rule = {
 
 # Каскад: РФ-вход — user traffic VLESS+REALITY inbound → VLESS+REALITY outbound на внешний exit
 if cascade:
+    raw_extra_ru = (os.environ.get("VPN_CASCADE_RU_DIRECT_EXTRA_DOMAINS") or "vk.com").strip()
+    extra_ru_domains = []
+    if raw_extra_ru:
+        seen = set()
+        for token in re.split(r"[\s,;]+", raw_extra_ru):
+            t = token.strip()
+            if not t:
+                continue
+            # Xray domain rule items may be prefixed (domain:, full:, regexp:, geosite:, keyword:).
+            if ":" not in t:
+                t = "domain:%s" % t.lstrip(".")
+            if t not in seen:
+                seen.add(t)
+                extra_ru_domains.append(t)
+
     eg_sni_list = [
         x.strip()
         for x in os.environ.get("VPN_CASCADE_EGRESS_SERVER_NAMES", "").split(",")
@@ -277,6 +311,7 @@ if cascade:
         # (Loyalsoldier geosite:ru тоже может не находиться). Инофисные .com и т.д. пойдут в каскад, RU-IP — через geoip:ru
         _ru_domains = [
             "geosite:private",
+            *extra_ru_domains,
             "regexp:.*\\.ru$",
             "regexp:.*\\.su$",
             "regexp:.*\\.xn--p1ai$",  # .рф

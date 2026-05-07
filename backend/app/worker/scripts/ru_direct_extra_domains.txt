@@ -1,0 +1,76 @@
+# Additional RU services outside .ru/.su TLDs.
+# One Xray domain item per line.
+# Supported examples:
+#   vk.com                  -> auto-converted to domain:vk.com
+#   domain:youtube.com
+#   regexp:^.*\.tinkoff\.com$
+#   full:example.com
+
+vk.com
+vk.cc
+vk.me
+vk.video
+vkmusic.me
+vk.company
+mail.com
+
+yandex.com
+yandex.cloud
+yandex.net
+yandex.st
+yandex.team
+
+kinopoisk.me
+kinopoisk.dev
+st.kp.yandex.net
+ott.yandex.net
+
+yandex.music
+
+food.yandex.net
+
+zen.me
+
+ozon.travel
+ozon.dev
+ozon.market
+ozon.app
+ozon.com
+ozon.kz
+ozon.global
+
+rutube.com
+rutube.net
+rutube.li
+
+alfa.bank
+
+vtb.com
+
+sberbank.com
+sber.pro
+sber.bank
+sber.link
+sberbank.online
+
+tinkoff.group
+tbank.io
+t-bank.com
+
+odnoklassniki.com
+
+2gis.com
+
+gosuslugi.dev
+
+samokat.io
+
+avito.com
+avito.st
+avito.ma
+
+megafon.tv
+
+mts.me
+mts.cashback
+wasd.tv
