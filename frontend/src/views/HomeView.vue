@@ -6,17 +6,25 @@ import {
   ref,
 } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { getAccessToken } from '../auth/session.js'
+import { getAccessToken, getSessionRole } from '../auth/session.js'
+import { defaultPathAfterLogin } from '../auth/permissions.js'
 import { sitePublicUrl } from '../api/client.js'
 
 const router = useRouter()
 const hasToken = ref(false)
+const sessionRole = ref(null)
 
 function refreshAuth() {
   hasToken.value = Boolean(getAccessToken())
+  sessionRole.value = getSessionRole()
 }
 
 const isLoggedIn = computed(() => hasToken.value)
+
+/** После входа: клиент → /cabinet, admin/manager → старт админки. */
+const loggedInHomeCtaPath = computed(() =>
+  defaultPathAfterLogin(sessionRole.value),
+)
 
 onMounted(refreshAuth)
 router.afterEach(refreshAuth)
@@ -230,7 +238,7 @@ onBeforeUnmount(() => {
 
           <div class="cta-row">
             <template v-if="isLoggedIn">
-              <RouterLink class="cta primary large" to="/cabinet">
+              <RouterLink class="cta primary large" :to="loggedInHomeCtaPath">
                 Перейти в кабинет
               </RouterLink>
             </template>
@@ -449,7 +457,7 @@ onBeforeUnmount(() => {
               <RouterLink
                 v-if="isLoggedIn"
                 class="cta primary large pricing-trial__cta"
-                to="/cabinet"
+                :to="loggedInHomeCtaPath"
               >
                 Перейти в кабинет
               </RouterLink>
@@ -556,7 +564,7 @@ onBeforeUnmount(() => {
               <RouterLink
                 v-if="isLoggedIn"
                 class="cta secondary pricing-card__btn"
-                to="/cabinet"
+                :to="loggedInHomeCtaPath"
               >
                 Перейти в кабинет
               </RouterLink>
@@ -681,7 +689,7 @@ onBeforeUnmount(() => {
             <RouterLink
               v-if="isLoggedIn"
               class="cta primary large final-cta-card__btn"
-              to="/cabinet"
+              :to="loggedInHomeCtaPath"
             >
               Открыть кабинет
             </RouterLink>
