@@ -123,7 +123,7 @@ async def subscription_client_metadata_headers(
         announce_raw = ANNOUNCE_RAW
     return {
         "subscription-userinfo": userinfo,
-        "profile-update-interval": "2",
+        "profile-update-interval": "1",
         "profile-title": BRAND_NAME_ASCII,
         "support-url": "https://t.me/Podoroznik_Support",
         "profile-web-page-url": "https://cool-vpn.ru",
