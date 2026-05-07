@@ -38,6 +38,10 @@ class ServerCreate(BaseModel):
         description="Оценка загрузки 0–100 (для сортировки/отбора при выдаче подписки)",
     )
     is_active: bool = Field(default=True, description="Учитывать узел при выдаче подписки")
+    whitelist: bool = Field(
+        default=False,
+        description="Узел для белого списка (выдача только отмеченным пользователям — при поддержке в приложении)",
+    )
     vless_uuid: str | None = Field(
         default=None,
         max_length=64,
@@ -199,6 +203,10 @@ class ServerUpdate(BaseModel):
     country: str | None = Field(default=None, max_length=128)
     load_percent: int | None = Field(default=None, ge=0, le=100)
     is_active: bool | None = None
+    whitelist: bool | None = Field(
+        default=None,
+        description="Флаг белого списка для узла",
+    )
     reality_dest: str | None = Field(default=None, max_length=256)
     reality_server_names: str | None = Field(default=None, max_length=512)
     reality_fingerprint: str | None = Field(default=None, max_length=64)
@@ -330,6 +338,10 @@ class ServerRead(BaseModel):
     country: str
     load_percent: int
     is_active: bool
+    whitelist: bool = Field(
+        default=False,
+        description="Сервер помечен для выдачи в белом списке",
+    )
     provision_ready: bool = Field(description="ПО на узле установлено (воркер завершил задачу)")
     provision_status: str = Field(
         description="idle | queued | running | success | failed",

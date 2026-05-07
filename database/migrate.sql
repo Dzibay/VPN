@@ -191,3 +191,6 @@ CREATE INDEX IF NOT EXISTS idx_tasks_user_created_at
 CREATE INDEX IF NOT EXISTS idx_tasks_pending
     ON tasks (created_at ASC)
     WHERE done_at IS NULL;
+
+-- Сервер помечен для белого списка (логика фильтрации в подписке — отдельно)
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS whitelist BOOLEAN NOT NULL DEFAULT FALSE;

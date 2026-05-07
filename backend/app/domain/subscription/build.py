@@ -1,9 +1,22 @@
-"""Сборка тела подписки: список узлов, ``vless://`` URI, Base64, Clash Meta YAML."""
+"""Сборка тела подписки: список узлов, ``vless://`` URI, Base64, Clash Meta YAML.
+
+Порядок записей в клиенте:
+
+1. ``⚡ Auto (рекомендуемый)`` — дубликат первого узла в выдаче с валидным URI
+   (список уже отсортирован по ``load_percent``).
+2. ``⚡ Auto (белый список)`` — если среди узлов выдачи есть хотя бы один с
+   ``whitelist``, дубликат первого по нагрузке среди whitelist с валидным URI.
+3. Все узлы выдачи по одному разу с обычными именами.
+
+Каскад: внешние exit узлы из пар «РФ-вход → exit» в список не попадают
+(``subscription_servers_for_delivery``).
+"""
 
 from __future__ import annotations
 
 import base64
 import logging
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote, urlencode
 
@@ -18,8 +31,8 @@ from app.infrastructure.persistence.models.user import User
 
 log = logging.getLogger("app.subscription.build")
 
-# Дубликат первого узла по load_percent (после фильтрации каскада) с тем же endpoint.
 SUBSCRIPTION_AUTO_RECOMMENDED_LABEL = "⚡ Auto (рекомендуемый)"
+SUBSCRIPTION_AUTO_WHITELIST_LABEL = "⚡ Auto (белый список)"
 
 
 def subscription_servers_for_delivery(rows: list[Server]) -> list[Server]:
@@ -174,23 +187,101 @@ def _server_to_subscription_dict(
     }
 
 
-def _first_subscription_eligible_server(
-    rows: list[Server],
+def _cascade_exit_ids_referenced(delivery_rows: list[Server]) -> set[int]:
+    return {
+        int(s.cascade_next_server_id)
+        for s in delivery_rows
+        if s.cascade_next_server_id is not None
+    }
+
+
+@dataclass(frozen=True)
+class _SubscriptionDeliveryContext:
+    """Единый контекст после фильтрации каскада: строки выдачи и id внешних exit."""
+
+    delivery_rows: list[Server]
+    exit_ids_referenced: set[int]
+
+
+def _subscription_delivery_context(rows: list[Server]) -> _SubscriptionDeliveryContext:
+    delivery = subscription_servers_for_delivery(rows)
+    return _SubscriptionDeliveryContext(
+        delivery_rows=delivery,
+        exit_ids_referenced=_cascade_exit_ids_referenced(delivery),
+    )
+
+
+def _subscription_standard_uri_by_server_id(
+    ctx: _SubscriptionDeliveryContext,
     *,
     client_uuid: str,
-    exit_ids_referenced: set[int],
-) -> Server | None:
-    for s in rows:
-        if (
-            _vless_reality_share_uri(
-                s,
-                client_uuid=client_uuid,
-                exit_ids_referenced=exit_ids_referenced,
-            )
-            is not None
-        ):
-            return s
-    return None
+) -> dict[int, str | None]:
+    """Один расчёт стандартного URI на узел (без auto-подписей)."""
+    out: dict[int, str | None] = {}
+    for s in ctx.delivery_rows:
+        out[s.id] = _vless_reality_share_uri(
+            s,
+            client_uuid=client_uuid,
+            exit_ids_referenced=ctx.exit_ids_referenced,
+        )
+    return out
+
+
+def _pick_auto_duplicate_servers(
+    ctx: _SubscriptionDeliveryContext,
+    uri_by_id: dict[int, str | None],
+) -> tuple[Server | None, Server | None]:
+    """
+    Лучший по нагрузке среди всех с рабочим URI; среди whitelist — только если в выдаче
+    есть хотя бы один узел с флагом whitelist.
+    """
+    any_whitelist_in_delivery = any(s.whitelist for s in ctx.delivery_rows)
+    auto_rec: Server | None = None
+    auto_wl: Server | None = None
+    for s in ctx.delivery_rows:
+        if uri_by_id.get(s.id) is None:
+            continue
+        if auto_rec is None:
+            auto_rec = s
+        if s.whitelist and auto_wl is None:
+            auto_wl = s
+    if not any_whitelist_in_delivery:
+        auto_wl = None
+    return auto_rec, auto_wl
+
+
+def _append_clash_vless_proxy(
+    proxies: list[dict[str, Any]],
+    s: Server,
+    *,
+    client_uuid: str,
+    clash_name: str,
+) -> None:
+    pbk = (s.reality_public_key or "").strip()
+    sid = (s.reality_short_id or "").strip()
+    flow = (s.vless_flow or "").strip() or "xtls-rprx-vision"
+    fp = (s.reality_fingerprint or "").strip() or "chrome"
+    sni = _primary_sni(s.reality_server_names, s.reality_dest)
+    host = (s.host or "").strip()
+    proxies.append(
+        {
+            "name": clash_name,
+            "type": "vless",
+            "server": host,
+            "port": int(s.port),
+            "uuid": client_uuid,
+            "network": "tcp",
+            "tls": True,
+            "udp": True,
+            "flow": flow,
+            "servername": sni,
+            "reality-opts": {
+                "public-key": pbk,
+                "short-id": sid,
+            },
+            "client-fingerprint": fp,
+        }
+    )
 
 
 def _unique_clash_proxy_name(base_label: str, seen: dict[str, int]) -> str:
@@ -203,86 +294,37 @@ def _unique_clash_proxy_name(base_label: str, seen: dict[str, int]) -> str:
 
 
 def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
-    """Clash Meta: VLESS + REALITY; то же множество узлов, что и в Base64-подписке."""
-    rows = subscription_servers_for_delivery(rows)
+    """Clash Meta: VLESS + REALITY; тот же порядок узлов, что и в Base64-подписке."""
+    ctx = _subscription_delivery_context(rows)
     client_uuid = (user.vless_uuid or "").strip()
-    exit_ids_referenced: set[int] = {
-        int(s.cascade_next_server_id)
-        for s in rows
-        if s.cascade_next_server_id is not None
-    }
+    uri_by_id = _subscription_standard_uri_by_server_id(ctx, client_uuid=client_uuid)
+    auto_rec, auto_wl = _pick_auto_duplicate_servers(ctx, uri_by_id)
+
     proxies: list[dict[str, Any]] = []
     names_seen: dict[str, int] = {}
-    auto_src = _first_subscription_eligible_server(
-        rows,
-        client_uuid=client_uuid,
-        exit_ids_referenced=exit_ids_referenced,
-    )
-    if auto_src is not None:
-        label_auto = SUBSCRIPTION_AUTO_RECOMMENDED_LABEL
-        name = _unique_clash_proxy_name(label_auto, names_seen)
-        pbk = (auto_src.reality_public_key or "").strip()
-        sid = (auto_src.reality_short_id or "").strip()
-        flow = (auto_src.vless_flow or "").strip() or "xtls-rprx-vision"
-        fp = (auto_src.reality_fingerprint or "").strip() or "chrome"
-        sni = _primary_sni(auto_src.reality_server_names, auto_src.reality_dest)
-        host = (auto_src.host or "").strip()
-        proxies.append(
-            {
-                "name": name,
-                "type": "vless",
-                "server": host,
-                "port": int(auto_src.port),
-                "uuid": client_uuid,
-                "network": "tcp",
-                "tls": True,
-                "udp": True,
-                "flow": flow,
-                "servername": sni,
-                "reality-opts": {
-                    "public-key": pbk,
-                    "short-id": sid,
-                },
-                "client-fingerprint": fp,
-            }
+
+    if auto_rec is not None:
+        _append_clash_vless_proxy(
+            proxies,
+            auto_rec,
+            client_uuid=client_uuid,
+            clash_name=_unique_clash_proxy_name(SUBSCRIPTION_AUTO_RECOMMENDED_LABEL, names_seen),
         )
-    for s in rows:
-        if (
-            _vless_reality_share_uri(
-                s,
-                client_uuid=client_uuid,
-                exit_ids_referenced=exit_ids_referenced,
-            )
-            is None
-        ):
+    if auto_wl is not None:
+        _append_clash_vless_proxy(
+            proxies,
+            auto_wl,
+            client_uuid=client_uuid,
+            clash_name=_unique_clash_proxy_name(SUBSCRIPTION_AUTO_WHITELIST_LABEL, names_seen),
+        )
+
+    for s in ctx.delivery_rows:
+        if uri_by_id.get(s.id) is None:
             continue
-        label = _node_subscription_label(s, exit_ids_referenced=exit_ids_referenced)
+        label = _node_subscription_label(s, exit_ids_referenced=ctx.exit_ids_referenced)
         name = _unique_clash_proxy_name(label, names_seen)
-        pbk = (s.reality_public_key or "").strip()
-        sid = (s.reality_short_id or "").strip()
-        flow = (s.vless_flow or "").strip() or "xtls-rprx-vision"
-        fp = (s.reality_fingerprint or "").strip() or "chrome"
-        sni = _primary_sni(s.reality_server_names, s.reality_dest)
-        host = (s.host or "").strip()
-        proxies.append(
-            {
-                "name": name,
-                "type": "vless",
-                "server": host,
-                "port": int(s.port),
-                "uuid": client_uuid,
-                "network": "tcp",
-                "tls": True,
-                "udp": True,
-                "flow": flow,
-                "servername": sni,
-                "reality-opts": {
-                    "public-key": pbk,
-                    "short-id": sid,
-                },
-                "client-fingerprint": fp,
-            }
-        )
+        _append_clash_vless_proxy(proxies, s, client_uuid=client_uuid, clash_name=name)
+
     group_name = BRAND_NAME
     proxy_names = [p["name"] for p in proxies]
     if not proxy_names:
@@ -308,52 +350,62 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
 
 
 def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPayload:
-    rows = subscription_servers_for_delivery(rows)
+    ctx = _subscription_delivery_context(rows)
     client_uuid = (user.vless_uuid or "").strip()
-    exit_ids_referenced: set[int] = {
-        int(s.cascade_next_server_id)
-        for s in rows
-        if s.cascade_next_server_id is not None
-    }
+    uri_by_id = _subscription_standard_uri_by_server_id(ctx, client_uuid=client_uuid)
+    auto_rec, auto_wl = _pick_auto_duplicate_servers(ctx, uri_by_id)
+
     servers_out: list[dict[str, Any]] = []
     uris: list[str] = []
-    auto_src = _first_subscription_eligible_server(
-        rows,
-        client_uuid=client_uuid,
-        exit_ids_referenced=exit_ids_referenced,
-    )
-    if auto_src is not None:
+
+    if auto_rec is not None:
         servers_out.append(
             _server_to_subscription_dict(
-                auto_src,
+                auto_rec,
                 client_uuid=client_uuid,
-                exit_ids_referenced=exit_ids_referenced,
+                exit_ids_referenced=ctx.exit_ids_referenced,
                 name_override=SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
             )
         )
-        auto_uri = _vless_reality_share_uri(
-            auto_src,
+        u = _vless_reality_share_uri(
+            auto_rec,
             client_uuid=client_uuid,
-            exit_ids_referenced=exit_ids_referenced,
+            exit_ids_referenced=ctx.exit_ids_referenced,
             fragment_override=SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
         )
-        if auto_uri:
-            uris.append(auto_uri)
-    for s in rows:
+        if u:
+            uris.append(u)
+
+    if auto_wl is not None:
+        servers_out.append(
+            _server_to_subscription_dict(
+                auto_wl,
+                client_uuid=client_uuid,
+                exit_ids_referenced=ctx.exit_ids_referenced,
+                name_override=SUBSCRIPTION_AUTO_WHITELIST_LABEL,
+            )
+        )
+        u = _vless_reality_share_uri(
+            auto_wl,
+            client_uuid=client_uuid,
+            exit_ids_referenced=ctx.exit_ids_referenced,
+            fragment_override=SUBSCRIPTION_AUTO_WHITELIST_LABEL,
+        )
+        if u:
+            uris.append(u)
+
+    for s in ctx.delivery_rows:
         servers_out.append(
             _server_to_subscription_dict(
                 s,
                 client_uuid=client_uuid,
-                exit_ids_referenced=exit_ids_referenced,
+                exit_ids_referenced=ctx.exit_ids_referenced,
             )
         )
-        uri = _vless_reality_share_uri(
-            s,
-            client_uuid=client_uuid,
-            exit_ids_referenced=exit_ids_referenced,
-        )
-        if uri:
-            uris.append(uri)
+        u = uri_by_id.get(s.id)
+        if u:
+            uris.append(u)
+
     raw = "\n".join(uris) + ("\n" if uris else "")
     b64 = base64.standard_b64encode(raw.encode("utf-8")).decode("ascii") if raw else ""
     return SubscriptionPayload(

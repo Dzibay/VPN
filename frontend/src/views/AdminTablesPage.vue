@@ -78,6 +78,7 @@ const serverSortAccessors = {
   cap: (s) => (s.network_cap_mbps != null ? Number(s.network_cap_mbps) : -1),
   host: (s) => (s.host ?? '').toLowerCase(),
   status: (s) => String(s.provision_status ?? '').toLowerCase(),
+  whitelist: (s) => (s.whitelist ? 1 : 0),
 }
 
 const {
@@ -136,6 +137,8 @@ const formHost = ref('')
 const formPort = ref(443)
 const formCountry = ref('')
 const formActive = ref(true)
+/** Узел помечен для белого списка (фильтрация в подписке — при реализации на бэкенде) */
+const formWhitelist = ref(false)
 /** Override label instance в Prometheus; пусто — host + порт из PROVISION_NODE_EXPORTER_PORT API (часто 9100) */
 const formPrometheusInstance = ref('')
 const formNetworkCapMbps = ref('')
@@ -398,6 +401,7 @@ function openModal() {
     formPort.value = 443
     formCountry.value = ''
     formActive.value = true
+    formWhitelist.value = false
     formPrometheusInstance.value = ''
     formNetworkCapMbps.value = ''
     formVlessUuid.value = ''
@@ -418,6 +422,7 @@ function openEditServer(s) {
   formPort.value = s.port
   formCountry.value = s.country ?? ''
   formActive.value = Boolean(s.is_active)
+  formWhitelist.value = Boolean(s.whitelist)
   formPrometheusInstance.value =
     (s.prometheus_instance && String(s.prometheus_instance).trim()) || ''
   formNetworkCapMbps.value =
@@ -772,6 +777,7 @@ async function submitSaveServer() {
         name: String(formName.value ?? '').trim() || null,
         country,
         is_active: formActive.value,
+        whitelist: formWhitelist.value,
       }
       const rd = String(formRealityDest.value ?? '').trim()
       if (rd) patch.reality_dest = rd
@@ -804,6 +810,7 @@ async function submitSaveServer() {
         port: normalizePort(formPort.value),
         country,
         is_active: formActive.value,
+        whitelist: formWhitelist.value,
       }
       const rd = String(formRealityDest.value ?? '').trim()
       if (rd) createBody.reality_dest = rd
@@ -1543,6 +1550,13 @@ watch(formIsCascadeRuEntry, (v) => {
                 @sort="toggleServerSort"
               />
               <AdminSortTh
+                label="Белый список"
+                column-key="whitelist"
+                :sort-key="serverSortKey"
+                :sort-dir="serverSortDir"
+                @sort="toggleServerSort"
+              />
+              <AdminSortTh
                 label="Host"
                 column-key="host"
                 :sort-key="serverSortKey"
@@ -1586,6 +1600,9 @@ watch(formIsCascadeRuEntry, (v) => {
               </td>
               <td class="mono tabular num">
                 {{ s.network_cap_mbps != null ? s.network_cap_mbps : '—' }}
+              </td>
+              <td class="tabular" title="Узел для белого списка">
+                {{ s.whitelist ? 'да' : '—' }}
               </td>
               <td class="mono">{{ s.host }}</td>
               <td>{{ formatProvisionStatus(s.provision_status) }}</td>
@@ -2023,6 +2040,10 @@ watch(formIsCascadeRuEntry, (v) => {
               <label class="field field-check">
                 <input v-model="formActive" type="checkbox" />
                 <span>Активен (учитывать в подписке)</span>
+              </label>
+              <label class="field field-check">
+                <input v-model="formWhitelist" type="checkbox" />
+                <span>Белый список (отметка узла; фильтрация выдачи — при настройке на сервере)</span>
               </label>
               <div class="field field-cascade">
                 <label class="field field-check">

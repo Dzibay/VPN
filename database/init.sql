@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS servers (
     country TEXT NOT NULL DEFAULT '',
     load_percent INTEGER NOT NULL DEFAULT 0 CHECK (load_percent >= 0 AND load_percent <= 100),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    whitelist BOOLEAN NOT NULL DEFAULT FALSE,
     provision_ready BOOLEAN NOT NULL DEFAULT FALSE,
     provision_status TEXT NOT NULL DEFAULT 'idle',
     provision_error TEXT,

@@ -15,6 +15,7 @@ class Server(Base):
     country: Mapped[str] = mapped_column(Text, nullable=False, default="")
     load_percent: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    whitelist: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     provision_ready: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     provision_status: Mapped[str] = mapped_column(Text, nullable=False, default="idle")
     provision_error: Mapped[str | None] = mapped_column(Text, nullable=True)
