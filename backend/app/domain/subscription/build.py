@@ -10,12 +10,16 @@
 
 Каскад: внешние exit узлы из пар «РФ-вход → exit» в список не попадают
 (``subscription_servers_for_delivery``).
+
+Параметр ``fp`` (uTLS) в ``vless://`` и поле ``fingerprint`` в JSON узла: при каждой
+выдаче подписки случайно выбирается из chrome / firefox / safari / edge (не из БД).
 """
 
 from __future__ import annotations
 
 import base64
 import logging
+import secrets
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote, urlencode
@@ -33,6 +37,14 @@ log = logging.getLogger("app.subscription.build")
 
 SUBSCRIPTION_AUTO_RECOMMENDED_LABEL = "🔥 Auto (рекомендуемый)"
 SUBSCRIPTION_AUTO_WHITELIST_LABEL = "📄 Auto (белый список)"
+
+# uTLS fingerprint в vless:// и Clash: не из БД, а случайный на каждую выдачу подписки (DPI).
+_SUBSCRIPTION_UTLS_FP_CHOICES: tuple[str, ...] = ("chrome", "firefox", "safari", "edge")
+
+
+def _random_subscription_utls_fingerprint() -> str:
+    return secrets.choice(_SUBSCRIPTION_UTLS_FP_CHOICES)
+
 
 # Совпадает с install_xray_on_remote.sh (inbound sockopt); для сборки Xray JSON на клиенте.
 _XRAY_VLESS_STREAM_SETTINGS_SOCKOPT: dict[str, Any] = {
@@ -116,6 +128,7 @@ def _vless_reality_share_uri(
     *,
     client_uuid: str,
     exit_ids_referenced: set[int],
+    client_fingerprint: str,
     fragment_override: str | None = None,
 ) -> str | None:
     pbk = (s.reality_public_key or "").strip()
@@ -130,7 +143,7 @@ def _vless_reality_share_uri(
         log.warning("Пропуск узла id=%s: пустой reality_short_id", s.id)
         return None
     flow = (s.vless_flow or "").strip() or "xtls-rprx-vision"
-    fp = (s.reality_fingerprint or "").strip() or "chrome"
+    fp = (client_fingerprint or "").strip() or "chrome"
     sni = _primary_sni(s.reality_server_names, s.reality_dest)
     if not sni:
         log.warning("Пропуск узла id=%s: не удалось вывести SNI", s.id)
@@ -166,6 +179,7 @@ def _server_to_subscription_dict(
     *,
     client_uuid: str,
     exit_ids_referenced: set[int],
+    client_fingerprint: str,
     name_override: str | None = None,
 ) -> dict[str, Any]:
     sni = _primary_sni(s.reality_server_names, s.reality_dest)
@@ -187,7 +201,7 @@ def _server_to_subscription_dict(
         "network": "tcp",
         "security": "reality",
         "sni": sni,
-        "fingerprint": s.reality_fingerprint,
+        "fingerprint": (client_fingerprint or "").strip() or "chrome",
         "public_key": s.reality_public_key,
         "short_id": s.reality_short_id,
         "dest": s.reality_dest,
@@ -220,20 +234,24 @@ def _subscription_delivery_context(rows: list[Server]) -> _SubscriptionDeliveryC
     )
 
 
-def _subscription_standard_uri_by_server_id(
+def _subscription_uri_and_fingerprint_by_server_id(
     ctx: _SubscriptionDeliveryContext,
     *,
     client_uuid: str,
-) -> dict[int, str | None]:
-    """Один расчёт стандартного URI на узел (без auto-подписей)."""
-    out: dict[int, str | None] = {}
+) -> tuple[dict[int, str | None], dict[int, str]]:
+    """Стандартный URI на узел и uTLS fp для подписки (один fp на server_id на выдачу)."""
+    uri_by_id: dict[int, str | None] = {}
+    fp_by_id: dict[int, str] = {}
     for s in ctx.delivery_rows:
-        out[s.id] = _vless_reality_share_uri(
+        fp = _random_subscription_utls_fingerprint()
+        fp_by_id[s.id] = fp
+        uri_by_id[s.id] = _vless_reality_share_uri(
             s,
             client_uuid=client_uuid,
             exit_ids_referenced=ctx.exit_ids_referenced,
+            client_fingerprint=fp,
         )
-    return out
+    return uri_by_id, fp_by_id
 
 
 def _pick_auto_duplicate_servers(
@@ -265,11 +283,12 @@ def _append_clash_vless_proxy(
     *,
     client_uuid: str,
     clash_name: str,
+    client_fingerprint: str,
 ) -> None:
     pbk = (s.reality_public_key or "").strip()
     sid = (s.reality_short_id or "").strip()
     flow = (s.vless_flow or "").strip() or "xtls-rprx-vision"
-    fp = (s.reality_fingerprint or "").strip() or "chrome"
+    fp = (client_fingerprint or "").strip() or "chrome"
     sni = _primary_sni(s.reality_server_names, s.reality_dest)
     host = (s.host or "").strip()
     proxies.append(
@@ -307,7 +326,9 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
     """Clash Meta: VLESS + REALITY; тот же порядок узлов, что и в Base64-подписке."""
     ctx = _subscription_delivery_context(rows)
     client_uuid = (user.vless_uuid or "").strip()
-    uri_by_id = _subscription_standard_uri_by_server_id(ctx, client_uuid=client_uuid)
+    uri_by_id, fp_by_id = _subscription_uri_and_fingerprint_by_server_id(
+        ctx, client_uuid=client_uuid
+    )
     auto_rec, auto_wl = _pick_auto_duplicate_servers(ctx, uri_by_id)
 
     proxies: list[dict[str, Any]] = []
@@ -319,6 +340,7 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
             auto_rec,
             client_uuid=client_uuid,
             clash_name=_unique_clash_proxy_name(SUBSCRIPTION_AUTO_RECOMMENDED_LABEL, names_seen),
+            client_fingerprint=fp_by_id[auto_rec.id],
         )
     if auto_wl is not None:
         _append_clash_vless_proxy(
@@ -326,6 +348,7 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
             auto_wl,
             client_uuid=client_uuid,
             clash_name=_unique_clash_proxy_name(SUBSCRIPTION_AUTO_WHITELIST_LABEL, names_seen),
+            client_fingerprint=fp_by_id[auto_wl.id],
         )
 
     for s in ctx.delivery_rows:
@@ -333,7 +356,13 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
             continue
         label = _node_subscription_label(s, exit_ids_referenced=ctx.exit_ids_referenced)
         name = _unique_clash_proxy_name(label, names_seen)
-        _append_clash_vless_proxy(proxies, s, client_uuid=client_uuid, clash_name=name)
+        _append_clash_vless_proxy(
+            proxies,
+            s,
+            client_uuid=client_uuid,
+            clash_name=name,
+            client_fingerprint=fp_by_id[s.id],
+        )
 
     group_name = BRAND_NAME
     proxy_names = [p["name"] for p in proxies]
@@ -362,18 +391,22 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
 def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPayload:
     ctx = _subscription_delivery_context(rows)
     client_uuid = (user.vless_uuid or "").strip()
-    uri_by_id = _subscription_standard_uri_by_server_id(ctx, client_uuid=client_uuid)
+    uri_by_id, fp_by_id = _subscription_uri_and_fingerprint_by_server_id(
+        ctx, client_uuid=client_uuid
+    )
     auto_rec, auto_wl = _pick_auto_duplicate_servers(ctx, uri_by_id)
 
     servers_out: list[dict[str, Any]] = []
     uris: list[str] = []
 
     if auto_rec is not None:
+        fp_ar = fp_by_id[auto_rec.id]
         servers_out.append(
             _server_to_subscription_dict(
                 auto_rec,
                 client_uuid=client_uuid,
                 exit_ids_referenced=ctx.exit_ids_referenced,
+                client_fingerprint=fp_ar,
                 name_override=SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
             )
         )
@@ -381,17 +414,20 @@ def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPa
             auto_rec,
             client_uuid=client_uuid,
             exit_ids_referenced=ctx.exit_ids_referenced,
+            client_fingerprint=fp_ar,
             fragment_override=SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
         )
         if u:
             uris.append(u)
 
     if auto_wl is not None:
+        fp_aw = fp_by_id[auto_wl.id]
         servers_out.append(
             _server_to_subscription_dict(
                 auto_wl,
                 client_uuid=client_uuid,
                 exit_ids_referenced=ctx.exit_ids_referenced,
+                client_fingerprint=fp_aw,
                 name_override=SUBSCRIPTION_AUTO_WHITELIST_LABEL,
             )
         )
@@ -399,6 +435,7 @@ def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPa
             auto_wl,
             client_uuid=client_uuid,
             exit_ids_referenced=ctx.exit_ids_referenced,
+            client_fingerprint=fp_aw,
             fragment_override=SUBSCRIPTION_AUTO_WHITELIST_LABEL,
         )
         if u:
@@ -410,6 +447,7 @@ def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPa
                 s,
                 client_uuid=client_uuid,
                 exit_ids_referenced=ctx.exit_ids_referenced,
+                client_fingerprint=fp_by_id[s.id],
             )
         )
         u = uri_by_id.get(s.id)
