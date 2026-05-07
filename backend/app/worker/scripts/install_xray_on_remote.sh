@@ -6,7 +6,7 @@
 #      формат: один элемент Xray на строку (комментарии с #; без префикса => domain:<host>);
 #   2) fallback: VPN_CASCADE_RU_DIRECT_EXTRA_DOMAINS (CSV/space/semicolon), если файл отсутствует/пустой.
 # geosite:ru в Loyalsoldier часто отсутствует — используем geosite:category-ru + geosite:tld-ru (как у клиентов).
-# Gemini / Google: домены в правиле gemini_rule; geoip:google только если не ru_direct с geo с /sub (или VPN_XRAY_GEOIP_GOOGLE_RULE=1).
+# Gemini / мультимодальные сервисы Google: внутренний DNS (DoH) + sniffing (вкл. QUIC) + правила доменов первыми;
 #   при каскаде Gemini → egress-cascade (не direct на РФ-входе). См. https://habr.com/ru/articles/992380/
 # all/xray: curl/wget, python3. prometheus: curl, systemctl. cleanup: curl/wget для uninstall xray.
 #
@@ -19,21 +19,12 @@
 
 set -euo pipefail
 
-# SSH часто присылает TERM=unknown/dumb; install-release.sh вызывает tput → шум и иногда сбой при set -e.
-case "${TERM:-}" in
-  "" | dumb | unknown) export TERM=xterm-256color ;;
-esac
+# Неинтерактивный SSH часто без TERM; XTLS install-release.sh вызывает tput → ненулевой код и обрыв при set -e.
+export TERM="${TERM:-xterm-256color}"
 
 INSTALLER_URL="${VPN_XRAY_INSTALLER_URL:-https://github.com/XTLS/Xray-install/raw/main/install-release.sh}"
 COMPONENT="${VPN_PROVISION_COMPONENT:-all}"
-# bash -s по stdin: при set -u обращение к BASH_SOURCE[0] может быть «unbound» — проверяем длину массива.
-_script=""
-if [[ "${#BASH_SOURCE[@]}" -gt 0 ]]; then
-  _script="${BASH_SOURCE[0]}"
-fi
-[[ -z "${_script}" || "${_script}" == "-" ]] && _script="$0"
-SCRIPT_DIR="$(cd "$(dirname "${_script}")" && pwd)"
-unset _script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "[provision] component=${COMPONENT} host=$(hostname) id=${VPN_SERVER_ID:-?}"
 
@@ -239,27 +230,12 @@ gemini_rule = {
     "outboundTag": gemini_tag,
     "domain": gemini_domains,
 }
-# geoip:google есть в geoip.dat от install-release / Loyalsoldier. На РФ-входе с ru_direct geo качается с /sub —
-# урезанный файл без GOOGLE → правило ломает run -test. VPN_XRAY_GEOIP_GOOGLE_RULE=0|1 переопределяет авто.
+# Трафик на IP из списка google в geoip.dat (QUIC/без домена). Нужен geoip с тегом google (стандартный geoip.dat от install-release).
 gemini_google_ip_rule = {
     "type": "field",
     "outboundTag": gemini_tag,
     "ip": ["geoip:google"],
 }
-_go = (os.environ.get("VPN_XRAY_GEOIP_GOOGLE_RULE") or "").strip()
-if _go == "0":
-    _use_google_geoip = False
-elif _go == "1":
-    _use_google_geoip = True
-else:
-    _use_google_geoip = not (cascade and ru_direct)
-
-def _prepend_gemini_rules(rules):
-    out = [gemini_rule]
-    if _use_google_geoip:
-        out.append(gemini_google_ip_rule)
-    out.extend(rules)
-    return out
 
 # Каскад: РФ-вход — user traffic VLESS+REALITY inbound → VLESS+REALITY outbound на внешний exit
 if cascade:
@@ -344,47 +320,43 @@ if cascade:
         cfg["routing"] = {
             # routing.domainStrategy только AsIs | IPIfNonMatch | IPOnDemand — не UseIPv4 (см. xtls.github.io routing). IPv4: dns.queryStrategy + freedom.
             "domainStrategy": "IPIfNonMatch",
-            "rules": _prepend_gemini_rules(
-                [
-                    {
-                        "type": "field",
-                        "outboundTag": "direct",
-                        "domain": _ru_domains,
-                    },
-                    {
-                        "type": "field",
-                        "outboundTag": "direct",
-                        "ip": ["geoip:ru", "geoip:private"],
-                    },
-                    {
-                        "type": "field",
-                        "inboundTag": ["vless-in"],
-                        "outboundTag": "egress-cascade",
-                    },
-                ]
-            ),
+            "rules": [
+                gemini_rule,
+                gemini_google_ip_rule,
+                {
+                    "type": "field",
+                    "outboundTag": "direct",
+                    "domain": _ru_domains,
+                },
+                {
+                    "type": "field",
+                    "outboundTag": "direct",
+                    "ip": ["geoip:ru", "geoip:private"],
+                },
+                {
+                    "type": "field",
+                    "inboundTag": ["vless-in"],
+                    "outboundTag": "egress-cascade",
+                },
+            ],
         }
     else:
         cfg["routing"] = {
             "domainStrategy": "IPIfNonMatch",
-            "rules": _prepend_gemini_rules(
-                [
-                    {
-                        "type": "field",
-                        "inboundTag": ["vless-in"],
-                        "outboundTag": "egress-cascade",
-                    },
-                ]
-            ),
+            "rules": [
+                gemini_rule,
+                gemini_google_ip_rule,
+                {
+                    "type": "field",
+                    "inboundTag": ["vless-in"],
+                    "outboundTag": "egress-cascade",
+                },
+            ],
         }
 else:
     cfg["routing"] = {
         "domainStrategy": "IPIfNonMatch",
-        "rules": (
-            [gemini_rule, gemini_google_ip_rule]
-            if _use_google_geoip
-            else [gemini_rule]
-        ),
+        "rules": [gemini_rule, gemini_google_ip_rule],
     }
 
 path = os.environ.get("VPN_XRAY_CONFIG_PATH", "/usr/local/etc/xray/config.json")
