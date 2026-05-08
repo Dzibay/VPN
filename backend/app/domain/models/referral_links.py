@@ -68,7 +68,7 @@ class ReferralLinkOut(ReferralLinkRead):
 
 
 class ReferralMeResponse(BaseModel):
-    """GET /api/referral/me: персональная ссылка клиента (при отсутствии создаётся автоматически)."""
+    """GET /api/referral/me: персональная ссылка текущей учётной записи (при отсутствии создаётся автоматически)."""
 
     link: ReferralLinkOut = Field(
         description="Текущая персональная ссылка; при первом успешном запросе создаётся на сервере",

@@ -28,10 +28,10 @@ from app.domain.referrals.repository import (
     update_referral_link,
 )
 from app.domain.services.referral_links_service import (
-    client_site_user_id,
     delete_referral_link_row,
     list_staff_referral_links,
     referral_me_for_user,
+    referral_me_user_id_from_bearer,
 )
 
 staff_router = APIRouter(
@@ -175,5 +175,5 @@ async def get_my_referral_link(
     session: SessionDep,
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
 ) -> ReferralMeResponse:
-    uid = client_site_user_id(principal)
+    uid = referral_me_user_id_from_bearer(principal)
     return await referral_me_for_user(session, uid, settings)

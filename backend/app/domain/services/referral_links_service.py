@@ -13,8 +13,8 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dependencies import BearerPrincipal
 from app.core.exceptions import (
-    ForbiddenError,
     InternalServerError,
     NotFoundError,
     UnauthorizedError,
@@ -41,22 +41,11 @@ async def delete_referral_link_row(session: AsyncSession, link_id: int) -> None:
         raise NotFoundError("Токен не найден")
 
 
-def client_site_user_id(principal: object) -> int:
-    """Извлечь ``user_id`` из принципала только если роль = ``user`` (для /me-эндпоинтов).
-
-    Сотрудникам (``manager``/``admin``) персональная ссылка недоступна — они работают со всеми
-    ссылками через админ-панель и не должны вешать клики на свои аккаунты.
-    """
-    role = getattr(principal, "role", None)
-    uid = getattr(principal, "user_id", None)
-    if role != "user":
-        raise ForbiddenError(
-            "Персональная реферальная ссылка доступна только для учётной записи "
-            "клиента (токены для сотрудников — через админ-панель).",
-        )
-    if uid is None:
+def referral_me_user_id_from_bearer(principal: BearerPrincipal) -> int:
+    """Идентификатор учётной записи для персональной реферальной ссылки (роли user, manager, admin)."""
+    if principal.user_id is None:
         raise UnauthorizedError("Недействительный токен")
-    return int(uid)
+    return int(principal.user_id)
 
 
 async def referral_me_for_user(session: AsyncSession, user_id: int, cfg: object):

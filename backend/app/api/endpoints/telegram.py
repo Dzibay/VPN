@@ -38,7 +38,10 @@ from app.domain.services.telegram_auth_service import (
     telegram_site_link_start,
 )
 from app.domain.services.me_service import delete_subscription_device
-from app.domain.services.referral_links_service import client_site_user_id, referral_me_for_user
+from app.domain.services.referral_links_service import (
+    referral_me_for_user,
+    referral_me_user_id_from_bearer,
+)
 from app.domain.services.telegram_notification_tasks_service import (
     acknowledge_notification_tasks_with_statuses,
     list_pending_notification_tasks,
@@ -93,7 +96,7 @@ async def telegram_site_link_start_ep(
     response_model=ReferralMeResponse,
     dependencies=[Depends(require_telegram_bot_api_secret)],
     summary="Персональная реферальная ссылка (как GET /api/referral/me), по telegram_id и секрету бота",
-    description="Только для клиентской роли (как в кабинете); manager/admin — 403.",
+    description="Та же логика, что GET /api/referral/me: персональная ссылка для учётной записи по роли в БД.",
 )
 async def telegram_referral_me(
     session: SessionDep,
@@ -108,7 +111,7 @@ async def telegram_referral_me(
 ) -> ReferralMeResponse:
     user = await require_user_by_telegram_id(session, telegram_id)
     principal = BearerPrincipal(role=jwt_role_for_user(user), user_id=user.id)
-    uid = client_site_user_id(principal)
+    uid = referral_me_user_id_from_bearer(principal)
     return await referral_me_for_user(session, uid, settings)
 
 
