@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import logging
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -23,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.core.exceptions import ServiceUnavailableError, UnauthorizedError
+from app.core.exceptions import BadRequestError, ServiceUnavailableError, UnauthorizedError
 from app.core.time import utc_today
 from app.domain.models.payments import (
     TributeSubscriptionPublic,
@@ -242,7 +243,18 @@ async def process_tribute_webhook_raw_body(
     api_key = _require_tribute_api_key(settings)
     verify_tribute_webhook_signature(raw_body=raw_body, header_signature=trbt_signature, api_key=api_key)
 
-    env = _TributeWebhookEnvelope.model_validate_json(raw_body)
+    try:
+        body_obj: Any = json.loads(raw_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise BadRequestError(detail="Некорректный JSON тела webhook") from None
+
+    # Дашборд Tribute при «тестовом запросе» шлёт {"test_event": "..."} без name/payload.
+    if isinstance(body_obj, dict) and "test_event" in body_obj and "name" not in body_obj:
+        log.info("Tribute webhook: тестовое событие test_event=%r", body_obj.get("test_event"))
+        te = body_obj.get("test_event")
+        return TributeWebhookAck(ok=True, event=str(te) if te is not None else "test_event", duplicate=False)
+
+    env = _TributeWebhookEnvelope.model_validate(body_obj)
     name = (env.name or "").strip()
 
     if name in ("new_subscription", "renewed_subscription"):
