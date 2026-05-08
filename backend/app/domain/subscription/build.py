@@ -327,13 +327,16 @@ def _pick_auto_duplicate_servers(
     uri_by_id: dict[int, str | None],
 ) -> tuple[Server | None, Server | None]:
     """
-    Лучший по нагрузке среди всех с рабочим URI; среди whitelist — только если в выдаче
-    есть хотя бы один узел с флагом whitelist.
+    Auto-дубликаты выбираются только среди VLESS-узлов с рабочим URI.
+    Hysteria2 остаётся в обычной выдаче, но не становится "Auto".
     """
-    any_whitelist_in_delivery = any(s.whitelist for s in ctx.delivery_rows)
+    vless_rows = [
+        s for s in ctx.delivery_rows if (s.proxy_kind or "vless").strip().lower() == "vless"
+    ]
+    any_whitelist_in_delivery = any(s.whitelist for s in vless_rows)
     auto_rec: Server | None = None
     auto_wl: Server | None = None
-    for s in ctx.delivery_rows:
+    for s in vless_rows:
         if uri_by_id.get(s.id) is None:
             continue
         if auto_rec is None:
