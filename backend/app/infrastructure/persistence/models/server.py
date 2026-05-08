@@ -20,6 +20,7 @@ class Server(Base):
     provision_status: Mapped[str] = mapped_column(Text, nullable=False, default="idle")
     provision_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     provision_job_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    proxy_kind: Mapped[str] = mapped_column(Text, nullable=False, default="vless")
     vless_uuid: Mapped[str] = mapped_column(Text, nullable=False)
     reality_private_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     reality_public_key: Mapped[str | None] = mapped_column(Text, nullable=True)

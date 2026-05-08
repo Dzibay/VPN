@@ -156,6 +156,7 @@ const formHost = ref('')
 const formPort = ref(443)
 const formCountry = ref('')
 const formActive = ref(true)
+const formProxyKind = ref('vless')
 /** Узел помечен для белого списка (фильтрация в подписке — при реализации на бэкенде) */
 const formWhitelist = ref(false)
 /** Override label instance в Prometheus; пусто — host + порт из PROVISION_NODE_EXPORTER_PORT API (часто 9100) */
@@ -204,6 +205,7 @@ const serverProvisioningId = ref(null)
 const serverProvisionResetId = ref(null)
 const serverReconcileId = ref(null)
 const serverXrayId = ref(null)
+const serverHysteria2Id = ref(null)
 const serverPrometheusId = ref(null)
 const serverFairEgressId = ref(null)
 const serverCleanupId = ref(null)
@@ -423,6 +425,7 @@ function openModal() {
     formPort.value = 443
     formCountry.value = ''
     formActive.value = true
+    formProxyKind.value = 'vless'
     formWhitelist.value = false
     formPrometheusInstance.value = ''
     formNetworkCapMbps.value = ''
@@ -444,6 +447,7 @@ function openEditServer(s) {
   formPort.value = s.port
   formCountry.value = s.country ?? ''
   formActive.value = Boolean(s.is_active)
+  formProxyKind.value = s.proxy_kind === 'hysteria2' ? 'hysteria2' : 'vless'
   formWhitelist.value = Boolean(s.whitelist)
   formPrometheusInstance.value =
     (s.prometheus_instance && String(s.prometheus_instance).trim()) || ''
@@ -802,22 +806,25 @@ async function submitSaveServer() {
         name: String(formName.value ?? '').trim() || null,
         country,
         is_active: formActive.value,
+        proxy_kind: formProxyKind.value,
         whitelist: formWhitelist.value,
       }
-      const rd = String(formRealityDest.value ?? '').trim()
-      if (rd) patch.reality_dest = rd
-      const rsn = String(formRealityServerNames.value ?? '').trim()
-      if (rsn) patch.reality_server_names = rsn
-      const rfp = String(formRealityFingerprint.value ?? '').trim()
-      if (rfp) patch.reality_fingerprint = rfp
-      patch.reality_spider_x =
-        String(formRealitySpiderX.value ?? '').trim() || DEFAULT_REALITY_SPIDER_X
-      const vf = String(formVlessFlow.value ?? '').trim()
-      if (vf) patch.vless_flow = vf
-      const rsid = String(formRealityShortId.value ?? '').trim().toLowerCase()
-      if (rsid) patch.reality_short_id = rsid
-      const rpk = String(formRealityPrivateKey.value ?? '').trim()
-      if (rpk) patch.reality_private_key = rpk
+      if (formProxyKind.value === 'vless') {
+        const rd = String(formRealityDest.value ?? '').trim()
+        if (rd) patch.reality_dest = rd
+        const rsn = String(formRealityServerNames.value ?? '').trim()
+        if (rsn) patch.reality_server_names = rsn
+        const rfp = String(formRealityFingerprint.value ?? '').trim()
+        if (rfp) patch.reality_fingerprint = rfp
+        patch.reality_spider_x =
+          String(formRealitySpiderX.value ?? '').trim() || DEFAULT_REALITY_SPIDER_X
+        const vf = String(formVlessFlow.value ?? '').trim()
+        if (vf) patch.vless_flow = vf
+        const rsid = String(formRealityShortId.value ?? '').trim().toLowerCase()
+        if (rsid) patch.reality_short_id = rsid
+        const rpk = String(formRealityPrivateKey.value ?? '').trim()
+        if (rpk) patch.reality_private_key = rpk
+      }
       const pinst = String(formPrometheusInstance.value ?? '').trim()
       patch.prometheus_instance = pinst || null
       patch.network_cap_mbps = normalizeNetworkCapMbps(formNetworkCapMbps.value)
@@ -837,20 +844,23 @@ async function submitSaveServer() {
         port: normalizePort(formPort.value),
         country,
         is_active: formActive.value,
+        proxy_kind: formProxyKind.value,
         whitelist: formWhitelist.value,
       }
-      const rd = String(formRealityDest.value ?? '').trim()
-      if (rd) createBody.reality_dest = rd
-      const rsn = String(formRealityServerNames.value ?? '').trim()
-      if (rsn) createBody.reality_server_names = rsn
-      const rfp = String(formRealityFingerprint.value ?? '').trim()
-      if (rfp) createBody.reality_fingerprint = rfp
-      const rspx = String(formRealitySpiderX.value ?? '').trim()
-      if (rspx) createBody.reality_spider_x = rspx
-      const vf = String(formVlessFlow.value ?? '').trim()
-      if (vf) createBody.vless_flow = vf
-      const rsid = String(formRealityShortId.value ?? '').trim().toLowerCase()
-      if (rsid) createBody.reality_short_id = rsid
+      if (formProxyKind.value === 'vless') {
+        const rd = String(formRealityDest.value ?? '').trim()
+        if (rd) createBody.reality_dest = rd
+        const rsn = String(formRealityServerNames.value ?? '').trim()
+        if (rsn) createBody.reality_server_names = rsn
+        const rfp = String(formRealityFingerprint.value ?? '').trim()
+        if (rfp) createBody.reality_fingerprint = rfp
+        const rspx = String(formRealitySpiderX.value ?? '').trim()
+        if (rspx) createBody.reality_spider_x = rspx
+        const vf = String(formVlessFlow.value ?? '').trim()
+        if (vf) createBody.vless_flow = vf
+        const rsid = String(formRealityShortId.value ?? '').trim().toLowerCase()
+        if (rsid) createBody.reality_short_id = rsid
+      }
       const pinst = String(formPrometheusInstance.value ?? '').trim()
       if (pinst) createBody.prometheus_instance = pinst
       const cap = normalizeNetworkCapMbps(formNetworkCapMbps.value)
@@ -940,6 +950,7 @@ function isServerProvisionBusy(s) {
     serverReconcileId.value === id ||
     serverProvisionResetId.value === id ||
     serverXrayId.value === id ||
+    serverHysteria2Id.value === id ||
     serverPrometheusId.value === id ||
     serverFairEgressId.value === id ||
     serverCleanupId.value === id ||
@@ -999,6 +1010,19 @@ async function enqueueProvisionXray(s) {
     provisionActionError.value = e.message || String(e)
   } finally {
     serverXrayId.value = null
+  }
+}
+
+async function enqueueProvisionHysteria2(s) {
+  provisionActionError.value = null
+  serverHysteria2Id.value = s.id
+  try {
+    await fetchJson(`/api/servers/${s.id}/provision/hysteria2`, { method: 'POST' })
+    await loadServers()
+  } catch (e) {
+    provisionActionError.value = e.message || String(e)
+  } finally {
+    serverHysteria2Id.value = null
   }
 }
 
@@ -1698,7 +1722,7 @@ watch(formIsCascadeRuEntry, (v) => {
             !canEnqueueProvision(serverMenuTarget) ||
             isServerProvisionBusy(serverMenuTarget)
           "
-          :title="canEnqueueProvision(serverMenuTarget) ? 'Xray + node_exporter (если включено в настройках воркера)' : 'Недоступно: уже готов или задача в работе'"
+          :title="canEnqueueProvision(serverMenuTarget) ? 'Выбранный протокол + node_exporter (если включено в настройках воркера)' : 'Недоступно: уже готов или задача в работе'"
           @click="withOpenServerMenu(enqueueProvision)"
         >
           {{
@@ -1715,7 +1739,7 @@ watch(formIsCascadeRuEntry, (v) => {
             !canEnqueueReconcile(serverMenuTarget) ||
             isServerProvisionBusy(serverMenuTarget)
           "
-          title="Повторно всё: xray, REALITY, node_exporter (как в полной установке)"
+          title="Повторно всё: выбранный протокол, node_exporter (как в полной установке)"
           @click="withOpenServerMenu(enqueueReconcile)"
         >
           {{
@@ -1725,6 +1749,23 @@ watch(formIsCascadeRuEntry, (v) => {
           }}
         </button>
         <button
+          v-if="serverMenuTarget.proxy_kind === 'hysteria2'"
+          type="button"
+          class="dropdown-item"
+          role="menuitem"
+          :disabled="
+            !canEnqueueReconcile(serverMenuTarget) ||
+            isServerProvisionBusy(serverMenuTarget)
+          "
+          title="Только Hysteria2 и конфиг сервиса"
+          @click="withOpenServerMenu(enqueueProvisionHysteria2)"
+        >
+          {{
+            serverHysteria2Id === serverMenuTarget.id ? 'Hysteria2…' : 'Hysteria2'
+          }}
+        </button>
+        <button
+          v-else
           type="button"
           class="dropdown-item"
           role="menuitem"
@@ -2002,7 +2043,7 @@ watch(formIsCascadeRuEntry, (v) => {
               :aria-selected="serverModalTab === 'proxy'"
               @click="serverModalTab = 'proxy'"
             >
-              Прокси (VLESS+REALITY)
+              Прокси
             </button>
           </div>
           <form class="form" @submit.prevent="submitSaveServer">
@@ -2058,6 +2099,13 @@ watch(formIsCascadeRuEntry, (v) => {
               <label class="field field-check">
                 <input v-model="formActive" type="checkbox" />
                 <span>Активен (учитывать в подписке)</span>
+              </label>
+              <label class="field">
+                <span>Протокол</span>
+                <select v-model="formProxyKind">
+                  <option value="vless">VLESS + REALITY</option>
+                  <option value="hysteria2">Hysteria2</option>
+                </select>
               </label>
               <label class="field field-check">
                 <input v-model="formWhitelist" type="checkbox" />
@@ -2133,21 +2181,31 @@ watch(formIsCascadeRuEntry, (v) => {
               v-show="serverModalTab === 'proxy'"
               class="form-section"
             >
-              <p class="field-hint">
+              <p v-if="formProxyKind === 'vless'" class="field-hint">
                 По умолчанию — маскировка под Amazon (REALITY). После «Установить
                 ПО» ключи попадут в БД.
               </p>
-              <div v-if="editingServerId != null" class="field field-readonly">
+              <p v-else class="field-hint">
+                Для Hysteria2 используется официальный сервер hysteria с password auth и TLS self-signed.
+                Убедитесь, что UDP-порт inbound открыт в firewall провайдера.
+              </p>
+              <div
+                v-if="formProxyKind === 'vless' && editingServerId != null"
+                class="field field-readonly"
+              >
                 <span>VLESS UUID</span>
                 <p class="readonly-value mono break-all">{{ formVlessUuid }}</p>
               </div>
-              <div v-if="editingServerId != null" class="field field-readonly">
+              <div
+                v-if="formProxyKind === 'vless' && editingServerId != null"
+                class="field field-readonly"
+              >
                 <span>REALITY public (pbk)</span>
                 <p class="readonly-value mono break-all">
                   {{ formRealityPublicKey || '—' }}
                 </p>
               </div>
-              <label class="field">
+              <label v-if="formProxyKind === 'vless'" class="field">
                 <span>REALITY dest (маскировка)</span>
                 <input
                   v-model="formRealityDest"
@@ -2155,7 +2213,7 @@ watch(formIsCascadeRuEntry, (v) => {
                   autocomplete="off"
                 />
               </label>
-              <label class="field">
+              <label v-if="formProxyKind === 'vless'" class="field">
                 <span>serverNames (через запятую)</span>
                 <input
                   v-model="formRealityServerNames"
@@ -2163,7 +2221,7 @@ watch(formIsCascadeRuEntry, (v) => {
                   autocomplete="off"
                 />
               </label>
-              <label class="field">
+              <label v-if="formProxyKind === 'vless'" class="field">
                 <span>shortId REALITY (hex)</span>
                 <input
                   v-model="formRealityShortId"
@@ -2173,7 +2231,7 @@ watch(formIsCascadeRuEntry, (v) => {
                   spellcheck="false"
                 />
               </label>
-              <label class="field">
+              <label v-if="formProxyKind === 'vless'" class="field">
                 <span>fingerprint (uTLS)</span>
                 <input
                   v-model="formRealityFingerprint"
@@ -2181,7 +2239,7 @@ watch(formIsCascadeRuEntry, (v) => {
                   autocomplete="off"
                 />
               </label>
-              <label class="field">
+              <label v-if="formProxyKind === 'vless'" class="field">
                 <span>REALITY spiderX (путь к dest)</span>
                 <input
                   v-model="formRealitySpiderX"
@@ -2190,7 +2248,7 @@ watch(formIsCascadeRuEntry, (v) => {
                   placeholder="/"
                 />
               </label>
-              <label class="field">
+              <label v-if="formProxyKind === 'vless'" class="field">
                 <span>VLESS flow</span>
                 <input
                   v-model="formVlessFlow"
@@ -2198,7 +2256,10 @@ watch(formIsCascadeRuEntry, (v) => {
                   autocomplete="off"
                 />
               </label>
-              <label v-if="editingServerId != null" class="field">
+              <label
+                v-if="formProxyKind === 'vless' && editingServerId != null"
+                class="field"
+              >
                 <span>Приватный ключ REALITY (необязательно)</span>
                 <input
                   v-model="formRealityPrivateKey"

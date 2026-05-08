@@ -25,7 +25,7 @@ from typing import Any
 from urllib.parse import quote, urlencode
 
 import yaml
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import BRAND_NAME
@@ -93,8 +93,14 @@ async def subscription_servers_from_db(session: AsyncSession) -> list[Server]:
         .where(
             Server.is_active.is_(True),
             Server.provision_ready.is_(True),
-            Server.reality_public_key.isnot(None),
-            Server.reality_public_key != "",
+            or_(
+                Server.proxy_kind == "hysteria2",
+                and_(
+                    Server.proxy_kind == "vless",
+                    Server.reality_public_key.isnot(None),
+                    Server.reality_public_key != "",
+                ),
+            ),
         )
         .order_by(Server.load_percent.asc(), Server.id.asc())
     )
@@ -183,6 +189,35 @@ def _vless_reality_share_uri(
     return f"vless://{uuid}@{host}:{int(s.port)}?{query}#{fragment}"
 
 
+def _hysteria2_password_for_server(s: Server) -> str:
+    return ((s.vless_uuid or "").replace("-", "")[:32] or f"hysteria{int(s.id)}")
+
+
+def _hysteria2_share_uri(
+    s: Server,
+    *,
+    exit_ids_referenced: set[int],
+    fragment_override: str | None = None,
+) -> str | None:
+    host = (s.host or "").strip()
+    if not host:
+        return None
+    pwd = quote(_hysteria2_password_for_server(s), safe="")
+    sni = host
+    params = {
+        "sni": sni,
+        "insecure": "1",
+    }
+    query = urlencode(params, quote_via=quote, safe="")
+    remark = (
+        fragment_override
+        if fragment_override is not None
+        else _node_subscription_label(s, exit_ids_referenced=exit_ids_referenced)
+    )
+    fragment = quote(remark, safe="")
+    return f"hysteria2://{pwd}@{host}:{int(s.port)}?{query}#{fragment}"
+
+
 def _server_to_subscription_dict(
     s: Server,
     *,
@@ -191,17 +226,33 @@ def _server_to_subscription_dict(
     client_fingerprint: str,
     name_override: str | None = None,
 ) -> dict[str, Any]:
+    kind = (s.proxy_kind or "vless").strip().lower()
     sni = _primary_sni(s.reality_server_names, s.reality_dest)
-    uid = (client_uuid or "").strip()
     display_name = (
         name_override
         if name_override is not None
         else _node_subscription_label(s, exit_ids_referenced=exit_ids_referenced)
     )
+    if kind == "hysteria2":
+        host = (s.host or "").strip()
+        return {
+            "id": s.id,
+            "name": display_name,
+            "country": s.country,
+            "address": host,
+            "port": s.port,
+            "protocol": "hysteria2",
+            "password": _hysteria2_password_for_server(s),
+            "sni": host,
+            "insecure": True,
+            "network": "udp",
+        }
+    uid = (client_uuid or "").strip()
     return {
         "id": s.id,
         "name": display_name,
         "country": s.country,
+        "protocol": "vless",
         "address": s.host,
         "port": s.port,
         "uuid": uid,
@@ -255,12 +306,19 @@ def _subscription_uri_and_fingerprint_by_server_id(
     for s in ctx.delivery_rows:
         fp = _random_subscription_utls_fingerprint()
         fp_by_id[s.id] = fp
-        uri_by_id[s.id] = _vless_reality_share_uri(
-            s,
-            client_uuid=client_uuid,
-            exit_ids_referenced=ctx.exit_ids_referenced,
-            client_fingerprint=fp,
-        )
+        kind = (s.proxy_kind or "vless").strip().lower()
+        if kind == "hysteria2":
+            uri_by_id[s.id] = _hysteria2_share_uri(
+                s,
+                exit_ids_referenced=ctx.exit_ids_referenced,
+            )
+        else:
+            uri_by_id[s.id] = _vless_reality_share_uri(
+                s,
+                client_uuid=client_uuid,
+                exit_ids_referenced=ctx.exit_ids_referenced,
+                client_fingerprint=fp,
+            )
     return uri_by_id, fp_by_id
 
 
@@ -287,7 +345,7 @@ def _pick_auto_duplicate_servers(
     return auto_rec, auto_wl
 
 
-def _append_clash_vless_proxy(
+def _append_clash_proxy(
     proxies: list[dict[str, Any]],
     s: Server,
     *,
@@ -295,12 +353,27 @@ def _append_clash_vless_proxy(
     clash_name: str,
     client_fingerprint: str,
 ) -> None:
+    kind = (s.proxy_kind or "vless").strip().lower()
+    host = (s.host or "").strip()
+    if kind == "hysteria2":
+        proxies.append(
+            {
+                "name": clash_name,
+                "type": "hysteria2",
+                "server": host,
+                "port": int(s.port),
+                "password": _hysteria2_password_for_server(s),
+                "sni": host,
+                "skip-cert-verify": True,
+                "udp": True,
+            }
+        )
+        return
     pbk = (s.reality_public_key or "").strip()
     sid = (s.reality_short_id or "").strip()
     flow = (s.vless_flow or "").strip() or "xtls-rprx-vision"
     fp = (client_fingerprint or "").strip() or "chrome"
     sni = _primary_sni(s.reality_server_names, s.reality_dest)
-    host = (s.host or "").strip()
     spx = normalize_reality_spider_x(s.reality_spider_x)
     proxies.append(
         {
@@ -335,7 +408,7 @@ def _unique_clash_proxy_name(base_label: str, seen: dict[str, int]) -> str:
 
 
 def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
-    """Clash Meta: VLESS + REALITY; тот же порядок узлов, что и в Base64-подписке."""
+    """Clash Meta: VLESS+REALITY и/или Hysteria2; порядок как в Base64-подписке."""
     ctx = _subscription_delivery_context(rows)
     client_uuid = (user.vless_uuid or "").strip()
     uri_by_id, fp_by_id = _subscription_uri_and_fingerprint_by_server_id(
@@ -347,7 +420,7 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
     names_seen: dict[str, int] = {}
 
     if auto_rec is not None:
-        _append_clash_vless_proxy(
+        _append_clash_proxy(
             proxies,
             auto_rec,
             client_uuid=client_uuid,
@@ -355,7 +428,7 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
             client_fingerprint=fp_by_id[auto_rec.id],
         )
     if auto_wl is not None:
-        _append_clash_vless_proxy(
+        _append_clash_proxy(
             proxies,
             auto_wl,
             client_uuid=client_uuid,
@@ -368,7 +441,7 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
             continue
         label = _node_subscription_label(s, exit_ids_referenced=ctx.exit_ids_referenced)
         name = _unique_clash_proxy_name(label, names_seen)
-        _append_clash_vless_proxy(
+        _append_clash_proxy(
             proxies,
             s,
             client_uuid=client_uuid,
@@ -428,6 +501,10 @@ def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPa
             exit_ids_referenced=ctx.exit_ids_referenced,
             client_fingerprint=fp_ar,
             fragment_override=SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
+        ) if (auto_rec.proxy_kind or "vless") != "hysteria2" else _hysteria2_share_uri(
+            auto_rec,
+            exit_ids_referenced=ctx.exit_ids_referenced,
+            fragment_override=SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
         )
         if u:
             uris.append(u)
@@ -448,6 +525,10 @@ def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPa
             client_uuid=client_uuid,
             exit_ids_referenced=ctx.exit_ids_referenced,
             client_fingerprint=fp_aw,
+            fragment_override=SUBSCRIPTION_AUTO_WHITELIST_LABEL,
+        ) if (auto_wl.proxy_kind or "vless") != "hysteria2" else _hysteria2_share_uri(
+            auto_wl,
+            exit_ids_referenced=ctx.exit_ids_referenced,
             fragment_override=SUBSCRIPTION_AUTO_WHITELIST_LABEL,
         )
         if u:

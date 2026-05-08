@@ -55,9 +55,9 @@ class SubscriptionPayload(BaseModel):
     )
     vless_uris: list[str] = Field(
         default_factory=list,
-        description="Стандартные share-ссылки vless:// (v2rayN, v2rayNG, Nekoray, Streisand и др.)",
+        description="Share-ссылки узлов (vless:// и/или hysteria2:// в зависимости от proxy_kind сервера)",
     )
     subscription_base64: str = Field(
         default="",
-        description="Base64 от UTF-8 текста: по одной vless-ссылке на строку (как тело «subscription URL»)",
+        description="Base64 от UTF-8 текста: по одной share-ссылке (vless:// / hysteria2://) на строку",
     )

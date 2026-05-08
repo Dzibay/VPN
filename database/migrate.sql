@@ -226,3 +226,11 @@ ALTER TABLE tasks ADD CONSTRAINT tasks_type_check CHECK (
         'notify_sub_expire_1d'
     )
 );
+
+-- Тип прокси на узле: vless (Xray REALITY) или hysteria2
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS proxy_kind TEXT NOT NULL DEFAULT 'vless';
+UPDATE servers SET proxy_kind = 'hysteria2' WHERE proxy_kind = 'naive';
+ALTER TABLE servers DROP CONSTRAINT IF EXISTS servers_proxy_kind_check;
+ALTER TABLE servers ADD CONSTRAINT servers_proxy_kind_check CHECK (
+    proxy_kind IN ('vless', 'hysteria2')
+);

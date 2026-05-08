@@ -38,7 +38,7 @@ _REMOTE_SCRIPT = _SCRIPTS_DIR / "install_xray_on_remote.sh"
 _REMOTE_SCRIPT_PARTS = (
     _SCRIPTS_DIR / "provision_common.sh",
     _SCRIPTS_DIR / "provision_vless.sh",
-    _SCRIPTS_DIR / "provision_naive.sh",
+    _SCRIPTS_DIR / "provision_hysteria2.sh",
     _REMOTE_SCRIPT,
 )
 
@@ -59,7 +59,7 @@ ProvisionComponent = Literal[
     "all",
     "xray",
     "vless",
-    "naive",
+    "hysteria2",
     "prometheus",
     "fair_egress",
     "cleanup",
@@ -162,6 +162,17 @@ def _xray_env_lines(db: Session, server: Server) -> str:
     return remote_env
 
 
+def _hysteria2_env_lines(server: Server) -> str:
+    """Параметры для установки Hysteria2."""
+    host = (server.host or "").strip() or "localhost"
+    password = ((server.vless_uuid or "").replace("-", "")[:32] or f"hysteria{int(server.id)}")
+    return (
+        f"export VPN_SERVER_PORT={server.port}\n"
+        f"export VPN_HYSTERIA2_DOMAIN={shlex.quote(host)}\n"
+        f"export VPN_HYSTERIA2_PASSWORD={shlex.quote(password)}\n"
+    )
+
+
 def _cascade_xray_env_for_ru_entry(db: Session, server: Server) -> str:
     """
     РФ-вход: VLESS+REALITY outbound на внешний exit (тот же протокол, что у клиентов к exit).
@@ -212,6 +223,10 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
     # Иначе на удалённой стороне TERM пустой → tput в сторонних скриптах (install-release.sh) даёт ошибку и ненулевой exit.
     remote_env = 'export TERM="${TERM:-xterm-256color}"\n'
     remote_env += f"export VPN_PROVISION_COMPONENT={shlex.quote(component)}\n"
+    proxy_kind = (getattr(server, "proxy_kind", None) or "vless").strip().lower()
+    if proxy_kind not in ("vless", "hysteria2"):
+        proxy_kind = "vless"
+    remote_env += f"export VPN_PROXY_KIND={shlex.quote(proxy_kind)}\n"
 
     if component == "cleanup":
         remote_env += f"export VPN_SERVER_ID={server.id}\n"
@@ -227,11 +242,15 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
     elif component == "sync_clients":
         remote_env += f"export VPN_SERVER_ID={server.id}\n"
         remote_env += _xray_env_lines(db, server)
-    elif component == "naive":
+    elif component == "hysteria2":
         remote_env += f"export VPN_SERVER_ID={server.id}\n"
+        remote_env += _hysteria2_env_lines(server)
         remote_env += _node_exporter_env_lines(force_install=False)
     else:
-        remote_env += _xray_env_lines(db, server)
+        if proxy_kind == "hysteria2":
+            remote_env += _hysteria2_env_lines(server)
+        else:
+            remote_env += _xray_env_lines(db, server)
         remote_env += _node_exporter_env_lines(force_install=None)
 
     payload = (remote_env + script_body).replace("\r\n", "\n").replace("\r", "\n")
@@ -270,7 +289,7 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
             ),
         )
 
-    if component in ("all", "xray", "vless"):
+    if component in ("all", "xray", "vless") and (server.proxy_kind or "vless") == "vless":
         _persist_reality_keys(db, server, stdout_t)
     # sync_clients не генерирует ключи REALITY
 
@@ -377,6 +396,13 @@ def sync_xray_clients_to_server(server_id: int) -> None:
                 server_id,
             )
             return
+        if (server.proxy_kind or "vless") != "vless":
+            log.warning(
+                "sync_xray_clients: пропуск id=%s (proxy_kind=%s)",
+                server_id,
+                server.proxy_kind,
+            )
+            return
         if server.provision_status in ("queued", "running"):
             log.warning(
                 "sync_xray_clients: пропуск id=%s (идёт установка/очередь)",
@@ -409,7 +435,10 @@ def sync_xray_clients_all_servers() -> None:
     """
     db = SessionLocal()
     try:
-        stmt = select(Server.id).where(Server.provision_ready.is_(True))
+        stmt = select(Server.id).where(
+            Server.provision_ready.is_(True),
+            Server.proxy_kind == "vless",
+        )
         ids = list(db.scalars(stmt).all())
     finally:
         db.close()
@@ -455,6 +484,7 @@ def collect_xray_user_traffic_all_servers() -> dict[str, Any]:
             .where(
                 Server.provision_ready.is_(True),
                 Server.is_active.is_(True),
+                Server.proxy_kind == "vless",
             )
             .order_by(Server.id.asc())
         )

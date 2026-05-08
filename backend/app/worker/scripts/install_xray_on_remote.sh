@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-# Удалённый entrypoint. Режим: VPN_PROVISION_COMPONENT = all | xray | sync_clients | prometheus | fair_egress | cleanup | naive
+# Удалённый entrypoint. Режим: VPN_PROVISION_COMPONENT = all | xray | sync_clients | prometheus | fair_egress | cleanup | hysteria2
 #
 # Функции компонентов подставляются воркером в SSH payload перед этим dispatcher:
 #   provision_common.sh
 #   provision_vless.sh
-#   provision_naive.sh
+#   provision_hysteria2.sh
 
 set -euo pipefail
 
 COMPONENT="${VPN_PROVISION_COMPONENT:-all}"
+PROXY_KIND="${VPN_PROXY_KIND:-vless}"
 
-echo "[provision] component=${COMPONENT} host=$(hostname) id=${VPN_SERVER_ID:-?}"
+echo "[provision] component=${COMPONENT} proxy=${PROXY_KIND} host=$(hostname) id=${VPN_SERVER_ID:-?}"
 
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
   echo "[provision] нужен root" >&2
@@ -21,7 +22,7 @@ case "$COMPONENT" in
   cleanup)
     _cleanup_common
     _xray_cleanup
-    _naive_cleanup
+    _hysteria2_cleanup
     echo "[cleanup] готово."
     ;;
   sync_clients)
@@ -32,8 +33,8 @@ case "$COMPONENT" in
     _egress_fairness_install
     _emit_xray_meta
     ;;
-  naive)
-    _naive_install
+  hysteria2)
+    _hysteria2_install
     _egress_fairness_install
     ;;
   fair_egress)
@@ -43,10 +44,14 @@ case "$COMPONENT" in
     _ne_install
     ;;
   all|*)
-    _xray_install
+    if [[ "$PROXY_KIND" == "hysteria2" ]]; then
+      _hysteria2_install
+    else
+      _xray_install
+      _emit_xray_meta
+    fi
     _egress_fairness_install
     _ne_install
-    _emit_xray_meta
     ;;
 esac
 

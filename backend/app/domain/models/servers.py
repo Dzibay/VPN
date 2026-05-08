@@ -42,6 +42,10 @@ class ServerCreate(BaseModel):
         default=False,
         description="Узел для белого списка (выдача только отмеченным пользователям — при поддержке в приложении)",
     )
+    proxy_kind: Literal["vless", "hysteria2"] = Field(
+        default="vless",
+        description="Тип прокси на узле: vless (Xray REALITY) или hysteria2",
+    )
     vless_uuid: str | None = Field(
         default=None,
         max_length=64,
@@ -224,6 +228,10 @@ class ServerUpdate(BaseModel):
         default=None,
         description="Флаг белого списка для узла",
     )
+    proxy_kind: Literal["vless", "hysteria2"] | None = Field(
+        default=None,
+        description="Тип прокси на узле: vless или hysteria2",
+    )
     reality_dest: str | None = Field(default=None, max_length=256)
     reality_server_names: str | None = Field(default=None, max_length=512)
     reality_fingerprint: str | None = Field(default=None, max_length=64)
@@ -382,6 +390,10 @@ class ServerRead(BaseModel):
     )
     provision_error: str | None = Field(description="Текст ошибки при failed")
     provision_job_id: str | None = Field(description="ID последней задачи RQ")
+    proxy_kind: Literal["vless", "hysteria2"] = Field(
+        default="vless",
+        description="Тип прокси на узле: vless (Xray REALITY) или hysteria2",
+    )
     vless_uuid: str
     reality_private_key: str | None
     reality_public_key: str | None

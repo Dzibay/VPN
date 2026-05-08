@@ -170,6 +170,16 @@ async def enqueue_server_provision_xray(server_id: int, session: SessionDep) -> 
 
 
 @router.post(
+    "/{server_id}/provision/hysteria2",
+    response_model=ServerRead,
+    status_code=202,
+    summary="Установка и настройка только Hysteria2 на узле",
+)
+async def enqueue_server_provision_hysteria2(server_id: int, session: SessionDep) -> Server:
+    return await enqueue_component_install(session, server_id, component="hysteria2", cfg=settings)
+
+
+@router.post(
     "/{server_id}/provision/prometheus",
     response_model=ServerRead,
     status_code=202,

@@ -124,6 +124,8 @@ async def create_server(
         is_ru = True
     elif not is_ru:
         cnext = None
+    if body.proxy_kind == "hysteria2" and (is_ru or cnext is not None):
+        raise ConflictError("Hysteria2 пока не поддерживает каскад; используйте VLESS+REALITY")
     await validate_cascade_pair(session, self_id=None, is_ru_entry=is_ru, cascade_next_id=cnext)
     cascade_egress_uuid: str | None = str(uuid_lib.uuid4()) if cnext else None
     server = Server(
@@ -139,6 +141,7 @@ async def create_server(
         is_cascade_ru_entry=is_ru,
         cascade_next_server_id=cnext,
         cascade_egress_client_uuid=cascade_egress_uuid,
+        proxy_kind=body.proxy_kind,
         **defaults,
     )
     try:
@@ -179,6 +182,8 @@ async def enqueue_sync_xray_one(
         raise ConflictError(
             "Узел не готов (provision_ready=false); сначала установите ПО",
         )
+    if (server.proxy_kind or "vless") != "vless":
+        raise ConflictError("Синхронизация Xray-клиентов доступна только для VLESS-узлов")
     try:
         job_id = ensure_sync_xray_clients_to_server_enqueued(server_id)
     except RedisError as e:
@@ -295,6 +300,8 @@ async def patch_server(session: AsyncSession, server_id: int, body: ServerUpdate
         old_priv = (server.reality_private_key or "").strip()
         if new_priv != old_priv:
             server.reality_public_key = None
+    if data.get("proxy_kind") == "hysteria2":
+        data["reality_public_key"] = None
     cascade_touched = False
     old_cnext: int | None = None
     if "is_cascade_ru_entry" in data or "cascade_next_server_id" in data:
@@ -314,6 +321,11 @@ async def patch_server(session: AsyncSession, server_id: int, body: ServerUpdate
             data["cascade_egress_client_uuid"] = None
         elif cnext != old_cnext or not (str(old_cuuid or "").strip()):
             data["cascade_egress_client_uuid"] = str(uuid_lib.uuid4())
+    final_proxy = data.get("proxy_kind", server.proxy_kind or "vless")
+    final_is_ru = bool(data.get("is_cascade_ru_entry", server.is_cascade_ru_entry))
+    final_cnext = data.get("cascade_next_server_id", server.cascade_next_server_id)
+    if final_proxy == "hysteria2" and (final_is_ru or final_cnext is not None):
+        raise ConflictError("Hysteria2 пока не поддерживает каскад; используйте VLESS+REALITY")
     for key, value in data.items():
         setattr(server, key, value)
     await session.flush()
