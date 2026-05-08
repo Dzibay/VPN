@@ -145,13 +145,19 @@ class Settings(BaseSettings):
             "Пусто — POST /api/payments/tribute/webhook отвечает 503 (эндпоинт отключён)."
         ),
     )
-    tribute_subscription: TributeSubscription | None = Field(
-        default=None,
+    tribute_subscription_tg_link: str = Field(
+        default="",
         description=(
-            "Подписка Tribute (рекуррентная): одна ссылка на оплату для кабинета и бота. "
-            "В .env как JSON: TRIBUTE_SUBSCRIPTION={\"tg_link\":\"https://t.me/tribute/...\","
-            "\"web_link\":\"https://web.tribute.tg/...\"}. "
-            "Если пусто — эндпоинты возвращают subscription=null. На обработку webhook не влияет."
+            "Ссылка на оплату подписки Tribute для Telegram (deep-link). "
+            "Env: TRIBUTE_SUBSCRIPTION_TG_LINK. Если пусто хотя бы одно из двух полей ссылок — "
+            "эндпоинты отдают subscription=null."
+        ),
+    )
+    tribute_subscription_web_link: str = Field(
+        default="",
+        description=(
+            "Ссылка на оплату подписки Tribute для браузера (web.tribute.tg). "
+            "Env: TRIBUTE_SUBSCRIPTION_WEB_LINK."
         ),
     )
 
@@ -451,6 +457,14 @@ class Settings(BaseSettings):
         le=32,
         description="Параллельных TCP-проб в одном цикле (каждый поток со своей sync-сессией БД).",
     )
+
+    @property
+    def tribute_subscription(self) -> TributeSubscription | None:
+        tg = (self.tribute_subscription_tg_link or "").strip()
+        web = (self.tribute_subscription_web_link or "").strip()
+        if not tg or not web:
+            return None
+        return TributeSubscription(tg_link=tg, web_link=web)
 
     @computed_field
     def sqlalchemy_database_url(self) -> str:
