@@ -189,7 +189,7 @@ def require_telegram_bot_api_secret(
     """
     Тот же секрет, что и для POST /api/auth/telegram, POST /api/telegram/link, POST /api/telegram/site-link/start,
     GET /api/telegram/referral/me, DELETE /api/telegram/subscription-devices/{device_id},
-    GET /api/telegram/payments/tribute-subscription,
+    GET /api/telegram/payments/tribute-subscription, POST /api/payments/tribute/webhook-test,
     GET /api/telegram/notification-tasks, POST /api/telegram/notification-tasks/completed,
     GET /api/telegram/users, GET /api/telegram/users/{topic_id} и
     GET /api/telegram/subscription-open-clients (заголовок X-Telegram-Bot-Secret).

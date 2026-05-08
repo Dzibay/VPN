@@ -21,11 +21,7 @@ from app.domain.models.auth import (
     TelegramWebLinkBody,
     TelegramWebLinkResponse,
 )
-from app.domain.models.payments import (
-    TributeSubscriptionResponse,
-    TributeWebhookAck,
-    TributeWebhookTestBody,
-)
+from app.domain.models.payments import TributeSubscriptionResponse
 from app.domain.models.telegram_notification_tasks import (
     TelegramNotificationTasksListResponse,
     TelegramTasksAckBody,
@@ -46,10 +42,7 @@ from app.domain.services.telegram_notification_tasks_service import (
     acknowledge_notification_tasks_with_statuses,
     list_pending_notification_tasks,
 )
-from app.domain.services.tribute_service import (
-    process_tribute_webhook_event,
-    tribute_subscription_public_response,
-)
+from app.domain.services.tribute_service import tribute_subscription_public_response
 from app.domain.services.telegram_service import (
     get_user_by_topic_id,
     list_telegram_user_ids,
@@ -186,30 +179,6 @@ async def get_user_by_topic_id_ep(
 )
 async def telegram_tribute_subscription_ep() -> TributeSubscriptionResponse:
     return tribute_subscription_public_response(settings)
-
-
-@router.post(
-    "/payments/tribute-webhook-test",
-    response_model=TributeWebhookAck,
-    dependencies=[Depends(require_telegram_bot_api_secret)],
-    summary="Тестовый прогон Tribute-webhook без HMAC (X-Telegram-Bot-Secret вместо trbt-signature)",
-    description=(
-        "Только для ручной отладки в Swagger / Postman: вызывает ту же бизнес-логику, что и "
-        "POST /api/payments/tribute/webhook (запись в payments, продление подписки, реф-бонус, "
-        "идемпотентность по subscription_id+expires_at), но **без проверки HMAC** — защищён "
-        "только заголовком X-Telegram-Bot-Secret. В Tribute этот URL указывать НЕ нужно."
-    ),
-)
-async def telegram_tribute_webhook_test_ep(
-    session: SessionDep,
-    body: TributeWebhookTestBody,
-) -> TributeWebhookAck:
-    return await process_tribute_webhook_event(
-        session,
-        settings=settings,
-        name=body.name,
-        payload=body.payload.model_dump(mode="json"),
-    )
 
 
 @router.get(
