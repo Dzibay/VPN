@@ -43,6 +43,25 @@ function userTelegramSortKey(u) {
   return ''
 }
 
+function userTelegramDisplay(u) {
+  const directUsername = u.username ?? u.user_name ?? u.telegram_username
+  const props = u.telegram_properties
+  const nestedUsername =
+    props && typeof props === 'object'
+      ? props.username ?? props.user_name ?? props.telegram_username
+      : null
+  const username = directUsername ?? nestedUsername
+
+  if (username != null && username !== '') {
+    const s = String(username)
+    return s.startsWith('@') ? s : `@${s}`
+  }
+  if (u.telegram_id != null && u.telegram_id !== '') {
+    return String(u.telegram_id)
+  }
+  return '—'
+}
+
 const userSortAccessors = {
   id: (u) => u.id,
   email: (u) => (u.email ?? '').toLowerCase(),
@@ -1349,18 +1368,7 @@ watch(formIsCascadeRuEntry, (v) => {
               <td class="num">{{ u.id }}</td>
               <td>{{ u.email ?? '—' }}</td>
               <td>
-                <template v-if="u.telegram_id != null">
-                  {{ u.telegram_id
-                  }}<span
-                    v-if="u.telegram_properties?.username"
-                    class="muted"
-                  > @{{ u.telegram_properties.username }}</span>
-                </template>
-                <template v-else-if="u.telegram_properties?.username">
-                  <span class="muted"
-                    >@{{ u.telegram_properties.username }}</span>
-                </template>
-                <template v-else>—</template>
+                {{ userTelegramDisplay(u) }}
               </td>
               <td>
                 <UserRolePill :role="u.account_role" />
