@@ -260,7 +260,6 @@ _STORE: dict[str, AppStoreLinks] = {
         ios="https://apps.apple.com/app/v2raytun/id6476628951",
         windows="https://v2raytun.com",
         macos="https://v2raytun.com",
-        linux="https://v2raytun.com",
     ),
     "koala-clash": _stores(
         windows=(
