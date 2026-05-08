@@ -217,9 +217,21 @@ networks:
   internal:
     driver: bridge
 
+# Существующие тома на хосте (например docker volume create … или старый compose без labels):
+# помечаем external, иначе WARN «already exists but was not created by Docker Compose».
 volumes:
   postgres_data:
+    external: true
+    name: vpn_postgres_data
   redis_data:
+    external: true
+    name: vpn_redis_data
   prometheus_data:
+    external: true
+    name: vpn_prometheus_data
   caddy_data:
+    external: true
+    name: vpn_caddy_data
   caddy_config:
+    external: true
+    name: vpn_caddy_config
