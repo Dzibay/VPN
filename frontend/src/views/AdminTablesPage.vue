@@ -1367,8 +1367,8 @@ watch(formIsCascadeRuEntry, (v) => {
             <tr v-for="u in sortedUsers" :key="u.id">
               <td class="num">{{ u.id }}</td>
               <td>{{ u.email ?? '—' }}</td>
-              <td>
-                {{ userTelegramDisplay(u) }}
+              <td class="tg-display-cell" :title="userTelegramDisplay(u)">
+                <span class="tg-display-cell__text">{{ userTelegramDisplay(u) }}</span>
               </td>
               <td>
                 <UserRolePill :role="u.account_role" />
@@ -2572,6 +2572,16 @@ watch(formIsCascadeRuEntry, (v) => {
 }
 .link-cell .btn-secondary {
   margin-right: 0.35rem;
+}
+
+.tg-display-cell {
+  max-width: 10rem;
+}
+.tg-display-cell__text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .traffic-link-cell {
