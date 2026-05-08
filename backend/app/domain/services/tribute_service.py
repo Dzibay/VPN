@@ -255,18 +255,31 @@ async def process_tribute_webhook_raw_body(
         return TributeWebhookAck(ok=True, event=str(te) if te is not None else "test_event", duplicate=False)
 
     env = _TributeWebhookEnvelope.model_validate(body_obj)
-    name = (env.name or "").strip()
+    return await process_tribute_webhook_event(
+        session,
+        settings=settings,
+        name=env.name,
+        payload=env.payload,
+    )
 
-    if name in ("new_subscription", "renewed_subscription"):
+
+async def process_tribute_webhook_event(
+    session: AsyncSession,
+    *,
+    settings: Settings,
+    name: str,
+    payload: dict[str, Any],
+) -> TributeWebhookAck:
+    """Диспетчер по ``name``. Используется и реальным webhook'ом, и тестовым эндпоинтом."""
+    n = (name or "").strip()
+    if n in ("new_subscription", "renewed_subscription"):
         return await _handle_subscription_paid(
             session,
             settings=settings,
-            event_name=name,
-            payload=env.payload,
+            event_name=n,
+            payload=payload,
         )
-
-    if name == "cancelled_subscription":
-        return await _handle_subscription_cancelled(payload=env.payload)
-
-    log.info("Tribute webhook: неизвестное событие name=%r — игнор", name)
-    return TributeWebhookAck(ok=True, event=name or None, duplicate=False)
+    if n == "cancelled_subscription":
+        return await _handle_subscription_cancelled(payload=payload)
+    log.info("Tribute webhook: неизвестное событие name=%r — игнор", n)
+    return TributeWebhookAck(ok=True, event=n or None, duplicate=False)
