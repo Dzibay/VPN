@@ -107,22 +107,28 @@ class _TributeWebhookEnvelope(BaseModel):
 
 
 class _SubscriptionPaidPayload(BaseModel):
-    """Объединённая схема для ``new_subscription`` и ``renewed_subscription``."""
+    """Объединённая схема для ``new_subscription`` и ``renewed_subscription``.
+
+    Из всего, что присылает Tribute, нашему коду нужны только: ``subscription_id``,
+    ``period``, ``price``, ``expires_at``, ``telegram_user_id`` и опционально ``type``
+    (для пропуска ``gift``). Поля ``period_id``, ``amount``, ``currency`` отмечены
+    как обязательные в схеме Tribute, но логикой не используются — поэтому здесь
+    они опциональны (схема всё равно принимает их через ``extra="allow"``).
+    """
 
     model_config = ConfigDict(extra="allow")
 
     subscription_id: int
-    period_id: int
     period: str
     price: int
-    amount: int
-    currency: str
     expires_at: datetime
     telegram_user_id: int | None = None
     type: Literal["regular", "gift", "trial"] | None = None
 
 
 class _SubscriptionCancelledPayload(BaseModel):
+    """Из ``cancelled_subscription`` нам нужны subscription_id, expires_at и (опц.) telegram_user_id."""
+
     model_config = ConfigDict(extra="allow")
 
     subscription_id: int
@@ -158,7 +164,19 @@ async def _handle_subscription_paid(
         )
         return TributeWebhookAck(ok=True, event=event_name, duplicate=False)
 
-    ext = f"sub:{int(p.subscription_id)}:{_expires_at_iso_compact(p.expires_at)}"
+    if p.telegram_user_id is None:
+        log.warning(
+            "Tribute %s: payload.telegram_user_id отсутствует (subscription_id=%s) — игнор",
+            event_name,
+            p.subscription_id,
+        )
+        return TributeWebhookAck(ok=True, event=event_name, duplicate=False)
+
+    ext = (
+        f"sub:{int(p.subscription_id)}"
+        f":tg{int(p.telegram_user_id)}"
+        f":{_expires_at_iso_compact(p.expires_at)}"
+    )
 
     dup_stmt = (
         select(Payment.id)
@@ -167,14 +185,6 @@ async def _handle_subscription_paid(
     )
     if (await session.scalars(dup_stmt)).first() is not None:
         return TributeWebhookAck(ok=True, event=event_name, duplicate=True)
-
-    if p.telegram_user_id is None:
-        log.warning(
-            "Tribute %s: payload.telegram_user_id отсутствует (subscription_id=%s) — игнор",
-            event_name,
-            p.subscription_id,
-        )
-        return TributeWebhookAck(ok=True, event=event_name, duplicate=False)
 
     user = await require_user_by_telegram_id(session, int(p.telegram_user_id))
 

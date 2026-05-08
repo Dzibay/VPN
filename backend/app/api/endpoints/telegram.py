@@ -205,7 +205,7 @@ async def telegram_tribute_webhook_test_ep(
         session,
         settings=settings,
         name=body.name,
-        payload=body.payload,
+        payload=body.payload.model_dump(mode="json"),
     )
 
 

@@ -1,4 +1,5 @@
-from typing import Any
+from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -24,41 +25,46 @@ class TributeWebhookAck(BaseModel):
     duplicate: bool = False
 
 
+class TributeWebhookTestPayload(BaseModel):
+    """Полезная нагрузка тестового webhook: только поля, которые читает сервис."""
+
+    subscription_id: int = Field(
+        ge=1,
+        description="Tribute Subscription ID (часть ключа идемпотентности). Любое число.",
+    )
+    telegram_user_id: int = Field(
+        ge=1,
+        description="Telegram user id; должен совпадать с users.telegram_id в БД.",
+    )
+    expires_at: datetime = Field(
+        description=(
+            "Дата окончания периода в Tribute (ISO-8601 UTC, например 2026-06-08T20:00:00Z). "
+            "Часть ключа идемпотентности — для нового платежа меняйте на свежую."
+        ),
+    )
+    period: Literal["monthly", "quarterly", "yearly"] = Field(
+        default="monthly",
+        description="Период подписки: 1 / 3 / 12 месяцев (× 31 день к users.subscription_until).",
+    )
+    price: int = Field(
+        default=19900,
+        ge=0,
+        description="Цена в минорных единицах (копейки). Делится на 100 → payments.amount.",
+    )
+    type: Literal["regular", "gift", "trial"] | None = Field(
+        default=None,
+        description="Тип подписки. type=gift пропускается (платежа нет).",
+    )
+
+
 class TributeWebhookTestBody(BaseModel):
-    """Тело для тестового webhook-эндпоинта без HMAC (защищён бот-секретом).
+    """Тело для тестового webhook (без HMAC, защищён X-Telegram-Bot-Secret)."""
 
-    Структура повторяет реальный webhook Tribute: ``name`` + произвольный ``payload``.
-    Поля ``payload`` зависят от события, см. сервис ``tribute_service`` и схему Tribute.
-    """
-
-    name: str = Field(
+    name: Literal["new_subscription", "renewed_subscription", "cancelled_subscription"] = Field(
+        default="new_subscription",
         description=(
-            "Имя события Tribute: new_subscription | renewed_subscription | cancelled_subscription. "
-            "Любое другое значение → 200 без изменений."
+            "Имя события: new/renewed_subscription — пишет платёж и продлевает подписку; "
+            "cancelled_subscription — только лог, БД не меняется."
         ),
-        examples=["new_subscription"],
     )
-    payload: dict[str, Any] = Field(
-        description=(
-            "Полезная нагрузка события. Минимум для new/renewed_subscription: subscription_id, period_id, "
-            "period (monthly|quarterly|yearly), price (минор. ед.), amount, currency, expires_at (ISO-8601), "
-            "telegram_user_id (должен совпадать с users.telegram_id). Поле type=gift — пропускаем платёж."
-        ),
-        examples=[{
-            "subscription_name": "VPN",
-            "subscription_id": 1644,
-            "period_id": 1547,
-            "period": "monthly",
-            "type": "regular",
-            "price": 19900,
-            "amount": 17000,
-            "currency": "rub",
-            "user_id": 31326,
-            "trb_user_id": "T-31326",
-            "telegram_user_id": 123456789,
-            "telegram_username": "test_user",
-            "channel_id": 614,
-            "channel_name": "vpn",
-            "expires_at": "2026-06-08T20:00:00Z",
-        }],
-    )
+    payload: TributeWebhookTestPayload
