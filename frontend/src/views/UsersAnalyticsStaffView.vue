@@ -178,6 +178,23 @@ function telegramCell(u) {
   return '—'
 }
 
+function telegramUsernameCell(u) {
+  const directUsername = u.username ?? u.user_name ?? u.telegram_username
+  const props = u.telegram_properties
+  const nestedUsername =
+    props && typeof props === 'object'
+      ? props.username ?? props.user_name ?? props.telegram_username
+      : null
+
+  const username = directUsername ?? nestedUsername
+  if (username != null && username !== '') {
+    const s = String(username)
+    return s.startsWith('@') ? s : `@${s}`
+  }
+
+  return telegramCell(u)
+}
+
 function toggleUserRowSelect(userId, event) {
   if (event?.target?.closest?.('a, button')) return
   selectedUserId.value = selectedUserId.value === userId ? null : userId
@@ -464,7 +481,7 @@ onMounted(() => {
               @click="toggleUserRowSelect(u.id, $event)"
             >
               <td class="email-cell" :title="u.email || undefined">{{ u.email ?? '—' }}</td>
-              <td class="tg-cell">{{ telegramCell(u) }}</td>
+              <td class="tg-cell">{{ telegramUsernameCell(u) }}</td>
               <td>{{ formatDate(u.registered_at) }}</td>
               <td>{{ formatDate(u.subscription_until) }}</td>
               <td class="num mono-num">{{ formatTrafficBytes(u.total_traffic_bytes) }}</td>
