@@ -8,7 +8,7 @@ import { useTableSort } from '../utils/adminTableSort.js'
 
 const loading = ref(false)
 const error = ref(null)
-/** @type {import('vue').Ref<Array<{ user_agent: string, os: string, connected_users: number, users_with_traffic: number }>>} */
+/** @type {import('vue').Ref<Array<{ user_agent: string, os: string, connected_users: number, users_with_traffic: number, users_over_100mb: number, active_users_today: number }>>} */
 const items = ref([])
 
 const sortAccessors = {
@@ -16,6 +16,8 @@ const sortAccessors = {
   os: (r) => String(r.os ?? '').toLowerCase(),
   connected_users: (r) => Number(r.connected_users) || 0,
   users_with_traffic: (r) => Number(r.users_with_traffic) || 0,
+  users_over_100mb: (r) => Number(r.users_over_100mb) || 0,
+  active_users_today: (r) => Number(r.active_users_today) || 0,
 }
 
 const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(
@@ -34,6 +36,8 @@ async function load() {
       os: String(r.os ?? ''),
       connected_users: Number(r.connected_users) || 0,
       users_with_traffic: Number(r.users_with_traffic) || 0,
+      users_over_100mb: Number(r.users_over_100mb) || 0,
+      active_users_today: Number(r.active_users_today) || 0,
     }))
   } catch (e) {
     error.value = e.message || String(e)
@@ -99,6 +103,22 @@ onMounted(() => {
                 :sort-dir="sortDir"
                 @sort="toggleSort"
               />
+              <AdminSortTh
+                label=">100MB"
+                column-key="users_over_100mb"
+                align="right"
+                :sort-key="sortKey"
+                :sort-dir="sortDir"
+                @sort="toggleSort"
+              />
+              <AdminSortTh
+                label="Активные сегодня"
+                column-key="active_users_today"
+                align="right"
+                :sort-key="sortKey"
+                :sort-dir="sortDir"
+                @sort="toggleSort"
+              />
             </tr>
           </thead>
           <tbody>
@@ -117,6 +137,12 @@ onMounted(() => {
               </td>
               <td class="num">
                 {{ row.users_with_traffic.toLocaleString('ru-RU') }}
+              </td>
+              <td class="num">
+                {{ row.users_over_100mb.toLocaleString('ru-RU') }}
+              </td>
+              <td class="num">
+                {{ row.active_users_today.toLocaleString('ru-RU') }}
               </td>
             </tr>
           </tbody>

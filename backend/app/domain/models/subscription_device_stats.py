@@ -20,6 +20,14 @@ class SubscriptionDeviceUserAgentStatsItem(BaseModel):
         ge=0,
         description="Из них пользователей с ненулевой суммой up+down по user_server_traffic",
     )
+    users_over_100mb: int = Field(
+        ge=0,
+        description="Из них пользователей с суммарным трафиком больше 100 MiB (up+down)",
+    )
+    active_users_today: int = Field(
+        ge=0,
+        description="Из них пользователей с ненулевым трафиком за текущий день UTC",
+    )
 
 
 class SubscriptionDeviceUserAgentStatsResponse(BaseModel):
