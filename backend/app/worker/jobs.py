@@ -33,7 +33,14 @@ from app.infrastructure.xray.xray_stats_collect import collect_xray_traffic_for_
 
 log = logging.getLogger("worker.provision")
 
-_REMOTE_SCRIPT = Path(__file__).resolve().parent / "scripts" / "install_xray_on_remote.sh"
+_SCRIPTS_DIR = Path(__file__).resolve().parent / "scripts"
+_REMOTE_SCRIPT = _SCRIPTS_DIR / "install_xray_on_remote.sh"
+_REMOTE_SCRIPT_PARTS = (
+    _SCRIPTS_DIR / "provision_common.sh",
+    _SCRIPTS_DIR / "provision_vless.sh",
+    _SCRIPTS_DIR / "provision_naive.sh",
+    _REMOTE_SCRIPT,
+)
 
 
 def _format_ssh_capture(stdout_t: str, stderr_t: str, *, limit: int = 14000) -> str:
@@ -51,11 +58,21 @@ def _format_ssh_capture(stdout_t: str, stderr_t: str, *, limit: int = 14000) -> 
 ProvisionComponent = Literal[
     "all",
     "xray",
+    "vless",
+    "naive",
     "prometheus",
     "fair_egress",
     "cleanup",
     "sync_clients",
 ]
+
+
+def _remote_script_payload() -> str:
+    """Собрать один self-contained bash payload из entrypoint и component scripts."""
+    missing = [str(p) for p in _REMOTE_SCRIPT_PARTS if not p.is_file()]
+    if missing:
+        raise FileNotFoundError("Нет скриптов установки: " + ", ".join(missing))
+    return "\n\n".join(p.read_text(encoding="utf-8") for p in _REMOTE_SCRIPT_PARTS)
 
 
 def _parse_xray_meta(stdout: str) -> dict[str, str] | None:
@@ -191,10 +208,7 @@ def _cascade_xray_env_for_ru_entry(db: Session, server: Server) -> str:
 
 
 def _run_ssh_remote_provision(db: Session, server: Server, *, component: ProvisionComponent) -> None:
-    if not _REMOTE_SCRIPT.is_file():
-        raise FileNotFoundError(f"Нет скрипта установки: {_REMOTE_SCRIPT}")
-
-    script_body = _REMOTE_SCRIPT.read_text(encoding="utf-8")
+    script_body = _remote_script_payload()
     # Иначе на удалённой стороне TERM пустой → tput в сторонних скриптах (install-release.sh) даёт ошибку и ненулевой exit.
     remote_env = 'export TERM="${TERM:-xterm-256color}"\n'
     remote_env += f"export VPN_PROVISION_COMPONENT={shlex.quote(component)}\n"
@@ -207,12 +221,15 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
         remote_env += _node_exporter_env_lines(force_install=True)
     elif component == "fair_egress":
         remote_env += f"export VPN_SERVER_ID={server.id}\n"
-    elif component == "xray":
+    elif component in ("xray", "vless"):
         remote_env += _xray_env_lines(db, server)
         remote_env += _node_exporter_env_lines(force_install=False)
     elif component == "sync_clients":
         remote_env += f"export VPN_SERVER_ID={server.id}\n"
         remote_env += _xray_env_lines(db, server)
+    elif component == "naive":
+        remote_env += f"export VPN_SERVER_ID={server.id}\n"
+        remote_env += _node_exporter_env_lines(force_install=False)
     else:
         remote_env += _xray_env_lines(db, server)
         remote_env += _node_exporter_env_lines(force_install=None)
@@ -253,7 +270,7 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
             ),
         )
 
-    if component in ("all", "xray"):
+    if component in ("all", "xray", "vless"):
         _persist_reality_keys(db, server, stdout_t)
     # sync_clients не генерирует ключи REALITY
 
