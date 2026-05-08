@@ -186,6 +186,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     referee_id BIGINT REFERENCES users (id) ON DELETE SET NULL,
     bonus_days INTEGER CHECK (bonus_days IS NULL OR bonus_days >= 0),
+    paid_months INTEGER,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     done_at TIMESTAMPTZ,
     CONSTRAINT tasks_type_check CHECK (
@@ -247,3 +248,10 @@ ALTER TABLE servers ADD CONSTRAINT servers_proxy_kind_check CHECK (
 DROP INDEX IF EXISTS idx_payments_status;
 ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_status_check;
 ALTER TABLE payments DROP COLUMN IF EXISTS status;
+
+-- tasks: paid_months для notify_payment (число оплаченных месяцев)
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS paid_months INTEGER;
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_paid_months_check;
+ALTER TABLE tasks ADD CONSTRAINT tasks_paid_months_check CHECK (
+    paid_months IS NULL OR paid_months >= 1
+);

@@ -53,6 +53,7 @@ async def list_pending_notification_tasks(
                 user_id=int(task.user_id),
                 referee_id=int(task.referee_id) if task.referee_id is not None else None,
                 bonus_days=int(task.bonus_days) if task.bonus_days is not None else None,
+                paid_months=int(task.paid_months) if task.paid_months is not None else None,
                 created_at=task.created_at,
                 recipient_telegram_id=int(rec_tid) if rec_tid is not None else None,
                 referee_telegram_id=int(ref_tid) if ref_tid is not None else None,

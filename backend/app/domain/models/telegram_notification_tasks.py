@@ -20,6 +20,11 @@ class TelegramNotificationTaskItem(BaseModel):
     user_id: int
     referee_id: int | None = None
     bonus_days: int | None = None
+    paid_months: int | None = Field(
+        default=None,
+        ge=1,
+        description="Для type=notify_payment: оплаченные месяцы (как payments.months).",
+    )
     created_at: datetime
     recipient_telegram_id: int | None = Field(
         default=None,

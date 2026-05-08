@@ -214,6 +214,7 @@ async def _handle_subscription_paid(
             user_id=int(user.id),
             referee_id=None,
             bonus_days=None,
+            paid_months=months,
         ),
     )
     await apply_referral_bonus_on_payment(

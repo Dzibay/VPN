@@ -27,6 +27,8 @@ class Task(Base):
         nullable=True,
     )
     bonus_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Для ``notify_payment`` — число оплаченных месяцев (как в ``payments.months``).
+    paid_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
