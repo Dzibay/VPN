@@ -56,7 +56,7 @@ from app.domain.models.auth import (
 )
 from app.domain.services.auth_service import account_me_from_user
 from app.domain.public_urls import public_spa_base_url, telegram_bot_public_page_url
-from app.domain.referrals.registration_tasks import create_notify_reg_task_if_applicable
+from app.domain.referrals.registration_tasks import create_notify_ref_reg_task_if_applicable
 from app.domain.referrals.repository import increment_referral_counter
 from app.domain.users.identifiers import new_subscription_token, new_vless_uuid
 from app.domain.subscription.validity import (
@@ -124,7 +124,7 @@ async def telegram_authenticate(
                     await increment_referral_counter(session, rlink.id, "clicks")
                     await increment_referral_counter(session, rlink.id, "registrations")
                     await session.flush()
-                    await create_notify_reg_task_if_applicable(
+                    await create_notify_ref_reg_task_if_applicable(
                         session,
                         referral_link=rlink,
                         referee_user_id=int(user.id),

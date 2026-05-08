@@ -181,7 +181,13 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     done_at TIMESTAMPTZ,
     CONSTRAINT tasks_type_check CHECK (
-        type IN ('notify_reg', 'notify_payment', 'add_bonus')
+        type IN (
+            'notify_ref_reg',
+            'notify_ref_pay',
+            'notify_payment',
+            'notify_sub_expire_3d',
+            'notify_sub_expire_1d'
+        )
     )
 );
 
@@ -197,3 +203,26 @@ ALTER TABLE servers ADD COLUMN IF NOT EXISTS whitelist BOOLEAN NOT NULL DEFAULT 
 
 -- REALITY spiderX (путь к dest для «паучка»); подписка / провижн
 ALTER TABLE servers ADD COLUMN IF NOT EXISTS reality_spider_x TEXT NOT NULL DEFAULT '/';
+
+-- tasks: явный статус обработки (pending/completed/failed)
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending';
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_status_check;
+ALTER TABLE tasks ADD CONSTRAINT tasks_status_check CHECK (
+    status IN ('pending', 'completed', 'failed')
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_status
+    ON tasks (status);
+
+-- tasks: обновление старых типов задач на новую схему
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_type_check;
+UPDATE tasks SET type = 'notify_ref_reg' WHERE type = 'notify_reg';
+UPDATE tasks SET type = 'notify_ref_pay' WHERE type = 'add_bonus';
+ALTER TABLE tasks ADD CONSTRAINT tasks_type_check CHECK (
+    type IN (
+        'notify_ref_reg',
+        'notify_ref_pay',
+        'notify_payment',
+        'notify_sub_expire_3d',
+        'notify_sub_expire_1d'
+    )
+);

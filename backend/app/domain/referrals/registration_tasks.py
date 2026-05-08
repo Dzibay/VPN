@@ -8,7 +8,7 @@ from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.task import Task
 
 
-async def create_notify_reg_task_if_applicable(
+async def create_notify_ref_reg_task_if_applicable(
     session: AsyncSession,
     *,
     referral_link: ReferralLink,
@@ -28,7 +28,7 @@ async def create_notify_reg_task_if_applicable(
         return
     session.add(
         Task(
-            task_type="notify_reg",
+            task_type="notify_ref_reg",
             user_id=owner_id,
             referee_id=ref_id,
             bonus_days=None,

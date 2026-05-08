@@ -40,7 +40,7 @@ from app.domain.services.telegram_auth_service import (
 from app.domain.services.me_service import delete_subscription_device
 from app.domain.services.referral_links_service import client_site_user_id, referral_me_for_user
 from app.domain.services.telegram_notification_tasks_service import (
-    acknowledge_notification_tasks,
+    acknowledge_notification_tasks_with_statuses,
     list_pending_notification_tasks,
 )
 from app.domain.services.telegram_payments_service import (
@@ -228,7 +228,7 @@ async def telegram_set_payment_status_ep(
     "/notification-tasks",
     response_model=TelegramNotificationTasksListResponse,
     dependencies=[Depends(require_telegram_bot_api_secret)],
-    summary="Невыполненные задачи оповещения (notify_reg, notify_payment)",
+    summary="Невыполненные задачи оповещения (notify_ref_*, notify_payment, notify_sub_expire_*)",
     description="С joined telegram_id получателя и реферала (если есть в users).",
 )
 async def telegram_list_notification_tasks_ep(
@@ -241,12 +241,16 @@ async def telegram_list_notification_tasks_ep(
     "/notification-tasks/completed",
     response_model=TelegramTasksAckResponse,
     dependencies=[Depends(require_telegram_bot_api_secret)],
-    summary="Отметить задачи оповещения выполненными",
-    description="По переданным id проставляется done_at (только pending и типы notify_reg / notify_payment).",
+    summary="Отметить задачи оповещения как completed/failed",
+    description="По переданным id для pending-задач ставится статус completed или failed (только типы задач оповещения).",
 )
 async def telegram_complete_notification_tasks_ep(
     session: SessionDep,
     body: TelegramTasksAckBody,
 ) -> TelegramTasksAckResponse:
-    ids = await acknowledge_notification_tasks(session, body.task_ids)
-    return TelegramTasksAckResponse(completed_task_ids=ids)
+    completed_ids, failed_ids = await acknowledge_notification_tasks_with_statuses(
+        session,
+        completed_task_ids=body.completed_task_ids,
+        failed_task_ids=body.failed_task_ids,
+    )
+    return TelegramTasksAckResponse(completed_task_ids=completed_ids, failed_task_ids=failed_ids)

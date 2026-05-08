@@ -15,13 +15,19 @@ from app.domain.models.telegram_notification_tasks import (
 from app.infrastructure.persistence.models.task import Task
 from app.infrastructure.persistence.models.user import User
 
-_NOTIFICATION_TYPES: tuple[str, ...] = ("notify_reg", "notify_payment")
+_NOTIFICATION_TYPES: tuple[str, ...] = (
+    "notify_ref_reg",
+    "notify_ref_pay",
+    "notify_payment",
+    "notify_sub_expire_3d",
+    "notify_sub_expire_1d",
+)
 
 
 async def list_pending_notification_tasks(
     session: AsyncSession,
 ) -> TelegramNotificationTasksListResponse:
-    """Все невыполненные задачи типов notify_reg / notify_payment, по возрастанию created_at."""
+    """Все pending-задачи оповещений, по возрастанию created_at."""
     ur = aliased(User)
     rr = aliased(User)
     stmt = (
@@ -29,7 +35,7 @@ async def list_pending_notification_tasks(
         .join(ur, ur.id == Task.user_id)
         .outerjoin(rr, rr.id == Task.referee_id)
         .where(
-            Task.done_at.is_(None),
+            Task.status == "pending",
             Task.task_type.in_(_NOTIFICATION_TYPES),
         )
         .order_by(Task.created_at.asc())
@@ -56,19 +62,52 @@ async def list_pending_notification_tasks(
 
 
 async def acknowledge_notification_tasks(session: AsyncSession, task_ids: list[int]) -> list[int]:
-    """Проставить done_at только для подходящих id; вернуть те, что реально обновлены."""
-    if not task_ids:
-        return []
-    now = datetime.now(timezone.utc)
-    stmt = (
-        update(Task)
-        .where(
-            Task.id.in_(task_ids),
-            Task.done_at.is_(None),
-            Task.task_type.in_(_NOTIFICATION_TYPES),
-        )
-        .values(done_at=now)
-        .returning(Task.id)
+    completed_ids, _ = await acknowledge_notification_tasks_with_statuses(
+        session,
+        completed_task_ids=task_ids,
+        failed_task_ids=[],
     )
-    res = await session.execute(stmt)
-    return sorted(int(x) for x in res.scalars().all())
+    return completed_ids
+
+
+async def acknowledge_notification_tasks_with_statuses(
+    session: AsyncSession,
+    *,
+    completed_task_ids: list[int],
+    failed_task_ids: list[int],
+) -> tuple[list[int], list[int]]:
+    """Обновить status для pending-задач; вернуть реально обновлённые completed/failed id."""
+
+    def _unique_positive(ids: list[int]) -> list[int]:
+        seen: set[int] = set()
+        out: list[int] = []
+        for x in ids:
+            if x > 0 and x not in seen:
+                seen.add(x)
+                out.append(x)
+        return out
+
+    completed_ids = _unique_positive(completed_task_ids)
+    failed_ids = _unique_positive(failed_task_ids)
+    failed_ids = [x for x in failed_ids if x not in set(completed_ids)]
+    now = datetime.now(timezone.utc)
+
+    async def _update(ids: list[int], status: str) -> list[int]:
+        if not ids:
+            return []
+        stmt = (
+            update(Task)
+            .where(
+                Task.id.in_(ids),
+                Task.status == "pending",
+                Task.task_type.in_(_NOTIFICATION_TYPES),
+            )
+            .values(status=status, done_at=now)
+            .returning(Task.id)
+        )
+        res = await session.execute(stmt)
+        return sorted(int(x) for x in res.scalars().all())
+
+    updated_completed = await _update(completed_ids, "completed")
+    updated_failed = await _update(failed_ids, "failed")
+    return updated_completed, updated_failed

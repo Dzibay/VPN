@@ -3,7 +3,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-NotificationTaskType = Literal["notify_reg", "notify_payment"]
+NotificationTaskType = Literal[
+    "notify_ref_reg",
+    "notify_ref_pay",
+    "notify_payment",
+    "notify_sub_expire_3d",
+    "notify_sub_expire_1d",
+]
 
 
 class TelegramNotificationTaskItem(BaseModel):
@@ -30,11 +36,12 @@ class TelegramNotificationTasksListResponse(BaseModel):
 
 
 class TelegramTasksAckBody(BaseModel):
-    """Идентификаторы задач, которые бот успешно обработал (проставится done_at)."""
+    """Идентификаторы задач, которые бот обработал, разделённые по исходу."""
 
-    task_ids: list[int] = Field(default_factory=list, max_length=500)
+    completed_task_ids: list[int] = Field(default_factory=list, max_length=500)
+    failed_task_ids: list[int] = Field(default_factory=list, max_length=500)
 
-    @field_validator("task_ids")
+    @field_validator("completed_task_ids", "failed_task_ids")
     @classmethod
     def positive_unique(cls, v: list[int]) -> list[int]:
         seen: set[int] = set()
@@ -50,5 +57,8 @@ class TelegramTasksAckBody(BaseModel):
 
 class TelegramTasksAckResponse(BaseModel):
     completed_task_ids: list[int] = Field(
-        description="Строки, у которых реально выставлен done_at (ожидали pending и тип оповещения).",
+        description="Строки, которым реально выставлен статус completed (ожидали pending и тип оповещения).",
+    )
+    failed_task_ids: list[int] = Field(
+        description="Строки, которым реально выставлен статус failed (ожидали pending и тип оповещения).",
     )
