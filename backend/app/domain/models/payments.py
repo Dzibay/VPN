@@ -1,36 +1,22 @@
-from datetime import datetime
-from decimal import Decimal
-from typing import Literal
-
-from pydantic import BaseModel, ConfigDict, Field
-
-from app.constants import BIGINT_MAX
+from pydantic import BaseModel
 
 
-class TelegramPaymentCreateBody(BaseModel):
-    """Создание строки платежа со статусом pending (бот)."""
+class TributeSubscriptionPublic(BaseModel):
+    """Публичная карточка подписки Tribute (одна ссылка для tg и web)."""
 
-    telegram_id: int = Field(
-        ge=1,
-        le=BIGINT_MAX,
-        description="Telegram user id (Bot API); владелец платежа в users.",
-    )
-    amount: Decimal = Field(ge=0, description="Сумма (NUMERIC 14,2 в БД).")
-    months: int = Field(ge=1, description="Число месяцев подписки по этой оплате.")
+    tg_link: str
+    web_link: str
 
 
-class TelegramPaymentSetStatusBody(BaseModel):
-    """Завершение платежа: только из pending в completed или failed."""
+class TributeSubscriptionResponse(BaseModel):
+    """Ответ кабинета и бота: либо настроенная подписка, либо null."""
 
-    status: Literal["completed", "failed"]
+    subscription: TributeSubscriptionPublic | None = None
 
 
-class TelegramPaymentRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class TributeWebhookAck(BaseModel):
+    """Краткий ответ webhook (для Tribute главное HTTP 200; тело только для отладки)."""
 
-    id: int
-    user_id: int
-    amount: Decimal
-    months: int
-    status: str
-    created_at: datetime
+    ok: bool = True
+    event: str | None = None
+    duplicate: bool = False

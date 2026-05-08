@@ -171,6 +171,26 @@ CREATE INDEX IF NOT EXISTS idx_payments_user_created_at
 CREATE INDEX IF NOT EXISTS idx_payments_status
     ON payments (status);
 
+-- payments: Tribute (Digital Product) — провайдер, внешний purchase_id, статус refunded
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'manual';
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS external_id TEXT;
+
+UPDATE payments SET provider = 'manual' WHERE provider IS NULL OR provider = '';
+
+ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_provider_check;
+ALTER TABLE payments ADD CONSTRAINT payments_provider_check CHECK (
+    provider IN ('manual', 'tribute')
+);
+
+ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_status_check;
+ALTER TABLE payments ADD CONSTRAINT payments_status_check CHECK (
+    status IN ('pending', 'completed', 'failed', 'refunded')
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_tribute_purchase
+    ON payments (provider, external_id)
+    WHERE provider = 'tribute' AND external_id IS NOT NULL;
+
 -- Очередь задач (уведомления / бонусы по рефералам и т.п.)
 CREATE TABLE IF NOT EXISTS tasks (
     id BIGSERIAL PRIMARY KEY,

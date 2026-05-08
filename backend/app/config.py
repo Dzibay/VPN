@@ -1,8 +1,27 @@
 from functools import lru_cache
 from urllib.parse import quote_plus
 
-from pydantic import Field, computed_field
+from pydantic import BaseModel, Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class TributeSubscription(BaseModel):
+    """Подписка Tribute (рекуррентная): одна ссылка на оплату, период приходит в webhook.
+
+    Tribute сам считает дату окончания (``expires_at``) и шлёт события
+    ``new_subscription`` / ``renewed_subscription`` / ``cancelled_subscription``.
+    Достоверность вебхука обеспечивается HMAC-подписью (``trbt-signature``); фильтрация
+    по subscription_id не выполняется — все подписки, подписанные нашим Api-Key, обрабатываются.
+    """
+
+    tg_link: str = Field(
+        min_length=1,
+        description="Ссылка для Telegram-клиента (deep-link канала/подписки).",
+    )
+    web_link: str = Field(
+        min_length=1,
+        description="Ссылка для браузера (web.tribute.tg).",
+    )
 
 
 class Settings(BaseSettings):
@@ -75,7 +94,7 @@ class Settings(BaseSettings):
         description=(
             "Секрет для POST /api/auth/telegram, POST /api/telegram/link, POST /api/telegram/site-link/start, "
             "GET /api/telegram/referral/me, DELETE /api/telegram/subscription-devices/{device_id}, "
-            "POST /api/telegram/payments, PATCH /api/telegram/payments/{payment_id}, "
+            "GET /api/telegram/payments/tribute-subscription, "
             "GET /api/telegram/notification-tasks, POST /api/telegram/notification-tasks/completed, "
             "GET /api/telegram/users, GET /api/telegram/users/{topic_id} и "
             "GET /api/telegram/subscription-open-clients: "
@@ -103,6 +122,36 @@ class Settings(BaseSettings):
         description=(
             "Username Telegram-бота без @ (env: TELEGRAM_BOT_USERNAME). "
             "Ссылки: https://t.me/{username}, рефералы — …?start={token}, страница бота в ЛК."
+        ),
+    )
+
+    referral_bonus_days_per_paid_month: int = Field(
+        default=3,
+        ge=0,
+        le=365,
+        description=(
+            "Сколько бонусных дней подписки получает реферер за каждый оплаченный реферируемым месяц. "
+            "При оплате реферируемым ``months`` месяцев реферер получает ``months × значение`` дней. "
+            "0 — бонус отключён: задача ``notify_ref_pay`` не создаётся, продление рефереру не выполняется. "
+            "Счётчик ``referral_links.payments_count`` инкрементится в любом случае при оплате реферируемым."
+        ),
+    )
+
+    tribute_api_key: str = Field(
+        default="",
+        description=(
+            "Api-Key Tribute (Creator Dashboard → Settings → API Keys). Используется ТОЛЬКО как "
+            "секрет для проверки подписи webhook (заголовок trbt-signature, HMAC-SHA256 от raw body). "
+            "Пусто — POST /api/payments/tribute/webhook отвечает 503 (эндпоинт отключён)."
+        ),
+    )
+    tribute_subscription: TributeSubscription | None = Field(
+        default=None,
+        description=(
+            "Подписка Tribute (рекуррентная): одна ссылка на оплату для кабинета и бота. "
+            "В .env как JSON: TRIBUTE_SUBSCRIPTION={\"tg_link\":\"https://t.me/tribute/...\","
+            "\"web_link\":\"https://web.tribute.tg/...\"}. "
+            "Если пусто — эндпоинты возвращают subscription=null. На обработку webhook не влияет."
         ),
     )
 

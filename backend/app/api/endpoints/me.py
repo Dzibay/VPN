@@ -10,18 +10,24 @@ from app.core.dependencies import (
     ReadonlySessionDep,
     SessionDep,
     get_bearer_principal_dep,
+    require_roles,
 )
+from app.core.exceptions import ForbiddenError
 from app.domain.models.auth import (
     AccountChangePasswordBody,
     AccountMeResponse,
     TelegramSyncStartResponse,
 )
+from app.domain.models.payments import TributeSubscriptionResponse
 from app.domain.services.auth_service import account_me, change_account_password
 from app.domain.services.me_service import delete_subscription_device
 from app.domain.services.telegram_auth_service import telegram_sync_start_link
+from app.domain.services.tribute_service import tribute_subscription_public_response
 from app.infrastructure.cache import get_redis
 
 router = APIRouter(prefix="/me", tags=["user"])
+
+require_client_jwt = require_roles("user")
 
 _AUTH_ME_OPENAPI_EXAMPLES: dict = {
     "user_with_email": {
@@ -112,6 +118,20 @@ async def me(
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
 ) -> AccountMeResponse:
     return await account_me(session, principal, settings)
+
+
+@router.get(
+    "/payments/tribute-subscription",
+    response_model=TributeSubscriptionResponse,
+    dependencies=[Depends(require_client_jwt)],
+    summary="Ссылка на подписку Tribute (рекуррентная): tg_link и web_link",
+)
+async def me_tribute_subscription(
+    principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
+) -> TributeSubscriptionResponse:
+    if principal.role != "user" or principal.user_id is None:
+        raise ForbiddenError(detail="Доступно только клиентской роли")
+    return tribute_subscription_public_response(settings)
 
 
 @router.post(

@@ -8,6 +8,7 @@ from app.api.endpoints import (
     me as me_endpoints,
     health,
     http_audit_staff,
+    payments,
     prometheus_sd,
     referral_links,
     server_metrics,
@@ -26,6 +27,7 @@ api_router.include_router(referral_links.public_router)
 api_router.include_router(referral_links.me_router)
 api_router.include_router(me_endpoints.router)
 api_router.include_router(auth.router)
+api_router.include_router(payments.router)
 api_router.include_router(telegram.router)
 api_router.include_router(status.router)
 api_router.include_router(users.router)
