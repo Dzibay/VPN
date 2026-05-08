@@ -40,6 +40,9 @@ const AdminSubscriptionUserAgentStatsView = () =>
   import('../views/AdminSubscriptionUserAgentStatsView.vue')
 const AdminServersReachabilityView = () =>
   import('../views/AdminServersReachabilityView.vue')
+const AdminPaymentsStaffView = () =>
+  import('../views/AdminPaymentsStaffView.vue')
+const AdminTasksStaffView = () => import('../views/AdminTasksStaffView.vue')
 
 const routes = [
   { path: '/', name: 'home', component: HomeView },
@@ -70,6 +73,16 @@ const routes = [
     path: '/admin/referrals',
     name: 'admin-referrals',
     component: ReferralTokensAdminPage,
+  },
+  {
+    path: '/admin/payments',
+    name: 'admin-payments-staff',
+    component: AdminPaymentsStaffView,
+  },
+  {
+    path: '/admin/tasks',
+    name: 'admin-tasks-staff',
+    component: AdminTasksStaffView,
   },
   {
     path: '/admin/funnel',
@@ -178,13 +191,17 @@ router.beforeEach(async (to, _from, next) => {
       const isHttpLogsStaff = to.name === 'admin-http-logs'
       const isSubscriptionUaStatsStaff =
         to.name === 'admin-subscription-user-agent-stats'
+      const isPaymentsStaff = to.name === 'admin-payments-staff'
+      const isTasksStaff = to.name === 'admin-tasks-staff'
       if (
         isReferralsRoute ||
         isUsersAnalyticsStaff ||
         isMarketingFunnel ||
         isRegistrationsByDate ||
         isHttpLogsStaff ||
-        isSubscriptionUaStatsStaff
+        isSubscriptionUaStatsStaff ||
+        isPaymentsStaff ||
+        isTasksStaff
       ) {
         if (!canAccessReferralsAdmin(role)) {
           return next({ path: '/cabinet' })

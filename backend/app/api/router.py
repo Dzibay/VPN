@@ -14,6 +14,7 @@ from app.api.endpoints import (
     server_metrics,
     servers,
     staff_chart_events,
+    staff_ledger,
     status,
     subscription_device_stats,
     telegram,
@@ -37,4 +38,6 @@ api_router.include_router(referral_links.staff_router)
 api_router.include_router(servers.router)
 api_router.include_router(server_metrics.router)
 api_router.include_router(subscription_device_stats.router)
+api_router.include_router(staff_ledger.payments_staff_router)
+api_router.include_router(staff_ledger.tasks_staff_router)
 api_router.include_router(prometheus_sd.router)

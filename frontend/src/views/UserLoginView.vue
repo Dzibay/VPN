@@ -36,7 +36,9 @@ async function submit() {
           r.startsWith('/admin/funnel') ||
           r.startsWith('/admin/users/registrations-by-date') ||
           r.startsWith('/admin/users/analytics') ||
-          r.startsWith('/admin/users-analytics'))
+          r.startsWith('/admin/users-analytics') ||
+          r.startsWith('/admin/payments') ||
+          r.startsWith('/admin/tasks'))
       router.replace(rOk ? r : '/admin/referrals')
     } else {
       router.replace(typeof r === 'string' && r ? r : '/cabinet')

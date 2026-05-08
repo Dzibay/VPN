@@ -70,6 +70,18 @@ export const ADMIN_NAV_DEFINITION = [
     path: '/admin/referrals',
     access: 'staff',
   },
+  {
+    routeName: 'admin-payments-staff',
+    label: 'Платежи',
+    path: '/admin/payments',
+    access: 'staff',
+  },
+  {
+    routeName: 'admin-tasks-staff',
+    label: 'Задачи',
+    path: '/admin/tasks',
+    access: 'staff',
+  },
 ]
 
 /**
