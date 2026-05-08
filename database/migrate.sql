@@ -152,26 +152,19 @@ CREATE TABLE IF NOT EXISTS staff_chart_events (
 CREATE INDEX IF NOT EXISTS idx_staff_chart_events_event_at
     ON staff_chart_events (event_at ASC);
 
--- Платежи пользователей
+-- Платежи пользователей (наличие строки = зафиксированный платёж)
 CREATE TABLE IF NOT EXISTS payments (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     amount NUMERIC(14, 2) NOT NULL CHECK (amount >= 0),
     months INTEGER NOT NULL CHECK (months >= 1),
-    status TEXT NOT NULL DEFAULT 'pending',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT payments_status_check CHECK (
-        status IN ('pending', 'completed', 'failed')
-    )
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_payments_user_created_at
     ON payments (user_id, created_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_payments_status
-    ON payments (status);
-
--- payments: Tribute (Digital Product) — провайдер, внешний purchase_id, статус refunded
+-- payments: Tribute (Digital Product) — провайдер, внешний purchase_id
 ALTER TABLE payments ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'manual';
 ALTER TABLE payments ADD COLUMN IF NOT EXISTS external_id TEXT;
 
@@ -180,11 +173,6 @@ UPDATE payments SET provider = 'manual' WHERE provider IS NULL OR provider = '';
 ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_provider_check;
 ALTER TABLE payments ADD CONSTRAINT payments_provider_check CHECK (
     provider IN ('manual', 'tribute')
-);
-
-ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_status_check;
-ALTER TABLE payments ADD CONSTRAINT payments_status_check CHECK (
-    status IN ('pending', 'completed', 'failed', 'refunded')
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_tribute_purchase
@@ -254,3 +242,8 @@ ALTER TABLE servers DROP CONSTRAINT IF EXISTS servers_proxy_kind_check;
 ALTER TABLE servers ADD CONSTRAINT servers_proxy_kind_check CHECK (
     proxy_kind IN ('vless', 'hysteria2')
 );
+
+-- payments: удаление колонки status (миграция со старых схем)
+DROP INDEX IF EXISTS idx_payments_status;
+ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_status_check;
+ALTER TABLE payments DROP COLUMN IF EXISTS status;

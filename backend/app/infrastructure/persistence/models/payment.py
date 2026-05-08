@@ -28,7 +28,6 @@ class Payment(Base):
         server_default=text("'manual'"),
     )
     external_id: Mapped[str | None] = mapped_column(Text, nullable=True)
-    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

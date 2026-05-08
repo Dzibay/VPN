@@ -206,7 +206,6 @@ async def _handle_subscription_paid(
             months=months,
             provider="tribute",
             external_id=ext,
-            status="completed",
         ),
     )
     session.add(
