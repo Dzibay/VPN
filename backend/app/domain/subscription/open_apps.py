@@ -7,7 +7,7 @@
 (см. ``app.domain.subscription.userinfo`` и документацию Happ, Stash Wiki, Clash Verge Rev).
 
 - happ: сырая ссылка в path — happ://add/https://…/sub/{token}
-- Stash, Clash Meta, flclashx, koala-clash, prizrak-box: в query url=… указывает на
+- Stash, flclashx, koala-clash, prizrak-box: в query url=… указывает на
   ``GET /sub/{token}`` (клиент запрашивает с User-Agent, содержащим ``clash`` — тело YAML Clash Meta;
   иначе была бы Base64-подписка).
 - v2rayNG: url на ``/sub/{token}`` (Base64 со строками vless://); по UrlSchemeActivity
@@ -185,11 +185,6 @@ _streisand_deeplink = _deeplink_query_url("streisand://install-subscription?url=
 _flclashx_deeplink = _deeplink_query_url("flclashx://install-config?url=")
 
 
-def _clashmeta_deeplink(subscription_https_url: str) -> str:
-    u = _sub_url_trim(subscription_https_url)
-    return f"clashmeta://install-config?url={u}&name={_q(BRAND_NAME)}"
-
-
 def _v2rayng_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
     return f"v2rayng://install-sub?url={u}#{_q(BRAND_NAME)}"
@@ -306,9 +301,6 @@ SUBSCRIPTION_OPEN_APPS: dict[str, SubscriptionOpenApp] = {
     "streisand": _app("streisand", "Streisand", _streisand_deeplink),
     "flclashx": _app(
         "flclashx", "FLClashX", _flclashx_deeplink,
-    ),
-    "clashmeta": _app(
-        "clashmeta", "Clash Meta", _clashmeta_deeplink,
     ),
     "v2rayng": _app("v2rayng", "v2rayNG", _v2rayng_deeplink),
     "v2raytun": _app("v2raytun", "v2RayTun", _v2raytun_deeplink),
