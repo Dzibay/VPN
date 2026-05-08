@@ -226,23 +226,6 @@ cfg = {
     ],
 }
 
-cfg["dns"] = {
-    "servers": [
-        "https://1.1.1.1/dns-query",
-        {
-            "address": "77.88.8.8",
-            "domains": [
-                "geosite:private",
-                "geosite:category-ru",
-                "regexp:.*\\.ru$",
-                "regexp:.*\\.su$",
-                "regexp:.*\\.xn--p1ai$"
-            ]
-        }
-    ],
-    "queryStrategy": "UseIPv4",
-}
-
 cascade = (os.environ.get("VPN_CASCADE_ENABLED") or "").strip() == "1"
 ru_direct = cascade and (os.environ.get("VPN_CASCADE_RU_DIRECT") or "1").strip() == "1"
 # routeOnly=True: домен из sniff только для routing (RU/не-RU, Gemini); целевой адрес пакета не подменяется —
@@ -262,6 +245,7 @@ gemini_domains = [
     "domain:proactivebackend-pa.googleapis.com",
 ]
 gemini_tag = "egress-cascade" if cascade else "direct"
+dns_outbound_tag = "egress-cascade" if cascade else "direct"
 gemini_rule = {
     "type": "field",
     "outboundTag": gemini_tag,
@@ -354,7 +338,8 @@ if cascade:
         "tag": "direct",
         "settings": {"domainStrategy": "UseIPv4"},
     }
-    cfg["outbounds"] = [vless_to_exit, direct_out]
+    blackhole_out = {"protocol": "blackhole", "tag": "block"}
+    cfg["outbounds"] = [vless_to_exit, direct_out, blackhole_out]
     cfg["inbounds"][0]["tag"] = "vless-in"
     # РФ-ресурсы: прямой выход; остальное (иностранные) — через VLESS к exit
     if ru_direct:
@@ -405,10 +390,64 @@ if cascade:
             ],
         }
 else:
+    cfg["outbounds"].append({"protocol": "blackhole", "tag": "block"})
     cfg["routing"] = {
         "domainStrategy": "IPIfNonMatch",
         "rules": [gemini_rule, gemini_google_ip_rule],
     }
+
+dns_ru_domains = [
+    "geosite:private",
+    "geosite:category-ru",
+    "regexp:.*\\.ru$",
+    "regexp:.*\\.su$",
+    "regexp:.*\\.xn--p1ai$",
+]
+if cascade and ru_direct:
+    dns_ru_domains = [*dns_ru_domains, *extra_ru_domains]
+
+cfg["dns"] = {
+    "servers": [
+        {
+            "address": "https://1.1.1.1/dns-query",
+            "domains": ["geosite:geolocation-!cn"],
+            "skipFallback": True,
+            "clientIP": "1.1.1.1",
+        },
+        {
+            "address": "77.88.8.8",
+            "domains": dns_ru_domains,
+            "expectIPs": ["geoip:ru"],
+            "skipFallback": True,
+        },
+        "8.8.8.8",
+    ],
+    "queryStrategy": "UseIPv4",
+    "tag": "dns-inbound",
+}
+
+dns_rules = [
+    {
+        "type": "field",
+        "inboundTag": ["dns-inbound"],
+        "outboundTag": dns_outbound_tag,
+        "domain": ["geosite:geolocation-!cn"],
+    },
+    {
+        "type": "field",
+        "inboundTag": ["dns-inbound"],
+        "outboundTag": "direct",
+        "domain": dns_ru_domains,
+    },
+]
+quic_block_rule = {
+    "type": "field",
+    "outboundTag": "block",
+    "network": "udp",
+    "port": "443",
+    "domain": ["geosite:geolocation-!cn"],
+}
+cfg["routing"]["rules"] = [*dns_rules, *cfg["routing"]["rules"], quic_block_rule]
 
 path = os.environ.get("VPN_XRAY_CONFIG_PATH", "/usr/local/etc/xray/config.json")
 with open(path, "w", encoding="utf-8") as f:
