@@ -48,6 +48,7 @@ log = logging.getLogger("app.subscription_service")
 ANNOUNCE_RAW = "⚠️ При возникновении проблем попробуйте 🔁 обновить конфигурацию. Если проблема сохраняется — обратитесь в поддержку"
 ANNOUNCE_RAW_DEVICE_LIMIT_REJECTED = "Достигнуто максимальное количество подключений (устройств). Освободите слот в личном кабинете или обратитесь в поддержку."
 ANNOUNCE_RAW_SUBSCRIPTION_EXPIRED = "Подписка истекла — продлите подписку в личном кабинете или боте"
+_DIRECT_SERVICE_PORTS = "22,25,135-139,465,587,593,2525,3306,3389,5432,6379,11211,1900"
 
 
 def _routing_profile_happ(cfg: Settings | None = None) -> dict[str, object]:
@@ -56,10 +57,10 @@ def _routing_profile_happ(cfg: Settings | None = None) -> dict[str, object]:
         return {}
     base = subscription_public_base_url().rstrip("/")
     return {
-        "Name": "Pdoroznik-RU-Direct",
+        "Name": "Pdoroznik-Default",
         "GlobalProxy": "true",
         "RemoteDNSType": "DoH",
-        "RemoteDNSDomain": "https://cloudflare-dns.com/dns-query",
+        "RemoteDNSDomain": "https://1.1.1.1/dns-query",
         "RemoteDNSIP": "1.1.1.1",
         "DomesticDNSType": "DoH",
         "DomesticDNSDomain": "https://dns.google/dns-query",
@@ -67,31 +68,23 @@ def _routing_profile_happ(cfg: Settings | None = None) -> dict[str, object]:
         "Geoipurl": f"{base}/sub/geoip.dat",
         "Geositeurl": f"{base}/sub/geosite.dat",
         "DnsHosts": {
+            "1.1.1.1": "1.1.1.1",
+            "8.8.8.8": "8.8.8.8",
+            "domain:googleapis.cn": "googleapis.com",
             "cloudflare-dns.com": "1.1.1.1",
             "dns.google": "8.8.8.8",
         },
-        # Loyalsoldier geosite.dat не содержит списка «ru» — есть category-ru и tld-ru (см. domain-list-community).
         "DirectSites": [
             "geosite:private",
-            "geosite:category-ru",
-            "geosite:tld-ru",
-            "regexp:.*\\.ru$",
-            "regexp:.*\\.su$",
-            "regexp:.*\\.xn--p1ai$",
+            "geosite:category-direct",
         ],
         "DirectIp": [
             "geoip:private",
-            "geoip:ru",
-            "10.0.0.0/8",
-            "172.16.0.0/12",
-            "192.168.0.0/16",
-            "169.254.0.0/16",
-            "224.0.0.0/4",
-            "255.255.255.255",
         ],
-        "ProxySites": [],
+        "DirectPorts": _DIRECT_SERVICE_PORTS,
+        "ProxySites": ["geosite:category-proxy"],
         "ProxyIp": [],
-        "BlockSites": [],
+        "BlockSites": ["geosite:category-block"],
         "BlockIp": [],
         "DomainStrategy": "IPIfNonMatch",
         "FakeDNS": "false",
@@ -112,23 +105,44 @@ def _v2raytun_routing_header_value(cfg: Settings | None = None) -> str:
     if not cfg.cascade_ru_split_routing:
         return ""
     routing = {
-        "name": "Pdoroznik RU Direct",
+        "name": "Pdoroznik Default",
         "domainStrategy": "IPIfNonMatch",
         "domainMatcher": "hybrid",
         "rules": [
             {
                 "type": "field",
                 "outboundTag": "direct",
+                "port": _DIRECT_SERVICE_PORTS,
+            },
+            {
+                "type": "field",
+                "outboundTag": "block",
+                "domain": ["geosite:category-block"],
+            },
+            {
+                "type": "field",
+                "outboundTag": "proxy",
+                "domain": ["geosite:category-proxy"],
+            },
+            {
+                "type": "field",
+                "outboundTag": "direct",
                 "domain": [
                     "geosite:private",
-                    "geosite:category-ru",
-                    "geosite:tld-ru",
-                    "regexp:.*\\.ru$",
-                    "regexp:.*\\.su$",
-                    "regexp:.*\\.xn--p1ai$",
+                    "geosite:category-direct",
+                    "domain:vhub.pro",
                 ],
-                "ip": ["geoip:ru", "geoip:private"],
-            }
+            },
+            {
+                "type": "field",
+                "outboundTag": "direct",
+                "ip": ["geoip:private"],
+            },
+            {
+                "type": "field",
+                "network": "tcp,udp",
+                "outboundTag": "proxy",
+            },
         ],
     }
     raw = json.dumps(routing, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
