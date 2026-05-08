@@ -240,15 +240,6 @@ _STORE: dict[str, AppStoreLinks] = {
             "https://github.com/pluralplay/FlClashX/releases/latest/download/FlClashX-linux-amd64.deb",
         ),
     ),
-    "clashmeta": _stores(
-        android=(
-            "https://f-droid.org/packages/com.github.metacubex.clash.meta/",
-            "https://github.com/MetaCubeX/ClashMetaForAndroid/releases/download/v2.11.20/cmfa-2.11.20-meta-universal-release.apk",
-        ),
-        windows="https://github.com/MetaCubeX/Clash.Meta/releases",
-        macos="https://github.com/MetaCubeX/Clash.Meta/releases",
-        linux="https://github.com/MetaCubeX/Clash.Meta/releases",
-    ),
     "v2rayng": _stores(
         android=(
             "https://github.com/2dust/v2rayNG/releases",
