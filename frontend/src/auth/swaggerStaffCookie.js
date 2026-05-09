@@ -16,5 +16,5 @@ export function clearStaffSwaggerCookie() {
 export function startStaffSwaggerWithToken(token) {
   if (typeof document === 'undefined' || typeof window === 'undefined' || !token) return
   document.cookie = `${SWAGGER_STAFF_JWT_COOKIE}=${encodeURIComponent(token)}; Path=/swagger; SameSite=Lax; Max-Age=${MAX_AGE_SECONDS}${cookieSecureTail()}`
-  window.location.assign('/swagger')
+  window.open('/swagger', '_blank', 'noopener,noreferrer')
 }
