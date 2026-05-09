@@ -1,27 +1,51 @@
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { fetchJson } from '../api/client.js'
-import { getMobileStoreRedirectUrl } from '../util/subscriptionOpenStores.js'
+import {
+  forcedStoreRefs,
+  getMobileStoreRedirectUrl,
+  isMobileAppStoreDevice,
+  pickStoreRefsAuto,
+} from '../util/subscriptionOpenStores.js'
 
 const route = useRoute()
 const router = useRouter()
 
-const loading = ref(true)
-/** После вызова deeplink ждём: либо сигнал открытия (visibility), либо таймаут → страница установки. */
-const postDeeplinkWait = ref(false)
-/** Только если вкладка ушла в фон после deeplink — считаем, что приложение откликнулось; иначе не показываем «успех». */
-const openedOk = ref(false)
 const token = computed(() => String(route.params.token ?? ''))
 const client = computed(() => String(route.params.client ?? ''))
 
-/** Сохраняем с ответа /data при state=ok — для редиректа в магазин, если диплинк не сработал. */
+/** Ответ GET …/data (после успешного запроса). */
+const page = ref(null)
+/** Параллельно: публичное описание клиента — имя и магазины до ответа /data. */
+const publicInfo = ref(null)
+const localSubError = ref(null)
+
 const openPageStoreLinks = ref(null)
+
+/** @type {import('vue').Ref<{ site?: string | null, download?: string | null } | null>} */
+const storeRef = ref(null)
 
 const platformFromQuery = computed(() => {
   const p = route.query.platform
   return typeof p === 'string' ? p : null
 })
+
+function applyStoreLinks(links, forcedPlatform) {
+  if (!links || typeof links !== 'object') {
+    storeRef.value = null
+    return
+  }
+  const fp =
+    forcedPlatform &&
+    typeof forcedPlatform === 'string' &&
+    ['windows', 'android', 'ios', 'macos', 'linux'].includes(forcedPlatform)
+      ? forcedPlatform
+      : null
+  storeRef.value = fp
+    ? forcedStoreRefs(links, fp)
+    : pickStoreRefsAuto(links)
+}
 
 function buildDataPath() {
   const t = encodeURIComponent(token.value)
@@ -37,63 +61,68 @@ function buildDataPath() {
   return path
 }
 
-function appsQuery(extra = {}) {
-  const q = { ...extra }
-  if (token.value) q.token = token.value
-  if (platformFromQuery.value) q.platform = platformFromQuery.value
-  return q
-}
+const displayTitle = computed(() => {
+  const p = page.value
+  const pub = publicInfo.value
+  return (
+    (p && typeof p.display_name === 'string' && p.display_name)
+    || (pub && typeof pub.display_name === 'string' && pub.display_name)
+    || (p && typeof p.headline === 'string' && p.headline)
+    || client.value
+  )
+})
 
-function goToApps(subError) {
-  router.replace({
-    name: 'client-app-download',
-    params: { client: client.value },
-    query: appsQuery(subError ? { sub_error: subError } : {}),
-  })
-}
+const routeBanner = computed(() => {
+  if (localSubError.value === 'load_failed') {
+    return {
+      kind: 'danger',
+      text:
+        'Не удалось проверить ссылку подписки. Попробуйте открыть снова или установите клиент.',
+    }
+  }
+  if (page.value?.state === 'invalid_token') {
+    return {
+      kind: 'danger',
+      text:
+        page.value.message
+        || 'Ссылка недействительна. Получите новую в боте или в личном кабинете.',
+    }
+  }
+  return null
+})
 
-/** Если после deeplink вкладка так и осталась на переднем плане — переход на установку (нет обработчика URI / клиент не открылся). */
-const OPEN_FALLBACK_MS = 2200
-/** Окно для принятия visibility/pagehide как «приложение открылось». */
-const OPEN_SUCCESS_WINDOW_MS = 3500
+const showStoreRow = computed(() => {
+  const R = storeRef.value
+  return !!(R && (R.site || R.download))
+})
 
-let deeplinkIssuedAt = 0
+const storeRowSingle = computed(() => {
+  const R = storeRef.value
+  if (!R) return true
+  const n = (R.download ? 1 : 0) + (R.site ? 1 : 0)
+  return n <= 1
+})
+
+const openInClientLabel = computed(() => {
+  const p = page.value
+  if (!p || typeof p.open_button_label !== 'string' || !p.open_button_label) {
+    return 'Открыть с подпиской'
+  }
+  return p.open_button_label
+})
+
+/** На мобильном после диплинка — быстрый переход в магазин, если вкладка осталась на переднем плане. */
+const OPEN_MOBILE_STORE_FALLBACK_MS = 450
+
+let loadGeneration = 0
 let openTimer = null
+let deeplinkIframe = null
 
-let detachOpenSignals = null
-function teardownOpenSignals() {
-  if (detachOpenSignals) {
-    detachOpenSignals()
-    detachOpenSignals = null
+function removeDeeplinkIframe() {
+  if (deeplinkIframe?.parentNode) {
+    deeplinkIframe.parentNode.removeChild(deeplinkIframe)
   }
-}
-
-function registerOpenSuccessSignals() {
-  teardownOpenSignals()
-  deeplinkIssuedAt = Date.now()
-
-  function tryMarkOpened() {
-    if (openedOk.value) return
-    const elapsed = Date.now() - deeplinkIssuedAt
-    if (elapsed > OPEN_SUCCESS_WINDOW_MS) return
-    openedOk.value = true
-    postDeeplinkWait.value = false
-    clearOpenTimer()
-    teardownOpenSignals()
-    loading.value = false
-  }
-
-  const onVisibility = () => {
-    if (document.visibilityState === 'hidden') tryMarkOpened()
-  }
-  const onPageHide = () => tryMarkOpened()
-
-  document.addEventListener('visibilitychange', onVisibility)
-  window.addEventListener('pagehide', onPageHide)
-  detachOpenSignals = () => {
-    document.removeEventListener('visibilitychange', onVisibility)
-    window.removeEventListener('pagehide', onPageHide)
-  }
+  deeplinkIframe = null
 }
 
 function clearOpenTimer() {
@@ -103,14 +132,13 @@ function clearOpenTimer() {
   }
 }
 
-function scheduleOpenFallback() {
+function scheduleMobileStoreFallback() {
+  if (!isMobileAppStoreDevice()) return
   clearOpenTimer()
   openTimer = setTimeout(() => {
-    if (openedOk.value) return
     if (typeof document === 'undefined') return
     if (document.visibilityState !== 'visible') return
-    postDeeplinkWait.value = false
-    teardownOpenSignals()
+    removeDeeplinkIframe()
     const storeUrl = getMobileStoreRedirectUrl(
       openPageStoreLinks.value,
       platformFromQuery.value,
@@ -119,60 +147,134 @@ function scheduleOpenFallback() {
       try {
         window.location.replace(storeUrl)
       } catch {
-        goToApps()
+        /* ignore */
       }
-      return
     }
-    goToApps()
-  }, OPEN_FALLBACK_MS)
+  }, OPEN_MOBILE_STORE_FALLBACK_MS)
+}
+
+/** Телефон — верхнее окно + таймер в магазин; ПК — iframe, страница не уезжает. */
+function invokeDeeplink(url) {
+  removeDeeplinkIframe()
+  const u = String(url)
+  if (isMobileAppStoreDevice()) {
+    try {
+      window.location.replace(u)
+    } catch {
+      /* ignore */
+    }
+    scheduleMobileStoreFallback()
+    return
+  }
+  deeplinkIframe = document.createElement('iframe')
+  deeplinkIframe.setAttribute(
+    'style',
+    'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;border:none;left:-9999px;top:0',
+  )
+  deeplinkIframe.setAttribute('aria-hidden', 'true')
+  document.body.appendChild(deeplinkIframe)
+  try {
+    deeplinkIframe.src = u
+  } catch {
+    try {
+      deeplinkIframe.contentWindow.location.href = u
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function retryOpenInClient() {
+  const d = page.value?.deeplink
+  if (!d || typeof d !== 'string') return
+  openPageStoreLinks.value = page.value?.store_links ?? null
+  removeDeeplinkIframe()
+  if (isMobileAppStoreDevice()) {
+    try {
+      window.location.replace(String(d))
+    } catch {
+      /* ignore */
+    }
+    scheduleMobileStoreFallback()
+    return
+  }
+  invokeDeeplink(String(d))
+}
+
+function mergeStoreLinks() {
+  const p = page.value
+  const pub = publicInfo.value
+  const links = p?.store_links ?? pub?.store_links ?? null
+  applyStoreLinks(links, platformFromQuery.value)
 }
 
 async function load() {
-  loading.value = true
-  postDeeplinkWait.value = false
-  openedOk.value = false
+  const gen = ++loadGeneration
+  page.value = null
+  publicInfo.value = null
+  localSubError.value = null
+  storeRef.value = null
   openPageStoreLinks.value = null
   clearOpenTimer()
-  teardownOpenSignals()
+  removeDeeplinkIframe()
 
   if (!token.value || !client.value) {
-    loading.value = false
-    goToApps('load_failed')
+    localSubError.value = 'load_failed'
     return
   }
 
+  const pubUrl = `/api/public/client-apps/${encodeURIComponent(client.value)}`
+  const pubPromise = fetchJson(pubUrl)
+    .then((info) => {
+      if (gen !== loadGeneration) return
+      publicInfo.value = info
+      mergeStoreLinks()
+    })
+    .catch(() => {})
+
   try {
     const data = await fetchJson(buildDataPath())
+    if (gen !== loadGeneration) return
+    await pubPromise.catch(() => {})
+    if (gen !== loadGeneration) return
+    page.value = data
+    mergeStoreLinks()
+
+    if (typeof data.title === 'string') document.title = data.title
 
     if (data.state === 'invalid_token') {
-      goToApps(data.state)
       return
     }
 
     if (data.state === 'ok' && data.deeplink) {
       openPageStoreLinks.value = data.store_links ?? null
-      if (typeof data.title === 'string') document.title = data.title
-      loading.value = false
-      postDeeplinkWait.value = true
-      registerOpenSuccessSignals()
-      try {
-        window.location.replace(String(data.deeplink))
-      } catch {
-        /* ignore */
-      }
-      scheduleOpenFallback()
-      return
+      await nextTick()
+      if (gen !== loadGeneration) return
+      invokeDeeplink(String(data.deeplink))
     }
-
-    goToApps('load_failed')
   } catch (e) {
-    if (e.status === 404) {
+    await pubPromise.catch(() => {})
+    if (gen !== loadGeneration) return
+    if (e?.status === 404) {
       router.replace({ path: '/cabinet', query: { unknown_client: '1' } })
       return
     }
-    goToApps('load_failed')
-  } finally {
-    loading.value = false
+    localSubError.value = 'load_failed'
+    const pub = publicInfo.value
+    if (pub) {
+      page.value = {
+        state: 'error',
+        display_name: pub.display_name,
+        store_links: pub.store_links,
+        title: `${pub.display_name} — Подорожник VPN`,
+        deeplink: null,
+        lead: null,
+      }
+      mergeStoreLinks()
+      document.title = `${pub.display_name} — Подорожник VPN`
+    } else {
+      page.value = null
+    }
   }
 }
 
@@ -186,77 +288,116 @@ watch(
 
 onBeforeUnmount(() => {
   clearOpenTimer()
-  teardownOpenSignals()
+  removeDeeplinkIframe()
 })
 </script>
 
 <template>
-  <div class="sub-open">
-    <div class="sub-open-wrap">
+  <div
+    v-if="token && client"
+    class="app-dl"
+  >
+    <div class="app-dl-wrap">
       <RouterLink
-        class="app-dl-back sub-open-back"
+        class="app-dl-back"
         to="/cabinet"
       ><span
         class="app-dl-back-arrow"
         aria-hidden="true"
       >←</span> Личный кабинет</RouterLink>
 
-      <div class="sub-open-card">
-        <div class="sub-open-brand">
-          <img
-            src="/icons/podorozhnik-logo.png"
-            alt=""
-            @error="(e) => { const el = e.target; if (el instanceof HTMLElement) el.style.display = 'none' }"
+      <div class="app-dl-card">
+        <template v-if="localSubError && !page">
+          <h1 class="app-dl-h1">
+            Не удалось загрузить
+          </h1>
+          <p
+            v-if="routeBanner"
+            class="app-dl-banner app-dl-banner--danger"
+            role="status"
           >
-          <span>Подорожник VPN</span>
-        </div>
-        <div
-          class="sub-open-loader"
-          aria-live="polite"
-        >
-          <template v-if="openedOk">
+            {{ routeBanner.text }}
+          </p>
+        </template>
+        <template v-else>
+          <div
+            v-if="routeBanner"
+            class="app-dl-banner"
+            :class="
+              routeBanner.kind === 'info'
+                ? 'app-dl-banner--info'
+                : 'app-dl-banner--danger'
+            "
+            role="status"
+          >
+            {{ routeBanner.text }}
+          </div>
+          <h1 class="app-dl-h1">
+            {{ displayTitle }}
+          </h1>
+          <p
+            v-if="page?.lead && page.state === 'ok'"
+            class="app-dl-lead app-dl-lead--tight"
+          >
+            {{ page.lead }}
+          </p>
+          <p
+            v-else
+            class="app-dl-lead"
+          >
+            Скачайте приложение для вашей системы или перейдите на официальный сайт.
+          </p>
+
+          <div
+            v-if="showStoreRow"
+            class="app-dl-actions"
+          >
             <div
-              class="sub-open-success-icon"
-              aria-hidden="true"
+              class="app-dl-actions-row"
+              :class="{ 'app-dl-actions-row--single': storeRowSingle }"
             >
-              ✓
+              <a
+                v-if="storeRef?.download"
+                class="btn-primary app-dl-btn"
+                :href="storeRef.download"
+              >Скачать</a>
+              <a
+                v-if="storeRef?.site"
+                class="btn-secondary app-dl-btn"
+                :href="storeRef.site"
+              >Перейти на сайт</a>
             </div>
-            <p class="sub-open-text sub-open-text-success">
-              Готово
+          </div>
+          <p
+            v-else
+            class="app-dl-muted"
+          >
+            Для этой платформы нет прямой ссылки в каталоге — откройте сайт разработчика вручную.
+          </p>
+
+          <div
+            v-if="page?.deeplink && page.state === 'ok'"
+            class="app-dl-open-block"
+          >
+            <p class="app-dl-hint">
+              Уже установили клиент — импортируйте подписку:
             </p>
-            <p class="sub-open-sub">
-              Подписка открыта в приложении. Можно вернуться в браузер — VPN-соединение настраивается в клиенте.
-            </p>
-          </template>
-          <template v-else-if="postDeeplinkWait">
-            <div
-              class="sub-open-spinner"
-              role="status"
-              aria-label="Открываем приложение"
-            />
-            <p class="sub-open-text">
-              Открываем приложение…
-            </p>
-          </template>
-          <template v-else>
-            <div
-              v-if="loading"
-              class="sub-open-spinner"
-              role="status"
-              aria-label="Загрузка"
-            />
-            <p class="sub-open-text">
-              {{ loading ? 'Проверяем ссылку…' : 'Открываем приложение…' }}
-            </p>
-          </template>
-        </div>
+            <button
+              type="button"
+              class="btn-primary app-dl-open-full"
+              @click="retryOpenInClient"
+            >
+              {{ openInClientLabel }}
+            </button>
+          </div>
+        </template>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.sub-open {
+.app-dl {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -266,7 +407,7 @@ onBeforeUnmount(() => {
   background: var(--bg-gradient);
 }
 
-.sub-open-wrap {
+.app-dl-wrap {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -277,9 +418,15 @@ onBeforeUnmount(() => {
   gap: 0.75rem;
 }
 
-/* Как на ClientAppDownloadView: ссылка в кабинет; ширина под карточку sub-open (22rem). */
-.app-dl-back.sub-open-back {
-  max-width: 22rem;
+.app-dl-card {
+  width: 100%;
+  max-width: 26rem;
+  padding: 1.35rem 1.25rem 1.5rem;
+  border-radius: var(--radius-lg);
+  background: var(--surface-glass);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--shadow-md);
+  box-sizing: border-box;
 }
 
 .app-dl-back {
@@ -311,89 +458,105 @@ onBeforeUnmount(() => {
   line-height: 1;
 }
 
-.sub-open-card {
+.app-dl-banner {
+  margin: 0 0 1rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.app-dl-banner--danger {
+  background: var(--danger-soft);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  color: var(--danger);
+}
+
+.app-dl-banner--info {
+  background: var(--accent-soft, rgba(59, 130, 246, 0.12));
+  border: 1px solid rgba(59, 130, 246, 0.28);
+  color: var(--muted);
+}
+
+.app-dl-h1 {
+  margin: 0 0 0.65rem;
+  font-family: var(--heading);
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--text-h);
+  line-height: 1.25;
+}
+
+.app-dl-lead {
+  margin: 0 0 1.1rem;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.app-dl-lead--tight {
+  margin-bottom: 0.85rem;
+}
+
+.app-dl-open-block {
+  margin-top: 1.25rem;
+  padding-top: 1.15rem;
+  border-top: 1px solid var(--card-border);
+}
+
+.app-dl-open-full {
+  display: flex;
   width: 100%;
-  max-width: 22rem;
-  padding: 1.35rem 1.25rem 1.5rem;
-  border-radius: var(--radius-lg);
-  background: var(--surface-glass);
-  border: 1px solid var(--card-border);
-  box-shadow: var(--shadow-md);
   box-sizing: border-box;
+  justify-content: center;
   text-align: center;
+  font: inherit;
+  cursor: pointer;
+  border: none;
 }
 
-.sub-open-brand {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  margin-bottom: 1.25rem;
-  font-weight: 600;
-  color: var(--text-h);
-  letter-spacing: 0.02em;
-}
-
-.sub-open-brand img {
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
-}
-
-.sub-open-loader {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.sub-open-spinner {
-  width: 2.25rem;
-  height: 2.25rem;
-  border-radius: 50%;
-  border: 3px solid var(--accent-soft);
-  border-top-color: var(--accent);
-  animation: sub-open-spin 0.75s linear infinite;
-}
-
-@keyframes sub-open-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.sub-open-text {
+.app-dl-muted {
   margin: 0;
-  font-size: 0.92rem;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.app-dl-actions {
+  margin-bottom: 0;
+}
+
+.app-dl-actions-row {
+  display: flex;
+  flex-direction: row;
+  gap: 0.6rem;
+  width: 100%;
+  flex-wrap: nowrap;
+}
+
+.app-dl-actions-row :deep(.btn-primary),
+.app-dl-actions-row :deep(.btn-secondary) {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  text-decoration: none;
+}
+
+.app-dl-actions-row--single :deep(.btn-primary),
+.app-dl-actions-row--single :deep(.btn-secondary) {
+  max-width: 100%;
+}
+
+.app-dl-btn {
+  display: inline-flex;
+  justify-content: center;
+  text-decoration: none;
+  box-sizing: border-box;
+}
+
+.app-dl-hint {
+  margin: 0 0 0.65rem;
+  font-size: 0.88rem;
   color: var(--muted);
   line-height: 1.45;
-}
-
-.sub-open-text-success {
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--text-h);
-}
-
-.sub-open-success-icon {
-  width: 3rem;
-  height: 3rem;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--on-accent, #000);
-  background: var(--accent);
-  line-height: 1;
-}
-
-.sub-open-sub {
-  margin: 0;
-  font-size: 0.82rem;
-  color: var(--muted);
-  line-height: 1.45;
-  max-width: 18rem;
 }
 </style>

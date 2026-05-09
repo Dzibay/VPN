@@ -68,7 +68,7 @@ export function isMobileAppStoreDevice() {
 
 /**
  * URL страницы магазина или прямой загрузки для текущего мобильного устройства
- * (та же логика, что выбор ссылок на /apps/:client). Для десктопа — null.
+ * (та же логика, что выбор ссылок на странице /sub/…/open/…). Для десктопа — null.
  *
  * @param {Record<string, { site?: string | null, download?: string | null }> | null | undefined} links
  * @param {string | null | undefined} platformFromQuery — как ?platform= на open-странице

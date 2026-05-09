@@ -20,8 +20,6 @@ const UserLoginView = () => import('../views/UserLoginView.vue')
 const UserRegisterView = () => import('../views/UserRegisterView.vue')
 const LinkFromTelegramView = () => import('../views/LinkFromTelegramView.vue')
 const UserCabinetView = () => import('../views/UserCabinetView.vue')
-const ClientAppDownloadView = () =>
-  import('../views/ClientAppDownloadView.vue')
 const SubscriptionOpenView = () => import('../views/SubscriptionOpenView.vue')
 const AdminTablesPage = () => import('../views/AdminTablesPage.vue')
 const ReferralFunnelView = () => import('../views/ReferralFunnelView.vue')
@@ -56,8 +54,7 @@ const routes = [
   { path: '/cabinet', name: 'cabinet', component: UserCabinetView },
   {
     path: '/apps/:client',
-    name: 'client-app-download',
-    component: ClientAppDownloadView,
+    redirect: { name: 'cabinet' },
   },
   {
     path: '/sub/:token/open/:client',

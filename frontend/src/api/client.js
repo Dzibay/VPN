@@ -148,7 +148,7 @@ export function detectStorePlatform() {
 }
 
 /**
- * Путь страницы «открыть в клиенте»: /sub/{token}/open/{client} (данные: …/data).
+ * Путь страницы «открыть в клиенте» (карточка загрузки + диплинк): /sub/{token}/open/{client} (данные: …/data).
  */
 export function subscriptionOpenPath(token, clientCode, platform) {
   const t = encodeURIComponent(token)
@@ -156,28 +156,6 @@ export function subscriptionOpenPath(token, clientCode, platform) {
   let path = `/sub/${t}/open/${s}`
   if (platform && STORE_PLATFORM_SET.has(platform)) {
     path += `?platform=${encodeURIComponent(platform)}`
-  }
-  return path
-}
-
-/**
- * Путь страницы скачивания клиента /apps/{clientCode}
- * @param {string} clientCode
- * @param {Record<string, string | undefined | null>} [query]
- */
-export function clientAppDownloadPath(clientCode, query) {
-  const s = encodeURIComponent(clientCode)
-  let path = `/apps/${s}`
-  if (query && typeof query === 'object') {
-    const pairs = []
-    for (const [k, v] of Object.entries(query)) {
-      if (v != null && v !== '') {
-        pairs.push(
-          `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`,
-        )
-      }
-    }
-    if (pairs.length) path += `?${pairs.join('&')}`
   }
   return path
 }

@@ -16,6 +16,10 @@ class SubscriptionOpenPageData(BaseModel):
         description="ok — можно открыть клиент (при неактивной подписке узлы будут пустыми до продления); invalid_token — нет пользователя; inactive — устаревшее значение, не используется.",
     )
     title: str = Field(..., description="document.title")
+    display_name: str = Field(
+        ...,
+        description="Короткое имя клиента для карточки загрузки (как display_name в GET /api/public/client-apps).",
+    )
     headline: str = Field(..., description="Заголовок на странице (h1)")
     message: str | None = Field(
         None,

@@ -1,4 +1,4 @@
-"""Публичное описание VPN-клиента для страницы /apps/{code} (без токена подписки)."""
+"""Публичное описание VPN-клиента (GET /api/public/client-apps/{code}; используется на /sub/…/open/…)."""
 
 from __future__ import annotations
 

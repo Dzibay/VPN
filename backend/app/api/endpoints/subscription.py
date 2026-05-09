@@ -21,7 +21,7 @@ Stash / Clash Verge / v2rayNG. Подробнее: ``app.domain.subscription.use
 и текстом в заголовке ``announce``, без HTTP 403.
 
 - GET /sub/{subscription_token}/open/{client} — 302 на ту же страницу на origin SPA (если API и сайт разъехались).
-- GET /sub/{subscription_token}/open/{client}/data — JSON для попытки диплинка (Vue /sub/…/open/…); скачивание — /apps/{client}.
+- GET /sub/{subscription_token}/open/{client}/data — JSON для страницы открытия (Vue /sub/…/open/…: карточка клиента, диплинк, магазины); публичное имя и магазины также в GET /api/public/client-apps/{code}.
 - Неизвестный client → 302 в кабинет.
 """
 

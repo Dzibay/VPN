@@ -206,16 +206,19 @@ def subscription_build_open_page_data(
     hint = "Если приложение не открылось, но установлено - нажмите «Открыть». "
 
     if user is None:
+        sl_bad: AppStoreLinks = app.store_links
+        store_bad = sl_bad.to_public_json_dict() if sl_bad.any() else None
         return SubscriptionOpenPageData(
             state="invalid_token",
             title="Ссылка недействительна",
+            display_name=app.display_name,
             headline="Ссылка недействительна",
             message="Проверьте ссылку или получите новую в боте / личном кабинете.",
             deeplink=None,
             open_button_label="",
             lead=None,
             hint=None,
-            store_links=None,
+            store_links=store_bad,
             forced_platform=forced,
         )
 
@@ -236,6 +239,7 @@ def subscription_build_open_page_data(
     return SubscriptionOpenPageData(
         state="ok",
         title=title,
+        display_name=app.display_name,
         headline=headline,
         message=None,
         deeplink=deeplink,
