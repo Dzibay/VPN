@@ -100,54 +100,6 @@ def _happ_routing_header_value(cfg: Settings | None = None) -> str:
     return f"happ://routing/onadd/{payload}"
 
 
-def _v2raytun_routing_header_value(cfg: Settings | None = None) -> str:
-    cfg = cfg or settings
-    if not cfg.cascade_ru_split_routing:
-        return ""
-    routing = {
-        "name": "Pdoroznik Default",
-        "domainStrategy": "IPIfNonMatch",
-        "domainMatcher": "hybrid",
-        "rules": [
-            {
-                "type": "field",
-                "outboundTag": "direct",
-                "port": _DIRECT_SERVICE_PORTS,
-            },
-            {
-                "type": "field",
-                "outboundTag": "block",
-                "domain": ["geosite:category-block"],
-            },
-            {
-                "type": "field",
-                "outboundTag": "proxy",
-                "domain": ["geosite:category-proxy"],
-            },
-            {
-                "type": "field",
-                "outboundTag": "direct",
-                "domain": [
-                    "geosite:private",
-                    "geosite:category-direct",
-                    "domain:vhub.pro",
-                ],
-            },
-            {
-                "type": "field",
-                "outboundTag": "direct",
-                "ip": ["geoip:private"],
-            },
-            {
-                "type": "field",
-                "network": "tcp,udp",
-                "outboundTag": "proxy",
-            },
-        ],
-    }
-    raw = json.dumps(routing, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    return base64.b64encode(raw).decode("ascii")
-
 async def subscription_payload_rows_for_resolved_user(
     session: AsyncSession,
     user: User,
@@ -224,7 +176,7 @@ async def subscription_client_metadata_headers(
     else:
         announce_raw = ANNOUNCE_RAW
     ua = ((request.headers.get("user-agent") or "") if request is not None else "").lower()
-    routing_header = _v2raytun_routing_header_value() if "v2raytun" in ua else _happ_routing_header_value()
+    routing_header = _happ_routing_header_value() if "happ" in ua else ""
     return {
         "subscription-userinfo": userinfo,
         "profile-update-interval": "1",
