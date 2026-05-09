@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.core.time import utc_today
 from app.domain.referrals.repository import increment_referral_counter
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.task import Task
@@ -22,7 +19,7 @@ async def apply_referral_bonus_on_payment(
     referee_user_id: int,
     paid_months: int,
 ) -> int | None:
-    """После оплаты реферируемым: ``payments_count += 1``, бонус и ``notify_ref_pay``.
+    """После оплаты реферируемым: ``payments_count += 1`` и задача ``notify_ref_pay``.
 
     Логика:
 
@@ -30,11 +27,16 @@ async def apply_referral_bonus_on_payment(
     2. Иначе всегда инкрементируем ``referral_links.payments_count`` (учёт воронки).
     3. Для ссылок с ``owner_kind='user'`` и владельцем ≠ покупатель:
        вычисляется ``bonus_days = paid_months × REFERRAL_BONUS_DAYS_PER_PAID_MONTH``;
-       если ``bonus_days > 0`` — продлеваем ``users.subscription_until`` владельца ссылки
-       (от ``max(today, current)``) и ставим в ``tasks`` задачу ``notify_ref_pay`` с этим ``bonus_days``;
-       при ``bonus_days == 0`` — задачу не ставим, продление не делаем.
+       если ``bonus_days > 0`` — ставится задача ``notify_ref_pay`` с этим ``bonus_days``;
+       при ``bonus_days == 0`` — задача не создаётся.
 
-    Возвращает фактически начисленные бонусные дни (или ``None``, если задача не создана).
+    ВАЖНО: ``users.subscription_until`` владельца здесь НЕ продлевается. Накопленные
+    бонусные дни применяются к подписке владельца только при его собственной оплате
+    (см. ``_handle_subscription_paid`` в ``tribute_service``): суммируются ``bonus_days``
+    всех его ``notify_ref_pay``-задач от ``created_at`` его последней ``notify_payment``
+    и прибавляются к оплаченным дням при продлении ``subscription_until``.
+
+    Возвращает фактически зафиксированные бонусные дни (или ``None``, если задача не создана).
     """
 
     user_stmt = select(User).where(User.id == int(referee_user_id)).limit(1)
@@ -59,13 +61,6 @@ async def apply_referral_bonus_on_payment(
     bonus_days = per_month * int(paid_months)
     if bonus_days <= 0:
         return None
-
-    owner_stmt = select(User).where(User.id == owner_id).limit(1)
-    owner = (await session.scalars(owner_stmt)).first()
-    if owner is not None and owner.subscription_until is not None:
-        today = utc_today()
-        base = owner.subscription_until if owner.subscription_until >= today else today
-        owner.subscription_until = base + timedelta(days=bonus_days)
 
     session.add(
         Task(
