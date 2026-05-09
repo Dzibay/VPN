@@ -198,6 +198,15 @@ class UserListItem(BaseModel):
         ge=0,
         description="Сумма up+down по всем узлам (user_server_traffic)",
     )
+    active_today: bool = Field(
+        default=False,
+        description=(
+            "Календарный день UTC: сумма по узлам последних снимков с traffic_date ≤ сегодня "
+            "больше, чем сумма последних снимков строго до сегодняшнего дня (traffic_date < сегодня) "
+            "— то есть накопленные счётчики выросли относительно предыдущего известного снимка, "
+            "а не только относительно строки с датой «вчера»"
+        ),
+    )
     subscription_devices_count: int = Field(
         ge=0,
         description="Число записей subscription_devices (подключённых устройств по подписке)",

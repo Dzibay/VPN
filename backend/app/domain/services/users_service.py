@@ -29,7 +29,11 @@ from app.domain.models.users import (
     UserUpdate,
 )
 from app.domain.subscription.devices import list_subscription_connection_records_for_users
-from app.domain.user_traffic import user_server_traffic_latest_subquery
+from app.domain.user_traffic import (
+    user_server_traffic_latest_subquery,
+    user_traffic_total_by_user_as_of,
+    user_traffic_total_by_user_strictly_before_calendar_day,
+)
 from app.domain.users.identifiers import new_subscription_token, new_vless_uuid
 from app.infrastructure.database.operations import table_insert
 from app.infrastructure.persistence.models.subscription_device import SubscriptionDevice
@@ -99,6 +103,12 @@ async def staff_list_users(session: AsyncSession, *, show_secrets: bool) -> list
     rows = await _user_rows_with_traffic(session)
     user_ids = [int(user.id) for user, _, _ in rows]
     devices_map = await list_subscription_connection_records_for_users(session, user_ids)
+    today_utc = utc_today()
+    totals_last_before_today = await user_traffic_total_by_user_strictly_before_calendar_day(
+        session,
+        today_utc,
+    )
+    totals_through_today = await user_traffic_total_by_user_as_of(session, today_utc)
     out: list[UserListItem] = []
     for user, total_raw, dev_raw in rows:
         try:
@@ -117,6 +127,10 @@ async def staff_list_users(session: AsyncSession, *, show_secrets: bool) -> list
         role_lit = type_cast(Literal["client", "manager", "admin"], role)
         raw_devs = devices_map.get(int(user.id), [])
         subs_devices = [SubscriptionConnectionItem(**r) for r in raw_devs]
+        uid = int(user.id)
+        t_prev = int(totals_last_before_today.get(uid, 0))
+        t_now = int(totals_through_today.get(uid, 0))
+        active_today = t_now > t_prev
         out.append(
             UserListItem(
                 id=user.id,
@@ -127,6 +141,7 @@ async def staff_list_users(session: AsyncSession, *, show_secrets: bool) -> list
                 telegram_properties=user.telegram_properties,
                 subscription_until=user.subscription_until,
                 total_traffic_bytes=total,
+                active_today=active_today,
                 subscription_devices_count=dev_n,
                 subscription_devices=subs_devices,
                 referral_link_id=user.referral_link_id,

@@ -476,6 +476,7 @@ onMounted(() => {
               :class="{
                 'client-row-highlight': highlightUserId === u.id,
                 'user-row--selected': selectedUserId === u.id,
+                'client-row-active-today': u.active_today,
               }"
               title="Нажмите строку, чтобы открыть или закрыть карточку пользователя справа"
               @click="toggleUserRowSelect(u.id, $event)"
@@ -850,8 +851,26 @@ onMounted(() => {
 .client-row-toggle:hover {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
+/* Рост счётчиков относительно последнего снимка до текущего UTC-дня (active_today в GET /api/users) */
+tr.client-row-active-today {
+  background-color: color-mix(in srgb, var(--success, #15803d) 10%, transparent);
+}
+tr.client-row-active-today.client-row-toggle:hover {
+  background-color: color-mix(
+    in srgb,
+    var(--success, #15803d) 12%,
+    color-mix(in srgb, var(--accent) 8%, transparent)
+  );
+}
 .user-row--selected {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+tr.client-row-active-today.user-row--selected {
+  background-color: color-mix(
+    in srgb,
+    var(--success, #15803d) 11%,
+    color-mix(in srgb, var(--accent) 9%, transparent)
+  );
 }
 .analytics-main {
   width: 100%;
