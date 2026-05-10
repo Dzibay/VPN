@@ -5,9 +5,9 @@ from app.core.dependencies import apply_request_subject_from_bearer_optional
 from app.api.endpoints import (
     auth,
     client_app_public,
-    me as me_endpoints,
     health,
     http_audit_staff,
+    me as me_endpoints,
     payments,
     prometheus_sd,
     referral_links,

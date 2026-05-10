@@ -1,0 +1,2826 @@
+[
+  {
+    "id": 1,
+    "title": "Вариант 1: (Всё кроме RU)",
+    "config": {
+      "dns": {
+        "tag": "dns-in",
+        "servers": [
+          {
+            "address": "https://1.1.1.1/dns-query",
+            "timeoutMs": 1000
+          },
+          {
+            "domain": [
+              "geosite:category-direct"
+            ],
+            "address": "udp+local://77.88.8.8",
+            "timeoutMs": 1000
+          }
+        ],
+        "serveStale": true,
+        "disableCache": false,
+        "queryStrategy": "UseIPv4"
+      },
+      "policy": {
+        "levels": {
+          "0": {
+            "connIdle": 30,
+            "handshake": 8,
+            "bufferSize": 8
+          }
+        }
+      },
+      "remarks": "🚀 Мой сервер (Всё кроме RU)",
+      "routing": {
+        "domainMatcher": "hybrid",
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "158.160.230.132"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "port": "22,25,135-139,465,587,593,2525,3306,3389,5432,6379,11211,1900",
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "geosite:category-block"
+            ],
+            "outboundTag": "block"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "regexp:(.*\\.ru$)",
+              "regexp:(.*\\.su$)",
+              "regexp:(.*\\.рф$)",
+              "geosite:yandex",
+              "geosite:vk",
+              "geosite:mailru"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "ip": [
+              "geoip:ru",
+              "geoip:private"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "network": "tcp,udp",
+            "outboundTag": "proxy"
+          }
+        ]
+      },
+      "inbounds": [
+        {
+          "tag": "socks",
+          "port": 10808,
+          "listen": "127.0.0.1",
+          "protocol": "socks",
+          "settings": {
+            "udp": true,
+            "auth": "noauth"
+          },
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ]
+          }
+        },
+        {
+          "tag": "http",
+          "port": 10809,
+          "listen": "127.0.0.1",
+          "protocol": "http",
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ]
+          }
+        }
+      ],
+      "outbounds": [
+        {
+          "tag": "proxy",
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "158.160.230.132",
+                "port": 443,
+                "users": [
+                  {
+                    "id": "53e0285c-136c-4d16-a170-da5d6f346067",
+                    "encryption": "none",
+                    "flow": "xtls-rprx-vision",
+                    "level": 8,
+                    "security": "auto"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+              "allowInsecure": false,
+              "fingerprint": "safari",
+              "serverName": "www.yandex.ru",
+              "publicKey": "gLbMykabGj1vfPBGquxhpQkLcxcYNJ4QbBswaeuaaF8",
+              "shortId": "2722f449",
+              "spiderX": "/",
+              "show": false
+            },
+            "tcpSettings": {
+              "header": {
+                "type": "none"
+              }
+            }
+          }
+        },
+        {
+          "tag": "direct",
+          "protocol": "freedom"
+        },
+        {
+          "tag": "block",
+          "protocol": "blackhole"
+        }
+      ]
+    }
+  },
+  {
+    "id": 2,
+    "title": "Вариант 2: (Ручной список)",
+    "config": {
+      "dns": {
+        "servers": [
+          "https://1.1.1.1/dns-query",
+          "8.8.8.8"
+        ]
+      },
+      "remarks": "🚀 Мой сервер (Ручной список)",
+      "routing": {
+        "domainMatcher": "hybrid",
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "158.160.230.132"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "geosite:google",
+              "geosite:youtube",
+              "geosite:instagram",
+              "geosite:twitter",
+              "domain:rutracker.org"
+            ],
+            "outboundTag": "proxy"
+          },
+          {
+            "type": "field",
+            "network": "tcp,udp",
+            "outboundTag": "direct"
+          }
+        ]
+      },
+      "inbounds": [
+        {
+          "tag": "socks",
+          "port": 10808,
+          "listen": "127.0.0.1",
+          "protocol": "socks",
+          "settings": {
+            "udp": true,
+            "auth": "noauth"
+          },
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls"
+            ]
+          }
+        },
+        {
+          "tag": "http",
+          "port": 10809,
+          "listen": "127.0.0.1",
+          "protocol": "http",
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls"
+            ]
+          }
+        }
+      ],
+      "outbounds": [
+        {
+          "tag": "proxy",
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "158.160.230.132",
+                "port": 443,
+                "users": [
+                  {
+                    "id": "53e0285c-136c-4d16-a170-da5d6f346067",
+                    "encryption": "none",
+                    "flow": "xtls-rprx-vision",
+                    "level": 8,
+                    "security": "auto"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+              "allowInsecure": false,
+              "fingerprint": "safari",
+              "serverName": "www.yandex.ru",
+              "publicKey": "gLbMykabGj1vfPBGquxhpQkLcxcYNJ4QbBswaeuaaF8",
+              "shortId": "2722f449",
+              "spiderX": "/"
+            }
+          }
+        },
+        {
+          "tag": "direct",
+          "protocol": "freedom"
+        }
+      ]
+    }
+  },
+  {
+    "id": 3,
+    "title": "Вариант 3: (Fragment + Proxy)",
+    "config": {
+      "dns": {
+        "tag": "dns-in",
+        "servers": [
+          {
+            "address": "https://1.1.1.1/dns-query",
+            "timeoutMs": 1000
+          },
+          {
+            "address": "https://8.8.8.8/dns-query",
+            "domains": [
+              "geosite:category-direct"
+            ]
+          }
+        ],
+        "queryStrategy": "UseIPv4"
+      },
+      "remarks": "🚀 Мой сервер (Fragment + Proxy)",
+      "routing": {
+        "domainMatcher": "hybrid",
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+          {
+            "ip": [
+              "158.160.230.132"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "geosite:category-block"
+            ],
+            "outboundTag": "block"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "geosite:category-direct"
+            ],
+            "outboundTag": "direct-fragment"
+          },
+          {
+            "type": "field",
+            "ip": [
+              "geoip:private",
+              "geoip:ru"
+            ],
+            "outboundTag": "direct-fragment"
+          },
+          {
+            "type": "field",
+            "network": "tcp,udp",
+            "outboundTag": "proxy"
+          }
+        ]
+      },
+      "inbounds": [
+        {
+          "tag": "socks",
+          "port": 10808,
+          "protocol": "socks",
+          "settings": {
+            "udp": true
+          },
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ]
+          }
+        },
+        {
+          "tag": "http",
+          "port": 10809,
+          "protocol": "http",
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ]
+          }
+        }
+      ],
+      "outbounds": [
+        {
+          "tag": "proxy",
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "158.160.230.132",
+                "port": 443,
+                "users": [
+                  {
+                    "id": "53e0285c-136c-4d16-a170-da5d6f346067",
+                    "encryption": "none",
+                    "flow": "xtls-rprx-vision"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+              "fingerprint": "firefox",
+              "serverName": "www.yandex.ru",
+              "publicKey": "gLbMykabGj1vfPBGquxhpQkLcxcYNJ4QbBswaeuaaF8",
+              "shortId": "2722f449"
+            }
+          }
+        },
+        {
+          "tag": "direct",
+          "protocol": "freedom"
+        },
+        {
+          "tag": "direct-fragment",
+          "protocol": "freedom",
+          "settings": {
+            "fragment": {
+              "length": "10-20",
+              "packets": "tlshello",
+              "interval": "5-10"
+            }
+          }
+        },
+        {
+          "tag": "block",
+          "protocol": "blackhole"
+        }
+      ]
+    }
+  },
+  {
+    "id": 4,
+    "title": "Вариант 4: (DNS Isolation)",
+    "config": {
+      "dns": {
+        "hosts": {
+          "domain:googleapis.cn": "googleapis.com"
+        },
+        "servers": [
+          {
+            "address": "https://1.1.1.1/dns-query",
+            "domains": [
+              "geosite:category-proxy",
+              "geosite:google"
+            ]
+          },
+          {
+            "address": "8.8.8.8",
+            "domains": [
+              "geosite:category-direct"
+            ]
+          }
+        ],
+        "queryStrategy": "UseIP"
+      },
+      "remarks": "🚀 Мой сервер (DNS Isolation)",
+      "routing": {
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+          {
+            "ip": [
+              "158.160.230.132"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "geosite:category-proxy",
+              "domain:instagram.com",
+              "domain:facebook.com"
+            ],
+            "outboundTag": "proxy"
+          },
+          {
+            "type": "field",
+            "ip": [
+              "1.1.1.1"
+            ],
+            "outboundTag": "proxy"
+          },
+          {
+            "type": "field",
+            "ip": [
+              "geoip:private",
+              "geoip:ru"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "network": "tcp,udp",
+            "outboundTag": "direct"
+          }
+        ]
+      },
+      "inbounds": [
+        {
+          "tag": "socks",
+          "port": 10808,
+          "protocol": "socks",
+          "settings": {
+            "udp": true,
+            "userLevel": 8
+          },
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ]
+          }
+        }
+      ],
+      "outbounds": [
+        {
+          "tag": "proxy",
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "158.160.230.132",
+                "port": 443,
+                "users": [
+                  {
+                    "id": "53e0285c-136c-4d16-a170-da5d6f346067",
+                    "encryption": "none",
+                    "flow": "xtls-rprx-vision"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+              "fingerprint": "chrome",
+              "serverName": "www.yandex.ru",
+              "publicKey": "gLbMykabGj1vfPBGquxhpQkLcxcYNJ4QbBswaeuaaF8",
+              "shortId": "2722f449"
+            }
+          }
+        },
+        {
+          "tag": "direct",
+          "protocol": "freedom"
+        }
+      ]
+    }
+  },
+  {
+    "id": 5,
+    "title": "Вариант 5: Microsoft Reality",
+    "config": {
+      "remarks": "🚀 SNI: Microsoft Reality",
+      "routing": {
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "158.160.230.132"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "network": "tcp,udp",
+            "outboundTag": "proxy"
+          }
+        ]
+      },
+      "outbounds": [
+        {
+          "tag": "proxy",
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "158.160.230.132",
+                "port": 443,
+                "users": [
+                  {
+                    "id": "53e0285c-136c-4d16-a170-da5d6f346067",
+                    "flow": "xtls-rprx-vision",
+                    "encryption": "none"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+              "fingerprint": "chrome",
+              "serverName": "www.microsoft.com",
+              "publicKey": "gLbMykabGj1vfPBGquxhpQkLcxcYNJ4QbBswaeuaaF8",
+              "shortId": "2722f449",
+              "spiderX": "/"
+            }
+          }
+        },
+        {
+          "tag": "direct",
+          "protocol": "freedom"
+        }
+      ],
+      "dns": {
+        "servers": [
+          "1.1.1.1",
+          "8.8.8.8"
+        ]
+      }
+    }
+  },
+  {
+    "id": 6,
+    "title": "Вариант 6: Secure DNS (DoH) Mode",
+    "config": {
+      "dns": {
+        "tag": "dns-in",
+        "servers": [
+          {
+            "address": "https://8.8.8.8/dns-query",
+            "proxyStrategy": "use_proxy"
+          }
+        ]
+      },
+      "remarks": "🚀 Secure DNS (DoH) Mode",
+      "routing": {
+        "domainStrategy": "AsIs",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "158.160.230.132"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "port": "53",
+            "outboundTag": "proxy"
+          },
+          {
+            "type": "field",
+            "network": "tcp,udp",
+            "outboundTag": "proxy"
+          }
+        ]
+      },
+      "outbounds": [
+        {
+          "tag": "proxy",
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "158.160.230.132",
+                "port": 443,
+                "users": [
+                  {
+                    "id": "53e0285c-136c-4d16-a170-da5d6f346067",
+                    "flow": "xtls-rprx-vision",
+                    "encryption": "none"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+              "fingerprint": "firefox",
+              "serverName": "www.google.com",
+              "publicKey": "gLbMykabGj1vfPBGquxhpQkLcxcYNJ4QbBswaeuaaF8",
+              "shortId": "2722f449"
+            }
+          }
+        },
+        {
+          "tag": "direct",
+          "protocol": "freedom"
+        }
+      ]
+    }
+  },
+  {
+    "id": 7,
+    "title": "Вариант 7: GeoIP Targeting",
+    "config": {
+      "remarks": "🚀 GeoIP Targeting",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "158.160.230.132"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "ip": [
+              "geoip:google",
+              "geoip:facebook",
+              "geoip:twitter",
+              "geoip:telegram"
+            ],
+            "outboundTag": "proxy"
+          },
+          {
+            "type": "field",
+            "network": "tcp,udp",
+            "outboundTag": "direct"
+          }
+        ]
+      },
+      "outbounds": [
+        {
+          "tag": "proxy",
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "158.160.230.132",
+                "port": 443,
+                "users": [
+                  {
+                    "id": "53e0285c-136c-4d16-a170-da5d6f346067",
+                    "flow": "xtls-rprx-vision",
+                    "encryption": "none"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+              "fingerprint": "edge",
+              "serverName": "www.yandex.ru",
+              "publicKey": "gLbMykabGj1vfPBGquxhpQkLcxcYNJ4QbBswaeuaaF8",
+              "shortId": "2722f449"
+            }
+          }
+        },
+        {
+          "tag": "direct",
+          "protocol": "freedom"
+        }
+      ]
+    }
+  },
+  {
+    "id": 8,
+    "title": "Вариант 8: Фрагментация (DPI Bypass)",
+    "config": {
+      "remarks": "🚀 Мой сервер + Фрагментация (DPI Bypass)",
+      "dns": {
+        "servers": [
+          "https://1.1.1.1/dns-query",
+          "8.8.8.8"
+        ]
+      },
+      "routing": {
+        "domainMatcher": "hybrid",
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "158.160.230.132"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "ip": [
+              "geoip:private"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "network": "tcp,udp",
+            "outboundTag": "fragment-out"
+          }
+        ]
+      },
+      "inbounds": [
+        {
+          "tag": "socks",
+          "port": 10808,
+          "listen": "127.0.0.1",
+          "protocol": "socks",
+          "settings": {
+            "udp": true,
+            "auth": "noauth"
+          },
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ]
+          }
+        },
+        {
+          "tag": "http",
+          "port": 10809,
+          "listen": "127.0.0.1",
+          "protocol": "http",
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ]
+          }
+        }
+      ],
+      "outbounds": [
+        {
+          "tag": "fragment-out",
+          "protocol": "fragment",
+          "settings": {
+            "packets": "1-3",
+            "length": "10-20",
+            "interval": "5-10"
+          },
+          "streamSettings": {
+            "sockopt": {
+              "dialerProxy": "proxy"
+            }
+          }
+        },
+        {
+          "tag": "proxy",
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "158.160.230.132",
+                "port": 443,
+                "users": [
+                  {
+                    "id": "53e0285c-136c-4d16-a170-da5d6f346067",
+                    "encryption": "none",
+                    "flow": "xtls-rprx-vision",
+                    "level": 8
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+              "allowInsecure": false,
+              "fingerprint": "safari",
+              "serverName": "www.yandex.ru",
+              "publicKey": "gLbMykabGj1vfPBGquxhpQkLcxcYNJ4QbBswaeuaaF8",
+              "shortId": "2722f449",
+              "spiderX": "/"
+            }
+          }
+        },
+        {
+          "tag": "direct",
+          "protocol": "freedom"
+        },
+        {
+          "tag": "block",
+          "protocol": "blackhole"
+        }
+      ]
+    }
+  },
+  {
+    "id": 9,
+    "title": "Вариант 9",
+    "config": {
+      "dns": {
+        "queryStrategy": "UseIP",
+        "servers": [
+          "1.1.1.1",
+          "1.0.0.1"
+        ]
+      },
+      "inbounds": [
+        {
+          "listen": "127.0.0.1",
+          "port": 10808,
+          "protocol": "socks",
+          "settings": {
+            "auth": "noauth",
+            "udp": true
+          },
+          "sniffing": {
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ],
+            "enabled": true,
+            "routeOnly": false
+          },
+          "tag": "socks"
+        },
+        {
+          "listen": "127.0.0.1",
+          "port": 10809,
+          "protocol": "http",
+          "settings": {
+            "allowTransparent": false
+          },
+          "sniffing": {
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ],
+            "enabled": true,
+            "routeOnly": false
+          },
+          "tag": "http"
+        }
+      ],
+      "outbounds": [
+        {
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "158.160.230.132",
+                "port": 443,
+                "users": [
+                  {
+                    "id": "53e0285c-136c-4d16-a170-da5d6f346067",
+                    "encryption": "none",
+                    "flow": "xtls-rprx-vision"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+              "fingerprint": "chrome",
+              "publicKey": "gLbMykabGj1vfPBGquxhpQkLcxcYNJ4QbBswaeuaaF8",
+              "serverName": "www.yandex.ru",
+              "shortId": "2722f449",
+              "spiderX": "/"
+            },
+            "tcpSettings": {}
+          },
+          "tag": "proxy"
+        },
+        {
+          "protocol": "freedom",
+          "tag": "direct"
+        },
+        {
+          "protocol": "blackhole",
+          "tag": "block"
+        }
+      ],
+      "routing": {
+        "domainMatcher": "hybrid",
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+          {
+            "type": "field",
+            "outboundTag": "direct",
+            "protocol": [
+              "bittorrent"
+            ]
+          },
+          {
+            "type": "field",
+            "ip": [
+              "geoip:private"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "localhost",
+              "localhost.localdomain",
+              "local",
+              "*.local",
+              "*.localdomain",
+              "*.lan",
+              "*.internal"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "ip": [
+              "127.0.0.0/8",
+              "10.0.0.0/8",
+              "172.16.0.0/12",
+              "192.168.0.0/16",
+              "169.254.0.0/16",
+              "::1/128",
+              "fc00::/7",
+              "fe80::/10"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "network": "udp",
+            "port": "443",
+            "outboundTag": "block"
+          },
+          {
+            "type": "field",
+            "ip": [
+              "geoip:ru"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "geosite:category-ru",
+              "regexp:.*\\.ru$",
+              "regexp:.*\\.su$",
+              "domain:.ru",
+              "domain:.su",
+              "domain:mtalk.google.com",
+              "domain:push.apple.com",
+              "domain:api.push.apple.com",
+              "domain:push-apple.com.akadns.net",
+              "regexp:^.*-courier\\.push\\.apple\\.com$",
+              "geosite:vk",
+              "domain:gosuslugi.ru",
+              "domain:esia.gosuslugi.ru",
+              "domain:lk.gosuslugi.ru",
+              "geosite:category-gov-ru",
+              "geosite:yandex",
+              "domain:music.yandex.ru",
+              "domain:kinopoisk.ru",
+              "domain:hd.kinopoisk.ru",
+              "domain:www.kinopoisk.ru",
+              "domain:ya.ru",
+              "domain:yandex.net",
+              "geosite:category-ru"
+            ],
+            "outboundTag": "direct"
+          }
+        ]
+      },
+      "remarks": "🇩🇪 Германия (Gemini✨)"
+    }
+  },
+  {
+    "id": 10,
+    "title": "Вариант 10",
+    "config": {
+      "dns": {
+        "disableCache": false,
+        "disableFallback": false,
+        "disableFallbackIfMatch": true,
+        "enableParallelQuery": false,
+        "queryStrategy": "UseIPv4",
+        "serveExpiredTTL": 0,
+        "serveStale": true,
+        "servers": [
+          {
+            "address": "https://1.1.1.1/dns-query",
+            "timeoutMs": 1000
+          },
+          {
+            "address": "udp+local://77.88.8.8",
+            "domain": [
+              "geosite:category-direct",
+              "domain:vhub.pro"
+            ],
+            "timeoutMs": 1000
+          }
+        ],
+        "tag": "dns-in",
+        "useSystemHosts": false
+      },
+      "inbounds": [
+        {
+          "listen": "127.0.0.1",
+          "port": 10808,
+          "protocol": "socks",
+          "settings": {
+            "auth": "noauth",
+            "udp": true
+          },
+          "sniffing": {
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ],
+            "enabled": true,
+            "routeOnly": false
+          },
+          "tag": "socks"
+        },
+        {
+          "listen": "127.0.0.1",
+          "port": 10809,
+          "protocol": "http",
+          "settings": {
+            "allowTransparent": false
+          },
+          "sniffing": {
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ],
+            "enabled": true,
+            "routeOnly": false
+          },
+          "tag": "http"
+        }
+      ],
+      "outbounds": [
+        {
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "158.160.230.132",
+                "port": 443,
+                "users": [
+                  {
+                    "encryption": "none",
+                    "flow": "xtls-rprx-vision",
+                    "id": "53e0285c-136c-4d16-a170-da5d6f346067",
+                    "level": 8,
+                    "security": "auto"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "realitySettings": {
+              "allowInsecure": false,
+              "fingerprint": "safari",
+              "publicKey": "gLbMykabGj1vfPBGquxhpQkLcxcYNJ4QbBswaeuaaF8",
+              "serverName": "www.yandex.ru",
+              "shortId": "2722f449",
+              "show": false,
+              "spiderX": "/"
+            },
+            "security": "reality",
+            "tcpSettings": {
+              "header": {
+                "type": "none"
+              }
+            }
+          },
+          "tag": "proxy"
+        },
+        {
+          "protocol": "freedom",
+          "settings": {
+            "domainStrategy": "UseIP"
+          },
+          "tag": "direct"
+        },
+        {
+          "protocol": "blackhole",
+          "settings": {
+            "response": {
+              "type": "http"
+            }
+          },
+          "tag": "block"
+        }
+      ],
+      "policy": {
+        "levels": {
+          "0": {
+            "bufferSize": 8,
+            "connIdle": 30,
+            "downlinkOnly": 2,
+            "handshake": 8,
+            "uplinkOnly": 2
+          }
+        }
+      },
+      "remarks": "?? Мой сервер (Весь трафик)",
+      "routing": {
+        "domainMatcher": "hybrid",
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+          {
+            "ip": [
+              "158.160.230.132"
+            ],
+            "outboundTag": "direct",
+            "type": "field"
+          },
+          {
+            "outboundTag": "direct",
+            "port": "22,25,135-139,465,587,593,2525,3306,3389,5432,6379,11211,1900"
+          },
+          {
+            "domain": [
+              "geosite:category-block"
+            ],
+            "outboundTag": "block",
+            "type": "field"
+          },
+          {
+            "ip": [
+              "geoip:private"
+            ],
+            "outboundTag": "direct",
+            "type": "field"
+          },
+          {
+            "network": "tcp,udp",
+            "outboundTag": "proxy",
+            "type": "field"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": 11,
+    "title": "Вариант 11",
+    "config": {
+      "dns": {
+        "disableCache": false,
+        "disableFallback": false,
+        "disableFallbackIfMatch": true,
+        "enableParallelQuery": false,
+        "queryStrategy": "UseIPv4",
+        "serveExpiredTTL": 0,
+        "serveStale": true,
+        "servers": [
+          {
+            "address": "https://1.1.1.1/dns-query",
+            "timeoutMs": 1000
+          },
+          {
+            "address": "udp+local://77.88.8.8",
+            "domain": [
+              "geosite:category-direct",
+              "domain:vhub.pro"
+            ],
+            "timeoutMs": 1000
+          }
+        ],
+        "tag": "dns-in",
+        "useSystemHosts": false
+      },
+      "inbounds": [
+        {
+          "listen": "127.0.0.1",
+          "port": 10808,
+          "protocol": "socks",
+          "settings": {
+            "auth": "noauth",
+            "udp": true
+          },
+          "sniffing": {
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ],
+            "enabled": true,
+            "routeOnly": false
+          },
+          "tag": "socks"
+        },
+        {
+          "listen": "127.0.0.1",
+          "port": 10809,
+          "protocol": "http",
+          "settings": {
+            "allowTransparent": false
+          },
+          "sniffing": {
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ],
+            "enabled": true,
+            "routeOnly": false
+          },
+          "tag": "http"
+        }
+      ],
+      "meta": null,
+      "outbounds": [
+        {
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "158.160.230.132",
+                "port": 443,
+                "users": [
+                  {
+                    "encryption": "none",
+                    "flow": "xtls-rprx-vision",
+                    "id": "53e0285c-136c-4d16-a170-da5d6f346067",
+                    "level": 8,
+                    "security": "auto"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "realitySettings": {
+              "allowInsecure": false,
+              "fingerprint": "safari",
+              "publicKey": "gLbMykabGj1vfPBGquxhpQkLcxcYNJ4QbBswaeuaaF8",
+              "serverName": "www.yandex.ru",
+              "shortId": "2722f449",
+              "show": false,
+              "spiderX": "/"
+            },
+            "security": "reality",
+            "tcpSettings": {
+              "header": {
+                "type": "none"
+              }
+            }
+          },
+          "tag": "proxy"
+        },
+        {
+          "protocol": "freedom",
+          "settings": {
+            "domainStrategy": "UseIP"
+          },
+          "tag": "direct"
+        },
+        {
+          "protocol": "blackhole",
+          "settings": {
+            "response": {
+              "type": "http"
+            }
+          },
+          "tag": "block"
+        }
+      ],
+      "policy": {
+        "levels": {
+          "0": {
+            "bufferSize": 8,
+            "connIdle": 30,
+            "downlinkOnly": 2,
+            "handshake": 8,
+            "uplinkOnly": 2
+          }
+        }
+      },
+      "remarks": "?? Мой сервер + Умный роутинг",
+      "routing": {
+        "domainMatcher": "hybrid",
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+          {
+            "ip": [
+              "158.160.230.132"
+            ],
+            "outboundTag": "direct",
+            "type": "field"
+          },
+          {
+            "outboundTag": "direct",
+            "port": "22,25,135-139,465,587,593,2525,3306,3389,5432,6379,11211,1900"
+          },
+          {
+            "domain": [
+              "geosite:category-block"
+            ],
+            "outboundTag": "block",
+            "type": "field"
+          },
+          {
+            "domain": [
+              "geosite:category-proxy"
+            ],
+            "outboundTag": "proxy",
+            "type": "field"
+          },
+          {
+            "domain": [
+              "geosite:category-direct"
+            ],
+            "outboundTag": "direct",
+            "type": "field"
+          },
+          {
+            "ip": [
+              "geoip:private"
+            ],
+            "outboundTag": "direct",
+            "type": "field"
+          },
+          {
+            "network": "tcp,udp",
+            "outboundTag": "direct",
+            "type": "field"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": 12,
+    "title": "Вариант 12: Обход глушилок",
+    "config": {
+      "dns": {
+        "queryStrategy": "UseIP",
+        "servers": [
+          "1.1.1.1",
+          "1.0.0.1"
+        ]
+      },
+      "inbounds": [
+        {
+          "listen": "127.0.0.1",
+          "port": 10808,
+          "protocol": "socks",
+          "settings": {
+            "auth": "noauth",
+            "udp": true
+          },
+          "sniffing": {
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ],
+            "enabled": true,
+            "routeOnly": false
+          },
+          "tag": "socks"
+        },
+        {
+          "listen": "127.0.0.1",
+          "port": 10809,
+          "protocol": "http",
+          "settings": {
+            "allowTransparent": false
+          },
+          "sniffing": {
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ],
+            "enabled": true,
+            "routeOnly": false
+          },
+          "tag": "http"
+        }
+      ],
+      "log": {
+        "access": "/private/var/mobile/Containers/Shared/AppGroup/AC00F471-ED7F-4A47-9D69-C4B08E3C335E/Library/Application Support/Xray/logs/access.log",
+        "dnsLog": true,
+        "loglevel": "Warning"
+      },
+      "outbounds": [
+        {
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "158.160.53.108",
+                "port": 443,
+                "users": [
+                  {
+                    "encryption": "none",
+                    "flow": "xtls-rprx-vision",
+                    "id": "54407ac3-6995-497c-b0eb-5d1654f9a280"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "realitySettings": {
+              "fingerprint": "chrome",
+              "publicKey": "CF49-iS9dsHBwvqYFoDs_T3Me8TT0FpNW2kibGBkVXY",
+              "serverName": "yandex.ru"
+            },
+            "security": "reality",
+            "tcpSettings": {}
+          },
+          "tag": "proxy"
+        },
+        {
+          "protocol": "freedom",
+          "tag": "direct"
+        },
+        {
+          "protocol": "blackhole",
+          "tag": "block"
+        }
+      ],
+      "remarks": "ОБХОД ГЛУШИЛОК №1 🇷🇺",
+      "routing": {
+        "domainMatcher": "hybrid",
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+          {
+            "outboundTag": "direct",
+            "protocol": [
+              "bittorrent"
+            ],
+            "type": "field"
+          },
+          {
+            "ip": [
+              "geoip:private"
+            ],
+            "outboundTag": "direct",
+            "type": "field"
+          },
+          {
+            "domain": [
+              "localhost",
+              "localhost.localdomain",
+              "local",
+              "*.local",
+              "*.localdomain",
+              "*.lan",
+              "*.internal"
+            ],
+            "outboundTag": "direct",
+            "type": "field"
+          },
+          {
+            "ip": [
+              "127.0.0.0/8",
+              "10.0.0.0/8",
+              "172.16.0.0/12",
+              "192.168.0.0/16",
+              "169.254.0.0/16",
+              "::1/128",
+              "fc00::/7",
+              "fe80::/10"
+            ],
+            "outboundTag": "direct",
+            "type": "field"
+          },
+          {
+            "network": "udp",
+            "outboundTag": "block",
+            "port": "443",
+            "type": "field"
+          },
+          {
+            "ip": [
+              "geoip:ru"
+            ],
+            "outboundTag": "direct",
+            "type": "field"
+          },
+          {
+            "domain": [
+              "geosite:category-ru",
+              "regexp:.*\\.ru$",
+              "regexp:.*\\.su$",
+              "domain:.ru",
+              "domain:.su",
+              "domain:mtalk.google.com",
+              "domain:push.apple.com",
+              "domain:api.push.apple.com",
+              "domain:push-apple.com.akadns.net",
+              "regexp:^.*-courier\\.push\\.apple\\.com$",
+              "geosite:vk",
+              "domain:gosuslugi.ru",
+              "domain:esia.gosuslugi.ru",
+              "domain:lk.gosuslugi.ru",
+              "geosite:category-gov-ru",
+              "geosite:yandex",
+              "domain:music.yandex.ru",
+              "domain:kinopoisk.ru",
+              "domain:hd.kinopoisk.ru",
+              "domain:www.kinopoisk.ru",
+              "domain:ya.ru",
+              "domain:yandex.net",
+              "geosite:category-ru"
+            ],
+            "outboundTag": "direct",
+            "type": "field"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": 13,
+    "title": "Вариант 13",
+    "config": {
+      "remarks": "🚀 Вариант 3: Reality + Mux (Long Session)",
+      "dns": {
+        "servers": [
+          "1.1.1.1",
+          "8.8.8.8"
+        ]
+      },
+      "inbounds": [
+        {
+          "tag": "socks",
+          "port": 10808,
+          "listen": "127.0.0.1",
+          "protocol": "socks",
+          "settings": {
+            "udp": true,
+            "auth": "noauth"
+          },
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ]
+          }
+        },
+        {
+          "tag": "http",
+          "port": 10809,
+          "listen": "127.0.0.1",
+          "protocol": "http",
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ]
+          }
+        }
+      ],
+      "routing": {
+        "domainMatcher": "hybrid",
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "158.160.230.132"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "network": "udp",
+            "port": "443",
+            "outboundTag": "block"
+          },
+          {
+            "type": "field",
+            "ip": [
+              "geoip:private",
+              "geoip:ru"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "geosite:category-ru",
+              "regexp:.*\\.ru$"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "network": "tcp,udp",
+            "outboundTag": "proxy"
+          }
+        ]
+      },
+      "outbounds": [
+        {
+          "tag": "proxy",
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "158.160.230.132",
+                "port": 443,
+                "users": [
+                  {
+                    "id": "53e0285c-136c-4d16-a170-da5d6f346067",
+                    "encryption": "none",
+                    "flow": "xtls-rprx-vision"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+              "fingerprint": "chrome",
+              "serverName": "www.yandex.ru",
+              "publicKey": "gLbMykabGj1vfPBGquxhpQkLcxcYNJ4QbBswaeuaaF8",
+              "shortId": "2722f449",
+              "spiderX": "/"
+            }
+          },
+          "mux": {
+            "enabled": true,
+            "concurrency": 8
+          }
+        },
+        {
+          "protocol": "freedom",
+          "tag": "direct"
+        },
+        {
+          "protocol": "blackhole",
+          "tag": "block"
+        }
+      ]
+    }
+  },
+  {
+    "id": 14,
+    "title": "Вариант 14",
+    "config": {
+      "dns": {
+        "queryStrategy": "UseIP",
+        "servers": [
+          "1.1.1.1",
+          "1.0.0.1",
+          "8.8.8.8"
+        ]
+      },
+      "inbounds": [
+        {
+          "listen": "127.0.0.1",
+          "port": 10808,
+          "protocol": "socks",
+          "settings": {
+            "auth": "noauth",
+            "udp": true
+          },
+          "sniffing": {
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ],
+            "enabled": true,
+            "routeOnly": false
+          },
+          "tag": "socks"
+        },
+        {
+          "listen": "127.0.0.1",
+          "port": 10809,
+          "protocol": "http",
+          "settings": {
+            "allowTransparent": false
+          },
+          "sniffing": {
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ],
+            "enabled": true,
+            "routeOnly": false
+          },
+          "tag": "http"
+        }
+      ],
+      "outbounds": [
+        {
+          "tag": "proxy",
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "158.160.230.132",
+                "port": 443,
+                "users": [
+                  {
+                    "encryption": "none",
+                    "flow": "xtls-rprx-vision",
+                    "id": "53e0285c-136c-4d16-a170-da5d6f346067",
+                    "level": 8,
+                    "security": "auto"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+              "allowInsecure": false,
+              "fingerprint": "safari",
+              "publicKey": "gLbMykabGj1vfPBGquxhpQkLcxcYNJ4QbBswaeuaaF8",
+              "serverName": "www.yandex.ru",
+              "shortId": "2722f449",
+              "show": false,
+              "spiderX": "/"
+            },
+            "tcpSettings": {
+              "header": {
+                "type": "none"
+              }
+            }
+          }
+        },
+        {
+          "protocol": "freedom",
+          "tag": "direct"
+        },
+        {
+          "protocol": "blackhole",
+          "tag": "block"
+        }
+      ],
+      "remarks": "🚀 Мой сервер [Обход Белых Списков]",
+      "routing": {
+        "domainMatcher": "hybrid",
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+          {
+            "outboundTag": "direct",
+            "protocol": [
+              "bittorrent"
+            ],
+            "type": "field"
+          },
+          {
+            "ip": [
+              "158.160.230.132"
+            ],
+            "outboundTag": "direct",
+            "type": "field"
+          },
+          {
+            "ip": [
+              "geoip:private"
+            ],
+            "outboundTag": "direct",
+            "type": "field"
+          },
+          {
+            "domain": [
+              "localhost",
+              "*.local",
+              "*.lan"
+            ],
+            "outboundTag": "direct",
+            "type": "field"
+          },
+          {
+            "network": "udp",
+            "outboundTag": "block",
+            "port": "443",
+            "type": "field"
+          },
+          {
+            "domain": [
+              "geosite:category-block"
+            ],
+            "outboundTag": "block",
+            "type": "field"
+          },
+          {
+            "ip": [
+              "geoip:ru"
+            ],
+            "outboundTag": "direct",
+            "type": "field"
+          },
+          {
+            "domain": [
+              "geosite:category-ru",
+              "regexp:.*\\.ru$",
+              "regexp:.*\\.su$",
+              "geosite:vk",
+              "domain:gosuslugi.ru",
+              "geosite:yandex",
+              "domain:kinopoisk.ru"
+            ],
+            "outboundTag": "direct",
+            "type": "field"
+          },
+          {
+            "network": "tcp,udp",
+            "outboundTag": "proxy",
+            "type": "field"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": 15,
+    "title": "Вариант 15",
+    "config": {
+      "remarks": "🚀 Обход: Мимикрия под Yandex",
+      "dns": {
+        "servers": [
+          "1.1.1.1",
+          "8.8.8.8"
+        ]
+      },
+      "routing": {
+        "domainMatcher": "hybrid",
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+          {
+            "ip": [
+              "158.160.230.132"
+            ],
+            "outboundTag": "direct",
+            "type": "field"
+          },
+          {
+            "network": "udp",
+            "port": "443",
+            "outboundTag": "block",
+            "type": "field"
+          },
+          {
+            "ip": [
+              "geoip:ru"
+            ],
+            "outboundTag": "direct",
+            "type": "field"
+          },
+          {
+            "domain": [
+              "geosite:category-ru",
+              "regexp:.*\\.ru$"
+            ],
+            "outboundTag": "direct",
+            "type": "field"
+          },
+          {
+            "network": "tcp,udp",
+            "outboundTag": "proxy",
+            "type": "field"
+          }
+        ]
+      },
+      "outbounds": [
+        {
+          "tag": "proxy",
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "158.160.230.132",
+                "port": 443,
+                "users": [
+                  {
+                    "id": "53e0285c-136c-4d16-a170-da5d6f346067",
+                    "encryption": "none",
+                    "flow": "xtls-rprx-vision"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+              "fingerprint": "chrome",
+              "serverName": "yandex.ru",
+              "publicKey": "gLbMykabGj1vfPBGquxhpQkLcxcYNJ4QbBswaeuaaF8",
+              "shortId": "2722f449",
+              "spiderX": "/"
+            }
+          }
+        },
+        {
+          "protocol": "freedom",
+          "tag": "direct"
+        },
+        {
+          "protocol": "blackhole",
+          "tag": "block"
+        }
+      ]
+    }
+  },
+  {
+    "id": 16,
+    "title": "Вариант 16",
+    "config": {
+      "remarks": "🚀 Вариант 2: Reality + Фрагментация",
+      "dns": {
+        "servers": [
+          "1.1.1.1",
+          "8.8.8.8"
+        ]
+      },
+      "inbounds": [
+        {
+          "tag": "socks",
+          "port": 10808,
+          "listen": "127.0.0.1",
+          "protocol": "socks",
+          "settings": {
+            "udp": true,
+            "auth": "noauth"
+          },
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ]
+          }
+        },
+        {
+          "tag": "http",
+          "port": 10809,
+          "listen": "127.0.0.1",
+          "protocol": "http",
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ]
+          }
+        }
+      ],
+      "routing": {
+        "domainMatcher": "hybrid",
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "158.160.230.132"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "network": "udp",
+            "port": "443",
+            "outboundTag": "block"
+          },
+          {
+            "type": "field",
+            "ip": [
+              "geoip:private",
+              "geoip:ru"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "geosite:category-ru",
+              "regexp:.*\\.ru$"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "network": "tcp,udp",
+            "outboundTag": "fragment-out"
+          }
+        ]
+      },
+      "outbounds": [
+        {
+          "tag": "fragment-out",
+          "protocol": "fragment",
+          "settings": {
+            "packets": "1-3",
+            "length": "20-30",
+            "interval": "10-20"
+          },
+          "streamSettings": {
+            "sockopt": {
+              "dialerProxy": "proxy"
+            }
+          }
+        },
+        {
+          "tag": "proxy",
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "158.160.230.132",
+                "port": 443,
+                "users": [
+                  {
+                    "id": "53e0285c-136c-4d16-a170-da5d6f346067",
+                    "encryption": "none",
+                    "flow": "xtls-rprx-vision"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+              "fingerprint": "chrome",
+              "serverName": "yandex.ru",
+              "publicKey": "gLbMykabGj1vfPBGquxhpQkLcxcYNJ4QbBswaeuaaF8",
+              "shortId": "2722f449",
+              "spiderX": "/"
+            }
+          }
+        },
+        {
+          "protocol": "freedom",
+          "tag": "direct"
+        },
+        {
+          "protocol": "blackhole",
+          "tag": "block"
+        }
+      ]
+    }
+  },
+  {
+    "id": 17,
+    "title": "Вариант 17: max.ru (Chrome)",
+    "config": {
+      "dns": {
+        "tag": "dns-in",
+        "servers": [
+          {
+            "address": "https://1.1.1.1/dns-query",
+            "timeoutMs": 1000
+          },
+          {
+            "domain": [
+              "geosite:category-direct"
+            ],
+            "address": "udp+local://77.88.8.8",
+            "timeoutMs": 1000
+          }
+        ],
+        "serveStale": true,
+        "disableCache": false,
+        "queryStrategy": "UseIPv4"
+      },
+      "policy": {
+        "levels": {
+          "0": {
+            "connIdle": 30,
+            "handshake": 8,
+            "bufferSize": 8
+          }
+        }
+      },
+      "remarks": "🚀 Тест SNI max.ru · chrome",
+      "routing": {
+        "domainMatcher": "hybrid",
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "158.160.230.132"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "port": "22,25,135-139,465,587,593,2525,3306,3389,5432,6379,11211,1900",
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "geosite:category-block"
+            ],
+            "outboundTag": "block"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "regexp:(.*\\.ru$)",
+              "regexp:(.*\\.su$)",
+              "regexp:(.*\\.рф$)",
+              "geosite:yandex",
+              "geosite:vk",
+              "geosite:mailru"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "ip": [
+              "geoip:ru",
+              "geoip:private"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "network": "tcp,udp",
+            "outboundTag": "proxy"
+          }
+        ]
+      },
+      "inbounds": [
+        {
+          "tag": "socks",
+          "port": 10808,
+          "listen": "127.0.0.1",
+          "protocol": "socks",
+          "settings": {
+            "udp": true,
+            "auth": "noauth"
+          },
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ]
+          }
+        },
+        {
+          "tag": "http",
+          "port": 10809,
+          "listen": "127.0.0.1",
+          "protocol": "http",
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ]
+          }
+        }
+      ],
+      "outbounds": [
+        {
+          "tag": "proxy",
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "158.160.230.132",
+                "port": 443,
+                "users": [
+                  {
+                    "id": "53e0285c-136c-4d16-a170-da5d6f346067",
+                    "encryption": "none",
+                    "flow": "xtls-rprx-vision",
+                    "level": 8,
+                    "security": "auto"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+              "allowInsecure": false,
+              "fingerprint": "chrome",
+              "serverName": "max.ru",
+              "publicKey": "gLbMykabGj1vfPBGquxhpQkLcxcYNJ4QbBswaeuaaF8",
+              "shortId": "2722f449",
+              "spiderX": "/",
+              "show": false
+            },
+            "tcpSettings": {
+              "header": {
+                "type": "none"
+              }
+            }
+          }
+        },
+        {
+          "tag": "direct",
+          "protocol": "freedom"
+        },
+        {
+          "tag": "block",
+          "protocol": "blackhole"
+        }
+      ]
+    }
+  },
+  {
+    "id": 18,
+    "title": "Вариант 18: max.ru (Firefox)",
+    "config": {
+      "dns": {
+        "tag": "dns-in",
+        "servers": [
+          {
+            "address": "https://1.1.1.1/dns-query",
+            "timeoutMs": 1000
+          },
+          {
+            "domain": [
+              "geosite:category-direct"
+            ],
+            "address": "udp+local://77.88.8.8",
+            "timeoutMs": 1000
+          }
+        ],
+        "serveStale": true,
+        "disableCache": false,
+        "queryStrategy": "UseIPv4"
+      },
+      "policy": {
+        "levels": {
+          "0": {
+            "connIdle": 30,
+            "handshake": 8,
+            "bufferSize": 8
+          }
+        }
+      },
+      "remarks": "🚀 Тест SNI max.ru · firefox",
+      "routing": {
+        "domainMatcher": "hybrid",
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "158.160.230.132"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "port": "22,25,135-139,465,587,593,2525,3306,3389,5432,6379,11211,1900",
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "geosite:category-block"
+            ],
+            "outboundTag": "block"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "regexp:(.*\\.ru$)",
+              "regexp:(.*\\.su$)",
+              "regexp:(.*\\.рф$)",
+              "geosite:yandex",
+              "geosite:vk",
+              "geosite:mailru"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "ip": [
+              "geoip:ru",
+              "geoip:private"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "network": "tcp,udp",
+            "outboundTag": "proxy"
+          }
+        ]
+      },
+      "inbounds": [
+        {
+          "tag": "socks",
+          "port": 10808,
+          "listen": "127.0.0.1",
+          "protocol": "socks",
+          "settings": {
+            "udp": true,
+            "auth": "noauth"
+          },
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ]
+          }
+        },
+        {
+          "tag": "http",
+          "port": 10809,
+          "listen": "127.0.0.1",
+          "protocol": "http",
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ]
+          }
+        }
+      ],
+      "outbounds": [
+        {
+          "tag": "proxy",
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "158.160.230.132",
+                "port": 443,
+                "users": [
+                  {
+                    "id": "53e0285c-136c-4d16-a170-da5d6f346067",
+                    "encryption": "none",
+                    "flow": "xtls-rprx-vision",
+                    "level": 8,
+                    "security": "auto"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+              "allowInsecure": false,
+              "fingerprint": "firefox",
+              "serverName": "max.ru",
+              "publicKey": "gLbMykabGj1vfPBGquxhpQkLcxcYNJ4QbBswaeuaaF8",
+              "shortId": "2722f449",
+              "spiderX": "/",
+              "show": false
+            },
+            "tcpSettings": {
+              "header": {
+                "type": "none"
+              }
+            }
+          }
+        },
+        {
+          "tag": "direct",
+          "protocol": "freedom"
+        },
+        {
+          "tag": "block",
+          "protocol": "blackhole"
+        }
+      ]
+    }
+  },
+  {
+    "id": 19,
+    "title": "Вариант 19: max.ru (Safari)",
+    "config": {
+      "dns": {
+        "tag": "dns-in",
+        "servers": [
+          {
+            "address": "https://1.1.1.1/dns-query",
+            "timeoutMs": 1000
+          },
+          {
+            "domain": [
+              "geosite:category-direct"
+            ],
+            "address": "udp+local://77.88.8.8",
+            "timeoutMs": 1000
+          }
+        ],
+        "serveStale": true,
+        "disableCache": false,
+        "queryStrategy": "UseIPv4"
+      },
+      "policy": {
+        "levels": {
+          "0": {
+            "connIdle": 30,
+            "handshake": 8,
+            "bufferSize": 8
+          }
+        }
+      },
+      "remarks": "🚀 Тест SNI max.ru · safari",
+      "routing": {
+        "domainMatcher": "hybrid",
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "158.160.230.132"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "port": "22,25,135-139,465,587,593,2525,3306,3389,5432,6379,11211,1900",
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "geosite:category-block"
+            ],
+            "outboundTag": "block"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "regexp:(.*\\.ru$)",
+              "regexp:(.*\\.su$)",
+              "regexp:(.*\\.рф$)",
+              "geosite:yandex",
+              "geosite:vk",
+              "geosite:mailru"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "ip": [
+              "geoip:ru",
+              "geoip:private"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "network": "tcp,udp",
+            "outboundTag": "proxy"
+          }
+        ]
+      },
+      "inbounds": [
+        {
+          "tag": "socks",
+          "port": 10808,
+          "listen": "127.0.0.1",
+          "protocol": "socks",
+          "settings": {
+            "udp": true,
+            "auth": "noauth"
+          },
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ]
+          }
+        },
+        {
+          "tag": "http",
+          "port": 10809,
+          "listen": "127.0.0.1",
+          "protocol": "http",
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ]
+          }
+        }
+      ],
+      "outbounds": [
+        {
+          "tag": "proxy",
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "158.160.230.132",
+                "port": 443,
+                "users": [
+                  {
+                    "id": "53e0285c-136c-4d16-a170-da5d6f346067",
+                    "encryption": "none",
+                    "flow": "xtls-rprx-vision",
+                    "level": 8,
+                    "security": "auto"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+              "allowInsecure": false,
+              "fingerprint": "safari",
+              "serverName": "max.ru",
+              "publicKey": "gLbMykabGj1vfPBGquxhpQkLcxcYNJ4QbBswaeuaaF8",
+              "shortId": "2722f449",
+              "spiderX": "/",
+              "show": false
+            },
+            "tcpSettings": {
+              "header": {
+                "type": "none"
+              }
+            }
+          }
+        },
+        {
+          "tag": "direct",
+          "protocol": "freedom"
+        },
+        {
+          "tag": "block",
+          "protocol": "blackhole"
+        }
+      ]
+    }
+  },
+  {
+    "id": 20,
+    "title": "Вариант 20: max.ru (Edge)",
+    "config": {
+      "dns": {
+        "tag": "dns-in",
+        "servers": [
+          {
+            "address": "https://1.1.1.1/dns-query",
+            "timeoutMs": 1000
+          },
+          {
+            "domain": [
+              "geosite:category-direct"
+            ],
+            "address": "udp+local://77.88.8.8",
+            "timeoutMs": 1000
+          }
+        ],
+        "serveStale": true,
+        "disableCache": false,
+        "queryStrategy": "UseIPv4"
+      },
+      "policy": {
+        "levels": {
+          "0": {
+            "connIdle": 30,
+            "handshake": 8,
+            "bufferSize": 8
+          }
+        }
+      },
+      "remarks": "🚀 Тест SNI max.ru · edge",
+      "routing": {
+        "domainMatcher": "hybrid",
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "158.160.230.132"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "port": "22,25,135-139,465,587,593,2525,3306,3389,5432,6379,11211,1900",
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "geosite:category-block"
+            ],
+            "outboundTag": "block"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "regexp:(.*\\.ru$)",
+              "regexp:(.*\\.su$)",
+              "regexp:(.*\\.рф$)",
+              "geosite:yandex",
+              "geosite:vk",
+              "geosite:mailru"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "ip": [
+              "geoip:ru",
+              "geoip:private"
+            ],
+            "outboundTag": "direct"
+          },
+          {
+            "type": "field",
+            "network": "tcp,udp",
+            "outboundTag": "proxy"
+          }
+        ]
+      },
+      "inbounds": [
+        {
+          "tag": "socks",
+          "port": 10808,
+          "listen": "127.0.0.1",
+          "protocol": "socks",
+          "settings": {
+            "udp": true,
+            "auth": "noauth"
+          },
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ]
+          }
+        },
+        {
+          "tag": "http",
+          "port": 10809,
+          "listen": "127.0.0.1",
+          "protocol": "http",
+          "sniffing": {
+            "enabled": true,
+            "destOverride": [
+              "http",
+              "tls",
+              "quic"
+            ]
+          }
+        }
+      ],
+      "outbounds": [
+        {
+          "tag": "proxy",
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "158.160.230.132",
+                "port": 443,
+                "users": [
+                  {
+                    "id": "53e0285c-136c-4d16-a170-da5d6f346067",
+                    "encryption": "none",
+                    "flow": "xtls-rprx-vision",
+                    "level": 8,
+                    "security": "auto"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+              "allowInsecure": false,
+              "fingerprint": "edge",
+              "serverName": "max.ru",
+              "publicKey": "gLbMykabGj1vfPBGquxhpQkLcxcYNJ4QbBswaeuaaF8",
+              "shortId": "2722f449",
+              "spiderX": "/",
+              "show": false
+            },
+            "tcpSettings": {
+              "header": {
+                "type": "none"
+              }
+            }
+          }
+        },
+        {
+          "tag": "direct",
+          "protocol": "freedom"
+        },
+        {
+          "tag": "block",
+          "protocol": "blackhole"
+        }
+      ]
+    }
+  }
+]

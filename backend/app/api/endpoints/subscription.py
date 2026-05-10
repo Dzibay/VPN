@@ -23,6 +23,12 @@ Stash / Clash Verge / v2rayNG. Подробнее: ``app.domain.subscription.use
 - GET /sub/{subscription_token}/open/{client} — 302 на ту же страницу на origin SPA (если API и сайт разъехались).
 - GET /sub/{subscription_token}/open/{client}/data — JSON для страницы открытия (Vue /sub/…/open/…: карточка клиента, диплинк, магазины); публичное имя и магазины также в GET /api/public/client-apps/{code}.
 - Неизвестный client → 302 в кабинет.
+
+Тестовые конфигурации (файл ``backend/configurations/test_configurations.json``):
+
+- GET/HEAD ``/sub/test-configurations`` — как обычная подписка: Base64 со строками ``vless://`` или YAML при User-Agent с ``clash``.
+
+Каждая запись в JSON должна содержать клиентский outbound VLESS+REALITY (TCP); берётся узел с ``tag: proxy`` или первый не-служебный outbound.
 """
 
 from __future__ import annotations
@@ -44,8 +50,17 @@ from app.domain.services.subscription_service import (
     subscription_client_metadata_headers,
     subscription_maybe_register_device,
     subscription_payload_rows_for_resolved_user,
+    test_subscription_client_metadata_headers,
+)
+from app.domain.services.test_configurations_service import (
+    default_test_configurations_json_path,
+    load_test_configurations,
 )
 from app.domain.subscription.build import build_clash_subscription_yaml
+from app.domain.subscription.test_config_share import (
+    build_test_configs_clash_yaml,
+    build_test_subscription_payload,
+)
 from app.domain.subscription.links import (
     normalize_subscription_store_platform,
     subscription_cabinet_redirect_url,
@@ -126,6 +141,57 @@ async def subscription_geoip_dat() -> Response:
 async def subscription_geosite_dat() -> Response:
     body = _read_local_geo_dat_or_503(_LOCAL_GEOSITE_PATH, "geosite.dat")
     return _geo_response(body, "geosite.dat")
+
+
+def _load_test_configuration_items():
+    try:
+        return load_test_configurations(default_test_configurations_json_path())
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.head(
+    "/sub/test-configurations",
+    summary="HEAD тестовой подписки: без тела; те же заголовки метаданных, что у /sub/{token}",
+    response_class=Response,
+)
+async def subscription_test_configs_head(request: Request) -> Response:
+    _load_test_configuration_items()
+    want_yaml = _user_agent_requests_clash_yaml(request)
+    headers = test_subscription_client_metadata_headers(request=request)
+    media = (
+        "text/yaml; charset=utf-8"
+        if want_yaml
+        else "text/plain; charset=utf-8"
+    )
+    return Response(content="", media_type=media, headers=headers)
+
+
+@router.get(
+    "/sub/test-configurations",
+    summary=(
+        "Тестовая подписка из configurations/test_configurations.json: "
+        "text/plain Base64 (строки vless://), либо YAML при User-Agent с подстрокой clash"
+    ),
+    response_class=Response,
+)
+async def subscription_test_configs_get(request: Request) -> Response:
+    items = _load_test_configuration_items()
+    want_yaml = _user_agent_requests_clash_yaml(request)
+    headers = test_subscription_client_metadata_headers(request=request)
+    if want_yaml:
+        yaml_body = build_test_configs_clash_yaml(items)
+        return Response(
+            content=yaml_body,
+            media_type="text/yaml; charset=utf-8",
+            headers=headers,
+        )
+    payload = build_test_subscription_payload(items)
+    return Response(
+        content=payload.subscription_base64,
+        media_type="text/plain; charset=utf-8",
+        headers=headers,
+    )
 
 
 @router.get(

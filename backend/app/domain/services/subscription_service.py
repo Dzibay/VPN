@@ -154,6 +154,23 @@ async def subscription_maybe_register_device(
     )
 
 
+def test_subscription_client_metadata_headers(*, request: Request | None = None) -> dict[str, str]:
+    """Заголовки как у обычной подписки /sub, для статической выдачи тестовых узлов."""
+    ua = ((request.headers.get("user-agent") or "") if request is not None else "").lower()
+    routing_header = _happ_routing_header_value() if "happ" in ua else ""
+    announce_raw = "Тестовые конфигурации"
+    return {
+        "subscription-userinfo": "",
+        "profile-update-interval": "",
+        "profile-title": f"{BRAND_NAME_ASCII} test",
+        "support-url": "",
+        "profile-web-page-url": "",
+        "announce": subscription_announce_header_value(announce_raw),
+        "announce-url": "",
+        "routing": routing_header,
+    }
+
+
 async def subscription_client_metadata_headers(
     session: AsyncSession,
     user: User,
