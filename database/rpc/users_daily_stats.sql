@@ -1,4 +1,5 @@
 -- Дневная сводка по календарным дням UTC (registered_at, traffic_date, subscription_devices).
+drop function if exists rpc_users_daily_stats;
 
 CREATE OR REPLACE FUNCTION rpc_users_daily_stats ()
 RETURNS TABLE (
@@ -6,7 +7,9 @@ RETURNS TABLE (
     users_count bigint,
     users_with_traffic_count bigint,
     active_users_count bigint,
-    subscription_devices_users_count bigint
+    subscription_devices_users_count bigint,
+    users_cumulative_traffic_over_100_mbit_count bigint,
+    persistent_traffic_users_count bigint
 )
 LANGUAGE sql
 STABLE
@@ -91,6 +94,38 @@ active_by_day AS (
     FROM with_prev
     GROUP BY cal_day
 ),
+-- Порог объёма: 100 Мбит (десятичных, 100×10⁶ бит) → байты.
+high_traffic_users_by_day AS (
+    SELECT
+        cal_day,
+        COUNT(*) FILTER (
+            WHERE total > (100::bigint * 1000000 / 8)
+        )::bigint AS users_cumulative_traffic_over_100_mbit_count
+    FROM user_total_by_day
+    GROUP BY cal_day
+),
+user_active_on_day AS (
+    SELECT
+        cal_day,
+        user_id
+    FROM with_prev
+    WHERE total > COALESCE(prev_total, 0)
+),
+first_user_active_day AS (
+    SELECT user_id, MIN(cal_day) AS first_cal
+    FROM user_active_on_day
+    GROUP BY user_id
+),
+persistent_traffic_users_by_day AS (
+    SELECT
+        u.cal_day,
+        COUNT(*)::bigint AS persistent_traffic_users_count
+    FROM user_active_on_day u
+    INNER JOIN first_user_active_day f
+        ON f.user_id = u.user_id
+       AND u.cal_day > f.first_cal
+    GROUP BY u.cal_day
+),
 first_dev AS (
     SELECT user_id, MIN(created_at) AS first_at
     FROM subscription_devices
@@ -109,6 +144,10 @@ dated_keys AS (
     SELECT cal_day FROM active_by_day
     UNION
     SELECT sd FROM dev WHERE sd IS NOT NULL
+    UNION
+    SELECT cal_day FROM high_traffic_users_by_day
+    UNION
+    SELECT cal_day FROM persistent_traffic_users_by_day
 ),
 merged AS (
     SELECT
@@ -116,11 +155,17 @@ merged AS (
         COALESCE(r.users_count, 0)::bigint AS users_count,
         COALESCE(r.users_with_traffic_count, 0)::bigint AS users_with_traffic_count,
         COALESCE(a.active_users_count, 0)::bigint AS active_users_count,
-        COALESCE(d.cnt, 0)::bigint AS subscription_devices_users_count
+        COALESCE(d.cnt, 0)::bigint AS subscription_devices_users_count,
+        COALESCE(h.users_cumulative_traffic_over_100_mbit_count, 0)::bigint
+            AS users_cumulative_traffic_over_100_mbit_count,
+        COALESCE(p.persistent_traffic_users_count, 0)::bigint
+            AS persistent_traffic_users_count
     FROM dated_keys dk
     LEFT JOIN reg r ON r.sd = dk.dk
     LEFT JOIN active_by_day a ON a.cal_day = dk.dk
     LEFT JOIN dev d ON d.sd = dk.dk
+    LEFT JOIN high_traffic_users_by_day h ON h.cal_day = dk.dk
+    LEFT JOIN persistent_traffic_users_by_day p ON p.cal_day = dk.dk
 ),
 undated AS (
     SELECT
@@ -128,7 +173,9 @@ undated AS (
         r.users_count,
         r.users_with_traffic_count,
         0::bigint AS active_users_count,
-        0::bigint AS subscription_devices_users_count
+        0::bigint AS subscription_devices_users_count,
+        0::bigint AS users_cumulative_traffic_over_100_mbit_count,
+        0::bigint AS persistent_traffic_users_count
     FROM reg r
     WHERE r.sd IS NULL
 )
@@ -137,7 +184,9 @@ SELECT
     u.users_count,
     u.users_with_traffic_count,
     u.active_users_count,
-    u.subscription_devices_users_count
+    u.subscription_devices_users_count,
+    u.users_cumulative_traffic_over_100_mbit_count,
+    u.persistent_traffic_users_count
 FROM (
     SELECT *
     FROM merged

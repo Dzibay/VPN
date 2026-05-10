@@ -4,7 +4,7 @@ import { fetchJson } from '../api/client.js'
 
 /**
  * @typedef {'day' | 'hour'} StatsGranularity
- * @typedef {{ stats_date: string | null; period_start_utc?: string | null; users_count: number; users_with_traffic_count?: number; active_users_count?: number; subscription_devices_users_count?: number }} DailyStatsRow
+ * @typedef {{ stats_date: string | null; period_start_utc?: string | null; users_count: number; users_with_traffic_count?: number; active_users_count?: number; subscription_devices_users_count?: number; users_cumulative_traffic_over_100_mbit_count?: number; persistent_traffic_users_count?: number }} DailyStatsRow
  */
 
 /** Полночь текущего календарного дня UTC (YYYY-MM-DD). */
@@ -150,7 +150,7 @@ function utcHourFloorMs(ms) {
 
 /**
  * Достраивает календарные дни UTC между первым и последним бакетом.
- * @param {Array<{ iso: string; periodStart: string | null; dayUsers: number; dayTraffic: number; dayActive: number; dayDevices: number }>} sortedRows
+ * @param {Array<{ iso: string; periodStart: string | null; dayUsers: number; dayTraffic: number; dayActive: number; dayDevices: number; dayOver100Mbit: number; dayPersistentTraffic: number }>} sortedRows
  */
 function densifyUtcDays(sortedRows) {
   if (!sortedRows.length) return sortedRows
@@ -174,6 +174,8 @@ function densifyUtcDays(sortedRows) {
         dayTraffic: 0,
         dayActive: 0,
         dayDevices: 0,
+        dayOver100Mbit: 0,
+        dayPersistentTraffic: 0,
       },
     )
   }
@@ -238,6 +240,8 @@ export function useUsersDailyStatsChart() {
         dayTraffic: Number(r.users_with_traffic_count) || 0,
         dayActive: Number(r.active_users_count) || 0,
         dayDevices: Number(r.subscription_devices_users_count) || 0,
+        dayOver100Mbit: Number(r.users_cumulative_traffic_over_100_mbit_count) || 0,
+        dayPersistentTraffic: Number(r.persistent_traffic_users_count) || 0,
       }))
       .filter((row) => row.iso != null)
       .sort((a, b) => String(a.iso).localeCompare(String(b.iso)))
@@ -255,6 +259,8 @@ export function useUsersDailyStatsChart() {
         dayTraffic: row.dayTraffic,
         dayActive: row.dayActive,
         dayDevices: row.dayDevices,
+        dayOver100Mbit: 0,
+        dayPersistentTraffic: 0,
         cumDatedUsers: row.dayUsers,
         cumDatedTraffic: row.dayTraffic,
         cumDatedDevices: row.dayDevices,
@@ -278,6 +284,8 @@ export function useUsersDailyStatsChart() {
         dayTraffic: row.dayTraffic,
         dayActive: row.dayActive,
         dayDevices: row.dayDevices,
+        dayOver100Mbit: row.dayOver100Mbit,
+        dayPersistentTraffic: row.dayPersistentTraffic,
         cumDatedUsers,
         cumDatedTraffic,
         cumDatedDevices,
@@ -373,7 +381,7 @@ export function useUsersDailyStatsChart() {
   const chartAriaLabel = computed(() =>
     granularity.value === 'hour'
       ? `По часам за ${formatMskCalendarDayShort(hourDayMsk.value)} (МСК): накопление пользователей и первых подключений устройств`
-      : 'По дням UTC: накопление регистраций и клиентов с устройствами, активные по трафику',
+      : 'По дням UTC: накопление регистраций и клиентов с устройствами, активные по трафику, >100 Мбит накопленного объёма, возвращающиеся активные',
   )
 
   function fmtRu(n) {
@@ -397,6 +405,8 @@ export function useUsersDailyStatsChart() {
 
   const activeSkyRgb = [56, 189, 248]
   const deviceVioletRgb = [167, 139, 250]
+  const over100EmeraldRgb = [52, 211, 153]
+  const persistentPinkRgb = [244, 114, 182]
 
   const registrationChartDatasets = computed(() => {
     const pts = chartPoints.value
@@ -428,6 +438,18 @@ export function useUsersDailyStatsChart() {
         label: 'Активные · за день',
         data: pts.map((p) => p.dayActive),
         rgb: activeSkyRgb,
+        filled: false,
+      },
+      {
+        label: 'Накоп. объём > 100 Мбит · на день',
+        data: pts.map((p) => p.dayOver100Mbit),
+        rgb: over100EmeraldRgb,
+        filled: false,
+      },
+      {
+        label: 'Возвращающиеся активные · за день',
+        data: pts.map((p) => p.dayPersistentTraffic),
+        rgb: persistentPinkRgb,
         filled: false,
       },
     ]
@@ -502,12 +524,33 @@ export function useUsersDailyStatsChart() {
         `Прирост с предыдущего ${stepWord}: ${fmtDeltaRu(dDev)}`,
       ]
     }
-    const prevA = i > 0 ? pts[i - 1].dayActive : 0
-    const dA = p.dayActive - prevA
-    return [
-      `Активных за день: ${fmtRu(p.dayActive)}`,
-      `К предыдущему дню: ${fmtDeltaRu(dA)}`,
-    ]
+    if (ctx.datasetIndex === 3) {
+      const prevA = i > 0 ? pts[i - 1].dayActive : 0
+      const dA = p.dayActive - prevA
+      return [
+        `Активных за день: ${fmtRu(p.dayActive)}`,
+        `К предыдущему дню: ${fmtDeltaRu(dA)}`,
+      ]
+    }
+    if (ctx.datasetIndex === 4) {
+      const prevH = i > 0 ? pts[i - 1].dayOver100Mbit : 0
+      const dH = p.dayOver100Mbit - prevH
+      return [
+        `С накоп. трафиком > 100 Мбит (объём данных): ${fmtRu(p.dayOver100Mbit)}`,
+        `К предыдущему дню: ${fmtDeltaRu(dH)}`,
+      ]
+    }
+    if (ctx.datasetIndex === 5) {
+      const prevP = i > 0 ? pts[i - 1].dayPersistentTraffic : 0
+      const dP = p.dayPersistentTraffic - prevP
+      return [
+        `Возвращающиеся активные (рост трафика не в первый раз): ${fmtRu(
+          p.dayPersistentTraffic,
+        )}`,
+        `К предыдущему дню: ${fmtDeltaRu(dP)}`,
+      ]
+    }
+    return []
   }
 
   async function load() {

@@ -62,6 +62,24 @@ class UserStatsByDateRow(BaseModel):
             "строго до конца часа по календарю Москвы."
         ),
     )
+    users_cumulative_traffic_over_100_mbit_count: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Только granularity=day: число пользователей, у которых на конец этого UTC-дня суммарный "
+            "накопленный трафик (последний снимок на узел, как в метрике active_users_count) "
+            "строго больше 100 Мбит объёма (100×10⁶ бит → байты). При hour — 0."
+        ),
+    )
+    persistent_traffic_users_count: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Только granularity=day: пользователи с ростом суммарного трафика в этот UTC-день "
+            "(как active_users_count), для которых это не первый такой «активный» день — "
+            "раньше уже был день с ростом. При hour — 0."
+        ),
+    )
 
 
 class UsersDailyStatsResponse(BaseModel):
