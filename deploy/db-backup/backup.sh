@@ -23,7 +23,7 @@ trap cleanup EXIT
 RCLONE_CONFIG="${RCLONE_CONFIG:-/root/.config/rclone/rclone.conf}"
 mkdir -p "$(dirname "$RCLONE_CONFIG")"
 rm -f "$RCLONE_CONFIG"
-OBSCURED="$(printf '%s' "${YANDEX_DISK_PASSWORD}" | rclone obscure --stdin-no-entities -)"
+OBSCURED="$(printf '%s' "${YANDEX_DISK_PASSWORD}" | rclone obscure -)"
 rclone config create ydisk webdav url https://webdav.yandex.ru vendor other \
   user "${YANDEX_DISK_USER}" pass "${OBSCURED}"
 chmod 600 "$RCLONE_CONFIG"
