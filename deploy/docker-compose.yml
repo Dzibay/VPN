@@ -4,6 +4,13 @@
 #   mkdir -p secrets/ssh  # положите ключ для PROVISION_SSH_KEY_PATH
 #   docker compose up -d --build
 #
+# Ежедневный бэкап БД на Яндекс Диск через WebDAV (профиль backup, см. сервис db-backup):
+#   docker compose --profile backup up -d --build db-backup
+# В .env: логин Яндекса и пароль приложения (https://id.yandex.ru/security → пароли приложений → для WebDAV/Диска).
+#   YANDEX_DISK_USER=user@yandex.ru
+#   YANDEX_DISK_PASSWORD=...
+#   YANDEX_DISK_FOLDER=vpn-db-backups   # опционально, папка в корне Диска
+#
 # Метрики: отредактируйте prometheus/targets/node_exporter.json (targets как в servers.prometheus_instance).
 
 name: vpn
@@ -25,6 +32,29 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
+    networks: [internal]
+
+  # Ежедневный pg_dump → gzip → Яндекс Диск (WebDAV). Не поднимается без --profile backup.
+  db-backup:
+    profiles: ["backup"]
+    build:
+      context: ./db-backup
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-vpn}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-vpn}
+      YANDEX_DISK_USER: ${YANDEX_DISK_USER:-}
+      YANDEX_DISK_PASSWORD: ${YANDEX_DISK_PASSWORD:-}
+      YANDEX_DISK_FOLDER: ${YANDEX_DISK_FOLDER:-vpn-db-backups}
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks: [internal]
 
   redis:
