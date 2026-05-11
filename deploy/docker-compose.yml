@@ -1,6 +1,7 @@
 # Продакшен-стек: Caddy (TLS) → Nginx (SPA + /api) → FastAPI; Prometheus; Postgres; Redis; RQ worker.
 # Запуск из каталога deploy/:
 #   cp env.production.example .env   # JWT, POSTGRES_PASSWORD, SITE_ADDRESS, TELEGRAM_BOT_USERNAME
+#   Для метрик в админке задайте в .env PROMETHEUS_SD_TOKEN (одна строка) — API и Prometheus подхватят его сами.
 #   mkdir -p secrets/ssh  # положите ключ для PROVISION_SSH_KEY_PATH
 #   docker compose up -d --build
 #
@@ -197,16 +198,19 @@ services:
   prometheus:
     image: prom/prometheus:v2.53.3
     restart: unless-stopped
+    environment:
+      PROMETHEUS_SD_TOKEN: ${PROMETHEUS_SD_TOKEN:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    entrypoint: ["/bin/sh", "/etc/prometheus/docker-entrypoint.sh"]
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=15d
       - --web.enable-lifecycle
     volumes:
+      - ./prometheus/docker-entrypoint.sh:/etc/prometheus/docker-entrypoint.sh:ro
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./prometheus/sd_bearer.txt:/etc/prometheus/sd_bearer.txt:ro
       - ./prometheus/targets:/etc/prometheus/targets:ro
       - prometheus_data:/prometheus
     networks: [internal]
