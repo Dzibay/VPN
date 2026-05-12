@@ -10,7 +10,7 @@ BRAND_NAME = "Подорожник VPN"
 
 # ASCII-вариант для HTTP-заголовков подписки (`profile-title` и т.п.):
 # часть старых клиентов читает заголовок как ASCII и ломается на UTF-8.
-BRAND_NAME_ASCII = "Podorozhnik VPN"
+BRAND_NAME_ASCII = "🍃Подорожник VPN"
 
 # Длина пробного периода подписки после регистрации (календарных дней).
 TRIAL_DAYS_AFTER_REGISTRATION = 14
