@@ -16,7 +16,7 @@ class ReferralLink(Base):
     owner_kind: Mapped[str] = mapped_column(String(64), nullable=False)
     owner_user_id: Mapped[int | None] = mapped_column(
         BigInteger,
-        ForeignKey("users.id", ondelete="SET NULL"),
+        ForeignKey("users.id", ondelete="CASCADE"),
         nullable=True,
     )
     clicks_count: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")

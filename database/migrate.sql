@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS referral_links (
     id BIGSERIAL PRIMARY KEY,
     token TEXT NOT NULL,
     owner_kind TEXT NOT NULL,
-    owner_user_id BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    owner_user_id BIGINT REFERENCES users (id) ON DELETE CASCADE,
     clicks_count BIGINT NOT NULL DEFAULT 0 CHECK (clicks_count >= 0),
     registrations_count BIGINT NOT NULL DEFAULT 0 CHECK (registrations_count >= 0),
     payments_count BIGINT NOT NULL DEFAULT 0 CHECK (payments_count >= 0),
@@ -255,3 +255,9 @@ ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_paid_months_check;
 ALTER TABLE tasks ADD CONSTRAINT tasks_paid_months_check CHECK (
     paid_months IS NULL OR paid_months >= 1
 );
+
+-- referral_links: при удалении пользователя удалять его персональную ссылку (owner_kind=user),
+-- иначе ON DELETE SET NULL даёт owner_user_id=NULL и ломает referral_links_owner_consistency
+ALTER TABLE referral_links DROP CONSTRAINT IF EXISTS referral_links_owner_user_id_fkey;
+ALTER TABLE referral_links ADD CONSTRAINT referral_links_owner_user_id_fkey
+    FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE CASCADE;
