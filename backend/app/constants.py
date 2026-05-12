@@ -17,9 +17,16 @@ JWT_TOKEN_TTL_DAYS = 14
 
 # --- Tribute: публичные ссылки на оплату (не секреты) ---
 # Заполните здесь или задайте TRIBUTE_* в окружении — env перекрывает дефолты (см. ``app.config.Settings``).
-TRIBUTE_TARIFF_WEB_LINK_1M: str = ""
+TRIBUTE_TARIFF_WEB_LINK_1M: str = "https://web.tribute.tg/p/vRX"
 TRIBUTE_TARIFF_WEB_LINK_3M: str = ""
 TRIBUTE_TARIFF_WEB_LINK_6M: str = ""
 TRIBUTE_TARIFF_WEB_LINK_1Y: str = ""
-TRIBUTE_RECURRING_PAY_TG_LINK: str = ""
-TRIBUTE_RECURRING_PAY_WEB_LINK: str = ""
+
+# Точные product_name из webhook new_digital_product (после .strip()) → срок; пустая строка — не сопоставлять.
+TRIBUTE_DIGITAL_PRODUCT_NAME_1M: str = "Подорожник VPN | 1 месяц"
+TRIBUTE_DIGITAL_PRODUCT_NAME_3M: str = ""
+TRIBUTE_DIGITAL_PRODUCT_NAME_6M: str = ""
+TRIBUTE_DIGITAL_PRODUCT_NAME_1Y: str = ""
+
+TRIBUTE_RECURRING_PAY_TG_LINK: str = "https://t.me/tribute/app?startapp=sTWv"
+TRIBUTE_RECURRING_PAY_WEB_LINK: str = "https://web.tribute.tg/s/TWv"

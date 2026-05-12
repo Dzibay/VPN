@@ -1,21 +1,12 @@
-"""Tribute: webhook подписки и разовой цифровой покупки, плюс публичные ссылки (тарифы + рекуррент).
+"""Tribute: webhook подписки и разовой цифровой покупки, публичные ссылки на оплату.
 
-Подписка (``new_subscription`` / ``renewed_subscription``): payload с ``subscription_id``,
-``period``, ``price``, ``expires_at``, ``telegram_user_id`` — см. OpenAPI ``tribute.tg/api/v1``.
+Подписка: ``new_subscription`` / ``renewed_subscription`` — ``period``, ``price``, ``expires_at``, ``telegram_user_id``.
 
-Разовая покупка (``new_digital_product``): ``purchase_id``, ``product_id``, ``amount``, ``telegram_user_id``;
-срок продления — из ``months`` (целое 1…120) и/или ``period`` (как у подписки: monthly, quarterly, …),
-либо из дополнительных полей payload (см. ``_months_from_digital_product_payload``). См. OpenAPI
-``NewDigitalProductPayload``; неизвестные поля принимаются через ``extra="allow"``.
+Разовая покупка: ``new_digital_product`` — срок из ``months`` / ``period`` в payload, иначе точное совпадение
+``product_name`` с ``app.constants.TRIBUTE_DIGITAL_PRODUCT_NAME_*``. HMAC: заголовок ``trbt-signature``, ключ
+``TRIBUTE_API_KEY``.
 
-``cancelled_subscription`` — только лог. ``digital_product_refunded`` — только лог (откат
-подписки в этом сервисе не реализован).
-
-Все события с телом JSON защищены HMAC-SHA256 (заголовок ``trbt-signature``, ключ ``TRIBUTE_API_KEY``).
-
-Входящее тело каждого webhook пишется в лог (уровень INFO, логгер ``app.tribute_service``):
-полный JSON как пришёл от Tribute (реальный ``POST /tribute/webhook``) или объект ``{name, payload}``
-для ``POST …/webhook-test``.
+``cancelled_subscription`` и ``digital_product_refunded`` — без изменений в БД (заглушки).
 """
 
 from __future__ import annotations
@@ -32,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import constants
 from app.config import Settings
 from app.core.exceptions import BadRequestError, ServiceUnavailableError, UnauthorizedError
 from app.core.time import utc_today
@@ -89,15 +81,6 @@ def _amount_from_minor_units(amount_minor: int) -> Decimal:
     return (Decimal(int(amount_minor)) * Decimal("0.01")).quantize(Decimal("0.01"))
 
 
-def _log_tribute_webhook_incoming(body: Any) -> None:
-    """Печатает в лог полную структуру тела webhook (как пришло от Tribute / тест-клиента)."""
-    try:
-        text = json.dumps(body, ensure_ascii=False, indent=2, sort_keys=True, default=str)
-    except (TypeError, ValueError):
-        text = repr(body)
-    log.info("Tribute webhook — полное тело:\n%s", text)
-
-
 def _period_to_months(period: str) -> int | None:
     return _PERIOD_TO_MONTHS.get((period or "").strip().lower())
 
@@ -124,8 +107,6 @@ class _TributeWebhookEnvelope(BaseModel):
 
 
 class _SubscriptionPaidPayload(BaseModel):
-    """Объединённая схема для ``new_subscription`` и ``renewed_subscription``."""
-
     model_config = ConfigDict(extra="allow")
 
     subscription_id: int
@@ -146,8 +127,6 @@ class _SubscriptionCancelledPayload(BaseModel):
 
 
 class _DigitalProductPaidPayload(BaseModel):
-    """Схема ``new_digital_product`` (см. OpenAPI ``NewDigitalProductPayload`` + опциональный срок)."""
-
     model_config = ConfigDict(extra="allow")
 
     product_id: int
@@ -158,20 +137,11 @@ class _DigitalProductPaidPayload(BaseModel):
     product_name: str | None = None
     purchase_created_at: datetime | None = None
     currency: str | None = None
-    months: int | None = Field(
-        default=None,
-        ge=1,
-        le=120,
-        description="Срок оплаты в месяцах, если Tribute передаёт в webhook.",
-    )
-    period: str | None = Field(
-        default=None,
-        description="Период как у подписки (monthly, quarterly, …), если передаётся.",
-    )
+    months: int | None = Field(default=None, ge=1, le=120)
+    period: str | None = None
 
 
-def _months_from_digital_product_payload(p: _DigitalProductPaidPayload) -> int | None:
-    """Срок в месяцах из тела ``new_digital_product`` (явные поля и распространённые доп. ключи)."""
+def _resolve_new_digital_product_months(p: _DigitalProductPaidPayload) -> int | None:
     if p.months is not None:
         m = int(p.months)
         if 1 <= m <= 120:
@@ -180,20 +150,18 @@ def _months_from_digital_product_payload(p: _DigitalProductPaidPayload) -> int |
         mapped = _period_to_months(p.period)
         if mapped is not None:
             return mapped
-    extra = p.model_extra or {}
-    for key in ("paid_months", "subscription_months", "duration_months", "months_paid", "period_months"):
-        v = extra.get(key)
-        if isinstance(v, int) and 1 <= v <= 120:
-            return int(v)
-        if isinstance(v, str) and v.strip().isdigit():
-            n = int(v.strip())
-            if 1 <= n <= 120:
-                return n
-    pe = extra.get("period")
-    if isinstance(pe, str):
-        mapped = _period_to_months(pe)
-        if mapped is not None:
-            return mapped
+    pn = (p.product_name or "").strip()
+    if not pn:
+        return None
+    for label, months in (
+        (constants.TRIBUTE_DIGITAL_PRODUCT_NAME_1M, 1),
+        (constants.TRIBUTE_DIGITAL_PRODUCT_NAME_3M, 3),
+        (constants.TRIBUTE_DIGITAL_PRODUCT_NAME_6M, 6),
+        (constants.TRIBUTE_DIGITAL_PRODUCT_NAME_1Y, 12),
+    ):
+        cfg = (label or "").strip()
+        if cfg and cfg == pn:
+            return months
     return None
 
 
@@ -208,7 +176,6 @@ async def _commit_tribute_paid_months(
     payment_kind: Literal["subscription", "one_time"],
     event_name: str,
 ) -> TributeWebhookAck:
-    """Идемпотентная запись платежа Tribute и продление ``users.subscription_until``."""
     dup_stmt = (
         select(Payment.id)
         .where(Payment.provider == "tribute", Payment.external_id == external_id)
@@ -218,14 +185,6 @@ async def _commit_tribute_paid_months(
         return TributeWebhookAck(ok=True, event=event_name, duplicate=True)
 
     user = await require_user_by_telegram_id(session, int(telegram_user_id))
-
-    dup_stmt2 = (
-        select(Payment.id)
-        .where(Payment.provider == "tribute", Payment.external_id == external_id)
-        .limit(1)
-    )
-    if (await session.scalars(dup_stmt2)).first() is not None:
-        return TributeWebhookAck(ok=True, event=event_name, duplicate=True)
 
     amount_decimal = _amount_from_minor_units(int(amount_minor))
     paid_days = int(months) * _DAYS_PER_MONTH
@@ -286,16 +245,11 @@ async def _handle_subscription_paid(
         return TributeWebhookAck(ok=True, event=event_name, duplicate=False)
 
     if (p.type or "regular") == "gift":
-        log.info(
-            "Tribute %s: type=gift (subscription_id=%s) — пропускаем (платежа нет)",
-            event_name,
-            p.subscription_id,
-        )
         return TributeWebhookAck(ok=True, event=event_name, duplicate=False)
 
     if p.telegram_user_id is None:
         log.warning(
-            "Tribute %s: payload.telegram_user_id отсутствует (subscription_id=%s) — игнор",
+            "Tribute %s: нет telegram_user_id (subscription_id=%s) — игнор",
             event_name,
             p.subscription_id,
         )
@@ -324,20 +278,19 @@ async def _handle_digital_product_paid(
     p = _DigitalProductPaidPayload.model_validate(payload)
     event_name = "new_digital_product"
 
-    months = _months_from_digital_product_payload(p)
+    months = _resolve_new_digital_product_months(p)
     if months is None:
         log.warning(
-            "Tribute new_digital_product: нет срока (поля months/period или доп. ключи в payload; "
-            "product_id=%s purchase_id=%s product_name=%r) — игнор",
+            "Tribute new_digital_product: неизвестный срок (product_id=%s purchase_id=%s product_name=%r)",
             p.product_id,
             p.purchase_id,
-            (p.product_name or "")[:120],
+            (p.product_name or "")[:200],
         )
         return TributeWebhookAck(ok=True, event=event_name, duplicate=False)
 
     if p.telegram_user_id is None:
         log.warning(
-            "Tribute new_digital_product: telegram_user_id отсутствует (purchase_id=%s) — игнор",
+            "Tribute new_digital_product: нет telegram_user_id (purchase_id=%s) — игнор",
             p.purchase_id,
         )
         return TributeWebhookAck(ok=True, event=event_name, duplicate=False)
@@ -356,27 +309,12 @@ async def _handle_digital_product_paid(
     )
 
 
-async def _handle_subscription_cancelled(
-    *,
-    payload: dict[str, Any],
-) -> TributeWebhookAck:
-    p = _SubscriptionCancelledPayload.model_validate(payload)
-    log.info(
-        "Tribute cancelled_subscription: telegram_user_id=%s subscription_id=%s expires_at=%s reason=%r — "
-        "доступ сохраняется до expires_at, отдельных действий не требуется",
-        p.telegram_user_id,
-        p.subscription_id,
-        p.expires_at.isoformat(),
-        p.cancel_reason or "",
-    )
+async def _handle_subscription_cancelled(*, payload: dict[str, Any]) -> TributeWebhookAck:
+    _SubscriptionCancelledPayload.model_validate(payload)
     return TributeWebhookAck(ok=True, event="cancelled_subscription", duplicate=False)
 
 
 async def _handle_digital_product_refunded(*, payload: dict[str, Any]) -> TributeWebhookAck:
-    log.info(
-        "Tribute digital_product_refunded: payload keys=%s — запись в payments не меняется (откат доступа вручную)",
-        list(payload.keys()) if isinstance(payload, dict) else type(payload),
-    )
     return TributeWebhookAck(ok=True, event="digital_product_refunded", duplicate=False)
 
 
@@ -396,19 +334,15 @@ async def process_tribute_webhook_raw_body(
         raise BadRequestError(detail="Некорректный JSON тела webhook") from None
 
     if isinstance(body_obj, dict) and "test_event" in body_obj and "name" not in body_obj:
-        _log_tribute_webhook_incoming(body_obj)
-        log.info("Tribute webhook: тестовое событие test_event=%r", body_obj.get("test_event"))
         te = body_obj.get("test_event")
         return TributeWebhookAck(ok=True, event=str(te) if te is not None else "test_event", duplicate=False)
 
-    _log_tribute_webhook_incoming(body_obj)
     env = _TributeWebhookEnvelope.model_validate(body_obj)
     return await process_tribute_webhook_event(
         session,
         settings=settings,
         name=env.name,
         payload=env.payload,
-        log_incoming=False,
     )
 
 
@@ -418,11 +352,8 @@ async def process_tribute_webhook_event(
     settings: Settings,
     name: str,
     payload: dict[str, Any],
-    log_incoming: bool = True,
 ) -> TributeWebhookAck:
-    """Диспетчер по ``name``. Используется и реальным webhook'ом, и тестовым эндпоинтом."""
-    if log_incoming:
-        _log_tribute_webhook_incoming({"name": name, "payload": payload})
+    """Диспетчер по ``name`` (реальный webhook и ``/webhook-test``)."""
     n = (name or "").strip()
     if n in ("new_subscription", "renewed_subscription"):
         return await _handle_subscription_paid(
@@ -437,5 +368,5 @@ async def process_tribute_webhook_event(
         return await _handle_digital_product_paid(session, settings=settings, payload=payload)
     if n == "digital_product_refunded":
         return await _handle_digital_product_refunded(payload=payload)
-    log.info("Tribute webhook: неизвестное событие name=%r — игнор", n)
+    log.warning("Tribute webhook: неизвестное событие name=%r", n)
     return TributeWebhookAck(ok=True, event=n or None, duplicate=False)

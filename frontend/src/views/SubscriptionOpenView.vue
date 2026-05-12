@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import CabinetBackLink from '../components/CabinetBackLink.vue'
 import { fetchJson } from '../api/client.js'
 import {
   forcedStoreRefs,
@@ -298,13 +299,7 @@ onBeforeUnmount(() => {
     class="app-dl"
   >
     <div class="app-dl-wrap">
-      <RouterLink
-        class="app-dl-back"
-        to="/cabinet"
-      ><span
-        class="app-dl-back-arrow"
-        aria-hidden="true"
-      >←</span> Личный кабинет</RouterLink>
+      <CabinetBackLink to="/cabinet" />
 
       <div class="app-dl-card">
         <template v-if="localSubError && !page">
@@ -427,35 +422,6 @@ onBeforeUnmount(() => {
   border: 1px solid var(--card-border);
   box-shadow: var(--shadow-md);
   box-sizing: border-box;
-}
-
-.app-dl-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  width: 100%;
-  max-width: 26rem;
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-  border: none;
-  background: none;
-  color: var(--muted);
-  font: inherit;
-  font-size: 0.9rem;
-  font-weight: 500;
-  text-decoration: none;
-  cursor: pointer;
-  transition: color 0.2s ease;
-}
-
-.app-dl-back:hover {
-  color: var(--accent);
-}
-
-.app-dl-back-arrow {
-  font-size: 1em;
-  line-height: 1;
 }
 
 .app-dl-banner {

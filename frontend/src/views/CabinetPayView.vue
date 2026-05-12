@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
 import { fetchJson } from '../api/client.js'
+import CabinetBackLink from '../components/CabinetBackLink.vue'
 
 const loading = ref(true)
 const error = ref(null)
@@ -43,17 +43,11 @@ onMounted(() => {
 
 <template>
   <main class="page">
-    <nav class="back-nav" aria-label="Назад">
-      <RouterLink class="back-link" :to="{ name: 'cabinet', query: { tab: 'subscription' } }">
-        ← Личный кабинет
-      </RouterLink>
-    </nav>
-
     <header class="head">
       <h1>Оплата и продление</h1>
-      <p class="sub">
-        Выберите способ: разовая оплата выбранного периода или подписка с сохранением карты в Tribute.
-      </p>
+      <div class="page-back">
+        <CabinetBackLink :to="{ name: 'cabinet', query: { tab: 'subscription' } }" />
+      </div>
     </header>
 
     <div v-if="loading" class="card card-pad muted">
@@ -92,7 +86,7 @@ onMounted(() => {
       >
         <h2 id="pay-recurring-title" class="block-title">Подписка с картой</h2>
         <p class="hint">
-          Рекуррентная подписка Tribute: карта сохраняется для следующих списаний. Можно оформить из
+          Карта сохраняется для следующих списаний. Можно оформить из
           Telegram или в браузере.
         </p>
         <div class="recurring-actions">
@@ -125,33 +119,32 @@ onMounted(() => {
 .page {
   max-width: 520px;
   margin: 0 auto;
-  padding: 1.75rem 1rem 2.5rem;
+  /* как .app-dl-wrap у страницы скачивания клиента */
+  padding: 1.5rem 1rem 2.5rem;
+  box-sizing: border-box;
 }
 
-.back-nav {
-  margin-bottom: 1rem;
-}
-
-.back-link {
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.back-link:hover {
-  text-decoration: underline;
+.page-back {
+  width: 100%;
+  max-width: 26rem;
+  align-self: start;
+  text-align: left;
 }
 
 .head {
-  margin-bottom: 1.35rem;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
 }
 
 h1 {
   font-size: 1.55rem;
-  margin: 0 0 0.5rem;
+  margin: 0;
   color: var(--text-h);
+  text-align: center;
+  width: 100%;
 }
 
 .sub {
