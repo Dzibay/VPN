@@ -416,6 +416,10 @@ async function copySubscriptionUrl() {
   }
 }
 
+function goCabinetPay() {
+  void router.push({ name: 'cabinet-pay' })
+}
+
 onMounted(() => {
   const q = route.query.unknown_client
   if (q === '1' || q === 'true') {
@@ -594,14 +598,23 @@ onMounted(() => {
                 </dd>
               </div>
             </dl>
-            <button
-              type="button"
-              class="copy-sub-btn"
-              :disabled="!subscriptionUrl"
-              @click="copySubscriptionUrl"
-            >
-              {{ subscriptionCopied ? 'Скопировано' : 'Скопировать ссылку подписки' }}
-            </button>
+            <div class="cabinet-sub-action-stack">
+              <button
+                type="button"
+                class="copy-sub-btn"
+                :disabled="!subscriptionUrl"
+                @click="copySubscriptionUrl"
+              >
+                {{ subscriptionCopied ? 'Скопировано' : 'Скопировать ссылку подписки' }}
+              </button>
+              <button
+                type="button"
+                class="cabinet-pay-btn"
+                @click="goCabinetPay"
+              >
+                Оплата и продление
+              </button>
+            </div>
           </div>
 
           <div
@@ -1310,7 +1323,7 @@ dd {
   box-sizing: border-box;
   margin: 1rem 0 0;
   padding: 0.5rem 1rem;
-  border-radius: 10px;
+  border-radius: var(--radius);
   font: inherit;
   font-size: 0.88rem;
   font-weight: 600;
@@ -1332,6 +1345,77 @@ dd {
 .copy-sub-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* После базовых правил .copy-sub-btn — иначе border: 1px снова перебивает «слитый» блок */
+.cabinet-sub-action-stack {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--card-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.cabinet-sub-action-stack > .copy-sub-btn,
+.cabinet-sub-action-stack > .cabinet-pay-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  min-height: 2.625rem;
+  padding: 0.5rem 1rem;
+  line-height: 1.3;
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.cabinet-sub-action-stack > .copy-sub-btn {
+  box-shadow: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.cabinet-sub-action-stack > .cabinet-pay-btn {
+  text-align: center;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  box-shadow: inset 0 1px 0 0 var(--nav-border);
+  color: #dbeafe;
+  background: linear-gradient(
+    168deg,
+    rgba(99, 102, 234, 0.38) 0%,
+    rgba(45, 179, 157, 0.14) 42%,
+    rgba(15, 23, 42, 0.92) 100%
+  );
+  transition:
+    filter 0.15s ease,
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.cabinet-sub-action-stack > .cabinet-pay-btn:hover {
+  filter: brightness(1.07);
+  color: #f0f9ff;
+}
+
+.cabinet-sub-action-stack > .cabinet-pay-btn:focus-visible {
+  outline: none;
+  position: relative;
+  z-index: 1;
+  box-shadow:
+    inset 0 1px 0 0 var(--nav-border),
+    inset 0 0 0 2px rgba(129, 140, 248, 0.65);
 }
 
 .profile-tg-unlinked-hint {
@@ -1471,7 +1555,33 @@ dd {
   box-shadow: var(--focus-ring);
 }
 
+.cabinet-sub-action-stack > .copy-sub-btn:focus-visible {
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.35), var(--focus-ring);
+}
+
 @media (prefers-color-scheme: light) {
+  .cabinet-sub-action-stack > .cabinet-pay-btn {
+    color: #1e3a5f;
+    background: linear-gradient(
+      168deg,
+      rgba(99, 102, 234, 0.2) 0%,
+      rgba(45, 179, 157, 0.12) 45%,
+      rgba(248, 250, 252, 0.98) 100%
+    );
+    box-shadow: inset 0 1px 0 0 rgba(29, 154, 92, 0.18);
+  }
+
+  .cabinet-sub-action-stack > .cabinet-pay-btn:hover {
+    color: #0f172a;
+    filter: brightness(1.02);
+  }
+
+  .cabinet-sub-action-stack > .cabinet-pay-btn:focus-visible {
+    box-shadow:
+      inset 0 1px 0 0 rgba(29, 154, 92, 0.18),
+      inset 0 0 0 2px rgba(99, 102, 234, 0.45);
+  }
+
   .copy-sub-btn {
     background: var(--accent);
     border-color: var(--accent-border);

@@ -3,13 +3,19 @@
 Подписка (``new_subscription`` / ``renewed_subscription``): payload с ``subscription_id``,
 ``period``, ``price``, ``expires_at``, ``telegram_user_id`` — см. OpenAPI ``tribute.tg/api/v1``.
 
-Разовая покупка цифрового товара (``new_digital_product``): ``purchase_id``, ``product_id``,
-``amount``, ``telegram_user_id`` и др. — см. `NewDigitalProductPayload` в том же OpenAPI.
+Разовая покупка (``new_digital_product``): ``purchase_id``, ``product_id``, ``amount``, ``telegram_user_id``;
+срок продления — из ``months`` (целое 1…120) и/или ``period`` (как у подписки: monthly, quarterly, …),
+либо из дополнительных полей payload (см. ``_months_from_digital_product_payload``). См. OpenAPI
+``NewDigitalProductPayload``; неизвестные поля принимаются через ``extra="allow"``.
 
 ``cancelled_subscription`` — только лог. ``digital_product_refunded`` — только лог (откат
 подписки в этом сервисе не реализован).
 
 Все события с телом JSON защищены HMAC-SHA256 (заголовок ``trbt-signature``, ключ ``TRIBUTE_API_KEY``).
+
+Входящее тело каждого webhook пишется в лог (уровень INFO, логгер ``app.tribute_service``):
+полный JSON как пришёл от Tribute (реальный ``POST /tribute/webhook``) или объект ``{name, payload}``
+для ``POST …/webhook-test``.
 """
 
 from __future__ import annotations
@@ -22,7 +28,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,6 +52,9 @@ _DAYS_PER_MONTH = 31
 _PERIOD_TO_MONTHS: dict[str, int] = {
     "monthly": 1,
     "quarterly": 3,
+    "biannual": 6,
+    "semiannual": 6,
+    "half_yearly": 6,
     "yearly": 12,
 }
 
@@ -78,6 +87,15 @@ def verify_tribute_webhook_signature(*, raw_body: bytes, header_signature: str |
 
 def _amount_from_minor_units(amount_minor: int) -> Decimal:
     return (Decimal(int(amount_minor)) * Decimal("0.01")).quantize(Decimal("0.01"))
+
+
+def _log_tribute_webhook_incoming(body: Any) -> None:
+    """Печатает в лог полную структуру тела webhook (как пришло от Tribute / тест-клиента)."""
+    try:
+        text = json.dumps(body, ensure_ascii=False, indent=2, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        text = repr(body)
+    log.info("Tribute webhook — полное тело:\n%s", text)
 
 
 def _period_to_months(period: str) -> int | None:
@@ -128,7 +146,7 @@ class _SubscriptionCancelledPayload(BaseModel):
 
 
 class _DigitalProductPaidPayload(BaseModel):
-    """Схема ``new_digital_product`` (см. OpenAPI ``NewDigitalProductPayload``)."""
+    """Схема ``new_digital_product`` (см. OpenAPI ``NewDigitalProductPayload`` + опциональный срок)."""
 
     model_config = ConfigDict(extra="allow")
 
@@ -140,6 +158,43 @@ class _DigitalProductPaidPayload(BaseModel):
     product_name: str | None = None
     purchase_created_at: datetime | None = None
     currency: str | None = None
+    months: int | None = Field(
+        default=None,
+        ge=1,
+        le=120,
+        description="Срок оплаты в месяцах, если Tribute передаёт в webhook.",
+    )
+    period: str | None = Field(
+        default=None,
+        description="Период как у подписки (monthly, quarterly, …), если передаётся.",
+    )
+
+
+def _months_from_digital_product_payload(p: _DigitalProductPaidPayload) -> int | None:
+    """Срок в месяцах из тела ``new_digital_product`` (явные поля и распространённые доп. ключи)."""
+    if p.months is not None:
+        m = int(p.months)
+        if 1 <= m <= 120:
+            return m
+    if p.period:
+        mapped = _period_to_months(p.period)
+        if mapped is not None:
+            return mapped
+    extra = p.model_extra or {}
+    for key in ("paid_months", "subscription_months", "duration_months", "months_paid", "period_months"):
+        v = extra.get(key)
+        if isinstance(v, int) and 1 <= v <= 120:
+            return int(v)
+        if isinstance(v, str) and v.strip().isdigit():
+            n = int(v.strip())
+            if 1 <= n <= 120:
+                return n
+    pe = extra.get("period")
+    if isinstance(pe, str):
+        mapped = _period_to_months(pe)
+        if mapped is not None:
+            return mapped
+    return None
 
 
 async def _commit_tribute_paid_months(
@@ -269,12 +324,14 @@ async def _handle_digital_product_paid(
     p = _DigitalProductPaidPayload.model_validate(payload)
     event_name = "new_digital_product"
 
-    months = settings.tribute_digital_product_id_to_months(int(p.product_id))
+    months = _months_from_digital_product_payload(p)
     if months is None:
         log.warning(
-            "Tribute new_digital_product: product_id=%s не сопоставлен с тарифом "
-            "(TRIBUTE_DIGITAL_PRODUCT_ID_*) — игнор",
+            "Tribute new_digital_product: нет срока (поля months/period или доп. ключи в payload; "
+            "product_id=%s purchase_id=%s product_name=%r) — игнор",
             p.product_id,
+            p.purchase_id,
+            (p.product_name or "")[:120],
         )
         return TributeWebhookAck(ok=True, event=event_name, duplicate=False)
 
@@ -339,16 +396,19 @@ async def process_tribute_webhook_raw_body(
         raise BadRequestError(detail="Некорректный JSON тела webhook") from None
 
     if isinstance(body_obj, dict) and "test_event" in body_obj and "name" not in body_obj:
+        _log_tribute_webhook_incoming(body_obj)
         log.info("Tribute webhook: тестовое событие test_event=%r", body_obj.get("test_event"))
         te = body_obj.get("test_event")
         return TributeWebhookAck(ok=True, event=str(te) if te is not None else "test_event", duplicate=False)
 
+    _log_tribute_webhook_incoming(body_obj)
     env = _TributeWebhookEnvelope.model_validate(body_obj)
     return await process_tribute_webhook_event(
         session,
         settings=settings,
         name=env.name,
         payload=env.payload,
+        log_incoming=False,
     )
 
 
@@ -358,8 +418,11 @@ async def process_tribute_webhook_event(
     settings: Settings,
     name: str,
     payload: dict[str, Any],
+    log_incoming: bool = True,
 ) -> TributeWebhookAck:
     """Диспетчер по ``name``. Используется и реальным webhook'ом, и тестовым эндпоинтом."""
+    if log_incoming:
+        _log_tribute_webhook_incoming({"name": name, "payload": payload})
     n = (name or "").strip()
     if n in ("new_subscription", "renewed_subscription"):
         return await _handle_subscription_paid(

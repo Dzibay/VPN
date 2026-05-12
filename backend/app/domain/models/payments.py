@@ -76,12 +76,13 @@ class TributeWebhookDigitalTestPayload(BaseModel):
     """Тест ``new_digital_product`` (разовая покупка)."""
 
     purchase_id: int = Field(ge=1, description="Уникальный purchase_id Tribute (external_id dp:…).")
-    product_id: int = Field(ge=1, description="Должен совпасть с одним из TRIBUTE_DIGITAL_PRODUCT_ID_* в env.")
+    product_id: int = Field(ge=1, description="ID цифрового товара в Tribute.")
     amount: int = Field(default=19900, ge=0, description="Сумма в минорных единицах.")
     telegram_user_id: int = Field(ge=1, description="Telegram user id в БД.")
     transaction_id: int = Field(default=1, ge=1)
     product_name: str = Field(default="Test digital product")
     currency: str = Field(default="rub")
+    months: int = Field(default=1, ge=1, le=120, description="Срок в месяцах (как в webhook).")
     purchase_created_at: datetime | None = Field(
         default=None,
         description="По умолчанию — текущее время (если клиент не передал).",

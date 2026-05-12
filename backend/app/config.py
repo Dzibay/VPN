@@ -5,6 +5,7 @@ from urllib.parse import quote_plus
 from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app import constants
 from app.domain.models.payments import TributeRecurringPayLinks, TributeTariffsPublic
 
 
@@ -130,54 +131,36 @@ class Settings(BaseSettings):
         ),
     )
     tribute_tariff_web_link_1m: str = Field(
-        default="",
-        description="Ссылка web.tribute.tg на тариф 1 месяц. Env: TRIBUTE_TARIFF_WEB_LINK_1M.",
+        default=constants.TRIBUTE_TARIFF_WEB_LINK_1M,
+        description=(
+            "Ссылка web.tribute.tg на тариф 1 месяц. Дефолт: ``app.constants.TRIBUTE_TARIFF_WEB_LINK_1M``; "
+            "перекрытие: env TRIBUTE_TARIFF_WEB_LINK_1M."
+        ),
     )
     tribute_tariff_web_link_3m: str = Field(
-        default="",
-        description="Ссылка web.tribute.tg на тариф 3 месяца. Env: TRIBUTE_TARIFF_WEB_LINK_3M.",
+        default=constants.TRIBUTE_TARIFF_WEB_LINK_3M,
+        description=(
+            "Ссылка web.tribute.tg на тариф 3 месяца. Дефолт: ``constants``; env: TRIBUTE_TARIFF_WEB_LINK_3M."
+        ),
     )
     tribute_tariff_web_link_6m: str = Field(
-        default="",
-        description="Ссылка web.tribute.tg на тариф 6 месяцев. Env: TRIBUTE_TARIFF_WEB_LINK_6M.",
+        default=constants.TRIBUTE_TARIFF_WEB_LINK_6M,
+        description="Аналогично 6 мес. Env: TRIBUTE_TARIFF_WEB_LINK_6M.",
     )
     tribute_tariff_web_link_1y: str = Field(
-        default="",
-        description="Ссылка web.tribute.tg на тариф 1 год. Env: TRIBUTE_TARIFF_WEB_LINK_1Y.",
+        default=constants.TRIBUTE_TARIFF_WEB_LINK_1Y,
+        description="Аналогично 1 год. Env: TRIBUTE_TARIFF_WEB_LINK_1Y.",
     )
     tribute_recurring_pay_tg_link: str = Field(
-        default="",
+        default=constants.TRIBUTE_RECURRING_PAY_TG_LINK,
         description=(
             "Ссылка на оплату рекуррентной подписки Tribute для Telegram (deep-link). "
-            "Env: TRIBUTE_RECURRING_PAY_TG_LINK. Вместе с web — блок recurring_pay в GET …/tribute-links."
+            "Дефолт: ``constants.TRIBUTE_RECURRING_PAY_TG_LINK``; env: TRIBUTE_RECURRING_PAY_TG_LINK."
         ),
     )
     tribute_recurring_pay_web_link: str = Field(
-        default="",
-        description="Ссылка на оплату подписки в браузере. Env: TRIBUTE_RECURRING_PAY_WEB_LINK.",
-    )
-    tribute_digital_product_id_1m: int = Field(
-        default=0,
-        ge=0,
-        description=(
-            "ID цифрового товара Tribute для тарифа 1 мес. (webhook new_digital_product.product_id). "
-            "0 — не сопоставлять. Env: TRIBUTE_DIGITAL_PRODUCT_ID_1M."
-        ),
-    )
-    tribute_digital_product_id_3m: int = Field(
-        default=0,
-        ge=0,
-        description="Аналогично 3 мес. Env: TRIBUTE_DIGITAL_PRODUCT_ID_3M.",
-    )
-    tribute_digital_product_id_6m: int = Field(
-        default=0,
-        ge=0,
-        description="Аналогично 6 мес. Env: TRIBUTE_DIGITAL_PRODUCT_ID_6M.",
-    )
-    tribute_digital_product_id_1y: int = Field(
-        default=0,
-        ge=0,
-        description="Аналогично 1 год. Env: TRIBUTE_DIGITAL_PRODUCT_ID_1Y.",
+        default=constants.TRIBUTE_RECURRING_PAY_WEB_LINK,
+        description="Ссылка на оплату подписки в браузере. Дефолт в constants; env: TRIBUTE_RECURRING_PAY_WEB_LINK.",
     )
 
     redis_url: str = Field(
@@ -527,22 +510,6 @@ class Settings(BaseSettings):
         if not tg or not web:
             return None
         return TributeRecurringPayLinks(tg_link=tg, web_link=web)
-
-    def tribute_digital_product_id_to_months(self, product_id: int) -> int | None:
-        """Сопоставление product_id из webhook ``new_digital_product`` → число месяцев (0 в настройках = выкл.)."""
-        pid = int(product_id)
-        if pid <= 0:
-            return None
-        pairs = (
-            (int(self.tribute_digital_product_id_1m or 0), 1),
-            (int(self.tribute_digital_product_id_3m or 0), 3),
-            (int(self.tribute_digital_product_id_6m or 0), 6),
-            (int(self.tribute_digital_product_id_1y or 0), 12),
-        )
-        for configured_id, months in pairs:
-            if configured_id > 0 and configured_id == pid:
-                return months
-        return None
 
     @computed_field
     def sqlalchemy_database_url(self) -> str:

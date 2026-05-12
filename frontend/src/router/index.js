@@ -20,6 +20,7 @@ const UserLoginView = () => import('../views/UserLoginView.vue')
 const UserRegisterView = () => import('../views/UserRegisterView.vue')
 const LinkFromTelegramView = () => import('../views/LinkFromTelegramView.vue')
 const UserCabinetView = () => import('../views/UserCabinetView.vue')
+const CabinetPayView = () => import('../views/CabinetPayView.vue')
 const SubscriptionOpenView = () => import('../views/SubscriptionOpenView.vue')
 const AdminTablesPage = () => import('../views/AdminTablesPage.vue')
 const ReferralFunnelView = () => import('../views/ReferralFunnelView.vue')
@@ -52,6 +53,11 @@ const routes = [
     component: LinkFromTelegramView,
   },
   { path: '/cabinet', name: 'cabinet', component: UserCabinetView },
+  {
+    path: '/cabinet/pay',
+    name: 'cabinet-pay',
+    component: CabinetPayView,
+  },
   {
     path: '/apps/:client',
     redirect: { name: 'cabinet' },
@@ -153,7 +159,7 @@ router.beforeEach(async (to, _from, next) => {
   const token = getAccessToken()
   const role = getSessionRole()
 
-  if (to.name === 'cabinet' && !token) {
+  if ((to.name === 'cabinet' || to.name === 'cabinet-pay') && !token) {
     return next({
       name: 'login',
       query: { redirect: to.fullPath },
