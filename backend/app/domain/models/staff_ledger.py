@@ -16,6 +16,8 @@ class StaffPaymentItem(BaseModel):
     amount: Decimal
     months: int
     provider: str
+    #: ``manual`` | ``subscription`` (Tribute) | ``one_time`` (Tribute цифровой товар).
+    payment_kind: str
     external_id: str | None = None
     created_at: datetime
 

@@ -27,6 +27,12 @@ class Payment(Base):
         nullable=False,
         server_default=text("'manual'"),
     )
+    #: ``manual`` | ``subscription`` (Tribute recurring) | ``one_time`` (Tribute digital product).
+    payment_kind: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default=text("'manual'"),
+    )
     external_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

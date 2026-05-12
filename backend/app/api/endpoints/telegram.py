@@ -21,7 +21,7 @@ from app.domain.models.auth import (
     TelegramWebLinkBody,
     TelegramWebLinkResponse,
 )
-from app.domain.models.payments import TributeSubscriptionResponse
+from app.domain.models.payments import TributePaymentsLinksResponse
 from app.domain.models.telegram_notification_tasks import (
     TelegramNotificationTasksListResponse,
     TelegramTasksAckBody,
@@ -42,7 +42,7 @@ from app.domain.services.telegram_notification_tasks_service import (
     acknowledge_notification_tasks_with_statuses,
     list_pending_notification_tasks,
 )
-from app.domain.services.tribute_service import tribute_subscription_public_response
+from app.domain.services.tribute_service import tribute_payments_links_public_response
 from app.domain.services.telegram_service import (
     get_user_by_topic_id,
     list_telegram_user_ids,
@@ -175,13 +175,13 @@ async def get_user_by_topic_id_ep(
 
 
 @router.get(
-    "/payments/tribute-subscription",
-    response_model=TributeSubscriptionResponse,
+    "/payments/tribute-links",
+    response_model=TributePaymentsLinksResponse,
     dependencies=[Depends(require_telegram_bot_api_secret)],
-    summary="Подписка Tribute (рекуррентная): ссылка для кнопки оплаты в боте",
+    summary="Tribute: ссылки на тарифы (web) и на оплату подписки (tg + web) для бота",
 )
-async def telegram_tribute_subscription_ep() -> TributeSubscriptionResponse:
-    return tribute_subscription_public_response(settings)
+async def telegram_tribute_links_ep() -> TributePaymentsLinksResponse:
+    return tribute_payments_links_public_response(settings)
 
 
 @router.get(

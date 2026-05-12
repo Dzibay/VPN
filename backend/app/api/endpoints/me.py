@@ -18,11 +18,11 @@ from app.domain.models.auth import (
     AccountMeResponse,
     TelegramSyncStartResponse,
 )
-from app.domain.models.payments import TributeSubscriptionResponse
+from app.domain.models.payments import TributePaymentsLinksResponse
 from app.domain.services.auth_service import account_me, change_account_password
 from app.domain.services.me_service import delete_subscription_device
 from app.domain.services.telegram_auth_service import telegram_sync_start_link
-from app.domain.services.tribute_service import tribute_subscription_public_response
+from app.domain.services.tribute_service import tribute_payments_links_public_response
 from app.infrastructure.cache import get_redis
 
 router = APIRouter(prefix="/me", tags=["user"])
@@ -121,17 +121,17 @@ async def me(
 
 
 @router.get(
-    "/payments/tribute-subscription",
-    response_model=TributeSubscriptionResponse,
+    "/payments/tribute-links",
+    response_model=TributePaymentsLinksResponse,
     dependencies=[Depends(require_client_jwt)],
-    summary="Ссылка на подписку Tribute (рекуррентная): tg_link и web_link",
+    summary="Tribute: ссылки на тарифы (web) и на оплату подписки (tg + web)",
 )
-async def me_tribute_subscription(
+async def me_tribute_links(
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
-) -> TributeSubscriptionResponse:
+) -> TributePaymentsLinksResponse:
     if principal.role != "user" or principal.user_id is None:
         raise ForbiddenError(detail="Доступно только клиентской роли")
-    return tribute_subscription_public_response(settings)
+    return tribute_payments_links_public_response(settings)
 
 
 @router.post(

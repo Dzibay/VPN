@@ -1,4 +1,4 @@
-"""Платежи: публичный webhook Tribute (Digital Product)."""
+"""Платежи: публичный webhook Tribute (подписка и цифровой товар)."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/payments", tags=["payments"])
 @router.post(
     "/tribute/webhook",
     response_model=TributeWebhookAck,
-    summary="Webhook Tribute (Digital Product): new_digital_product / digital_product_refund",
+    summary="Webhook Tribute: подписка (new/renewed_subscription), цифровой товар (new_digital_product), refund (лог)",
     description=(),
 )
 async def tribute_webhook_ep(

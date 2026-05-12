@@ -1,20 +1,35 @@
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 
-class TributeSubscriptionPublic(BaseModel):
-    """Публичная карточка подписки Tribute (одна ссылка для tg и web)."""
+class TributeTariffsPublic(BaseModel):
+    """Четыре ссылки на оплату тарифов (цифровые товары), только web.tribute.tg."""
 
-    tg_link: str
-    web_link: str
+    web_link_1m: str = Field(description="1 месяц")
+    web_link_3m: str = Field(description="3 месяца")
+    web_link_6m: str = Field(description="6 месяцев")
+    web_link_1y: str = Field(description="1 год")
 
 
-class TributeSubscriptionResponse(BaseModel):
-    """Ответ кабинета и бота: либо настроенная подписка, либо null."""
+class TributeRecurringPayLinks(BaseModel):
+    """Рекуррентная подписка Tribute: ссылка в Telegram и в браузере."""
 
-    subscription: TributeSubscriptionPublic | None = None
+    tg_link: str = Field(description="Оплата подписки из клиента Telegram (deep-link).")
+    web_link: str = Field(description="Оплата подписки в браузере (web.tribute.tg).")
+
+
+class TributePaymentsLinksResponse(BaseModel):
+    """Ссылки для клиента: тарифы (разовые web) и рекуррентная подписка (tg + web).
+
+    Каждый блок либо полностью задан, либо ``null``, если в env не хватает полей.
+    """
+
+    tariffs: TributeTariffsPublic | None = None
+    recurring_pay: TributeRecurringPayLinks | None = None
 
 
 class TributeWebhookAck(BaseModel):
@@ -25,12 +40,12 @@ class TributeWebhookAck(BaseModel):
     duplicate: bool = False
 
 
-class TributeWebhookTestPayload(BaseModel):
-    """Полезная нагрузка тестового webhook: только поля, которые читает сервис."""
+class TributeWebhookSubscriptionTestPayload(BaseModel):
+    """Тест подписочного события: поля, которые читает сервис."""
 
     subscription_id: int = Field(
         ge=1,
-        description="Tribute Subscription ID (часть ключа идемпотентности). Любое число.",
+        description="Tribute Subscription ID (внешний ключ в external_id для подписки).",
     )
     telegram_user_id: int = Field(
         ge=1,
@@ -38,8 +53,8 @@ class TributeWebhookTestPayload(BaseModel):
     )
     expires_at: datetime = Field(
         description=(
-            "Дата окончания периода в Tribute (ISO-8601 UTC, например 2026-06-08T20:00:00Z). "
-            "Часть ключа идемпотентности — для нового платежа меняйте на свежую."
+            "Дата окончания периода в Tribute (ISO-8601 UTC). "
+            "Входит в external_id вместе с subscription_id."
         ),
     )
     period: Literal["monthly", "quarterly", "yearly"] = Field(
@@ -57,14 +72,40 @@ class TributeWebhookTestPayload(BaseModel):
     )
 
 
-class TributeWebhookTestBody(BaseModel):
-    """Тело для тестового webhook (без HMAC, защищён X-Telegram-Bot-Secret)."""
+class TributeWebhookDigitalTestPayload(BaseModel):
+    """Тест ``new_digital_product`` (разовая покупка)."""
+
+    purchase_id: int = Field(ge=1, description="Уникальный purchase_id Tribute (external_id dp:…).")
+    product_id: int = Field(ge=1, description="Должен совпасть с одним из TRIBUTE_DIGITAL_PRODUCT_ID_* в env.")
+    amount: int = Field(default=19900, ge=0, description="Сумма в минорных единицах.")
+    telegram_user_id: int = Field(ge=1, description="Telegram user id в БД.")
+    transaction_id: int = Field(default=1, ge=1)
+    product_name: str = Field(default="Test digital product")
+    currency: str = Field(default="rub")
+    purchase_created_at: datetime | None = Field(
+        default=None,
+        description="По умолчанию — текущее время (если клиент не передал).",
+    )
+
+
+class TributeWebhookSubscriptionTestBody(BaseModel):
+    """Тест webhook подписки (без HMAC, защищён X-Telegram-Bot-Secret)."""
 
     name: Literal["new_subscription", "renewed_subscription", "cancelled_subscription"] = Field(
         default="new_subscription",
         description=(
-            "Имя события: new/renewed_subscription — пишет платёж и продлевает подписку; "
-            "cancelled_subscription — только лог, БД не меняется."
+            "new/renewed_subscription — пишет платёж (payment_kind=subscription) и продлевает доступ; "
+            "cancelled_subscription — только лог."
         ),
     )
-    payload: TributeWebhookTestPayload
+    payload: TributeWebhookSubscriptionTestPayload
+
+
+class TributeWebhookDigitalTestBody(BaseModel):
+    """Тест webhook цифрового товара."""
+
+    name: Literal["new_digital_product"] = "new_digital_product"
+    payload: TributeWebhookDigitalTestPayload
+
+
+TributeWebhookTestBody = TributeWebhookSubscriptionTestBody | TributeWebhookDigitalTestBody

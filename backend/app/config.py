@@ -2,27 +2,10 @@ from functools import lru_cache
 from typing import Literal
 from urllib.parse import quote_plus
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
-class TributeSubscription(BaseModel):
-    """Подписка Tribute (рекуррентная): одна ссылка на оплату, период приходит в webhook.
-
-    Tribute сам считает дату окончания (``expires_at``) и шлёт события
-    ``new_subscription`` / ``renewed_subscription`` / ``cancelled_subscription``.
-    Достоверность вебхука обеспечивается HMAC-подписью (``trbt-signature``); фильтрация
-    по subscription_id не выполняется — все подписки, подписанные нашим Api-Key, обрабатываются.
-    """
-
-    tg_link: str = Field(
-        min_length=1,
-        description="Ссылка для Telegram-клиента (deep-link канала/подписки).",
-    )
-    web_link: str = Field(
-        min_length=1,
-        description="Ссылка для браузера (web.tribute.tg).",
-    )
+from app.domain.models.payments import TributeRecurringPayLinks, TributeTariffsPublic
 
 
 class Settings(BaseSettings):
@@ -95,7 +78,7 @@ class Settings(BaseSettings):
         description=(
             "Секрет для POST /api/auth/telegram, POST /api/telegram/link, POST /api/telegram/site-link/start, "
             "GET /api/telegram/referral/me, DELETE /api/telegram/subscription-devices/{device_id}, "
-            "GET /api/telegram/payments/tribute-subscription, POST /api/payments/tribute/webhook-test, "
+            "GET /api/telegram/payments/tribute-links, POST /api/payments/tribute/webhook-test, "
             "GET /api/telegram/notification-tasks, POST /api/telegram/notification-tasks/completed, "
             "GET /api/telegram/users, GET /api/telegram/users/{topic_id} и "
             "GET /api/telegram/subscription-open-clients: "
@@ -146,20 +129,55 @@ class Settings(BaseSettings):
             "Пусто — POST /api/payments/tribute/webhook отвечает 503 (эндпоинт отключён)."
         ),
     )
-    tribute_subscription_tg_link: str = Field(
+    tribute_tariff_web_link_1m: str = Field(
+        default="",
+        description="Ссылка web.tribute.tg на тариф 1 месяц. Env: TRIBUTE_TARIFF_WEB_LINK_1M.",
+    )
+    tribute_tariff_web_link_3m: str = Field(
+        default="",
+        description="Ссылка web.tribute.tg на тариф 3 месяца. Env: TRIBUTE_TARIFF_WEB_LINK_3M.",
+    )
+    tribute_tariff_web_link_6m: str = Field(
+        default="",
+        description="Ссылка web.tribute.tg на тариф 6 месяцев. Env: TRIBUTE_TARIFF_WEB_LINK_6M.",
+    )
+    tribute_tariff_web_link_1y: str = Field(
+        default="",
+        description="Ссылка web.tribute.tg на тариф 1 год. Env: TRIBUTE_TARIFF_WEB_LINK_1Y.",
+    )
+    tribute_recurring_pay_tg_link: str = Field(
         default="",
         description=(
-            "Ссылка на оплату подписки Tribute для Telegram (deep-link). "
-            "Env: TRIBUTE_SUBSCRIPTION_TG_LINK. Если пусто хотя бы одно из двух полей ссылок — "
-            "эндпоинты отдают subscription=null."
+            "Ссылка на оплату рекуррентной подписки Tribute для Telegram (deep-link). "
+            "Env: TRIBUTE_RECURRING_PAY_TG_LINK. Вместе с web — блок recurring_pay в GET …/tribute-links."
         ),
     )
-    tribute_subscription_web_link: str = Field(
+    tribute_recurring_pay_web_link: str = Field(
         default="",
+        description="Ссылка на оплату подписки в браузере. Env: TRIBUTE_RECURRING_PAY_WEB_LINK.",
+    )
+    tribute_digital_product_id_1m: int = Field(
+        default=0,
+        ge=0,
         description=(
-            "Ссылка на оплату подписки Tribute для браузера (web.tribute.tg). "
-            "Env: TRIBUTE_SUBSCRIPTION_WEB_LINK."
+            "ID цифрового товара Tribute для тарифа 1 мес. (webhook new_digital_product.product_id). "
+            "0 — не сопоставлять. Env: TRIBUTE_DIGITAL_PRODUCT_ID_1M."
         ),
+    )
+    tribute_digital_product_id_3m: int = Field(
+        default=0,
+        ge=0,
+        description="Аналогично 3 мес. Env: TRIBUTE_DIGITAL_PRODUCT_ID_3M.",
+    )
+    tribute_digital_product_id_6m: int = Field(
+        default=0,
+        ge=0,
+        description="Аналогично 6 мес. Env: TRIBUTE_DIGITAL_PRODUCT_ID_6M.",
+    )
+    tribute_digital_product_id_1y: int = Field(
+        default=0,
+        ge=0,
+        description="Аналогично 1 год. Env: TRIBUTE_DIGITAL_PRODUCT_ID_1Y.",
     )
 
     redis_url: str = Field(
@@ -488,12 +506,43 @@ class Settings(BaseSettings):
     )
 
     @property
-    def tribute_subscription(self) -> TributeSubscription | None:
-        tg = (self.tribute_subscription_tg_link or "").strip()
-        web = (self.tribute_subscription_web_link or "").strip()
+    def tribute_tariffs_web(self) -> TributeTariffsPublic | None:
+        m1 = (self.tribute_tariff_web_link_1m or "").strip()
+        m3 = (self.tribute_tariff_web_link_3m or "").strip()
+        m6 = (self.tribute_tariff_web_link_6m or "").strip()
+        y1 = (self.tribute_tariff_web_link_1y or "").strip()
+        if not (m1 and m3 and m6 and y1):
+            return None
+        return TributeTariffsPublic(
+            web_link_1m=m1,
+            web_link_3m=m3,
+            web_link_6m=m6,
+            web_link_1y=y1,
+        )
+
+    @property
+    def tribute_recurring_pay(self) -> TributeRecurringPayLinks | None:
+        tg = (self.tribute_recurring_pay_tg_link or "").strip()
+        web = (self.tribute_recurring_pay_web_link or "").strip()
         if not tg or not web:
             return None
-        return TributeSubscription(tg_link=tg, web_link=web)
+        return TributeRecurringPayLinks(tg_link=tg, web_link=web)
+
+    def tribute_digital_product_id_to_months(self, product_id: int) -> int | None:
+        """Сопоставление product_id из webhook ``new_digital_product`` → число месяцев (0 в настройках = выкл.)."""
+        pid = int(product_id)
+        if pid <= 0:
+            return None
+        pairs = (
+            (int(self.tribute_digital_product_id_1m or 0), 1),
+            (int(self.tribute_digital_product_id_3m or 0), 3),
+            (int(self.tribute_digital_product_id_6m or 0), 6),
+            (int(self.tribute_digital_product_id_1y or 0), 12),
+        )
+        for configured_id, months in pairs:
+            if configured_id > 0 and configured_id == pid:
+                return months
+        return None
 
     @computed_field
     def sqlalchemy_database_url(self) -> str:

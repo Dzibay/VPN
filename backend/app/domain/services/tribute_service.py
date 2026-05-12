@@ -1,12 +1,15 @@
-"""Tribute (рекуррентная подписка): выдача публичной ссылки и обработка webhook.
+"""Tribute: webhook подписки и разовой цифровой покупки, плюс публичные ссылки (тарифы + рекуррент).
 
-Webhook ловит события подписочной модели Tribute (см. OpenAPI ``tribute.tg/api/v1``):
+Подписка (``new_subscription`` / ``renewed_subscription``): payload с ``subscription_id``,
+``period``, ``price``, ``expires_at``, ``telegram_user_id`` — см. OpenAPI ``tribute.tg/api/v1``.
 
-- ``new_subscription`` — первая оплата подписки (создана/возобновлена пользователем);
-- ``renewed_subscription`` — авто-продление за следующий период;
-- ``cancelled_subscription`` — пользователь отменил автопродление; до ``expires_at`` доступ остаётся.
+Разовая покупка цифрового товара (``new_digital_product``): ``purchase_id``, ``product_id``,
+``amount``, ``telegram_user_id`` и др. — см. `NewDigitalProductPayload` в том же OpenAPI.
 
-Все события защищены HMAC-SHA256 (заголовок ``trbt-signature``, ключ — ``TRIBUTE_API_KEY``).
+``cancelled_subscription`` — только лог. ``digital_product_refunded`` — только лог (откат
+подписки в этом сервисе не реализован).
+
+Все события с телом JSON защищены HMAC-SHA256 (заголовок ``trbt-signature``, ключ ``TRIBUTE_API_KEY``).
 """
 
 from __future__ import annotations
@@ -27,8 +30,7 @@ from app.config import Settings
 from app.core.exceptions import BadRequestError, ServiceUnavailableError, UnauthorizedError
 from app.core.time import utc_today
 from app.domain.models.payments import (
-    TributeSubscriptionPublic,
-    TributeSubscriptionResponse,
+    TributePaymentsLinksResponse,
     TributeWebhookAck,
 )
 from app.domain.referrals.payment_tasks import apply_referral_bonus_on_payment
@@ -48,16 +50,12 @@ _PERIOD_TO_MONTHS: dict[str, int] = {
 }
 
 
-def tribute_subscription_public_response(settings: Settings) -> TributeSubscriptionResponse:
-    sub = settings.tribute_subscription
-    if sub is None:
-        return TributeSubscriptionResponse(subscription=None)
-    return TributeSubscriptionResponse(
-        subscription=TributeSubscriptionPublic(
-            tg_link=sub.tg_link,
-            web_link=sub.web_link,
-        ),
-    )
+def tribute_payments_links_public_response(settings: Settings) -> TributePaymentsLinksResponse:
+    tariffs = settings.tribute_tariffs_web
+    recurring = settings.tribute_recurring_pay
+    if tariffs is None and recurring is None:
+        return TributePaymentsLinksResponse(tariffs=None, recurring_pay=None)
+    return TributePaymentsLinksResponse(tariffs=tariffs, recurring_pay=recurring)
 
 
 def _require_tribute_api_key(settings: Settings) -> str:
@@ -108,14 +106,7 @@ class _TributeWebhookEnvelope(BaseModel):
 
 
 class _SubscriptionPaidPayload(BaseModel):
-    """Объединённая схема для ``new_subscription`` и ``renewed_subscription``.
-
-    Из всего, что присылает Tribute, нашему коду нужны только: ``subscription_id``,
-    ``period``, ``price``, ``expires_at``, ``telegram_user_id`` и опционально ``type``
-    (для пропуска ``gift``). Поля ``period_id``, ``amount``, ``currency`` отмечены
-    как обязательные в схеме Tribute, но логикой не используются — поэтому здесь
-    они опциональны (схема всё равно принимает их через ``extra="allow"``).
-    """
+    """Объединённая схема для ``new_subscription`` и ``renewed_subscription``."""
 
     model_config = ConfigDict(extra="allow")
 
@@ -128,14 +119,96 @@ class _SubscriptionPaidPayload(BaseModel):
 
 
 class _SubscriptionCancelledPayload(BaseModel):
-    """Из ``cancelled_subscription`` нам нужны subscription_id, expires_at и (опц.) telegram_user_id."""
-
     model_config = ConfigDict(extra="allow")
 
     subscription_id: int
     expires_at: datetime
     telegram_user_id: int | None = None
     cancel_reason: str | None = None
+
+
+class _DigitalProductPaidPayload(BaseModel):
+    """Схема ``new_digital_product`` (см. OpenAPI ``NewDigitalProductPayload``)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    product_id: int
+    amount: int
+    purchase_id: int
+    telegram_user_id: int | None = None
+    transaction_id: int | None = None
+    product_name: str | None = None
+    purchase_created_at: datetime | None = None
+    currency: str | None = None
+
+
+async def _commit_tribute_paid_months(
+    session: AsyncSession,
+    settings: Settings,
+    *,
+    telegram_user_id: int,
+    months: int,
+    amount_minor: int,
+    external_id: str,
+    payment_kind: Literal["subscription", "one_time"],
+    event_name: str,
+) -> TributeWebhookAck:
+    """Идемпотентная запись платежа Tribute и продление ``users.subscription_until``."""
+    dup_stmt = (
+        select(Payment.id)
+        .where(Payment.provider == "tribute", Payment.external_id == external_id)
+        .limit(1)
+    )
+    if (await session.scalars(dup_stmt)).first() is not None:
+        return TributeWebhookAck(ok=True, event=event_name, duplicate=True)
+
+    user = await require_user_by_telegram_id(session, int(telegram_user_id))
+
+    dup_stmt2 = (
+        select(Payment.id)
+        .where(Payment.provider == "tribute", Payment.external_id == external_id)
+        .limit(1)
+    )
+    if (await session.scalars(dup_stmt2)).first() is not None:
+        return TributeWebhookAck(ok=True, event=event_name, duplicate=True)
+
+    amount_decimal = _amount_from_minor_units(int(amount_minor))
+    paid_days = int(months) * _DAYS_PER_MONTH
+
+    accumulated_bonus_days = await sum_referral_bonus_days_pending_activation(
+        session,
+        user_id=int(user.id),
+    )
+    total_days = paid_days + accumulated_bonus_days
+    user.subscription_until = _extend_subscription_until(user.subscription_until, days=total_days)
+
+    session.add(
+        Payment(
+            user_id=int(user.id),
+            amount=amount_decimal,
+            months=months,
+            provider="tribute",
+            payment_kind=payment_kind,
+            external_id=external_id,
+        ),
+    )
+    session.add(
+        Task(
+            task_type="notify_payment",
+            user_id=int(user.id),
+            referee_id=None,
+            bonus_days=accumulated_bonus_days if accumulated_bonus_days > 0 else None,
+            paid_months=months,
+        ),
+    )
+    await apply_referral_bonus_on_payment(
+        session,
+        settings=settings,
+        referee_user_id=int(user.id),
+        paid_months=months,
+    )
+    await session.flush()
+    return TributeWebhookAck(ok=True, event=event_name, duplicate=False)
 
 
 async def _handle_subscription_paid(
@@ -173,66 +246,57 @@ async def _handle_subscription_paid(
         )
         return TributeWebhookAck(ok=True, event=event_name, duplicate=False)
 
-    ext = (
-        f"sub:{int(p.subscription_id)}"
-        f":tg{int(p.telegram_user_id)}"
-        f":{_expires_at_iso_compact(p.expires_at)}"
-    )
+    ext = f"sub:{int(p.subscription_id)}:{_expires_at_iso_compact(p.expires_at)}"
 
-    dup_stmt = (
-        select(Payment.id)
-        .where(Payment.provider == "tribute", Payment.external_id == ext)
-        .limit(1)
-    )
-    if (await session.scalars(dup_stmt)).first() is not None:
-        return TributeWebhookAck(ok=True, event=event_name, duplicate=True)
-
-    user = await require_user_by_telegram_id(session, int(p.telegram_user_id))
-
-    dup_stmt2 = (
-        select(Payment.id)
-        .where(Payment.provider == "tribute", Payment.external_id == ext)
-        .limit(1)
-    )
-    if (await session.scalars(dup_stmt2)).first() is not None:
-        return TributeWebhookAck(ok=True, event=event_name, duplicate=True)
-
-    amount_decimal = _amount_from_minor_units(int(p.price))
-    paid_days = int(months) * _DAYS_PER_MONTH
-
-    accumulated_bonus_days = await sum_referral_bonus_days_pending_activation(
+    return await _commit_tribute_paid_months(
         session,
-        user_id=int(user.id),
+        settings,
+        telegram_user_id=int(p.telegram_user_id),
+        months=months,
+        amount_minor=int(p.price),
+        external_id=ext,
+        payment_kind="subscription",
+        event_name=event_name,
     )
-    total_days = paid_days + accumulated_bonus_days
-    user.subscription_until = _extend_subscription_until(user.subscription_until, days=total_days)
 
-    session.add(
-        Payment(
-            user_id=int(user.id),
-            amount=amount_decimal,
-            months=months,
-            provider="tribute",
-            external_id=ext,
-        ),
-    )
-    session.add(
-        Task(
-            task_type="notify_payment",
-            user_id=int(user.id),
-            referee_id=None,
-            bonus_days=accumulated_bonus_days if accumulated_bonus_days > 0 else None,
-            paid_months=months,
-        ),
-    )
-    await apply_referral_bonus_on_payment(
+
+async def _handle_digital_product_paid(
+    session: AsyncSession,
+    *,
+    settings: Settings,
+    payload: dict[str, Any],
+) -> TributeWebhookAck:
+    p = _DigitalProductPaidPayload.model_validate(payload)
+    event_name = "new_digital_product"
+
+    months = settings.tribute_digital_product_id_to_months(int(p.product_id))
+    if months is None:
+        log.warning(
+            "Tribute new_digital_product: product_id=%s не сопоставлен с тарифом "
+            "(TRIBUTE_DIGITAL_PRODUCT_ID_*) — игнор",
+            p.product_id,
+        )
+        return TributeWebhookAck(ok=True, event=event_name, duplicate=False)
+
+    if p.telegram_user_id is None:
+        log.warning(
+            "Tribute new_digital_product: telegram_user_id отсутствует (purchase_id=%s) — игнор",
+            p.purchase_id,
+        )
+        return TributeWebhookAck(ok=True, event=event_name, duplicate=False)
+
+    ext = f"dp:{int(p.purchase_id)}"
+
+    return await _commit_tribute_paid_months(
         session,
-        settings=settings,
-        referee_user_id=int(user.id),
-        paid_months=months,
+        settings,
+        telegram_user_id=int(p.telegram_user_id),
+        months=months,
+        amount_minor=int(p.amount),
+        external_id=ext,
+        payment_kind="one_time",
+        event_name=event_name,
     )
-    await session.flush()
-    return TributeWebhookAck(ok=True, event=event_name, duplicate=False)
 
 
 async def _handle_subscription_cancelled(
@@ -251,6 +315,14 @@ async def _handle_subscription_cancelled(
     return TributeWebhookAck(ok=True, event="cancelled_subscription", duplicate=False)
 
 
+async def _handle_digital_product_refunded(*, payload: dict[str, Any]) -> TributeWebhookAck:
+    log.info(
+        "Tribute digital_product_refunded: payload keys=%s — запись в payments не меняется (откат доступа вручную)",
+        list(payload.keys()) if isinstance(payload, dict) else type(payload),
+    )
+    return TributeWebhookAck(ok=True, event="digital_product_refunded", duplicate=False)
+
+
 async def process_tribute_webhook_raw_body(
     session: AsyncSession,
     *,
@@ -266,7 +338,6 @@ async def process_tribute_webhook_raw_body(
     except (UnicodeDecodeError, json.JSONDecodeError):
         raise BadRequestError(detail="Некорректный JSON тела webhook") from None
 
-    # Дашборд Tribute при «тестовом запросе» шлёт {"test_event": "..."} без name/payload.
     if isinstance(body_obj, dict) and "test_event" in body_obj and "name" not in body_obj:
         log.info("Tribute webhook: тестовое событие test_event=%r", body_obj.get("test_event"))
         te = body_obj.get("test_event")
@@ -299,5 +370,9 @@ async def process_tribute_webhook_event(
         )
     if n == "cancelled_subscription":
         return await _handle_subscription_cancelled(payload=payload)
+    if n == "new_digital_product":
+        return await _handle_digital_product_paid(session, settings=settings, payload=payload)
+    if n == "digital_product_refunded":
+        return await _handle_digital_product_refunded(payload=payload)
     log.info("Tribute webhook: неизвестное событие name=%r — игнор", n)
     return TributeWebhookAck(ok=True, event=n or None, duplicate=False)

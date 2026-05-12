@@ -8,7 +8,7 @@ import { useTableSort } from '../utils/adminTableSort.js'
 
 const loading = ref(false)
 const error = ref(null)
-/** @type {import('vue').Ref<Array<{ id: number, user_id: number, amount: string | number, months: number, provider: string, external_id: string | null, created_at: string }>>} */
+/** @type {import('vue').Ref<Array<{ id: number, user_id: number, amount: string | number, months: number, provider: string, payment_kind: string, external_id: string | null, created_at: string }>>} */
 const items = ref([])
 const total = ref(0)
 const limit = 200
@@ -20,6 +20,7 @@ const sortAccessors = {
   amount: (r) => Number(r.amount) || 0,
   months: (r) => Number(r.months) || 0,
   provider: (r) => String(r.provider ?? '').toLowerCase(),
+  payment_kind: (r) => String(r.payment_kind ?? '').toLowerCase(),
   external_id: (r) => String(r.external_id ?? '').toLowerCase(),
   created_at: (r) => String(r.created_at ?? ''),
 }
@@ -53,6 +54,14 @@ function fmtDate(iso) {
   } catch {
     return String(iso)
   }
+}
+
+function paymentKindLabel(k) {
+  const s = String(k ?? '')
+  if (s === 'subscription') return 'Подписка'
+  if (s === 'one_time') return 'Разовая'
+  if (s === 'manual') return 'Ручная'
+  return s || '—'
 }
 
 async function load() {
@@ -169,6 +178,13 @@ onMounted(() => {
                 @sort="toggleSort"
               />
               <AdminSortTh
+                label="Тип"
+                column-key="payment_kind"
+                :sort-key="sortKey"
+                :sort-dir="sortDir"
+                @sort="toggleSort"
+              />
+              <AdminSortTh
                 label="Провайдер"
                 column-key="provider"
                 :sort-key="sortKey"
@@ -193,7 +209,7 @@ onMounted(() => {
           </thead>
           <tbody>
             <tr v-if="sortedRows.length === 0">
-              <td colspan="7" class="muted">Нет записей</td>
+              <td colspan="8" class="muted">Нет записей</td>
             </tr>
             <template v-else>
               <tr v-for="row in sortedRows" :key="row.id">
@@ -201,6 +217,11 @@ onMounted(() => {
                 <td class="num">{{ row.user_id }}</td>
                 <td class="num">{{ formatAmount(row.amount) }}</td>
                 <td class="num">{{ row.months }}</td>
+                <td>
+                  <span class="pill pill-mono" :title="row.payment_kind">{{
+                    paymentKindLabel(row.payment_kind)
+                  }}</span>
+                </td>
                 <td>
                   <span class="pill pill-mono" :title="row.provider">{{ row.provider }}</span>
                 </td>

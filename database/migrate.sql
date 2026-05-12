@@ -164,7 +164,7 @@ CREATE TABLE IF NOT EXISTS payments (
 CREATE INDEX IF NOT EXISTS idx_payments_user_created_at
     ON payments (user_id, created_at DESC);
 
--- payments: Tribute (Digital Product) — провайдер, внешний purchase_id
+-- payments: провайдер tribute/manual, внешний id (подписка sub:… / покупка dp:…)
 ALTER TABLE payments ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'manual';
 ALTER TABLE payments ADD COLUMN IF NOT EXISTS external_id TEXT;
 
@@ -261,3 +261,20 @@ ALTER TABLE tasks ADD CONSTRAINT tasks_paid_months_check CHECK (
 ALTER TABLE referral_links DROP CONSTRAINT IF EXISTS referral_links_owner_user_id_fkey;
 ALTER TABLE referral_links ADD CONSTRAINT referral_links_owner_user_id_fkey
     FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE CASCADE;
+
+-- payments: тип сценария оплаты (ручная / Tribute подписка / Tribute разовая цифровая покупка)
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS payment_kind TEXT;
+UPDATE payments SET payment_kind = CASE
+    WHEN provider = 'manual' THEN 'manual'
+    WHEN provider = 'tribute' AND external_id LIKE 'dp:%' THEN 'one_time'
+    WHEN provider = 'tribute' THEN 'subscription'
+    ELSE 'manual'
+END
+WHERE payment_kind IS NULL;
+UPDATE payments SET payment_kind = 'manual' WHERE payment_kind IS NULL;
+ALTER TABLE payments ALTER COLUMN payment_kind SET DEFAULT 'manual';
+ALTER TABLE payments ALTER COLUMN payment_kind SET NOT NULL;
+ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_payment_kind_check;
+ALTER TABLE payments ADD CONSTRAINT payments_payment_kind_check CHECK (
+    payment_kind IN ('manual', 'subscription', 'one_time')
+);
