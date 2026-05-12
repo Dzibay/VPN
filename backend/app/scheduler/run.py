@@ -1,12 +1,20 @@
-"""Отдельный процесс с периодическими корутинами (Prometheus-load, Xray-сбор, daily sync,
-TCP-доступность узлов в Redis).
+"""Отдельный процесс с периодическими корутинами (Prometheus-load, Xray-сбор, daily Xray sync,
+TCP-доступность узлов в Redis, задачи Telegram ``notify_sub_expire_*``).
 
 До рефакторинга часть этих задач жила в ``lifespan`` API. Они работают через
 ``run_in_threadpool`` поверх sync ``SessionLocal`` / sync httpx, и при горизонтальном
-масштабировании API дублировали бы работу. Здесь один процесс на весь стек.
+масштабировании API дублировали бы работу. Здесь один или два процесса на весь стек
+(см. ``SCHEDULER_ROLE``).
 
-Запускается как ``python -m app.scheduler.run`` (см. сервис ``scheduler`` в
-``deploy/docker-compose.yml``).
+Запускается как ``python -m app.scheduler.run`` (см. ``scheduler-periodic`` и
+``scheduler-telegram-notify`` в ``deploy/docker-compose.yml``).
+
+Что куда отнесено:
+
+* **periodic** — сбор трафика Xray, ежедневный sync клиентов Xray (RQ), sync нагрузки из Prometheus,
+  фоновый TCP-опрос узлов.
+* **telegram_notify** — раз в сутки создание записей ``tasks`` ``notify_sub_expire_3d`` /
+  ``notify_sub_expire_1d`` для активных подписок с ``telegram_id``.
 """
 
 from __future__ import annotations
@@ -28,9 +36,10 @@ async def _run_until_stopped(
     """Поднять все включённые корутины и ждать SIGTERM/SIGINT (graceful)."""
     if not factories:
         log.warning(
-            "scheduler: ни одна периодическая задача не включена в настройках; "
-            "процесс закончится сразу. Включите хотя бы одну переменную "
-            "*_SCHEDULE_ENABLED, иначе контейнер не нужен.",
+            "scheduler: ни одна периодическая задача не включена для role=%s; "
+            "процесс закончится сразу. Проверьте SCHEDULER_ROLE и флаги *_SCHEDULE_ENABLED / "
+            "subscription_expiry_notify_schedule_enabled.",
+            settings.scheduler_role,
         )
         return
 
@@ -81,7 +90,8 @@ async def _run_until_stopped(
 
 async def main() -> None:
     setup_logging(settings.log_level)
-    log.info("scheduler: запуск (process for periodic background loops)")
+    role = settings.scheduler_role
+    log.info("scheduler: запуск (process for periodic background loops, role=%s)", role)
 
     # Гарантируем, что схема существует — на чистом окружении API мог ещё не успеть
     # её создать. Идемпотентно.
@@ -89,47 +99,64 @@ async def main() -> None:
 
     ensure_schema()
 
+    include_periodic = role in ("all", "periodic")
+    include_telegram_notify = role in ("all", "telegram_notify")
+
     factories: list[Callable[[], Awaitable[None]]] = []
 
-    if settings.xray_traffic_collect_schedule_enabled:
+    if include_periodic and settings.xray_traffic_collect_schedule_enabled:
         from app.infrastructure.xray.xray_traffic_scheduler import (
             periodic_xray_traffic_collect_loop,
         )
 
         factories.append(periodic_xray_traffic_collect_loop)
         log.info("scheduler: включён сбор трафика Xray (xray_traffic_collect_schedule)")
-    else:
+    elif include_periodic:
         log.info("scheduler: сбор трафика Xray выключен")
 
-    if settings.subscription_daily_xray_clients_sync_enabled:
+    if include_periodic and settings.subscription_daily_xray_clients_sync_enabled:
         from app.domain.subscription.scheduler import subscription_daily_xray_sync_loop
 
         factories.append(subscription_daily_xray_sync_loop)
         log.info("scheduler: включён ежедневный sync клиентов Xray")
-    else:
+    elif include_periodic:
         log.info("scheduler: ежедневный sync клиентов Xray выключен")
 
-    if settings.server_load_prometheus_sync_schedule_enabled and (
-        settings.prometheus_base_url or ""
-    ).strip():
+    if (
+        include_periodic
+        and settings.server_load_prometheus_sync_schedule_enabled
+        and (settings.prometheus_base_url or "").strip()
+    ):
         from app.infrastructure.prometheus.server_load_scheduler import (
             periodic_server_load_from_prometheus_loop,
         )
 
         factories.append(periodic_server_load_from_prometheus_loop)
         log.info("scheduler: включён sync servers.load_percent из Prometheus")
-    else:
+    elif include_periodic:
         log.info("scheduler: server load из Prometheus выключен (или нет PROMETHEUS_BASE_URL)")
 
-    if settings.server_reachability_schedule_enabled:
+    if include_periodic and settings.server_reachability_schedule_enabled:
         from app.infrastructure.server_reachability_scheduler import (
             periodic_server_reachability_loop,
         )
 
         factories.append(periodic_server_reachability_loop)
         log.info("scheduler: включён фоновый TCP-опрос узлов и история в Redis")
-    else:
+    elif include_periodic:
         log.info("scheduler: фоновый опрос доступности узлов выключен")
+
+    if include_telegram_notify and settings.subscription_expiry_notify_schedule_enabled:
+        from app.domain.subscription.expiry_notify_scheduler import (
+            subscription_expiry_notify_loop,
+        )
+
+        factories.append(subscription_expiry_notify_loop)
+        log.info(
+            "scheduler: включены задачи напоминания об окончании подписки (notify_sub_expire_*)",
+        )
+    elif include_telegram_notify:
+        log.info("scheduler: напоминания об окончании подписки выключены (subscription_expiry_notify)")
 
     await _run_until_stopped(factories)
 

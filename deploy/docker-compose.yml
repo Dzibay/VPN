@@ -165,11 +165,9 @@ services:
       - ${PROVISION_SSH_KEYS:-./secrets/ssh}:/ssh:ro
     networks: [internal]
 
-  # Отдельный процесс с периодическими корутинами (раньше жили в lifespan API):
-  # сбор трафика Xray, sync servers.load_percent из Prometheus, ежедневный sync клиентов,
-  # TCP-доступность узлов в Redis.
-  # Тот же образ, что у api/worker — отличается только командой.
-  scheduler:
+  # Два планировщика с одним образом: инфраструктура (Xray, Prometheus, TCP) и Telegram-
+  # задачи об окончании подписки. Роль задаёт SCHEDULER_ROLE (см. app/scheduler/run.py).
+  scheduler-periodic:
     build:
       context: ..
       dockerfile: backend/Dockerfile
@@ -188,6 +186,34 @@ services:
       DATABASE_URL: ""
       REDIS_URL: redis://redis:6379/0
       PROMETHEUS_BASE_URL: http://prometheus:9090
+      SCHEDULER_ROLE: periodic
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [internal]
+
+  scheduler-telegram-notify:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    command: ["python", "-m", "app.scheduler.run"]
+    healthcheck:
+      disable: true
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER:-vpn}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB:-vpn}
+      DATABASE_URL: ""
+      REDIS_URL: redis://redis:6379/0
+      PROMETHEUS_BASE_URL: http://prometheus:9090
+      SCHEDULER_ROLE: telegram_notify
     depends_on:
       postgres:
         condition: service_healthy

@@ -8,23 +8,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
 
 from redis.exceptions import RedisError
 from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
+from app.core.time import seconds_until_next_local_time
 from app.domain.users.xray_sync_queue import ensure_sync_xray_clients_all_servers_enqueued
 
 log = logging.getLogger("app.subscription.scheduler")
-
-
-def _seconds_until_next_local_time(hour: int, minute: int) -> float:
-    now = datetime.now()
-    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    if target <= now:
-        target += timedelta(days=1)
-    return (target - now).total_seconds()
 
 
 def run_daily_xray_clients_sync_enqueue() -> None:
@@ -53,7 +45,7 @@ async def subscription_daily_xray_sync_loop() -> None:
     )
     try:
         while True:
-            delay = _seconds_until_next_local_time(hour, minute)
+            delay = seconds_until_next_local_time(hour, minute)
             log.debug(
                 "Ежедневный sync Xray: сон %.0f с до следующего запуска",
                 delay,

@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 from urllib.parse import quote_plus
 
 from pydantic import BaseModel, Field, computed_field
@@ -338,6 +339,34 @@ class Settings(BaseSettings):
         ge=0,
         le=59,
         description="Минута локального времени процесса API.",
+    )
+    scheduler_role: Literal["all", "periodic", "telegram_notify"] = Field(
+        default="all",
+        description=(
+            "Какие циклы поднимает ``python -m app.scheduler.run``: "
+            "all — все; periodic — Xray-трафик, ежедневный sync Xray, Prometheus load, TCP-доступность; "
+            "telegram_notify — только задачи напоминания об окончании подписки (таблица tasks). "
+            "Env: SCHEDULER_ROLE."
+        ),
+    )
+    subscription_expiry_notify_schedule_enabled: bool = Field(
+        default=True,
+        description=(
+            "Раз в сутки (локальное время процесса) создавать задачи ``notify_sub_expire_3d`` / "
+            "``notify_sub_expire_1d`` для пользователей с активной конечной подпиской и telegram_id."
+        ),
+    )
+    subscription_expiry_notify_hour_local: int = Field(
+        default=12,
+        ge=0,
+        le=23,
+        description="Локальный час ежедневной проверки срока подписки (например 12 — полдень).",
+    )
+    subscription_expiry_notify_minute_local: int = Field(
+        default=0,
+        ge=0,
+        le=59,
+        description="Локальная минута проверки срока подписки.",
     )
     subscription_max_devices: int = Field(
         default=0,
