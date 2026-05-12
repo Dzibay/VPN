@@ -21,6 +21,8 @@ _NOTIFICATION_TYPES: tuple[str, ...] = (
     "notify_payment",
     "notify_sub_expire_3d",
     "notify_sub_expire_1d",
+    "notify_sub_expire_0d",
+    "notify_sub_expire",
 )
 
 

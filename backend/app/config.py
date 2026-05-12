@@ -354,7 +354,7 @@ class Settings(BaseSettings):
         default=True,
         description=(
             "Раз в сутки (локальное время процесса) создавать задачи ``notify_sub_expire_3d`` / "
-            "``notify_sub_expire_1d`` для пользователей с активной конечной подпиской и telegram_id."
+            "``notify_sub_expire_1d`` / ``notify_sub_expire_0d`` для пользователей с активной конечной подпиской и telegram_id."
         ),
     )
     subscription_expiry_notify_hour_local: int = Field(

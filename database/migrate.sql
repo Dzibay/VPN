@@ -278,3 +278,17 @@ ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_payment_kind_check;
 ALTER TABLE payments ADD CONSTRAINT payments_payment_kind_check CHECK (
     payment_kind IN ('manual', 'subscription', 'one_time')
 );
+
+-- tasks: тип notify_sub_expire_0d (последний календарный день подписки; раньше совпадал с notify_sub_expire_1d)
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_type_check;
+ALTER TABLE tasks ADD CONSTRAINT tasks_type_check CHECK (
+    type IN (
+        'notify_ref_reg',
+        'notify_ref_pay',
+        'notify_payment',
+        'notify_sub_expire_3d',
+        'notify_sub_expire_1d',
+        'notify_sub_expire_0d',
+        'notify_sub_expire'
+    )
+);
