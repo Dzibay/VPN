@@ -658,6 +658,10 @@ onMounted(() => {
             <div
               v-else
               class="client-btns"
+              :class="{
+                'client-btns--4': filteredOpenClients.length === 4,
+                'client-btns--5': filteredOpenClients.length === 5,
+              }"
             >
               <RouterLink
                 v-for="c in filteredOpenClients"
@@ -1626,9 +1630,29 @@ dd {
   gap: 0.5rem;
 }
 
+/* Ровно 4 кнопки: 2 + 2 */
+.client-btns--4 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+/* Ровно 5 кнопок: 2 + 3 (ровная ширина рядов через 6 колонок) */
+.client-btns--5 {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+}
+
+.client-btns--5 .client-btn:nth-child(-n + 2) {
+  grid-column: span 3;
+}
+
+.client-btns--5 .client-btn:nth-child(n + 3) {
+  grid-column: span 2;
+}
+
 .client-btn {
   display: inline-block;
-  padding: 0.45rem 0.85rem;
+  padding: 0.62rem 0.85rem;
   border-radius: 10px;
   font-size: 0.86rem;
   font-weight: 600;
