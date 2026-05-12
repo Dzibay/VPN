@@ -89,7 +89,10 @@ async def telegram_site_link_start_ep(
     response_model=ReferralMeResponse,
     dependencies=[Depends(require_telegram_bot_api_secret)],
     summary="Персональная реферальная ссылка (как GET /api/referral/me), по telegram_id и секрету бота",
-    description="Та же логика, что GET /api/referral/me: персональная ссылка для учётной записи по роли в БД.",
+    description=(
+        "Та же логика, что GET /api/referral/me: персональная ссылка и поля бонусных дней "
+        "(ожидающие активации и полученные через notify_payment) для учётной записи по telegram_id."
+    ),
 )
 async def telegram_referral_me(
     session: SessionDep,

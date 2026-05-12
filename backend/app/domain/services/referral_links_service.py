@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +26,10 @@ from app.domain.referrals.public_links import referral_link_to_response
 from app.domain.referrals.repository import (
     delete_referral_link,
     get_or_create_user_owned_referral_link,
+)
+from app.domain.referrals.task_bonus_days import (
+    sum_referral_bonus_days_pending_activation,
+    sum_referral_bonus_days_received_via_notify_payment,
 )
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 
@@ -62,4 +68,12 @@ async def referral_me_for_user(session: AsyncSession, user_id: int, cfg: object)
     except RuntimeError as e:
         raise InternalServerError(str(e)) from e
 
-    return ReferralMeResponse(link=referral_link_to_response(row, cfg))
+    pending, received = await asyncio.gather(
+        sum_referral_bonus_days_pending_activation(session, user_id=user_id),
+        sum_referral_bonus_days_received_via_notify_payment(session, user_id=user_id),
+    )
+    return ReferralMeResponse(
+        link=referral_link_to_response(row, cfg),
+        bonus_days_pending_activation=pending,
+        bonus_days_received=received,
+    )

@@ -32,9 +32,9 @@ async def apply_referral_bonus_on_payment(
 
     ВАЖНО: ``users.subscription_until`` владельца здесь НЕ продлевается. Накопленные
     бонусные дни применяются к подписке владельца только при его собственной оплате
-    (см. ``_handle_subscription_paid`` в ``tribute_service``): суммируются ``bonus_days``
-    всех его ``notify_ref_pay``-задач от ``created_at`` его последней ``notify_payment``
-    и прибавляются к оплаченным дням при продлении ``subscription_until``.
+    (см. ``_handle_subscription_paid`` в ``tribute_service``): та же граница и сумма, что в
+    :func:`app.domain.referrals.task_bonus_days.sum_referral_bonus_days_pending_activation`,
+    прибавляются к оплаченным дням при продлении ``subscription_until``.
 
     Возвращает фактически зафиксированные бонусные дни (или ``None``, если задача не создана).
     """

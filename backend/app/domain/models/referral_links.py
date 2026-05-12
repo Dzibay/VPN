@@ -73,6 +73,19 @@ class ReferralMeResponse(BaseModel):
     link: ReferralLinkOut = Field(
         description="Текущая персональная ссылка; при первом успешном запросе создаётся на сервере",
     )
+    bonus_days_pending_activation: int = Field(
+        ge=0,
+        description=(
+            "Бонусные дни реферера, ожидающие активации: сумма bonus_days задач notify_ref_pay "
+            "после created_at последней notify_payment этого пользователя (см. app.domain.referrals.task_bonus_days)"
+        ),
+    )
+    bonus_days_received: int = Field(
+        ge=0,
+        description=(
+            "Уже полученные бонусные дни: сумма bonus_days по всем notify_payment этого пользователя"
+        ),
+    )
 
 
 class ReferralTrackClickBody(BaseModel):

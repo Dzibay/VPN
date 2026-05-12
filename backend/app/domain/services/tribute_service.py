@@ -20,7 +20,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
@@ -32,6 +32,7 @@ from app.domain.models.payments import (
     TributeWebhookAck,
 )
 from app.domain.referrals.payment_tasks import apply_referral_bonus_on_payment
+from app.domain.referrals.task_bonus_days import sum_referral_bonus_days_pending_activation
 from app.domain.services.telegram_service import require_user_by_telegram_id
 from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.task import Task
@@ -97,40 +98,6 @@ def _extend_subscription_until(base: date | None, *, days: int) -> date:
     today = utc_today()
     start = base if base is not None and base >= today else today
     return start + timedelta(days=days)
-
-
-async def _sum_unclaimed_referral_bonus_days(
-    session: AsyncSession,
-    *,
-    user_id: int,
-) -> int:
-    """Сумма ``bonus_days`` из ``notify_ref_pay`` пользователя с момента его прошлой оплаты.
-
-    Граница — ``created_at`` последней задачи ``notify_payment`` этого ``user_id``; если её
-    нет (первая оплата), берутся все ``notify_ref_pay`` для этого ``user_id``. Возвращает
-    суммарное число «непогашенных» бонусных дней (0, если задач нет / у всех ``bonus_days``
-    обнулены или равны NULL).
-    """
-    last_payment_at_stmt = (
-        select(Task.created_at)
-        .where(
-            Task.user_id == int(user_id),
-            Task.task_type == "notify_payment",
-        )
-        .order_by(Task.created_at.desc())
-        .limit(1)
-    )
-    last_payment_at = (await session.scalars(last_payment_at_stmt)).first()
-
-    sum_stmt = select(func.coalesce(func.sum(Task.bonus_days), 0)).where(
-        Task.user_id == int(user_id),
-        Task.task_type == "notify_ref_pay",
-    )
-    if last_payment_at is not None:
-        sum_stmt = sum_stmt.where(Task.created_at > last_payment_at)
-
-    total = (await session.scalars(sum_stmt)).first()
-    return int(total or 0)
 
 
 class _TributeWebhookEnvelope(BaseModel):
@@ -233,7 +200,7 @@ async def _handle_subscription_paid(
     amount_decimal = _amount_from_minor_units(int(p.price))
     paid_days = int(months) * _DAYS_PER_MONTH
 
-    accumulated_bonus_days = await _sum_unclaimed_referral_bonus_days(
+    accumulated_bonus_days = await sum_referral_bonus_days_pending_activation(
         session,
         user_id=int(user.id),
     )
