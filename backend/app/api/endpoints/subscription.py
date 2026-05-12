@@ -14,8 +14,8 @@
 формат ``subscription-userinfo`` (upload, download, total, expire), что используют
 Stash / Clash Verge / v2rayNG. Подробнее: ``app.domain.subscription.userinfo``.
 
-``GET /sub/{token}``: при ``User-Agent``, содержащем подстроку ``clash`` (без учёта регистра), тело — YAML (Clash Meta);
-иначе — одна строка Base64 (как ранее).
+``GET /sub/{token}``: при ``User-Agent``, содержащем подстроку ``clash`` или ``hiddify`` (без учёта регистра), тело — YAML (Clash Meta);
+иначе — одна строка Base64 (как ранее). Явный YAML: ``GET /sub/{token}/clash``.
 
 При исчерпании лимита устройств (``SUBSCRIPTION_MAX_DEVICES``) ответ остаётся 200 с пустым списком узлов
 и текстом в заголовке ``announce``, без HTTP 403.
@@ -26,7 +26,7 @@ Stash / Clash Verge / v2rayNG. Подробнее: ``app.domain.subscription.use
 
 Тестовые конфигурации (файл ``backend/configurations/test_configurations.json``):
 
-- GET/HEAD ``/sub/test-configurations`` — как обычная подписка: Base64 со строками ``vless://`` или YAML при User-Agent с ``clash``.
+- GET/HEAD ``/sub/test-configurations`` — как обычная подписка: Base64 со строками ``vless://`` или YAML при User-Agent с ``clash`` / ``hiddify``.
 
 Каждая запись в JSON должна содержать клиентский outbound VLESS+REALITY (TCP); берётся узел с ``tag: proxy`` или первый не-служебный outbound.
 """
@@ -94,7 +94,8 @@ _LOCAL_GEOSITE_PATH = _GEO_DIR / "geosite.dat"
 
 def _user_agent_requests_clash_yaml(request: Request) -> bool:
     ua = (request.headers.get("user-agent") or "").lower()
-    return "clash" in ua
+    # Clash-семейство шлёт «clash»; Hiddify Next часто без него — «hiddify» в UA.
+    return "clash" in ua or "hiddify" in ua
 
 
 def _read_local_geo_dat_or_503(path: FilePath, name: str) -> bytes:
@@ -171,7 +172,7 @@ async def subscription_test_configs_head(request: Request) -> Response:
     "/sub/test-configurations",
     summary=(
         "Тестовая подписка из configurations/test_configurations.json: "
-        "text/plain Base64 (строки vless://), либо YAML при User-Agent с подстрокой clash"
+        "text/plain Base64 (строки vless://), либо YAML при User-Agent с подстрокой clash или hiddify"
     ),
     response_class=Response,
 )
@@ -266,7 +267,7 @@ async def subscription_open_in_app(
 
 @router.head(
     "/sub/{subscription_token}",
-    summary="HEAD подписки: без тела; Content-Type hint — text/yaml при User-Agent с clash, иначе text/plain",
+    summary="HEAD подписки: без тела; Content-Type hint — text/yaml при User-Agent с clash/hiddify, иначе text/plain",
     response_class=Response,
 )
 async def subscription_head_by_token(
@@ -296,7 +297,7 @@ async def subscription_head_by_token(
 
 @router.get(
     "/sub/{subscription_token}",
-    summary="Подписка: text/plain Base64, либо text/yaml при User-Agent с подстрокой clash",
+    summary="Подписка: text/plain Base64, либо text/yaml при User-Agent с подстрокой clash или hiddify",
     response_class=Response,
 )
 async def subscription_base64_by_token(
