@@ -351,7 +351,7 @@ function drawServerTrafficDailyChart() {
             const rt = Math.round(totGiB * 1000) / 1000
             const rd = Math.round(deltaGiB * 1000) / 1000
             return [
-              `Сумма на конец дня: ${rt} ГиБ`,
+              `Накопление: ${rt} ГиБ`,
               `Изменение за сутки: ${rd} ГиБ`,
             ]
           },
@@ -390,7 +390,7 @@ function drawServerTrafficDailyChart() {
       labels,
       datasets: [
         {
-          label: 'Сумма (up+down) по всем пользователям',
+          label: 'Накопление суточных приростов',
           data: totalGib,
           borderColor: 'rgb(34, 197, 94)',
           backgroundColor: (c) =>
@@ -1179,9 +1179,10 @@ onBeforeUnmount(() => {
             <span class="chart-unit">накопление, ГиБ</span>
           </div>
           <p class="chart-hint traffic-daily-hint">
-            Линия — сумма <code class="inline">up+down</code> по всем пользователям в
-            <code class="inline">user_server_traffic</code> на этот день UTC (как в БД). В подсказке —
-            эта сумма в ГиБ и <strong>изменение за сутки</strong> к предыдущему дню, где есть данные.
+            Линия — <strong>накопление</strong> с начала окна: каждый день берётся суточный прирост по серверу
+            (для каждого пользователя — разница между последним известным снимком на конец дня и на конец предыдущего дня,
+            без строки в БД значение переносится), приросты по всем пользователям суммируются, затем накапливаются.
+            На графике подряд <strong>все календарные дни</strong> UTC в окне. В подсказке — накопление и изменение за сутки.
           </p>
           <p v-if="serverTrafficDailyError" class="banner-err">{{ serverTrafficDailyError }}</p>
           <p
@@ -1191,7 +1192,7 @@ onBeforeUnmount(() => {
             "
             class="chart-hint muted-hint traffic-daily-empty"
           >
-            Нет дневных строк в БД за выбранный период — после сбора Xray появятся точки.
+            Нет точек для графика (некорректное окно дат).
           </p>
           <div class="chart-wrap chart-wrap-traffic-daily">
             <canvas ref="chartServerTrafficDaily" />

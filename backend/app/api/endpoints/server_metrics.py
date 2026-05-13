@@ -104,7 +104,7 @@ async def poll_user_traffic_collect_job(
     "/{server_id}/user-traffic/daily-summary",
     response_model=ServerTrafficDailySummary,
     dependencies=[Depends(require_admin)],
-    summary="Суточные суммы и прирост суммарного Xray-трафика по узлу (user_server_traffic)",
+    summary="Дневной ряд: накопление суточных приростов трафика по узлу (перенос снимков, все даты UTC)",
 )
 async def get_server_user_traffic_daily_summary(
     server_id: int,

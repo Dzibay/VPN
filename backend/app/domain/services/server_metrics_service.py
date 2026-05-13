@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from collections import defaultdict
+from datetime import date, datetime, timedelta
 
 import httpx
 from fastapi.concurrency import run_in_threadpool
 from redis.exceptions import RedisError
 from rq.exceptions import NoSuchJobError
 from rq.job import Job, JobStatus
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, settings
@@ -333,8 +334,35 @@ async def server_user_traffic_bundle_db_only(
     return await run_in_threadpool(_server_user_traffic_bundle_db_only_blocking, server_id)
 
 
+def _inclusive_date_range(a: date, b: date) -> list[date]:
+    out: list[date] = []
+    d = a
+    while d <= b:
+        out.append(d)
+        d += timedelta(days=1)
+    return out
+
+
+def _forward_fill_totals_on_grid(
+    series: list[tuple[date, int]],
+    grid: list[date],
+) -> list[int]:
+    """Для каждого дня из grid — последний total среди строк с traffic_date ≤ этого дня."""
+    if not grid:
+        return []
+    out: list[int] = []
+    pi = 0
+    curr = 0
+    for day in grid:
+        while pi < len(series) and series[pi][0] <= day:
+            curr = series[pi][1]
+            pi += 1
+        out.append(curr)
+    return out
+
+
 def _server_traffic_daily_summary_blocking(server_id: int, days: int) -> ServerTrafficDailySummary:
-    """Sync: своя сессия. Суточная сумма (up+down) по всем пользователям узла и прирост к предыдущему дню с данными."""
+    """Суточные дельты по переносу снимков на календарную сетку, сумма по пользователям, накопление и все дни подряд."""
     db = SessionLocal()
     try:
         if db.get(Server, server_id) is None:
@@ -342,44 +370,53 @@ def _server_traffic_daily_summary_blocking(server_id: int, days: int) -> ServerT
         span = max(1, min(int(days), 366))
         today = utc_today()
         start = today - timedelta(days=span - 1)
-        daily_sub = (
-            select(
-                UserServerTraffic.traffic_date.label("traffic_date"),
-                func.coalesce(
-                    func.sum(UserServerTraffic.up_bytes + UserServerTraffic.down_bytes),
-                    0,
-                ).label("total_sum"),
-            )
-            .where(UserServerTraffic.server_id == server_id)
-            .group_by(UserServerTraffic.traffic_date)
-            .subquery()
-        )
-        prev_total = func.lag(daily_sub.c.total_sum).over(
-            order_by=daily_sub.c.traffic_date.asc(),
-        )
+        day_before_start = start - timedelta(days=1)
+
         stmt = (
             select(
-                daily_sub.c.traffic_date,
-                daily_sub.c.total_sum,
-                prev_total.label("prev_total"),
+                UserServerTraffic.user_id,
+                UserServerTraffic.traffic_date,
+                (UserServerTraffic.up_bytes + UserServerTraffic.down_bytes).label("tot"),
             )
-            .select_from(daily_sub)
-            .where(daily_sub.c.traffic_date >= start)
-            .order_by(daily_sub.c.traffic_date.asc())
+            .where(UserServerTraffic.server_id == server_id)
+            .order_by(UserServerTraffic.user_id.asc(), UserServerTraffic.traffic_date.asc())
         )
-        rows = db.execute(stmt).all()
+        raw_rows = db.execute(stmt).all()
+
+        by_user: dict[int, list[tuple[date, int]]] = defaultdict(list)
+        for uid, traffic_d, tot in raw_rows:
+            by_user[int(uid)].append((traffic_d, int(tot or 0)))
+
+        grid = _inclusive_date_range(day_before_start, today)
+        if not grid:
+            return ServerTrafficDailySummary(server_id=server_id, points=[])
+
+        if not by_user:
+            points = [
+                ServerTrafficDailyPoint(traffic_date=D, delta_sum_bytes=0, total_sum_bytes=0)
+                for D in _inclusive_date_range(start, today)
+            ]
+            return ServerTrafficDailySummary(server_id=server_id, points=points)
+
+        day_delta: dict[date, int] = defaultdict(int)
+        for _uid, series in by_user.items():
+            vals = _forward_fill_totals_on_grid(series, grid)
+            for i in range(1, len(grid)):
+                d = grid[i]
+                if d < start:
+                    continue
+                day_delta[d] += max(0, vals[i] - vals[i - 1])
+
+        run = 0
         points: list[ServerTrafficDailyPoint] = []
-        for d, total_raw, prev_raw in rows:
-            total = int(total_raw or 0)
-            if prev_raw is None:
-                delta = 0
-            else:
-                delta = max(0, total - int(prev_raw or 0))
+        for d in _inclusive_date_range(start, today):
+            dd = int(day_delta[d])
+            run += dd
             points.append(
                 ServerTrafficDailyPoint(
                     traffic_date=d,
-                    total_sum_bytes=total,
-                    delta_sum_bytes=delta,
+                    delta_sum_bytes=dd,
+                    total_sum_bytes=run,
                 ),
             )
         return ServerTrafficDailySummary(server_id=server_id, points=points)
