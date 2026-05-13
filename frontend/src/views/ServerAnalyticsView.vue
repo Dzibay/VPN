@@ -416,7 +416,7 @@ async function loadServerTrafficDaily(genAtStart = null) {
   serverTrafficDailyError.value = null
   try {
     const data = await fetchJson(
-      `/api/servers/${serverId.value}/user-traffic/daily-summary?days=120`,
+      `/api/servers/${serverId.value}/user-traffic/daily-summary?days=30`,
       { signal: abortSignalAfterMs(45000) },
     )
     if (genAtStart != null && genAtStart !== userTrafficFetchGen) return
