@@ -519,7 +519,7 @@ async function deleteEditTask() {
               <StaffUserIdSuggestInput
                 v-model="formRefereeId"
                 input-id="tasks-create-referee-id"
-                placeholder="Пусто — NULL; иначе поиск как у User ID"
+                placeholder="Поиск от 3 символов (email, @username, tg id)"
               />
             </label>
             <p class="field-hint">Для notify_ref_reg / notify_ref_pay — второй пользователь в сценарии.</p>
@@ -603,7 +603,7 @@ async function deleteEditTask() {
               <StaffUserIdSuggestInput
                 v-model="editFormRefereeId"
                 input-id="tasks-edit-referee-id"
-                placeholder="Пусто — NULL; иначе поиск пользователя"
+                placeholder="Поиск от 3 символов (email, @username, tg id)"
               />
             </label>
             <label class="field">
