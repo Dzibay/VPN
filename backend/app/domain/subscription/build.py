@@ -38,7 +38,7 @@ from app.infrastructure.persistence.models.user import User
 log = logging.getLogger("app.subscription.build")
 
 SUBSCRIPTION_AUTO_RECOMMENDED_LABEL = "🔥 Auto (рекомендуемый)"
-SUBSCRIPTION_AUTO_WHITELIST_LABEL = "📄 Auto (белый список)"
+SUBSCRIPTION_AUTO_WHITELIST_LABEL = "📄 Auto (Белые списки)"
 
 # uTLS fingerprint в vless:// и Clash: не из БД, а случайный на каждую выдачу подписки (DPI).
 _SUBSCRIPTION_UTLS_FP_CHOICES: tuple[str, ...] = ("chrome", "firefox", "safari", "edge")
