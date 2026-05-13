@@ -311,7 +311,7 @@ function drawServerTrafficDailyChart() {
   if (!Array.isArray(pts) || pts.length === 0) return
 
   const labels = pts.map((p) => formatTrafficDayLabel(p.traffic_date))
-  const deltaGib = pts.map((p) => Number(p.delta_sum_bytes || 0) / 1024 ** 3)
+  const totalGib = pts.map((p) => Number(p.total_sum_bytes || 0) / 1024 ** 3)
   const common = {
     responsive: true,
     maintainAspectRatio: false,
@@ -322,7 +322,7 @@ function drawServerTrafficDailyChart() {
         position: 'top',
         labels: {
           usePointStyle: true,
-          pointStyle: 'rect',
+          pointStyle: 'circle',
           padding: 12,
           font: { family: 'var(--sans)', size: 12 },
           color: tickColor(),
@@ -336,15 +336,24 @@ function drawServerTrafficDailyChart() {
         cornerRadius: 10,
         displayColors: true,
         callbacks: {
+          title: (items) => {
+            if (!items.length) return ''
+            const i = items[0].dataIndex
+            const p = pts[i]
+            return p ? String(p.traffic_date).slice(0, 10) : ''
+          },
           label: (ctx) => {
             const i = ctx.dataIndex
             const p = pts[i]
-            if (!p) return `${ctx.dataset.label}: —`
-            const dg = deltaGib[i]
-            const tot = Number(p.total_sum_bytes || 0) / 1024 ** 3
-            const r = Math.round(dg * 1000) / 1000
-            const rt = Math.round(tot * 1000) / 1000
-            return [`Прирост: ${r} ГиБ`, `Сумма в БД за день: ${rt} ГиБ`]
+            if (!p) return []
+            const totGiB = Number(p.total_sum_bytes || 0) / 1024 ** 3
+            const deltaGiB = Number(p.delta_sum_bytes || 0) / 1024 ** 3
+            const rt = Math.round(totGiB * 1000) / 1000
+            const rd = Math.round(deltaGiB * 1000) / 1000
+            return [
+              `Сумма на конец дня: ${rt} ГиБ`,
+              `Изменение за сутки: ${rd} ГиБ`,
+            ]
           },
         },
       },
@@ -376,18 +385,22 @@ function drawServerTrafficDailyChart() {
   }
 
   serverTrafficDailyChart = new Chart(canvas, {
-    type: 'bar',
+    type: 'line',
     data: {
       labels,
       datasets: [
         {
-          label: 'Суточный прирост суммы (up+down)',
-          data: deltaGib,
-          backgroundColor: 'rgba(45, 179, 157, 0.55)',
+          label: 'Сумма (up+down) по всем пользователям',
+          data: totalGib,
           borderColor: 'rgb(34, 197, 94)',
-          borderWidth: 1,
-          borderRadius: 4,
-          maxBarThickness: 28,
+          backgroundColor: (c) =>
+            lineGradient(c, 'rgba(45, 179, 157, 0.28)', 'rgba(45, 179, 157, 0)'),
+          fill: true,
+          tension: 0.35,
+          spanGaps: true,
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
         },
       ],
     },
@@ -1163,8 +1176,13 @@ onBeforeUnmount(() => {
         <div class="traffic-daily-chart-section">
           <div class="chart-head traffic-daily-head">
             <h3 class="chart-title traffic-daily-title">Суммарный трафик по узлу по дням</h3>
-            <span class="chart-unit">прирост, ГиБ</span>
+            <span class="chart-unit">накопление, ГиБ</span>
           </div>
+          <p class="chart-hint traffic-daily-hint">
+            Линия — сумма <code class="inline">up+down</code> по всем пользователям в
+            <code class="inline">user_server_traffic</code> на этот день UTC (как в БД). В подсказке —
+            эта сумма в ГиБ и <strong>изменение за сутки</strong> к предыдущему дню, где есть данные.
+          </p>
           <p v-if="serverTrafficDailyError" class="banner-err">{{ serverTrafficDailyError }}</p>
           <p
             v-else-if="
@@ -1511,7 +1529,7 @@ onBeforeUnmount(() => {
   margin: 0 0 0.5rem;
 }
 .chart-wrap-traffic-daily {
-  height: 220px;
+  height: 240px;
 }
 .traffic-users-table-wrap {
   margin-top: 0.35rem;
