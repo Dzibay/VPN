@@ -112,12 +112,20 @@ const openInClientLabel = computed(() => {
   return p.open_button_label
 })
 
-/** На мобильном после диплинка — быстрый переход в магазин, если вкладка осталась на переднем плане. */
+/**
+ * На мобильном после диплинка — переход в магазин, если вкладка так и осталась на переднем плане
+ * (клиент не установлен / ОС не передала фокус приложению сразу).
+ * Слишком короткий интервал даёт ложное срабатывание в обычном Chrome при переходе с сайта:
+ * фокус уходит в приложение позже, чем срабатывал таймер. Отмена при visibility/pagehide
+ * закрывает гонку, когда приложение открылось, но document ещё «visible».
+ */
 const OPEN_MOBILE_STORE_FALLBACK_MS = 450
 
 let loadGeneration = 0
 let openTimer = null
 let deeplinkIframe = null
+/** Снятие слушателей, отменяющих fallback при уходе со страницы / в фон (приложение перехватило экран). */
+let cancelMobileFallbackWatchers = null
 
 function removeDeeplinkIframe() {
   if (deeplinkIframe?.parentNode) {
@@ -133,12 +141,41 @@ function clearOpenTimer() {
   }
 }
 
+function clearMobileFallbackWatchers() {
+  if (cancelMobileFallbackWatchers) {
+    cancelMobileFallbackWatchers()
+    cancelMobileFallbackWatchers = null
+  }
+}
+
+function armMobileFallbackWatchers() {
+  clearMobileFallbackWatchers()
+  const onBecameBackground = () => {
+    if (typeof document === 'undefined') return
+    if (document.visibilityState === 'visible') return
+    clearOpenTimer()
+    clearMobileFallbackWatchers()
+  }
+  document.addEventListener('visibilitychange', onBecameBackground)
+  window.addEventListener('pagehide', onBecameBackground)
+  cancelMobileFallbackWatchers = () => {
+    document.removeEventListener('visibilitychange', onBecameBackground)
+    window.removeEventListener('pagehide', onBecameBackground)
+  }
+}
+
 function scheduleMobileStoreFallback() {
   if (!isMobileAppStoreDevice()) return
   clearOpenTimer()
+  clearMobileFallbackWatchers()
+  armMobileFallbackWatchers()
   openTimer = setTimeout(() => {
     if (typeof document === 'undefined') return
-    if (document.visibilityState !== 'visible') return
+    if (document.visibilityState !== 'visible') {
+      clearMobileFallbackWatchers()
+      return
+    }
+    clearMobileFallbackWatchers()
     removeDeeplinkIframe()
     const storeUrl = getMobileStoreRedirectUrl(
       openPageStoreLinks.value,
@@ -217,6 +254,7 @@ async function load() {
   storeRef.value = null
   openPageStoreLinks.value = null
   clearOpenTimer()
+  clearMobileFallbackWatchers()
   removeDeeplinkIframe()
 
   if (!token.value || !client.value) {
@@ -289,6 +327,7 @@ watch(
 
 onBeforeUnmount(() => {
   clearOpenTimer()
+  clearMobileFallbackWatchers()
   removeDeeplinkIframe()
 })
 </script>
