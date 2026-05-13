@@ -195,7 +195,9 @@ CREATE TABLE IF NOT EXISTS tasks (
             'notify_ref_pay',
             'notify_payment',
             'notify_sub_expire_3d',
-            'notify_sub_expire_1d'
+            'notify_sub_expire_1d',
+            'notify_sub_expire_0d',
+            'notify_sub_expire'
         )
     )
 );
@@ -223,6 +225,8 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status
     ON tasks (status);
 
 -- tasks: обновление старых типов задач на новую схему
+-- (полный перечень type сразу — иначе при уже созданных notify_sub_expire_0d / notify_sub_expire
+-- повторный прогон падал бы на ADD CONSTRAINT, см. users_account_role_check выше.)
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_type_check;
 UPDATE tasks SET type = 'notify_ref_reg' WHERE type = 'notify_reg';
 UPDATE tasks SET type = 'notify_ref_pay' WHERE type = 'add_bonus';
@@ -232,7 +236,9 @@ ALTER TABLE tasks ADD CONSTRAINT tasks_type_check CHECK (
         'notify_ref_pay',
         'notify_payment',
         'notify_sub_expire_3d',
-        'notify_sub_expire_1d'
+        'notify_sub_expire_1d',
+        'notify_sub_expire_0d',
+        'notify_sub_expire'
     )
 );
 
