@@ -1,5 +1,6 @@
 """
-Идемпотентное приведение схемы PostgreSQL: database/init.sql, затем database/migrate.sql,
+Идемпотентное приведение схемы PostgreSQL: database/init.sql (CREATE/индексы),
+затем database/migrate.sql (опционально: может содержать только комментарии),
 затем все ``database/rpc/*.sql`` (функции RPC, например ``rpc_users_daily_stats``).
 
 docker-entrypoint-initdb.d выполняется только при пустом data directory; старые БД
@@ -102,16 +103,19 @@ def split_sql_statements(sql: str) -> list[str]:
     return parts
 
 
-def _execute_sql_file(conn, path: Path) -> None:
+def _execute_sql_file(conn, path: Path, *, allow_empty: bool = False) -> None:
     statements = split_sql_statements(path.read_text(encoding="utf-8"))
     if not statements:
+        if allow_empty:
+            log.debug("SQL-файл без исполняемых выражений (пропуск): %s", path)
+            return
         raise ValueError(f"В {path} нет исполняемых выражений.")
     for stmt in statements:
         conn.execute(text(stmt))
 
 
 def ensure_schema(engine: Engine | None = None) -> None:
-    """init.sql → migrate.sql → database/rpc/*.sql в одной транзакции."""
+    """init.sql → migrate.sql (может быть пустым по смыслу) → database/rpc/*.sql в одной транзакции."""
     from app.infrastructure.database.session import engine as default_engine
 
     eng = engine or default_engine
@@ -121,7 +125,7 @@ def ensure_schema(engine: Engine | None = None) -> None:
     try:
         with eng.begin() as conn:
             _execute_sql_file(conn, init_path)
-            _execute_sql_file(conn, migrate_path)
+            _execute_sql_file(conn, migrate_path, allow_empty=True)
             for rpc_path in rpc_paths:
                 _execute_sql_file(conn, rpc_path)
     except SQLAlchemyError:

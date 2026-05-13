@@ -1,5 +1,4 @@
--- Базовые таблицы для пустой БД (CREATE IF NOT EXISTS).
--- Патчи для старых инстансов, ALTER и индексы — в migrate.sql.
+-- Схема для новой БД (CREATE IF NOT EXISTS + индексы). Без ALTER: существующие инстансы уже догнаны вручную.
 
 CREATE TABLE IF NOT EXISTS users (
     id BIGSERIAL PRIMARY KEY,
@@ -11,6 +10,9 @@ CREATE TABLE IF NOT EXISTS users (
     account_role TEXT NOT NULL DEFAULT 'client',
     token TEXT NOT NULL,
     vless_uuid TEXT NOT NULL,
+    registered_at TIMESTAMPTZ,
+    -- Цикл с referral_links.owner_user_id: без REFERENCES, целостность на уровне приложения
+    referral_link_id BIGINT,
     CONSTRAINT users_token_key UNIQUE (token),
     CONSTRAINT users_vless_uuid_key UNIQUE (vless_uuid),
     CONSTRAINT users_account_role_check CHECK (account_role IN ('client', 'manager', 'admin'))
@@ -44,13 +46,12 @@ CREATE TABLE IF NOT EXISTS servers (
     ),
     is_cascade_ru_entry BOOLEAN NOT NULL DEFAULT FALSE,
     cascade_next_server_id BIGINT REFERENCES servers (id) ON DELETE SET NULL,
+    cascade_egress_client_uuid TEXT,
+    proxy_kind TEXT NOT NULL DEFAULT 'vless' CHECK (proxy_kind IN ('vless', 'hysteria2')),
     CONSTRAINT uq_servers_host_port UNIQUE (host, port),
     CONSTRAINT ck_servers_cascade_ru_and_next CHECK (
         cascade_next_server_id IS NULL OR is_cascade_ru_entry = TRUE
-    ),
-    -- UUID VLESS с РФ-входа на внешний exit (должен быть в inbound exit вместе с пользователями)
-    cascade_egress_client_uuid TEXT,
-    CONSTRAINT uq_servers_cascade_egress_uuid UNIQUE (cascade_egress_client_uuid)
+    )
 );
 
 CREATE TABLE IF NOT EXISTS user_server_traffic (
@@ -63,3 +64,154 @@ CREATE TABLE IF NOT EXISTS user_server_traffic (
     raw_down BIGINT NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, server_id, traffic_date)
 );
+
+CREATE TABLE IF NOT EXISTS referral_links (
+    id BIGSERIAL PRIMARY KEY,
+    token TEXT NOT NULL,
+    owner_kind TEXT NOT NULL,
+    owner_user_id BIGINT REFERENCES users (id) ON DELETE CASCADE,
+    clicks_count BIGINT NOT NULL DEFAULT 0 CHECK (clicks_count >= 0),
+    registrations_count BIGINT NOT NULL DEFAULT 0 CHECK (registrations_count >= 0),
+    payments_count BIGINT NOT NULL DEFAULT 0 CHECK (payments_count >= 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT referral_links_token_key UNIQUE (token),
+    CONSTRAINT referral_links_owner_consistency CHECK (
+        (owner_kind = 'user' AND owner_user_id IS NOT NULL)
+        OR (owner_kind <> 'user' AND owner_user_id IS NULL)
+    )
+);
+
+CREATE TABLE IF NOT EXISTS subscription_devices (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    fingerprint TEXT NOT NULL,
+    user_agent TEXT,
+    os TEXT,
+    hwid_raw TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_subscription_devices_user_fp UNIQUE (user_id, fingerprint)
+);
+
+CREATE TABLE IF NOT EXISTS user_http_request_traces (
+    id BIGSERIAL PRIMARY KEY,
+    request_id TEXT NOT NULL,
+    user_id BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    subject_source TEXT NOT NULL DEFAULT 'anonymous',
+    http_method TEXT NOT NULL,
+    path TEXT NOT NULL,
+    status_code INTEGER NOT NULL,
+    duration_ms DOUBLE PRECISION NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS staff_chart_events (
+    id BIGSERIAL PRIMARY KEY,
+    event_at TIMESTAMPTZ NOT NULL,
+    title TEXT NOT NULL,
+    color TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS payments (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    amount NUMERIC(14, 2) NOT NULL CHECK (amount >= 0),
+    months INTEGER NOT NULL CHECK (months >= 1),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    provider TEXT NOT NULL DEFAULT 'manual',
+    external_id TEXT,
+    payment_kind TEXT NOT NULL DEFAULT 'manual',
+    CONSTRAINT payments_provider_check CHECK (provider IN ('manual', 'tribute')),
+    CONSTRAINT payments_payment_kind_check CHECK (
+        payment_kind IN ('manual', 'subscription', 'one_time')
+    )
+);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id BIGSERIAL PRIMARY KEY,
+    type TEXT NOT NULL,
+    user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    referee_id BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    bonus_days INTEGER CHECK (bonus_days IS NULL OR bonus_days >= 0),
+    paid_months INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    done_at TIMESTAMPTZ,
+    status TEXT NOT NULL DEFAULT 'pending',
+    CONSTRAINT tasks_type_check CHECK (
+        type IN (
+            'notify_ref_reg',
+            'notify_ref_pay',
+            'notify_payment',
+            'notify_sub_expire_3d',
+            'notify_sub_expire_1d',
+            'notify_sub_expire_0d',
+            'notify_sub_expire'
+        )
+    ),
+    CONSTRAINT tasks_status_check CHECK (status IN ('pending', 'completed', 'failed')),
+    CONSTRAINT tasks_paid_months_check CHECK (paid_months IS NULL OR paid_months >= 1)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_telegram_id ON users (telegram_id)
+    WHERE telegram_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email ON users (email)
+    WHERE email IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_users_subscription_until ON users (subscription_until);
+
+CREATE INDEX IF NOT EXISTS idx_users_referral_link_id ON users (referral_link_id)
+    WHERE referral_link_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_users_registered_at ON users (registered_at DESC NULLS LAST);
+
+CREATE INDEX IF NOT EXISTS idx_servers_is_active ON servers (is_active);
+
+CREATE INDEX IF NOT EXISTS idx_servers_cascade_next ON servers (cascade_next_server_id)
+    WHERE cascade_next_server_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_servers_cascade_egress_uuid
+    ON servers (cascade_egress_client_uuid)
+    WHERE cascade_egress_client_uuid IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_user_server_traffic_server ON user_server_traffic (server_id);
+
+CREATE INDEX IF NOT EXISTS idx_user_server_traffic_user_day ON user_server_traffic (user_id, traffic_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_referral_links_owner_user_id ON referral_links (owner_user_id)
+    WHERE owner_user_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_referral_links_one_user_owner
+    ON referral_links (owner_user_id)
+    WHERE owner_kind = 'user';
+
+CREATE INDEX IF NOT EXISTS idx_subscription_devices_user_updated_at
+    ON subscription_devices (user_id, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_user_http_request_traces_user_created_at
+    ON user_http_request_traces (user_id, created_at DESC NULLS LAST)
+    WHERE user_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_user_http_request_traces_created_at
+    ON user_http_request_traces (created_at);
+
+CREATE INDEX IF NOT EXISTS idx_staff_chart_events_event_at
+    ON staff_chart_events (event_at ASC);
+
+CREATE INDEX IF NOT EXISTS idx_payments_user_created_at
+    ON payments (user_id, created_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_tribute_purchase
+    ON payments (provider, external_id)
+    WHERE provider = 'tribute' AND external_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_tasks_user_created_at
+    ON tasks (user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_pending
+    ON tasks (created_at ASC)
+    WHERE done_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_tasks_status
+    ON tasks (status);

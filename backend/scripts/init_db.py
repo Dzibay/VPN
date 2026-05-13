@@ -1,6 +1,6 @@
 """
-Применяет database/init.sql, database/migrate.sql и все ``database/rpc/*.sql`` к БД
-(app.infrastructure.database.session.ensure_schema).
+Применяет database/init.sql (CREATE/индексы), database/migrate.sql (если есть выражения)
+и все ``database/rpc/*.sql`` к БД (app.infrastructure.database.session.ensure_schema).
 
 Переменные подключения — из backend/.env: DATABASE_URL или DB_HOST / DB_USER / DB_PASSWORD / DB_NAME (см. app.config).
 
