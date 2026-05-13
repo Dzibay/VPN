@@ -10,6 +10,7 @@ from app.config import settings
 from app.core.dependencies import ReadonlySessionDep, require_admin
 from app.domain.models.server_metrics import ServerMetricsFromPrometheus
 from app.domain.models.server_traffic import (
+    ServerTrafficDailySummary,
     ServerUserTrafficBundle,
     UserTrafficCollectAllEnqueueResponse,
     UserTrafficCollectEnqueueResponse,
@@ -97,6 +98,27 @@ async def poll_user_traffic_collect_job(
     session: ReadonlySessionDep,
 ) -> UserTrafficCollectPollResponse:
     return await server_metrics_service.poll_user_traffic_collect_job_sync(session, server_id, job_id)
+
+
+@router.get(
+    "/{server_id}/user-traffic/daily-summary",
+    response_model=ServerTrafficDailySummary,
+    dependencies=[Depends(require_admin)],
+    summary="Суточные суммы и прирост суммарного Xray-трафика по узлу (user_server_traffic)",
+)
+async def get_server_user_traffic_daily_summary(
+    server_id: int,
+    _session: ReadonlySessionDep,
+    response: Response,
+    days: int = Query(
+        90,
+        ge=1,
+        le=366,
+        description="Глубина окна в календарных днях UTC от сегодня включительно",
+    ),
+) -> ServerTrafficDailySummary:
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return await server_metrics_service.server_traffic_daily_summary_db_only(server_id, days=days)
 
 
 @router.get(

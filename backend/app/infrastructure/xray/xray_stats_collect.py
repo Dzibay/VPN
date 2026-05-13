@@ -18,11 +18,14 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.core.time import utc_today
+from app.core.time import as_calendar_date, utc_today
 from app.infrastructure.persistence.models.server import Server
 from app.infrastructure.persistence.models.user import User
 from app.infrastructure.persistence.models.user_server_traffic import UserServerTraffic
-from app.domain.user_traffic import user_server_traffic_latest_subquery
+from app.domain.user_traffic import (
+    user_server_traffic_latest_strictly_before_calendar_day_subquery,
+    user_server_traffic_latest_subquery,
+)
 from app.domain.models.server_traffic import (
     ServerUserTrafficBundle,
     ServerUserTrafficRow,
@@ -441,7 +444,11 @@ def load_user_traffic_bundle_rows(
     Пользователи с активной подпиской или уже имеющие строку трафика на этом узле;
     LEFT JOIN — нули, если сбора ещё не было (иначе INNER давал пустой график).
     """
+    today = utc_today()
     ut_latest = user_server_traffic_latest_subquery().alias("ut_latest")
+    ut_prev = user_server_traffic_latest_strictly_before_calendar_day_subquery(today).alias(
+        "ut_prev"
+    )
     has_traffic_here = (
         select(1)
         .select_from(UserServerTraffic)
@@ -452,13 +459,27 @@ def load_user_traffic_bundle_rows(
         .correlate(User)
     ).exists()
     stmt = (
-        select(User, ut_latest.c.up_bytes, ut_latest.c.down_bytes)
+        select(
+            User,
+            ut_latest.c.up_bytes,
+            ut_latest.c.down_bytes,
+            ut_latest.c.traffic_date,
+            ut_prev.c.up_bytes,
+            ut_prev.c.down_bytes,
+        )
         .select_from(User)
         .outerjoin(
             ut_latest,
             and_(
                 User.id == ut_latest.c.user_id,
                 ut_latest.c.server_id == server_id,
+            ),
+        )
+        .outerjoin(
+            ut_prev,
+            and_(
+                User.id == ut_prev.c.user_id,
+                ut_prev.c.server_id == server_id,
             ),
         )
         .where(
@@ -472,9 +493,16 @@ def load_user_traffic_bundle_rows(
     )
     rows = session.execute(stmt).all()
     out: list[ServerUserTrafficRow] = []
-    for user, up_raw, down_raw in rows:
+    for user, up_raw, down_raw, latest_day, prev_up_raw, prev_down_raw in rows:
         up_b = int(up_raw or 0)
         down_b = int(down_raw or 0)
+        p_up = int(prev_up_raw or 0)
+        p_down = int(prev_down_raw or 0)
+        latest_d = as_calendar_date(latest_day)
+        if latest_d is None or latest_d != today:
+            d_total = 0
+        else:
+            d_total = max(0, (up_b + down_b) - (p_up + p_down))
         out.append(
             ServerUserTrafficRow(
                 user_id=user.id,
@@ -482,6 +510,7 @@ def load_user_traffic_bundle_rows(
                 up_bytes=up_b,
                 down_bytes=down_b,
                 total_bytes=up_b + down_b,
+                delta_total_bytes=d_total,
             )
         )
     return ServerUserTrafficBundle(

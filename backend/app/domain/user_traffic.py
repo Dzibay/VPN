@@ -10,10 +10,50 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.infrastructure.persistence.models.user_server_traffic import UserServerTraffic
 
 
+def _user_server_traffic_ranked_by_day_subquery():
+    """Строки user_server_traffic с номером по убыванию traffic_date внутри (user_id, server_id)."""
+    rn = (
+        func.row_number()
+        .over(
+            partition_by=(UserServerTraffic.user_id, UserServerTraffic.server_id),
+            order_by=UserServerTraffic.traffic_date.desc(),
+        )
+        .label("rn")
+    )
+    return (
+        select(
+            UserServerTraffic.user_id,
+            UserServerTraffic.server_id,
+            UserServerTraffic.up_bytes,
+            UserServerTraffic.down_bytes,
+            UserServerTraffic.traffic_date,
+            rn,
+        ).subquery()
+    )
+
+
 def user_server_traffic_latest_subquery():
     """
     Последняя по дате строка для каждой пары (user_id, server_id).
     Суммировать все строки по пользователю нельзя — это дублирует накопление между днями.
+    """
+    ranked = _user_server_traffic_ranked_by_day_subquery()
+    return (
+        select(
+            ranked.c.user_id,
+            ranked.c.server_id,
+            ranked.c.up_bytes,
+            ranked.c.down_bytes,
+            ranked.c.traffic_date,
+        )
+        .where(ranked.c.rn == 1)
+        .subquery()
+    )
+
+
+def user_server_traffic_latest_strictly_before_calendar_day_subquery(calendar_day: date):
+    """
+    На каждую пару (user_id, server_id) — последняя строка с traffic_date строго раньше calendar_day.
     """
     rn = (
         func.row_number()
@@ -31,7 +71,9 @@ def user_server_traffic_latest_subquery():
             UserServerTraffic.down_bytes,
             UserServerTraffic.traffic_date,
             rn,
-        ).subquery()
+        )
+        .where(UserServerTraffic.traffic_date < calendar_day)
+        .subquery()
     )
     return (
         select(

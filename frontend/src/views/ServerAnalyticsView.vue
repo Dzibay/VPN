@@ -21,8 +21,11 @@ const chartBottleneck = ref(null)
 const chartNet = ref(null)
 const chartTcp = ref(null)
 const chartLoad = ref(null)
+const chartServerTrafficDaily = ref(null)
 
-/** @type {import('vue').Ref<{ server_id: number, collected_at: string | null, collect_error: string | null, collect_detail?: object | null, users: Array<{ user_id: number, telegram_id: string | null, up_bytes: number, down_bytes: number, total_bytes: number }> } | null>} */
+/** @type {import('vue').Ref<{ server_id: number, points: Array<{ traffic_date: string, total_sum_bytes: number, delta_sum_bytes: number }> } | null>} */
+const serverTrafficDailyBundle = ref(null)
+const serverTrafficDailyError = ref(null)
 const userTrafficBundle = ref(null)
 const userTrafficLoading = ref(false)
 /** true только при запросе с collect=true (SSH), чтобы различать «тихую» подгрузку из БД */
@@ -49,6 +52,16 @@ function abortSignalAfterMs(ms) {
 
 /** @type {Chart[]} */
 let chartInstances = []
+/** @type {Chart | null} */
+let serverTrafficDailyChart = null
+
+function destroyServerTrafficDailyChart() {
+  if (serverTrafficDailyChart) {
+    serverTrafficDailyChart.destroy()
+    serverTrafficDailyChart = null
+  }
+}
+
 function destroyCharts() {
   chartInstances.forEach((c) => c.destroy())
   chartInstances = []
@@ -278,6 +291,133 @@ function formatTrafficMib(v) {
   return `${Math.round(mib * 100) / 100}`
 }
 
+/** Дата YYYY-MM-DD (UTC) → подпись на оси X */
+function formatTrafficDayLabel(trafficDate) {
+  const s = String(trafficDate ?? '').trim().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return s || '—'
+  const [y, m, d] = s.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  })
+}
+
+function drawServerTrafficDailyChart() {
+  destroyServerTrafficDailyChart()
+  const canvas = chartServerTrafficDaily.value
+  if (!canvas) return
+  const pts = serverTrafficDailyBundle.value?.points
+  if (!Array.isArray(pts) || pts.length === 0) return
+
+  const labels = pts.map((p) => formatTrafficDayLabel(p.traffic_date))
+  const deltaGib = pts.map((p) => Number(p.delta_sum_bytes || 0) / 1024 ** 3)
+  const common = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: {
+        display: true,
+        position: 'top',
+        labels: {
+          usePointStyle: true,
+          pointStyle: 'rect',
+          padding: 12,
+          font: { family: 'var(--sans)', size: 12 },
+          color: tickColor(),
+        },
+      },
+      tooltip: {
+        backgroundColor: 'rgba(4, 12, 9, 0.94)',
+        titleFont: { family: 'var(--sans)', size: 12 },
+        bodyFont: { family: 'var(--mono)', size: 12 },
+        padding: 12,
+        cornerRadius: 10,
+        displayColors: true,
+        callbacks: {
+          label: (ctx) => {
+            const i = ctx.dataIndex
+            const p = pts[i]
+            if (!p) return `${ctx.dataset.label}: —`
+            const dg = deltaGib[i]
+            const tot = Number(p.total_sum_bytes || 0) / 1024 ** 3
+            const r = Math.round(dg * 1000) / 1000
+            const rt = Math.round(tot * 1000) / 1000
+            return [`Прирост: ${r} ГиБ`, `Сумма в БД за день: ${rt} ГиБ`]
+          },
+        },
+      },
+    },
+    scales: {
+      x: {
+        ticks: {
+          maxRotation: 45,
+          autoSkip: true,
+          maxTicksLimit: 16,
+          color: tickColor(),
+          font: { size: 10 },
+        },
+        grid: { color: gridColor(), drawBorder: false },
+      },
+      y: {
+        min: 0,
+        beginAtZero: true,
+        title: {
+          display: true,
+          text: 'ГиБ',
+          color: tickColor(),
+          font: { size: 11, weight: '600' },
+        },
+        ticks: { color: tickColor() },
+        grid: { color: gridColor(), drawBorder: false },
+      },
+    },
+  }
+
+  serverTrafficDailyChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Суточный прирост суммы (up+down)',
+          data: deltaGib,
+          backgroundColor: 'rgba(45, 179, 157, 0.55)',
+          borderColor: 'rgb(34, 197, 94)',
+          borderWidth: 1,
+          borderRadius: 4,
+          maxBarThickness: 28,
+        },
+      ],
+    },
+    options: common,
+  })
+}
+
+/**
+ * @param {number | null} [genAtStart] — если передан и не совпадает с текущим поколением запроса, UI не обновлять
+ */
+async function loadServerTrafficDaily(genAtStart = null) {
+  if (serverId.value == null) return
+  serverTrafficDailyError.value = null
+  try {
+    const data = await fetchJson(
+      `/api/servers/${serverId.value}/user-traffic/daily-summary?days=120`,
+      { signal: abortSignalAfterMs(45000) },
+    )
+    if (genAtStart != null && genAtStart !== userTrafficFetchGen) return
+    serverTrafficDailyBundle.value = data
+  } catch (e) {
+    if (genAtStart != null && genAtStart !== userTrafficFetchGen) return
+    serverTrafficDailyBundle.value = null
+    serverTrafficDailyError.value = e.message || String(e)
+  }
+  await nextTick()
+  if (genAtStart != null && genAtStart !== userTrafficFetchGen) return
+  drawServerTrafficDailyChart()
+}
+
 /**
  * @param {boolean} collect — всегда false: только строки из БД. Сбор с узла — отдельно loadUserTrafficFromNode (RQ).
  */
@@ -310,10 +450,10 @@ async function loadUserTraffic(collect = false) {
     if (gen === userTrafficFetchGen) {
       userTrafficLoading.value = false
       userTrafficCollectPending.value = false
+      await nextTick()
+      await loadServerTrafficDaily(gen)
     }
   }
-  if (gen !== userTrafficFetchGen) return
-  await nextTick()
 }
 
 async function loadUserTrafficFromNode() {
@@ -375,10 +515,10 @@ async function loadUserTrafficFromNode() {
       userTrafficLoading.value = false
       userTrafficCollectPending.value = false
       userTrafficSSHInFlight.value = false
+      await nextTick()
+      await loadServerTrafficDaily(gen)
     }
   }
-  if (gen !== userTrafficFetchGen) return
-  await nextTick()
 }
 
 function labelsFor(m) {
@@ -819,6 +959,9 @@ watch(serverId, () => {
   userTrafficSSHInFlight.value = false
   userTrafficLoading.value = false
   userTrafficCollectPending.value = false
+  serverTrafficDailyBundle.value = null
+  serverTrafficDailyError.value = null
+  destroyServerTrafficDailyChart()
 })
 
 onMounted(async () => {
@@ -841,6 +984,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   destroyCharts()
+  destroyServerTrafficDailyChart()
 })
 </script>
 
@@ -954,13 +1098,6 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
-      <p class="chart-hint">
-        По умолчанию — данные из БД (быстро). Кнопка справа: SSH на узел, затем на самом VPS —
-        <code class="inline">xray api statsquery</code> к
-        <code class="inline">127.0.0.1</code> (Stats API). Порт API не должен быть открыт в интернет; его
-        слушает только Xray на localhost. Сбор ставит задачу в очередь воркера (SSH с той же машины, что и провижининг). Метки в Xray:
-        <code class="inline">u12@vpn</code> = id пользователя в БД.
-      </p>
       <p v-if="userTrafficBundle?.collect_error" class="banner-warn">
         {{ userTrafficBundle.collect_error }}
       </p>
@@ -976,50 +1113,73 @@ onBeforeUnmount(() => {
           </li>
         </ul>
       </div>
-      <div v-else class="traffic-users-table-wrap">
-        <table class="traffic-users-table">
-          <thead>
-            <tr>
-              <th>User ID</th>
-              <th class="num">Down, MiB</th>
-              <th class="num">Up, MiB</th>
-              <th class="num">Всего, MiB</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="u in topTrafficUsers" :key="u.user_id">
-              <td>
-                <span class="traffic-user-id-cell">
-                  <span class="traffic-user-id-num">{{ u.user_id }}</span>
-                  <RouterLink
-                    class="ref-open-in-list"
-                    :to="{
-                      path: '/admin/users/analytics',
-                      query: { highlight: String(u.user_id) },
-                    }"
-                    title="Открыть пользователя в таблице клиентов"
-                    aria-label="Перейти к пользователю в таблице клиентов"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" x2="21" y1="14" y2="3" /></svg>
-                  </RouterLink>
-                  <span
-                    v-if="u.telegram_id && String(u.telegram_id).trim()"
-                    class="traffic-user-meta"
-                    :title="`Telegram ID: ${u.telegram_id}`"
-                    >tg: {{ u.telegram_id }}</span
-                  >
-                </span>
-              </td>
-              <td class="num">{{ formatTrafficMib(u.down_bytes) }}</td>
-              <td class="num">{{ formatTrafficMib(u.up_bytes) }}</td>
-              <td class="num">{{ formatTrafficMib(u.total_bytes) }}</td>
-            </tr>
-            <tr v-if="topTrafficUsers.length === 0">
-              <td colspan="4" class="muted-cell">Нет данных по трафику</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <template v-else>
+        <div class="traffic-users-table-wrap">
+          <table class="traffic-users-table">
+            <thead>
+              <tr>
+                <th>User ID</th>
+                <th class="num">Down, MiB</th>
+                <th class="num">Up, MiB</th>
+                <th class="num">Всего, MiB</th>
+                <th class="num">Δ Всего, MiB</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="u in topTrafficUsers" :key="u.user_id">
+                <td>
+                  <span class="traffic-user-id-cell">
+                    <span class="traffic-user-id-num">{{ u.user_id }}</span>
+                    <RouterLink
+                      class="ref-open-in-list"
+                      :to="{
+                        path: '/admin/users/analytics',
+                        query: { highlight: String(u.user_id) },
+                      }"
+                      title="Открыть пользователя в таблице клиентов"
+                      aria-label="Перейти к пользователю в таблице клиентов"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" x2="21" y1="14" y2="3" /></svg>
+                    </RouterLink>
+                    <span
+                      v-if="u.telegram_id && String(u.telegram_id).trim()"
+                      class="traffic-user-meta"
+                      :title="`Telegram ID: ${u.telegram_id}`"
+                      >tg: {{ u.telegram_id }}</span
+                    >
+                  </span>
+                </td>
+                <td class="num">{{ formatTrafficMib(u.down_bytes) }}</td>
+                <td class="num">{{ formatTrafficMib(u.up_bytes) }}</td>
+                <td class="num">{{ formatTrafficMib(u.total_bytes) }}</td>
+                <td class="num">{{ formatTrafficMib(u.delta_total_bytes ?? 0) }}</td>
+              </tr>
+              <tr v-if="topTrafficUsers.length === 0">
+                <td colspan="5" class="muted-cell">Нет данных по трафику</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="traffic-daily-chart-section">
+          <div class="chart-head traffic-daily-head">
+            <h3 class="chart-title traffic-daily-title">Суммарный трафик по узлу по дням</h3>
+            <span class="chart-unit">прирост, ГиБ</span>
+          </div>
+          <p v-if="serverTrafficDailyError" class="banner-err">{{ serverTrafficDailyError }}</p>
+          <p
+            v-else-if="
+              serverTrafficDailyBundle &&
+              (!serverTrafficDailyBundle.points || serverTrafficDailyBundle.points.length === 0)
+            "
+            class="chart-hint muted-hint traffic-daily-empty"
+          >
+            Нет дневных строк в БД за выбранный период — после сбора Xray появятся точки.
+          </p>
+          <div class="chart-wrap chart-wrap-traffic-daily">
+            <canvas ref="chartServerTrafficDaily" />
+          </div>
+        </div>
+      </template>
       <details
         v-if="userTrafficCollectDetail && !userTrafficLoading"
         class="traffic-collect-detail"
@@ -1333,6 +1493,25 @@ onBeforeUnmount(() => {
 }
 .traffic-users-block {
   margin-bottom: 1.15rem;
+}
+.traffic-daily-chart-section {
+  margin-top: 1.15rem;
+  padding-top: 0.35rem;
+}
+.traffic-daily-head {
+  margin-bottom: 0.35rem;
+}
+.traffic-daily-title {
+  font-size: 1rem;
+}
+.traffic-daily-hint {
+  margin-bottom: 0.55rem;
+}
+.traffic-daily-empty {
+  margin: 0 0 0.5rem;
+}
+.chart-wrap-traffic-daily {
+  height: 220px;
 }
 .traffic-users-table-wrap {
   margin-top: 0.35rem;

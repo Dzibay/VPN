@@ -12,6 +12,15 @@ class ServerUserTrafficRow(BaseModel):
     up_bytes: int = Field(ge=0)
     down_bytes: int = Field(ge=0)
     total_bytes: int = Field(ge=0, description="up + down (накоплено в БД)")
+    delta_total_bytes: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Только если последняя по дате строка user_server_traffic на этом узле "
+            "имеет traffic_date = сегодня (UTC): (up+down) этой строки минус (up+down) "
+            "последней строки с датой строго раньше сегодня; иначе 0; не ниже 0"
+        ),
+    )
 
 
 class UserTrafficCollectDetail(BaseModel):
@@ -59,6 +68,28 @@ class ServerUserTrafficBundle(BaseModel):
         description="Детали последнего collect=true (SSH, фрагменты вывода)",
     )
     users: list[ServerUserTrafficRow] = Field(default_factory=list)
+
+
+class ServerTrafficDailyPoint(BaseModel):
+    """Один календарный день UTC по узлу: сумма накопленных счётчиков и суточный прирост."""
+
+    traffic_date: date
+    total_sum_bytes: int = Field(
+        ge=0,
+        description="Σ(up_bytes + down_bytes) по всем пользователям на этом server_id за день",
+    )
+    delta_sum_bytes: int = Field(
+        ge=0,
+        description=(
+            "Разница total_sum_bytes относительно предыдущего календарного дня, "
+            "в котором в БД есть строки (LAG по traffic_date); 0 если предыдущего дня не было"
+        ),
+    )
+
+
+class ServerTrafficDailySummary(BaseModel):
+    server_id: int
+    points: list[ServerTrafficDailyPoint] = Field(default_factory=list)
 
 
 class UserTrafficCollectEnqueueResponse(BaseModel):

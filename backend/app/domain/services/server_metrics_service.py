@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import httpx
 from fastapi.concurrency import run_in_threadpool
 from redis.exceptions import RedisError
 from rq.exceptions import NoSuchJobError
 from rq.job import Job, JobStatus
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, settings
@@ -24,7 +25,10 @@ from app.domain.models.server_metrics import (
     ServerMetricsAxisHints,
     ServerMetricsFromPrometheus,
 )
+from app.core.time import utc_today
 from app.domain.models.server_traffic import (
+    ServerTrafficDailyPoint,
+    ServerTrafficDailySummary,
     ServerUserTrafficBundle,
     UserTrafficCollectAllEnqueueResponse,
     UserTrafficCollectDetail,
@@ -34,6 +38,7 @@ from app.domain.models.server_traffic import (
 from app.infrastructure.cache import get_install_queue, get_redis
 from app.infrastructure.database.session import SessionLocal
 from app.infrastructure.persistence.models.server import Server
+from app.infrastructure.persistence.models.user_server_traffic import UserServerTraffic
 from app.infrastructure.prometheus.bottleneck_metrics import enrich_bottleneck_metrics
 from app.infrastructure.prometheus.prometheus_node import (
     fetch_analytics_axis_hints,
@@ -326,3 +331,65 @@ async def server_user_traffic_bundle_db_only(
             "/api/servers/{id}/user-traffic/collect-jobs/{job_id}",
         )
     return await run_in_threadpool(_server_user_traffic_bundle_db_only_blocking, server_id)
+
+
+def _server_traffic_daily_summary_blocking(server_id: int, days: int) -> ServerTrafficDailySummary:
+    """Sync: своя сессия. Суточная сумма (up+down) по всем пользователям узла и прирост к предыдущему дню с данными."""
+    db = SessionLocal()
+    try:
+        if db.get(Server, server_id) is None:
+            raise NotFoundError("Сервер не найден")
+        span = max(1, min(int(days), 366))
+        today = utc_today()
+        start = today - timedelta(days=span - 1)
+        daily_sub = (
+            select(
+                UserServerTraffic.traffic_date.label("traffic_date"),
+                func.coalesce(
+                    func.sum(UserServerTraffic.up_bytes + UserServerTraffic.down_bytes),
+                    0,
+                ).label("total_sum"),
+            )
+            .where(UserServerTraffic.server_id == server_id)
+            .group_by(UserServerTraffic.traffic_date)
+            .subquery()
+        )
+        prev_total = func.lag(daily_sub.c.total_sum).over(
+            order_by=daily_sub.c.traffic_date.asc(),
+        )
+        stmt = (
+            select(
+                daily_sub.c.traffic_date,
+                daily_sub.c.total_sum,
+                prev_total.label("prev_total"),
+            )
+            .select_from(daily_sub)
+            .where(daily_sub.c.traffic_date >= start)
+            .order_by(daily_sub.c.traffic_date.asc())
+        )
+        rows = db.execute(stmt).all()
+        points: list[ServerTrafficDailyPoint] = []
+        for d, total_raw, prev_raw in rows:
+            total = int(total_raw or 0)
+            if prev_raw is None:
+                delta = 0
+            else:
+                delta = max(0, total - int(prev_raw or 0))
+            points.append(
+                ServerTrafficDailyPoint(
+                    traffic_date=d,
+                    total_sum_bytes=total,
+                    delta_sum_bytes=delta,
+                ),
+            )
+        return ServerTrafficDailySummary(server_id=server_id, points=points)
+    finally:
+        db.close()
+
+
+async def server_traffic_daily_summary_db_only(
+    server_id: int,
+    *,
+    days: int = 90,
+) -> ServerTrafficDailySummary:
+    return await run_in_threadpool(_server_traffic_daily_summary_blocking, server_id, days)
