@@ -254,6 +254,13 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
         remote_env += _node_exporter_env_lines(force_install=None)
 
     payload = (remote_env + script_body).replace("\r\n", "\n").replace("\r", "\n")
+    log.info(
+        "SSH provision start component=%s server_id=%s host=%s timeout_s=%s",
+        component,
+        server.id,
+        server.host,
+        int(settings.provision_subprocess_timeout),
+    )
     rc, stdout_t, stderr_t, used_user = ssh_run_script_with_user_fallback(
         server,
         payload,
