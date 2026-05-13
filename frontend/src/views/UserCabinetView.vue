@@ -10,6 +10,7 @@ import {
 } from '../api/client.js'
 import AppTooltip from '../components/AppTooltip.vue'
 import { formatTrafficBytes } from '../utils/formatTraffic.js'
+import { Check, CreditCard, Link2, Loader2, Send } from 'lucide-vue-next'
 
 /** Подсказки к строкам исх./вх. в блоке трафика */
 const TRAFFIC_HINT_UP =
@@ -322,6 +323,23 @@ function setStorePlatform(p) {
   storePlatform.value = p
 }
 
+/** Картинка `frontend/public/client-logos/{client_code}.png` (например `happ.png`). При отсутствии файла скрывается через @error. */
+function openClientLogoUrl(clientCode) {
+  const code = String(clientCode ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '')
+  if (!code) return ''
+  const base = import.meta.env.BASE_URL || '/'
+  const prefix = base.endsWith('/') ? base : `${base}/`
+  return `${prefix}client-logos/${encodeURIComponent(code)}.png`
+}
+
+function onClientLogoError(ev) {
+  const el = ev.target
+  if (el instanceof HTMLImageElement) el.style.display = 'none'
+}
+
 /** Локальный путь /sub/…/open/… — открываем в этом же окне через RouterLink. */
 function openClientTo(clientCode) {
   const t = me.value?.subscription_token
@@ -605,14 +623,36 @@ onMounted(() => {
                 :disabled="!subscriptionUrl"
                 @click="copySubscriptionUrl"
               >
-                {{ subscriptionCopied ? 'Скопировано' : 'Скопировать ссылку подписки' }}
+                <Check
+                  v-if="subscriptionCopied"
+                  class="cabinet-sub-action-stack__icon"
+                  :size="18"
+                  :stroke-width="2"
+                  aria-hidden="true"
+                />
+                <Link2
+                  v-else
+                  class="cabinet-sub-action-stack__icon"
+                  :size="18"
+                  :stroke-width="2"
+                  aria-hidden="true"
+                />
+                <span class="cabinet-sub-action-stack__label">{{
+                  subscriptionCopied ? 'Скопировано' : 'Скопировать ссылку подписки'
+                }}</span>
               </button>
               <button
                 type="button"
                 class="cabinet-pay-btn"
                 @click="goCabinetPay"
               >
-                Оплата и продление
+                <CreditCard
+                  class="cabinet-sub-action-stack__icon"
+                  :size="18"
+                  :stroke-width="2"
+                  aria-hidden="true"
+                />
+                <span class="cabinet-sub-action-stack__label">Оплата и продление</span>
               </button>
             </div>
           </div>
@@ -645,7 +685,61 @@ onMounted(() => {
                   :aria-checked="storePlatform === p.value"
                   @click="setStorePlatform(p.value)"
                 >
-                  {{ p.label }}
+                  <span
+                    class="platform-chip__icon"
+                    aria-hidden="true"
+                  >
+                    <!-- Windows -->
+                    <svg
+                      v-if="p.value === 'windows'"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    ><path d="M3 5.5h9V12H3V5.5zm10.5 0H21V12h-7.5V5.5zM3 13.5h9v6.5H3V13.5zm10.5 0H21v6.5h-7.5V13.5z" /></svg>
+                    <!-- Android -->
+                    <svg
+                      v-else-if="p.value === 'android'"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    ><path d="M17.6 9.48l1.84-3.18c.16-.31.04-.69-.26-.85a.657.657 0 0 0-.83.22l-1.88 3.24a11.437 11.437 0 0 0-8.45 0L5.1 5.67a.648.648 0 0 0-.83-.22c-.3.16-.42.54-.26.85l1.84 3.18C3.25 10.82 2 13.37 2 16.19h20c0-2.82-1.25-5.37-3.4-7.71zM7 14.75c0 .55.45 1 1 1s1-.45 1-1-.45-1-1-1-1 .45-1 1zm8 0c0 .55.45 1 1 1s1-.45 1-1-.45-1-1-1-1 .45-1 1z" /></svg>
+                    <!-- iOS -->
+                    <svg
+                      v-else-if="p.value === 'ios'"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    ><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z" /></svg>
+                    <!-- macOS -->
+                    <svg
+                      v-else-if="p.value === 'macos'"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.75"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    ><rect
+                      x="3"
+                      y="4"
+                      width="18"
+                      height="12"
+                      rx="2"
+                    /><path d="M2 18h20" /></svg>
+                    <!-- Linux -->
+                    <svg
+                      v-else-if="p.value === 'linux'"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    ><path d="m4 17 5-5-5-5M13 19h7" /></svg>
+                  </span>
+                  <span class="platform-chip__label">{{ p.label }}</span>
                 </button>
               </div>
             </div>
@@ -658,17 +752,25 @@ onMounted(() => {
             <div
               v-else
               class="client-btns"
-              :class="{
-                'client-btns--4': filteredOpenClients.length === 4,
-                'client-btns--5': filteredOpenClients.length === 5,
-              }"
             >
               <RouterLink
                 v-for="c in filteredOpenClients"
                 :key="c.client_code"
-                class="client-btn"
+                class="client-app-tile"
                 :to="openClientTo(c.client_code)"
-              >{{ c.display_name }}</RouterLink>
+              >
+                <div class="client-app-tile__logo">
+                  <img
+                    :src="openClientLogoUrl(c.client_code)"
+                    :alt="`Логотип ${c.display_name}`"
+                    class="client-app-tile__logo-img"
+                    loading="lazy"
+                    decoding="async"
+                    @error="onClientLogoError"
+                  />
+                </div>
+                <span class="client-app-tile__name">{{ c.display_name }}</span>
+              </RouterLink>
             </div>
           </div>
         </div>
@@ -723,11 +825,25 @@ onMounted(() => {
                       :disabled="telegramSyncBusy"
                       @click="openTelegramSyncLink"
                     >
-                      {{
+                      <Loader2
+                        v-if="telegramSyncBusy"
+                        class="profile-tg-open-btn__icon profile-tg-open-btn__icon--spin"
+                        :size="20"
+                        :stroke-width="2"
+                        aria-hidden="true"
+                      />
+                      <Send
+                        v-else
+                        class="profile-tg-open-btn__icon"
+                        :size="20"
+                        :stroke-width="2"
+                        aria-hidden="true"
+                      />
+                      <span class="profile-tg-open-btn__label">{{
                         telegramSyncBusy
                           ? 'Готовим ссылку…'
                           : 'Привязать телеграм бота'
-                      }}
+                      }}</span>
                     </button>
                   </template>
                 </dd>
@@ -1368,6 +1484,7 @@ dd {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 0.5rem;
   min-width: 0;
   width: 100%;
   max-width: 100%;
@@ -1381,6 +1498,16 @@ dd {
   font-family: inherit;
   font-size: 0.88rem;
   font-weight: 600;
+}
+
+.cabinet-sub-action-stack__icon {
+  flex-shrink: 0;
+  color: currentColor;
+  opacity: 0.95;
+}
+
+.cabinet-sub-action-stack__label {
+  min-width: 0;
 }
 
 .cabinet-sub-action-stack > .copy-sub-btn {
@@ -1432,8 +1559,72 @@ dd {
 }
 
 .profile-tg-open-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   margin-top: 0.35rem;
+  padding: 0.72rem 1rem;
+  min-height: 3rem;
+  border: none;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.3;
+  cursor: pointer;
   text-decoration: none;
+  color: #fff;
+  background: #229ed9;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+  transition:
+    filter 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.profile-tg-open-btn:hover:not(:disabled) {
+  filter: brightness(1.06);
+  background: #1f8fc7;
+  box-shadow: 0 2px 8px rgba(34, 158, 217, 0.35);
+}
+
+.profile-tg-open-btn:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--card-bg),
+    0 0 0 4px #229ed9;
+}
+
+.profile-tg-open-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  filter: none;
+}
+
+.profile-tg-open-btn__icon {
+  flex-shrink: 0;
+  display: flex;
+  color: currentColor;
+  opacity: 0.98;
+}
+
+.profile-tg-open-btn__icon--spin {
+  animation: profile-tg-spin 0.85s linear infinite;
+}
+
+.profile-tg-open-btn__label {
+  min-width: 0;
+}
+
+@keyframes profile-tg-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .profile-pwd {
@@ -1594,6 +1785,16 @@ dd {
   .copy-sub-btn:hover:not(:disabled) {
     background: var(--accent-hover);
   }
+
+  .copy-sub-btn.profile-tg-open-btn {
+    background: #229ed9;
+    color: #fff;
+    border-color: transparent;
+  }
+
+  .copy-sub-btn.profile-tg-open-btn:hover:not(:disabled) {
+    background: #1f8fc7;
+  }
 }
 
 .banner-warn {
@@ -1625,29 +1826,93 @@ dd {
 }
 
 .client-btns {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-/* Ровно 4 кнопки: 2 + 2 */
-.client-btns--4 {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
 }
 
-/* Ровно 5 кнопок: 2 + 3 (ровная ширина рядов через 6 колонок) */
-.client-btns--5 {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
+.client-btns .client-app-tile {
+  min-width: 0;
 }
 
-.client-btns--5 .client-btn:nth-child(-n + 2) {
-  grid-column: span 3;
+.client-app-tile {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.65rem;
+  min-height: 0;
+  padding: 0.62rem 0.75rem;
+  border-radius: 14px;
+  text-align: left;
+  text-decoration: none;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.82rem;
+  line-height: 1.3;
+  background:
+    radial-gradient(
+      120% 80% at 15% 0%,
+      color-mix(in srgb, var(--accent) 14%, transparent),
+      transparent 55%
+    ),
+    radial-gradient(
+      100% 70% at 90% 20%,
+      color-mix(in srgb, var(--accent-soft) 55%, transparent),
+      transparent 50%
+    ),
+    var(--card-bg);
+  border: 1px solid var(--card-border);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease,
+    background 0.18s ease;
 }
 
-.client-btns--5 .client-btn:nth-child(n + 3) {
-  grid-column: span 2;
+.client-app-tile:hover {
+  border-color: color-mix(in srgb, var(--accent-border) 65%, var(--card-border));
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.12),
+    0 1px 0 rgba(255, 255, 255, 0.06);
+  transform: translateY(-1px);
+}
+
+.client-app-tile:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.client-app-tile__logo {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.85rem;
+  height: 2.85rem;
+  flex-shrink: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: transparent;
+}
+
+.client-app-tile__logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.client-app-tile__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .client-btn {
@@ -1711,17 +1976,25 @@ dd {
 
 .platform-chips {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+  flex-wrap: nowrap;
+  gap: 0.28rem;
+  justify-content: center;
+  min-width: 0;
 }
 
 .platform-chip {
   appearance: none;
   margin: 0;
-  padding: 0.38rem 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 0;
+  min-width: 0;
+  gap: 0.28rem;
+  padding: 0.34rem 0.32rem;
   border-radius: var(--radius-pill);
   font: inherit;
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
   color: var(--text);
@@ -1731,6 +2004,29 @@ dd {
     border-color 0.15s ease,
     background 0.15s ease,
     color 0.15s ease;
+}
+
+.platform-chip__label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.platform-chip__icon {
+  display: flex;
+  width: 0.92rem;
+  height: 0.92rem;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.platform-chip__icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.platform-chip--active .platform-chip__icon {
+  color: var(--accent);
 }
 
 .platform-chip:hover {
