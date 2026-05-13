@@ -15,6 +15,7 @@ from app.domain.models.server_traffic import UserTrafficByDayRow, UserTrafficByS
 from app.domain.models.users import (
     ExtendActiveSubscriptionsBody,
     ExtendActiveSubscriptionsResponse,
+    StaffUserSearchItem,
     UserCreate,
     UserListItem,
     UserRead,
@@ -28,6 +29,7 @@ from app.domain.services.users_service import (
     extend_active_subscriptions,
     patch_staff_user,
     require_user_exists,
+    search_staff_users,
     staff_list_users,
     users_count,
 )
@@ -69,6 +71,27 @@ async def list_users(
 ) -> list[UserListItem]:
     show_secrets = list_mode in ("open", "admin")
     return await staff_list_users(session, show_secrets=show_secrets)
+
+
+@router.get(
+    "/search",
+    response_model=list[StaffUserSearchItem],
+    dependencies=[Depends(require_referrals_staff)],
+    summary="Поиск пользователей (email, telegram_id, username в telegram_properties)",
+)
+async def staff_search_users(
+    session: ReadonlySessionDep,
+    q: Annotated[
+        str,
+        Query(
+            min_length=3,
+            max_length=100,
+            description="Подстрока без учёта регистра; от 3 символов",
+        ),
+    ],
+    limit: Annotated[int, Query(ge=1, le=50, description="Максимум строк в ответе")] = 30,
+) -> list[StaffUserSearchItem]:
+    return await search_staff_users(session, q=q, limit=limit)
 
 
 @router.get(

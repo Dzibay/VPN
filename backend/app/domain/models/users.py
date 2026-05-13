@@ -13,6 +13,18 @@ class UsersCountResponse(BaseModel):
     users_count: int = Field(ge=0, description="Число записей в таблице users")
 
 
+class StaffUserSearchItem(BaseModel):
+    """Краткая карточка пользователя для автодополнения в админке."""
+
+    id: int = Field(description="users.id")
+    email: str | None = Field(default=None, description="Почта, если задана")
+    telegram_id: int | None = Field(default=None, description="Числовой id в Telegram")
+    telegram_username: str | None = Field(
+        default=None,
+        description="Ник из telegram_properties.username (без @)",
+    )
+
+
 class UserStatsByDateRow(BaseModel):
     """День UTC — счётчики за календарный день; почасовой ряд — накопление до конца часа по календарю Москвы."""
 

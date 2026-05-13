@@ -4,8 +4,20 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+StaffCreatableTaskType = Literal[
+    "notify_ref_reg",
+    "notify_ref_pay",
+    "notify_payment",
+    "notify_sub_expire_3d",
+    "notify_sub_expire_1d",
+    "notify_sub_expire_0d",
+    "notify_sub_expire",
+]
 
 
 class StaffPaymentItem(BaseModel):
@@ -39,6 +51,56 @@ class StaffTaskItem(BaseModel):
     status: str
     created_at: datetime
     done_at: datetime | None = None
+
+
+class StaffCreateTaskBody(BaseModel):
+    """Создание строки ``tasks`` (типы и поля — как в схеме БД / планировщике)."""
+
+    user_id: int = Field(ge=1, description="Основной пользователь задачи: users.id")
+    task_type: StaffCreatableTaskType = Field(description="Значение колонки tasks.type")
+    referee_id: int | None = Field(
+        default=None,
+        ge=1,
+        description="Опционально: users.id реферала (notify_ref_*, часть сценариев).",
+    )
+    bonus_days: int | None = Field(
+        default=None,
+        ge=0,
+        description="Опционально: бонусные дни (notify_ref_pay, часть notify_payment).",
+    )
+    paid_months: int | None = Field(
+        default=None,
+        ge=1,
+        description="Опционально: для notify_payment — число оплаченных месяцев.",
+    )
+
+
+StaffTaskStatus = Literal["pending", "completed", "failed"]
+
+
+class StaffPatchTaskBody(BaseModel):
+    """Частичное обновление ``tasks`` (в запросе — только меняемые поля)."""
+
+    task_type: StaffCreatableTaskType | None = None
+    user_id: int | None = Field(default=None, ge=1)
+    referee_id: int | None = Field(
+        default=None,
+        ge=1,
+        description="null в JSON — сбросить referee_id.",
+    )
+    bonus_days: int | None = Field(default=None, ge=0)
+    paid_months: int | None = Field(default=None, ge=1)
+    status: StaffTaskStatus | None = None
+    done_at: datetime | None = Field(
+        default=None,
+        description="null — очистить done_at; иначе ISO8601 с часовым поясом.",
+    )
+
+    @model_validator(mode="after")
+    def at_least_one_field(self) -> StaffPatchTaskBody:
+        if not self.model_fields_set:
+            raise ValueError("Укажите хотя бы одно поле для обновления")
+        return self
 
 
 class StaffTasksListResponse(BaseModel):
