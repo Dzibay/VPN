@@ -119,7 +119,7 @@ const openInClientLabel = computed(() => {
  * фокус уходит в приложение позже, чем срабатывал таймер. Отмена при visibility/pagehide
  * закрывает гонку, когда приложение открылось, но document ещё «visible».
  */
-const OPEN_MOBILE_STORE_FALLBACK_MS = 450
+const OPEN_MOBILE_STORE_FALLBACK_MS = 1000
 
 let loadGeneration = 0
 let openTimer = null
