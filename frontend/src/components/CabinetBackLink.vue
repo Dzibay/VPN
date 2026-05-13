@@ -30,7 +30,7 @@ defineProps({
   align-items: center;
   gap: 0.3rem;
   width: 100%;
-  max-width: 26rem;
+  max-width: min(var(--page-content-max, 25rem), 100%);
   box-sizing: border-box;
   padding: 0;
   margin: 0;

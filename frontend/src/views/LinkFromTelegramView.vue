@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { fetchJson } from '../api/client.js'
 import { setSession } from '../auth/session.js'
+import SitePageLayout from '../components/SitePageLayout.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -83,15 +84,17 @@ watch(linkToken, (next, prev) => {
 </script>
 
 <template>
-  <div class="page">
-    <header class="head">
-      <RouterLink class="back" to="/">← На главную</RouterLink>
-      <h1>Доступ из Telegram</h1>
-      <p class="sub">
-        Если Вы впервые на сайте - введите email и пароль для возможности альтернативного управления аккаунтом.
-        Если у Вас уже есть аккаунт на сайте - введите его данные и аккаунты будут обьединены.
-      </p>
-    </header>
+  <SitePageLayout>
+    <template #header>
+      <header class="head">
+        <RouterLink class="back" to="/">← На главную</RouterLink>
+        <h1>Доступ из Telegram</h1>
+        <p class="sub">
+          Если Вы впервые на сайте - введите email и пароль для возможности альтернативного управления аккаунтом.
+          Если у Вас уже есть аккаунт на сайте - введите его данные и аккаунты будут обьединены.
+        </p>
+      </header>
+    </template>
 
     <div v-if="loading" class="card card-pad hint">Загрузка…</div>
 
@@ -180,23 +183,15 @@ watch(linkToken, (next, prev) => {
         </button>
       </form>
     </div>
-  </div>
+  </SitePageLayout>
 </template>
 
 <style scoped>
-.page {
-  width: 100%;
-  max-width: 420px;
-  min-width: min(280px, 100%);
-  margin: 0 auto;
-  padding: 1.75rem 1rem 2.5rem;
-  box-sizing: border-box;
-}
-
 .stack {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  min-width: 0;
 }
 
 .head {

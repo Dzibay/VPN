@@ -408,14 +408,19 @@ onBeforeUnmount(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 1.5rem 1rem 2.5rem;
+  width: 100%;
+  max-width: min(var(--page-content-max, 25rem), 100%);
+  min-width: 0;
+  margin-inline: auto;
+  padding: 1.5rem max(1rem, env(safe-area-inset-left, 0px)) 2.5rem
+    max(1rem, env(safe-area-inset-right, 0px));
   box-sizing: border-box;
   gap: 0.75rem;
 }
 
 .app-dl-card {
   width: 100%;
-  max-width: 26rem;
+  max-width: 100%;
   padding: 1.35rem 1.25rem 1.5rem;
   border-radius: var(--radius-lg);
   background: var(--surface-glass);

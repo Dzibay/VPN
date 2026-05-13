@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { fetchJson } from '../api/client.js'
 import CabinetBackLink from '../components/CabinetBackLink.vue'
+import SitePageLayout from '../components/SitePageLayout.vue'
 
 const loading = ref(true)
 const error = ref(null)
@@ -42,13 +43,18 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="page">
-    <header class="head">
-      <h1>Оплата и продление</h1>
-      <div class="page-back">
-        <CabinetBackLink :to="{ name: 'cabinet', query: { tab: 'subscription' } }" />
-      </div>
-    </header>
+  <SitePageLayout
+    as="main"
+    compact-top
+  >
+    <template #header>
+      <header class="head">
+        <h1>Оплата и продление</h1>
+        <div class="page-back">
+          <CabinetBackLink :to="{ name: 'cabinet', query: { tab: 'subscription' } }" />
+        </div>
+      </header>
+    </template>
 
     <div v-if="loading" class="card card-pad muted">
       Загрузка вариантов оплаты…
@@ -112,21 +118,13 @@ onMounted(() => {
         Подписка с картой сейчас не настроена — доступен только разовый вариант оплаты.
       </p>
     </div>
-  </main>
+  </SitePageLayout>
 </template>
 
 <style scoped>
-.page {
-  max-width: 520px;
-  margin: 0 auto;
-  /* как .app-dl-wrap у страницы скачивания клиента */
-  padding: 1.5rem 1rem 2.5rem;
-  box-sizing: border-box;
-}
-
 .page-back {
   width: 100%;
-  max-width: 26rem;
+  max-width: min(var(--page-content-max, 25rem), 100%);
   align-self: start;
   text-align: left;
 }
@@ -158,9 +156,11 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  min-width: 0;
 }
 
 .card {
+  min-width: 0;
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: 14px;

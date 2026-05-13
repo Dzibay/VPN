@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
+import SitePageLayout from '../components/SitePageLayout.vue'
 import {
   detectStorePlatform,
   fetchJson,
@@ -449,10 +450,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="page">
-    <header class="head">
-      <h1>Личный кабинет</h1>
-    </header>
+  <SitePageLayout>
+    <template #header>
+      <header class="head">
+        <h1>Личный кабинет</h1>
+      </header>
+    </template>
 
     <div v-if="loading" class="card card-pad muted">Загрузка…</div>
     <div v-else-if="error" class="card card-pad err">{{ error }}</div>
@@ -1045,21 +1048,17 @@ onMounted(() => {
         </div>
       </div>
     </template>
-  </div>
+  </SitePageLayout>
 </template>
 
 <style scoped>
-.page {
-  max-width: 520px;
-  margin: 0 auto;
-  padding: 1.75rem 1rem 2.5rem;
-}
-
 .cabinet-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.35rem;
   margin-bottom: 1rem;
+  width: 100%;
+  min-width: 0;
 }
 
 .cabinet-tab {
@@ -1200,9 +1199,16 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  min-width: 0;
+}
+
+.cabinet-panel {
+  min-width: 0;
+  width: 100%;
 }
 
 .card {
+  min-width: 0;
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: 14px;
@@ -1211,6 +1217,12 @@ h1 {
 
 .card-pad {
   padding: 1.35rem 1.4rem;
+}
+
+@media (max-width: 420px) {
+  .card-pad {
+    padding: 1.15rem 1rem;
+  }
 }
 
 .muted {
@@ -1233,7 +1245,8 @@ h1 {
 
 .row {
   display: grid;
-  grid-template-columns: 8.5rem 1fr;
+  /* minmax(0, 1fr) у второй колонки — иначе грид не сжимает dd ниже min-content и контент вылезает вправо */
+  grid-template-columns: 8.5rem minmax(0, 1fr);
   gap: 0.5rem 1rem;
   padding: 0.45rem 0;
   border-bottom: 1px solid var(--nav-border);
@@ -1979,7 +1992,23 @@ dd {
   flex-wrap: nowrap;
   gap: 0.28rem;
   justify-content: center;
+  width: 100%;
   min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  padding-bottom: 0.15rem;
+}
+
+.platform-chips::-webkit-scrollbar {
+  height: 4px;
+}
+
+.platform-chips::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: var(--nav-border);
 }
 
 .platform-chip {

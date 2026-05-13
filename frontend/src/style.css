@@ -82,6 +82,12 @@
   --radius-lg: 12px;
   --radius-pill: 999px;
 
+  /* Узкие страницы (кабинет, вход, open-sub): ширина и отступы — в т.ч. для SitePageLayout */
+  --page-content-max: 32rem;
+  --page-content-pad-block-start: 1.75rem;
+  --page-content-pad-block-start-compact: 1.5rem;
+  --page-content-pad-block-end: 2.5rem;
+
   --sans: 'Manrope', system-ui, 'Segoe UI', sans-serif;
   --heading: 'Sora', var(--sans);
   --mono: ui-monospace, 'Cascadia Code', Consolas, monospace;
@@ -205,6 +211,11 @@ body {
   min-height: 100dvh;
   background: var(--bg-gradient);
   color: var(--text);
+  overflow-x: clip;
+}
+
+#app {
+  min-width: 0;
 }
 
 h1,

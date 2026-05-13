@@ -4,6 +4,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import { fetchJson } from '../api/client.js'
 import { clearPendingReferralToken, peekPendingReferralToken } from '../referral/refCapture.js'
 import { setSession } from '../auth/session.js'
+import SitePageLayout from '../components/SitePageLayout.vue'
 
 const router = useRouter()
 
@@ -43,15 +44,17 @@ async function submit() {
 </script>
 
 <template>
-  <div class="page">
-    <header class="head">
-      <RouterLink class="back" to="/">← На главную</RouterLink>
-      <h1>Регистрация</h1>
-      <p class="sub">
-        Минимум 8 символов в пароле. После регистрации вы попадёте в личный
-        кабинет.
-      </p>
-    </header>
+  <SitePageLayout>
+    <template #header>
+      <header class="head">
+        <RouterLink class="back" to="/">← На главную</RouterLink>
+        <h1>Регистрация</h1>
+        <p class="sub">
+          Минимум 8 символов в пароле. После регистрации вы попадёте в личный
+          кабинет.
+        </p>
+      </header>
+    </template>
 
     <form class="card card-pad form" @submit.prevent="submit">
       <label class="field">
@@ -100,19 +103,10 @@ async function submit() {
         <RouterLink to="/login">Войти</RouterLink>
       </p>
     </form>
-  </div>
+  </SitePageLayout>
 </template>
 
 <style scoped>
-.page {
-  width: 100%;
-  max-width: 420px;
-  min-width: min(280px, 100%);
-  margin: 0 auto;
-  padding: 1.75rem 1rem 2.5rem;
-  box-sizing: border-box;
-}
-
 .head {
   margin-bottom: 1.35rem;
   text-align: center;
