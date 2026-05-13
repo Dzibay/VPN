@@ -178,10 +178,10 @@ async def get_user_by_topic_id_ep(
     "/payments/tribute-links",
     response_model=TributePaymentsLinksResponse,
     dependencies=[Depends(require_telegram_bot_api_secret)],
-    summary="Tribute: ссылки на тарифы (web) и на оплату подписки (tg + web) для бота",
+    summary="Tribute: тарифы из app/data/tribute_tariffs.json для бота",
 )
 async def telegram_tribute_links_ep() -> TributePaymentsLinksResponse:
-    return tribute_payments_links_public_response(settings)
+    return tribute_payments_links_public_response()
 
 
 @router.get(

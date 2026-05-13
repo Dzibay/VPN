@@ -6,23 +6,16 @@ import SitePageLayout from '../components/SitePageLayout.vue'
 
 const loading = ref(true)
 const error = ref(null)
-/** @type {import('vue').Ref<{ tariffs: Record<string, string> | null, recurring_pay: { tg_link: string, web_link: string } | null } | null>} */
+/** @type {import('vue').Ref<{ tariffs: Array<{ type: string, name: string, web_link: string, tg_link: string | null, months: number | null, price: number | null }> } | null>} */
 const links = ref(null)
 
-const hasTariffs = computed(() => links.value?.tariffs != null)
-const hasRecurring = computed(() => links.value?.recurring_pay != null)
-const hasAnyOption = computed(() => hasTariffs.value || hasRecurring.value)
+const tariffList = computed(() => links.value?.tariffs ?? [])
+const singleOptions = computed(() => tariffList.value.filter((o) => o.type === 'single'))
+const recurringOptions = computed(() => tariffList.value.filter((o) => o.type === 'recurring'))
 
-const tariffRows = computed(() => {
-  const t = links.value?.tariffs
-  if (!t) return []
-  return [
-    { label: '1 месяц', href: t.web_link_1m },
-    { label: '3 месяца', href: t.web_link_3m },
-    { label: '6 месяцев', href: t.web_link_6m },
-    { label: '1 год', href: t.web_link_1y },
-  ]
-})
+const hasSingles = computed(() => singleOptions.value.length > 0)
+const hasRecurring = computed(() => recurringOptions.value.length > 0)
+const hasAnyOption = computed(() => tariffList.value.length > 0)
 
 async function load() {
   loading.value = true
@@ -67,51 +60,53 @@ onMounted(() => {
         Способы оплаты на сервере пока не настроены. Напишите в поддержку или попробуйте позже.
       </p>
 
-      <section v-if="hasTariffs" class="card card-pad pay-section" aria-labelledby="pay-once-title">
+      <section v-if="hasSingles" class="card card-pad pay-section" aria-labelledby="pay-once-title">
         <h2 id="pay-once-title" class="block-title">Разовая оплата</h2>
         <p class="hint">
           Оплатите нужный срок один раз в браузере (без привязки карты к автопродлению). После успешной
           оплаты доступ продлится автоматически.
         </p>
         <ul class="tariff-list" role="list">
-          <li v-for="row in tariffRows" :key="row.label" class="tariff-item">
+          <li v-for="row in singleOptions" :key="`${row.months}-${row.web_link}`" class="tariff-item">
             <a
               class="tariff-link"
-              :href="row.href"
+              :href="row.web_link"
               target="_blank"
               rel="noopener noreferrer"
-            >{{ row.label }}</a>
+            >{{ row.name }}</a>
           </li>
         </ul>
       </section>
 
       <section
-        v-if="hasRecurring"
+        v-for="(rec, i) in recurringOptions"
+        :key="`${rec.name}-${rec.web_link}-${i}`"
         class="card card-pad pay-section"
-        aria-labelledby="pay-recurring-title"
+        :aria-labelledby="'pay-recurring-title-' + i"
       >
-        <h2 id="pay-recurring-title" class="block-title">Подписка с картой</h2>
+        <h2 :id="'pay-recurring-title-' + i" class="block-title">{{ rec.name }}</h2>
         <p class="hint">
           Карта сохраняется для следующих списаний. Можно оформить из
           Telegram или в браузере.
         </p>
         <div class="recurring-actions">
           <a
+            v-if="rec.tg_link"
             class="btn-primary recurring-btn"
-            :href="links?.recurring_pay?.tg_link"
+            :href="rec.tg_link"
             target="_blank"
             rel="noopener noreferrer"
           >Оплатить в Telegram</a>
           <a
             class="btn-secondary recurring-btn"
-            :href="links?.recurring_pay?.web_link"
+            :href="rec.web_link"
             target="_blank"
             rel="noopener noreferrer"
           >Оплатить в браузере</a>
         </div>
       </section>
 
-      <p v-if="hasAnyOption && !hasTariffs" class="hint foot-hint">
+      <p v-if="hasAnyOption && !hasSingles" class="hint foot-hint">
         Разовые тарифы сейчас недоступны — при необходимости используйте подписку или обратитесь в поддержку.
       </p>
       <p v-if="hasAnyOption && !hasRecurring" class="hint foot-hint">

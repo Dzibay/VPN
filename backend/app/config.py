@@ -6,7 +6,6 @@ from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app import constants
-from app.domain.models.payments import TributeRecurringPayLinks, TributeTariffsPublic
 
 
 class Settings(BaseSettings):
@@ -130,39 +129,6 @@ class Settings(BaseSettings):
             "Пусто — POST /api/payments/tribute/webhook отвечает 503 (эндпоинт отключён)."
         ),
     )
-    tribute_tariff_web_link_1m: str = Field(
-        default=constants.TRIBUTE_TARIFF_WEB_LINK_1M,
-        description=(
-            "Ссылка web.tribute.tg на тариф 1 месяц. Дефолт: ``app.constants.TRIBUTE_TARIFF_WEB_LINK_1M``; "
-            "перекрытие: env TRIBUTE_TARIFF_WEB_LINK_1M."
-        ),
-    )
-    tribute_tariff_web_link_3m: str = Field(
-        default=constants.TRIBUTE_TARIFF_WEB_LINK_3M,
-        description=(
-            "Ссылка web.tribute.tg на тариф 3 месяца. Дефолт: ``constants``; env: TRIBUTE_TARIFF_WEB_LINK_3M."
-        ),
-    )
-    tribute_tariff_web_link_6m: str = Field(
-        default=constants.TRIBUTE_TARIFF_WEB_LINK_6M,
-        description="Аналогично 6 мес. Env: TRIBUTE_TARIFF_WEB_LINK_6M.",
-    )
-    tribute_tariff_web_link_1y: str = Field(
-        default=constants.TRIBUTE_TARIFF_WEB_LINK_1Y,
-        description="Аналогично 1 год. Env: TRIBUTE_TARIFF_WEB_LINK_1Y.",
-    )
-    tribute_recurring_pay_tg_link: str = Field(
-        default=constants.TRIBUTE_RECURRING_PAY_TG_LINK,
-        description=(
-            "Ссылка на оплату рекуррентной подписки Tribute для Telegram (deep-link). "
-            "Дефолт: ``constants.TRIBUTE_RECURRING_PAY_TG_LINK``; env: TRIBUTE_RECURRING_PAY_TG_LINK."
-        ),
-    )
-    tribute_recurring_pay_web_link: str = Field(
-        default=constants.TRIBUTE_RECURRING_PAY_WEB_LINK,
-        description="Ссылка на оплату подписки в браузере. Дефолт в constants; env: TRIBUTE_RECURRING_PAY_WEB_LINK.",
-    )
-
     redis_url: str = Field(
         default="redis://127.0.0.1:6379/0",
         description="Redis для очереди установки ПО на узлы (RQ).",
@@ -487,29 +453,6 @@ class Settings(BaseSettings):
         le=32,
         description="Параллельных TCP-проб в одном цикле (каждый поток со своей sync-сессией БД).",
     )
-
-    @property
-    def tribute_tariffs_web(self) -> TributeTariffsPublic | None:
-        m1 = (self.tribute_tariff_web_link_1m or "").strip()
-        m3 = (self.tribute_tariff_web_link_3m or "").strip()
-        m6 = (self.tribute_tariff_web_link_6m or "").strip()
-        y1 = (self.tribute_tariff_web_link_1y or "").strip()
-        if not (m1 and m3 and m6 and y1):
-            return None
-        return TributeTariffsPublic(
-            web_link_1m=m1,
-            web_link_3m=m3,
-            web_link_6m=m6,
-            web_link_1y=y1,
-        )
-
-    @property
-    def tribute_recurring_pay(self) -> TributeRecurringPayLinks | None:
-        tg = (self.tribute_recurring_pay_tg_link or "").strip()
-        web = (self.tribute_recurring_pay_web_link or "").strip()
-        if not tg or not web:
-            return None
-        return TributeRecurringPayLinks(tg_link=tg, web_link=web)
 
     @computed_field
     def sqlalchemy_database_url(self) -> str:

@@ -1,0 +1,45 @@
+{
+  "tariffs": [
+    {
+      "months": 1,
+      "price": 120,
+      "tg_link": null,
+      "web_link": "https://web.tribute.tg/p/vVI",
+      "name": "1 мес",
+      "type": "single"
+    },
+    {
+      "months": 3,
+      "price": 349,
+      "tg_link": null,
+      "web_link": "https://web.tribute.tg/p/vVJ",
+      "name": "3 мес",
+      "type": "single"
+    },
+    {
+      "months": 6,
+      "price": 669,
+      "tg_link": null,
+      "web_link": "https://web.tribute.tg/p/vVK",
+      "name": "6 мес",
+      "type": "single"
+    },
+    {
+      "months": 12,
+      "price": 1299,
+      "tg_link": null,
+      "web_link": "https://web.tribute.tg/p/vVL",
+      "name": "1 год",
+      "type": "single"
+    },
+
+    {
+      "months": null,
+      "price": null,
+      "tg_link": "https://t.me/tribute/app?startapp=sTWv",
+      "web_link": "https://web.tribute.tg/s/TWv",
+      "name": "Подписка",
+      "type": "recurring"
+    }
+  ]
+}

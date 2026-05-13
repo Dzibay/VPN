@@ -1,4 +1,4 @@
-"""Tribute: webhook подписки и разовой цифровой покупки, публичные ссылки на оплату.
+"""Tribute: webhook подписки и разовой цифровой покупки; публичные тарифы — ``app/data/tribute_tariffs.json``.
 
 Подписка: ``new_subscription`` / ``renewed_subscription`` — ``period``, ``price``, ``expires_at``, ``telegram_user_id``.
 
@@ -17,9 +17,10 @@ import json
 import logging
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,6 +42,23 @@ log = logging.getLogger("app.tribute_service")
 
 _DAYS_PER_MONTH = 31
 
+_TRIBUTE_TARIFFS_JSON = Path(__file__).resolve().parents[2] / "data" / "tribute_tariffs.json"
+
+
+def tribute_payments_links_public_response() -> TributePaymentsLinksResponse:
+    """Ответ совпадает с содержимым ``app/data/tribute_tariffs.json`` (редактируйте файл)."""
+    try:
+        raw = _TRIBUTE_TARIFFS_JSON.read_text(encoding="utf-8")
+    except OSError as e:
+        log.warning("Не удалось прочитать %s: %s", _TRIBUTE_TARIFFS_JSON, e)
+        return TributePaymentsLinksResponse(tariffs=[])
+    try:
+        return TributePaymentsLinksResponse.model_validate_json(raw)
+    except ValidationError:
+        log.exception("Некорректный JSON тарифов: %s", _TRIBUTE_TARIFFS_JSON)
+        return TributePaymentsLinksResponse(tariffs=[])
+
+
 _PERIOD_TO_MONTHS: dict[str, int] = {
     "monthly": 1,
     "quarterly": 3,
@@ -49,14 +67,6 @@ _PERIOD_TO_MONTHS: dict[str, int] = {
     "half_yearly": 6,
     "yearly": 12,
 }
-
-
-def tribute_payments_links_public_response(settings: Settings) -> TributePaymentsLinksResponse:
-    tariffs = settings.tribute_tariffs_web
-    recurring = settings.tribute_recurring_pay
-    if tariffs is None and recurring is None:
-        return TributePaymentsLinksResponse(tariffs=None, recurring_pay=None)
-    return TributePaymentsLinksResponse(tariffs=tariffs, recurring_pay=recurring)
 
 
 def _require_tribute_api_key(settings: Settings) -> str:

@@ -6,30 +6,38 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-class TributeTariffsPublic(BaseModel):
-    """Четыре ссылки на оплату тарифов (цифровые товары), только web.tribute.tg."""
-
-    web_link_1m: str = Field(description="1 месяц")
-    web_link_3m: str = Field(description="3 месяца")
-    web_link_6m: str = Field(description="6 месяцев")
-    web_link_1y: str = Field(description="1 год")
+TributePaymentOptionKind = Literal["single", "recurring"]
 
 
-class TributeRecurringPayLinks(BaseModel):
-    """Рекуррентная подписка Tribute: ссылка в Telegram и в браузере."""
+class TributePaymentOptionItem(BaseModel):
+    """Один вариант оплаты Tribute: разовый тариф или рекуррентная подписка."""
 
-    tg_link: str = Field(description="Оплата подписки из клиента Telegram (deep-link).")
-    web_link: str = Field(description="Оплата подписки в браузере (web.tribute.tg).")
+    months: int | None = Field(
+        default=None,
+        description="Срок разовой покупки в месяцах; для подписки — null.",
+    )
+    price: int | None = Field(
+        default=None,
+        description=(
+            "Цена в минорных единицах (разовый тариф); null если в конфиге 0 / не задана, для подписки — null."
+        ),
+    )
+    tg_link: str | None = Field(
+        default=None,
+        description="Deep-link в Telegram; для разовых тарифов всегда null.",
+    )
+    web_link: str = Field(description="Оплата в браузере (web.tribute.tg).")
+    name: str = Field(description="Подпись для кнопки или списка.")
+    type: TributePaymentOptionKind = Field(description="single — разовая оплата; recurring — подписка.")
 
 
 class TributePaymentsLinksResponse(BaseModel):
-    """Ссылки для клиента: тарифы (разовые web) и рекуррентная подписка (tg + web).
+    """Все доступные способы оплаты Tribute в одном списке (порядок: разовые по сроку, затем подписка)."""
 
-    Каждый блок либо полностью задан, либо ``null``, если в env не хватает полей.
-    """
-
-    tariffs: TributeTariffsPublic | None = None
-    recurring_pay: TributeRecurringPayLinks | None = None
+    tariffs: list[TributePaymentOptionItem] = Field(
+        default_factory=list,
+        description="Только варианты с непустыми ссылками в настройках; длина не фиксирована.",
+    )
 
 
 class TributeWebhookAck(BaseModel):

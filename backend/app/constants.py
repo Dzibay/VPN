@@ -15,18 +15,12 @@ TRIAL_DAYS_AFTER_REGISTRATION = 14
 # Срок жизни access-JWT (дни) — единый для портала и админ-API.
 JWT_TOKEN_TTL_DAYS = 14
 
-# --- Tribute: публичные ссылки на оплату (не секреты) ---
-# Заполните здесь или задайте TRIBUTE_* в окружении — env перекрывает дефолты (см. ``app.config.Settings``).
-TRIBUTE_TARIFF_WEB_LINK_1M: str = "https://web.tribute.tg/p/vRX"
-TRIBUTE_TARIFF_WEB_LINK_3M: str = ""
-TRIBUTE_TARIFF_WEB_LINK_6M: str = ""
-TRIBUTE_TARIFF_WEB_LINK_1Y: str = ""
+# --- Tribute: тарифы для GET …/payments/tribute-links — файл ``app/data/tribute_tariffs.json`` (редактируйте его). ---
 
 # Точные product_name из webhook new_digital_product (после .strip()) → срок; пустая строка — не сопоставлять.
-TRIBUTE_DIGITAL_PRODUCT_NAME_1M: str = "Подорожник VPN | 1 месяц"
-TRIBUTE_DIGITAL_PRODUCT_NAME_3M: str = ""
-TRIBUTE_DIGITAL_PRODUCT_NAME_6M: str = ""
-TRIBUTE_DIGITAL_PRODUCT_NAME_1Y: str = ""
+TRIBUTE_DIGITAL_PRODUCT_NAME_1M: str = "Старт (1 месяц)"
+TRIBUTE_DIGITAL_PRODUCT_NAME_3M: str = "Оптимальный (3 месяца)"
+TRIBUTE_DIGITAL_PRODUCT_NAME_6M: str = "Популярный (6 месяцев) 🔥"
+TRIBUTE_DIGITAL_PRODUCT_NAME_1Y: str = "Максимальная выгода (1 год) 💎"
 
-TRIBUTE_RECURRING_PAY_TG_LINK: str = "https://t.me/tribute/app?startapp=sTWv"
-TRIBUTE_RECURRING_PAY_WEB_LINK: str = "https://web.tribute.tg/s/TWv"
+

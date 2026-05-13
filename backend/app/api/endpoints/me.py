@@ -124,14 +124,14 @@ async def me(
     "/payments/tribute-links",
     response_model=TributePaymentsLinksResponse,
     dependencies=[Depends(require_client_jwt)],
-    summary="Tribute: ссылки на тарифы (web) и на оплату подписки (tg + web)",
+    summary="Tribute: тарифы из app/data/tribute_tariffs.json",
 )
 async def me_tribute_links(
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
 ) -> TributePaymentsLinksResponse:
     if principal.role != "user" or principal.user_id is None:
         raise ForbiddenError(detail="Доступно только клиентской роли")
-    return tribute_payments_links_public_response(settings)
+    return tribute_payments_links_public_response()
 
 
 @router.post(
