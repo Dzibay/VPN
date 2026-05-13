@@ -1,4 +1,5 @@
 import { createApp } from 'vue'
+import './fonts.css'
 import './style.css'
 import './styles/admin-table.css'
 import App from './App.vue'
