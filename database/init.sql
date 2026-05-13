@@ -121,10 +121,10 @@ CREATE TABLE IF NOT EXISTS payments (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     provider TEXT NOT NULL DEFAULT 'manual',
     external_id TEXT,
-    payment_kind TEXT NOT NULL DEFAULT 'manual',
+    payment_kind TEXT NOT NULL DEFAULT 'subscription',
     CONSTRAINT payments_provider_check CHECK (provider IN ('manual', 'tribute')),
     CONSTRAINT payments_payment_kind_check CHECK (
-        payment_kind IN ('manual', 'subscription', 'one_time')
+        payment_kind IN ('subscription', 'one_time')
     )
 );
 

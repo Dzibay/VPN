@@ -28,7 +28,7 @@ class StaffPaymentItem(BaseModel):
     amount: Decimal
     months: int
     provider: str
-    #: ``manual`` | ``subscription`` (Tribute) | ``one_time`` (Tribute цифровой товар).
+    #: ``subscription`` (Tribute) | ``one_time`` (Tribute цифровой товар).
     payment_kind: str
     external_id: str | None = None
     created_at: datetime
@@ -39,6 +39,32 @@ class StaffPaymentsListResponse(BaseModel):
     total: int = Field(ge=0, description="Число строк в таблице payments")
     limit: int
     offset: int
+
+
+class StaffPaymentsFinanceBuckets(BaseModel):
+    """Суммы по месяцам (ось ``months``) для subscription и one_time."""
+
+    subscription: list[str] = Field(
+        default_factory=list,
+        description="Строки decimal, по порядку ``months``",
+    )
+    one_time: list[str] = Field(default_factory=list)
+
+
+class StaffPaymentsFinanceSummaryResponse(BaseModel):
+    """Ответ ``rpc_staff_payments_finance_summary()`` — cash и spread по месяцам UTC."""
+
+    months: list[str] = Field(
+        description="Объединение месяцев YYYY-MM, где есть данные в cash или spread",
+    )
+    cash: StaffPaymentsFinanceBuckets = Field(
+        description="Вся сумма платежа в месяце created_at (UTC)",
+    )
+    spread: StaffPaymentsFinanceBuckets = Field(
+        description="amount/months на каждый из months календарных месяцев вперёд от created_at (UTC)",
+    )
+    grand_total: str = Field(description="Сумма amount по всем платежам (без деления)")
+    payment_count: int = Field(ge=0, description="Число строк payments")
 
 
 class StaffTaskItem(BaseModel):

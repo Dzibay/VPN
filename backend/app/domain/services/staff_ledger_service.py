@@ -4,18 +4,40 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.models.staff_ledger import (
     StaffCreatableTaskType,
     StaffPatchTaskBody,
     StaffPaymentItem,
+    StaffPaymentsFinanceBuckets,
+    StaffPaymentsFinanceSummaryResponse,
     StaffTaskItem,
 )
 from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.task import Task
 from app.infrastructure.persistence.models.user import User
+
+
+async def staff_payments_finance_summary(
+    session: AsyncSession,
+) -> StaffPaymentsFinanceSummaryResponse:
+    """Сводка для финансов: ``rpc_staff_payments_finance_summary()`` (месяцы UTC × тип оплаты)."""
+    stmt = text("SELECT rpc_staff_payments_finance_summary() AS payload")
+    row = (await session.execute(stmt)).one()
+    raw = row.payload
+    if raw is None:
+        return StaffPaymentsFinanceSummaryResponse(
+            months=[],
+            cash=StaffPaymentsFinanceBuckets(),
+            spread=StaffPaymentsFinanceBuckets(),
+            grand_total="0",
+            payment_count=0,
+        )
+    if not isinstance(raw, dict):
+        raw = dict(raw)
+    return StaffPaymentsFinanceSummaryResponse.model_validate(raw)
 
 
 async def list_staff_payments(

@@ -77,6 +77,12 @@ export const ADMIN_NAV_DEFINITION = [
     access: 'staff',
   },
   {
+    routeName: 'admin-finance-staff',
+    label: 'Финансы',
+    path: '/admin/finance',
+    access: 'staff',
+  },
+  {
     routeName: 'admin-tasks-staff',
     label: 'Задачи',
     path: '/admin/tasks',

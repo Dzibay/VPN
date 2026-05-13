@@ -60,7 +60,6 @@ function paymentKindLabel(k) {
   const s = String(k ?? '')
   if (s === 'subscription') return 'Подписка'
   if (s === 'one_time') return 'Разовая'
-  if (s === 'manual') return 'Ручная'
   return s || '—'
 }
 

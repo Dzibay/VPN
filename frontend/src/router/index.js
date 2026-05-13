@@ -42,6 +42,8 @@ const AdminServersReachabilityView = () =>
   import('../views/AdminServersReachabilityView.vue')
 const AdminPaymentsStaffView = () =>
   import('../views/AdminPaymentsStaffView.vue')
+const AdminFinanceStaffView = () =>
+  import('../views/AdminFinanceStaffView.vue')
 const AdminTasksStaffView = () => import('../views/AdminTasksStaffView.vue')
 
 const routes = [
@@ -82,6 +84,11 @@ const routes = [
     path: '/admin/payments',
     name: 'admin-payments-staff',
     component: AdminPaymentsStaffView,
+  },
+  {
+    path: '/admin/finance',
+    name: 'admin-finance-staff',
+    component: AdminFinanceStaffView,
   },
   {
     path: '/admin/tasks',
@@ -222,6 +229,7 @@ router.beforeEach(async (to, _from, next) => {
       const isSubscriptionUaStatsStaff =
         to.name === 'admin-subscription-user-agent-stats'
       const isPaymentsStaff = to.name === 'admin-payments-staff'
+      const isFinanceStaff = to.name === 'admin-finance-staff'
       const isTasksStaff = to.name === 'admin-tasks-staff'
       if (
         isReferralsRoute ||
@@ -231,6 +239,7 @@ router.beforeEach(async (to, _from, next) => {
         isHttpLogsStaff ||
         isSubscriptionUaStatsStaff ||
         isPaymentsStaff ||
+        isFinanceStaff ||
         isTasksStaff
       ) {
         if (!canAccessReferralsAdmin(role)) {

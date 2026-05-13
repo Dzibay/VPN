@@ -39,6 +39,7 @@ async function submit() {
           r.startsWith('/admin/users/analytics') ||
           r.startsWith('/admin/users-analytics') ||
           r.startsWith('/admin/payments') ||
+          r.startsWith('/admin/finance') ||
           r.startsWith('/admin/tasks'))
       router.replace(rOk ? r : '/admin/referrals')
     } else {

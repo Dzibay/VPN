@@ -10,6 +10,7 @@ from app.core.dependencies import ReadonlySessionDep, SessionDep, require_admin,
 from app.domain.models.staff_ledger import (
     StaffCreateTaskBody,
     StaffPatchTaskBody,
+    StaffPaymentsFinanceSummaryResponse,
     StaffPaymentsListResponse,
     StaffTaskItem,
     StaffTasksListResponse,
@@ -19,6 +20,7 @@ from app.domain.services.staff_ledger_service import (
     delete_staff_task,
     list_staff_payments,
     list_staff_tasks,
+    staff_payments_finance_summary,
     update_staff_task,
 )
 
@@ -33,6 +35,20 @@ tasks_staff_router = APIRouter(
     tags=["admin"],
     dependencies=[Depends(require_referrals_staff)],
 )
+
+
+@payments_staff_router.get(
+    "/finance-summary",
+    response_model=StaffPaymentsFinanceSummaryResponse,
+    summary="Сводка платежей по месяцам и типу (RPC)",
+    description="Агрегат ``rpc_staff_payments_finance_summary()``: общая ось ``months`` (UTC). "
+    "``cash`` — полная сумма в месяце даты платежа. ``spread`` — сумма ``amount/months`` "
+    "в месяце платежа и в каждом из следующих ``months-1`` календарных месяцев.",
+)
+async def staff_payments_finance_summary_endpoint(
+    session: ReadonlySessionDep,
+) -> StaffPaymentsFinanceSummaryResponse:
+    return await staff_payments_finance_summary(session)
 
 
 @payments_staff_router.get(
