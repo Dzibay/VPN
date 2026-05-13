@@ -7,6 +7,9 @@ import { adminChartTheme, rgba } from '../utils/adminChartTheme.js'
 
 /** @typedef {{ subscription: string[]; one_time: string[] }} FinanceBuckets */
 
+/** После включения: все суммы на странице × (1 − 10%) — чистый доход за вычетом комиссии Tribute. */
+const NET_AFTER_TRIBUTE_FEE = 0.9
+
 const loading = ref(false)
 const error = ref(null)
 /**
@@ -22,6 +25,9 @@ const summary = ref(null)
 
 /** «cash» — вся сумма в месяце платежа; «spread» — amount/months по месяцам подписки вперёд (UTC). */
 const chartDistribution = ref(/** @type {'cash' | 'spread'} */ ('cash'))
+
+/** Вычитать 10% комиссии Tribute из суммы и графика (включено по умолчанию). */
+const deductTributeFee = ref(true)
 
 /** @type {Chart | null} */
 let chartInstance = null
@@ -68,11 +74,16 @@ function parseAmounts(arr) {
   })
 }
 
+const displayAmountFactor = computed(() =>
+  deductTributeFee.value ? NET_AFTER_TRIBUTE_FEE : 1,
+)
+
 const totalFormatted = computed(() => {
   const g = summary.value?.grand_total
   const n = g != null ? Number(String(g).replace(',', '.')) : 0
   if (!Number.isFinite(n)) return '0,00'
-  return n.toLocaleString('ru-RU', {
+  const out = n * displayAmountFactor.value
+  return out.toLocaleString('ru-RU', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
@@ -119,9 +130,10 @@ function drawChart() {
 
   const labels = s.months.map(formatMonthLabel)
 
+  const factor = displayAmountFactor.value
   const datasets = KIND_ORDER.map(({ field, label }) => ({
     label,
-    data: parseAmounts(buckets[field]),
+    data: parseAmounts(buckets[field]).map((v) => v * factor),
     backgroundColor: rgba(rgbByField[field] ?? theme.accent, 0.82),
     borderRadius: 4,
     borderSkipped: false,
@@ -224,6 +236,11 @@ watch(chartDistribution, async () => {
   drawChart()
 })
 
+watch(deductTributeFee, async () => {
+  await nextTick()
+  drawChart()
+})
+
 onMounted(() => {
   void load()
 })
@@ -277,6 +294,10 @@ onBeforeUnmount(() => {
       <section class="total-card" aria-live="polite">
         <p class="total-label">Сумма всех платежей</p>
         <p class="total-value">{{ totalFormatted }}&nbsp;₽</p>
+        <label class="fee-row">
+          <input v-model="deductTributeFee" type="checkbox" class="fee-input" />
+          <span class="fee-label">Вычесть 10%</span>
+        </label>
         <p class="total-meta">
           {{ paymentCountLabel }} записей
         </p>
@@ -378,15 +399,36 @@ onBeforeUnmount(() => {
   letter-spacing: -0.02em;
 }
 
+.fee-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.65rem 0 0;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-h);
+  user-select: none;
+}
+
+.fee-input {
+  margin: 0.15rem 0 0;
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent, #58d68d);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.fee-label {
+  line-height: 1.35;
+}
+
 .total-meta {
   margin: 0.5rem 0 0;
   font-size: 0.82rem;
   color: var(--muted);
   line-height: 1.45;
-}
-
-.legend-hint {
-  display: inline;
 }
 
 .chart-wrap {
