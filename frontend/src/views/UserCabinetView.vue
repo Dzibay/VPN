@@ -47,6 +47,26 @@ watch(
   },
 )
 
+const payNeedTelegramQuery = () => {
+  const v = route.query.pay_need_telegram
+  return v === '1' || v === 'true' || v === true
+}
+
+watch(
+  () => [route.query.pay_need_telegram, route.query.tab],
+  () => {
+    if (!payNeedTelegramQuery()) return
+    if (normalizeCabinetTab(route.query.tab) !== 'profile') {
+      activeCabinetTab.value = 'profile'
+      void router.replace({
+        path: route.path,
+        query: { ...route.query, tab: 'profile' },
+      })
+    }
+  },
+  { immediate: true },
+)
+
 function setCabinetTab(id) {
   const next = normalizeCabinetTab(id)
   activeCabinetTab.value = next
@@ -55,6 +75,9 @@ function setCabinetTab(id) {
     delete q.tab
   } else {
     q.tab = next
+  }
+  if (next !== 'profile') {
+    delete q.pay_need_telegram
   }
   router.replace({ path: route.path, query: q })
 }
@@ -97,6 +120,11 @@ const profileTelegramUsername = computed(() => {
   if (!raw) return ''
   return raw.startsWith('@') ? raw : `@${raw}`
 })
+
+/** Редирект с /cabinet/pay: просим привязать Telegram (совпадает с webhook Tribute по telegram_id). */
+const payNeedTelegramBanner = computed(
+  () => payNeedTelegramQuery() && me.value && me.value.telegram_id == null,
+)
 
 /** @type {import('vue').Ref<null | Record<string, unknown>>} */
 const myReferralLink = ref(null)
@@ -436,6 +464,13 @@ async function copySubscriptionUrl() {
 }
 
 function goCabinetPay() {
+  if (me.value?.telegram_id == null) {
+    void router.push({
+      path: '/cabinet',
+      query: { tab: 'profile', pay_need_telegram: '1' },
+    })
+    return
+  }
   void router.push({ name: 'cabinet-pay' })
 }
 
@@ -787,6 +822,19 @@ onMounted(() => {
         aria-labelledby="cabinet-tab-profile"
       >
         <div class="stack">
+          <div
+            v-if="payNeedTelegramBanner"
+            class="card card-pad profile-pay-tg-callout"
+            role="status"
+          >
+            <p class="profile-pay-tg-callout__title">
+              Оплата на сайте доступна после привязки Telegram
+            </p>
+            <p class="hint profile-pay-tg-callout__hint">
+              Так мы сопоставим платёж с вашим аккаунтом. Нажмите кнопку ниже и следуйте
+              инструкциям бота.
+            </p>
+          </div>
           <div v-if="me.role === 'admin'" class="card card-pad">
             <h2 class="block-title">Администратор</h2>
             <p class="hint">
@@ -1559,6 +1607,27 @@ dd {
   box-shadow:
     inset 0 1px 0 0 var(--nav-border),
     inset 0 0 0 2px rgba(129, 140, 248, 0.65);
+}
+
+.profile-pay-tg-callout {
+  border: 1px solid rgba(129, 140, 248, 0.45);
+  background: linear-gradient(
+    135deg,
+    rgba(99, 102, 241, 0.12) 0%,
+    rgba(15, 23, 42, 0.35) 100%
+  );
+}
+
+.profile-pay-tg-callout__title {
+  margin: 0 0 0.5rem;
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--text-h);
+  line-height: 1.35;
+}
+
+.profile-pay-tg-callout__hint {
+  margin: 0;
 }
 
 .profile-tg-unlinked-hint {

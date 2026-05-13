@@ -10,6 +10,7 @@ import {
   getSessionRole,
   isAdminJwtRequired,
 } from '../auth/session.js'
+import { fetchJson } from '../api/client.js'
 
 /**
  * Ленивые импорты вью: каждый роут — отдельный chunk.
@@ -164,6 +165,32 @@ router.beforeEach(async (to, _from, next) => {
       name: 'login',
       query: { redirect: to.fullPath },
     })
+  }
+
+  if (to.name === 'cabinet-pay' && token) {
+    try {
+      const me = await fetchJson('/api/me')
+      if (me?.telegram_id == null) {
+        return next({
+          name: 'cabinet',
+          query: { tab: 'profile', pay_need_telegram: '1' },
+          replace: true,
+        })
+      }
+    } catch (e) {
+      const st = e?.status
+      if (st === 401) {
+        return next({
+          name: 'login',
+          query: { redirect: to.fullPath },
+        })
+      }
+      return next({
+        name: 'cabinet',
+        query: { tab: 'profile', pay_need_telegram: '1' },
+        replace: true,
+      })
+    }
   }
 
   if ((to.name === 'login' || to.name === 'register') && token) {

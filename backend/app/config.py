@@ -183,7 +183,10 @@ class Settings(BaseSettings):
     )
     provision_xray_installer_url: str = Field(
         default="https://github.com/XTLS/Xray-install/raw/main/install-release.sh",
-        description="URL install-release.sh на удалённом хосте (curl/wget).",
+        description=(
+            "URL install-release.sh на удалённом хосте (curl/wget). Скрипт XTLS дополнительно качает бинарник с GitHub — "
+            "нужен исходящий HTTPS до github.com (при SSL timeout на ВМ используйте прокси или ручную установку xray)."
+        ),
     )
     provision_install_node_exporter: bool = Field(
         default=True,

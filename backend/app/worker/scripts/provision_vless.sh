@@ -479,6 +479,9 @@ _xray_install() {
   fi
   if [[ ! -x "$XRAY_BIN" ]]; then
     echo "[xray] не найден бинарник xray" >&2
+    echo "[xray] Частая причина: с ВМ нет стабильного HTTPS до GitHub (в логе выше — curl: (28) SSL connection timeout и т.п.)." >&2
+    echo "[xray] Проверка на узле: curl -vI https://github.com  и  curl -vI https://github.com/XTLS/Xray-core/releases" >&2
+    echo "[xray] Обход: HTTPS_PROXY на узле, другое зеркало релизов, или установите xray вручную в /usr/local/bin/xray и повторите provision." >&2
     exit 1
   fi
 
