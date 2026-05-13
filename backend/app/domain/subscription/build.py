@@ -2,11 +2,12 @@
 
 Порядок записей в клиенте:
 
-1. ``⚡ Auto (рекомендуемый)`` — дубликат первого узла в выдаче с валидным URI
-   (список уже отсортирован по ``load_percent``).
+1. ``⚡ Auto (рекомендуемый)`` — дубликат первого VLESS в выдаче с валидным URI
+   (выдача отсортирована: без ``whitelist`` по ``load_percent``, затем с ``whitelist``).
 2. ``⚡ Auto (белый список)`` — если среди узлов выдачи есть хотя бы один с
    ``whitelist``, дубликат первого по нагрузке среди whitelist с валидным URI.
-3. Все узлы выдачи по одному разу с обычными именами.
+3. Все узлы выдачи по одному разу с обычными именами: сначала без ``whitelist``,
+   в конце списка — только с ``whitelist`` (внутри групп — по ``load_percent``).
 
 Каскад: внешние exit узлы из пар «РФ-вход → exit» в список не попадают
 (``subscription_servers_for_delivery``).
@@ -85,6 +86,8 @@ async def subscription_servers_from_db(session: AsyncSession) -> list[Server]:
     """
     Узлы для выдачи в подписке: только чтение из БД (servers.load_percent обновляет фоновый планировщик).
 
+    Узлы с ``whitelist`` идут после всех остальных (внутри каждой группы — по нагрузке и id).
+
     Дальше ``subscription_servers_for_delivery`` убирает внешние exit из пар
     «РФ-вход → exit», чтобы в клиенте не дублировать прямой доступ к exit.
     """
@@ -102,7 +105,7 @@ async def subscription_servers_from_db(session: AsyncSession) -> list[Server]:
                 ),
             ),
         )
-        .order_by(Server.load_percent.asc(), Server.id.asc())
+        .order_by(Server.whitelist.asc(), Server.load_percent.asc(), Server.id.asc())
     )
     return list((await session.scalars(stmt)).all())
 
