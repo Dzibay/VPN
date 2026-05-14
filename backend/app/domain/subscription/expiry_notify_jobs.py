@@ -43,8 +43,8 @@ def _pending_expire_keys_for_users(session: Session, user_ids: list[int]) -> set
 
 
 def _task_types_for_delta(days_until_end: int) -> Iterable[str]:
-    if days_until_end == 3:
-        yield "notify_sub_expire_3d"
+    # if days_until_end == 3:
+    #     yield "notify_sub_expire_3d"
     if days_until_end == 1:
         yield "notify_sub_expire_1d"
     if days_until_end == 0:
