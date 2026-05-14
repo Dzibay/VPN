@@ -45,14 +45,21 @@ async def list_staff_payments(
     *,
     limit: int,
     offset: int,
+    user_id: int | None = None,
 ) -> tuple[list[StaffPaymentItem], int]:
-    total = int(await session.scalar(select(func.count()).select_from(Payment)) or 0)
-    stmt = (
-        select(Payment)
-        .order_by(Payment.id.desc())
-        .limit(limit)
-        .offset(offset)
-    )
+    if user_id is None:
+        count_stmt = select(func.count()).select_from(Payment)
+        stmt = select(Payment).order_by(Payment.id.desc()).limit(limit).offset(offset)
+    else:
+        count_stmt = select(func.count()).select_from(Payment).where(Payment.user_id == user_id)
+        stmt = (
+            select(Payment)
+            .where(Payment.user_id == user_id)
+            .order_by(Payment.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    total = int(await session.scalar(count_stmt) or 0)
     rows = list((await session.scalars(stmt)).all())
     return [StaffPaymentItem.model_validate(r) for r in rows], total
 
@@ -62,12 +69,31 @@ async def list_staff_tasks(
     *,
     limit: int,
     offset: int,
+    user_id: int | None = None,
 ) -> tuple[list[StaffTaskItem], int]:
-    total = int(await session.scalar(select(func.count()).select_from(Task)) or 0)
-    stmt = select(Task).order_by(Task.id.desc()).limit(limit).offset(offset)
+    if user_id is None:
+        count_stmt = select(func.count()).select_from(Task)
+        stmt = select(Task).order_by(Task.id.desc()).limit(limit).offset(offset)
+    else:
+        count_stmt = select(func.count()).select_from(Task).where(Task.user_id == user_id)
+        stmt = (
+            select(Task)
+            .where(Task.user_id == user_id)
+            .order_by(Task.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    total = int(await session.scalar(count_stmt) or 0)
     rows = list((await session.scalars(stmt)).all())
     items = [_staff_task_item_from_orm(t) for t in rows]
     return items, total
+
+
+async def get_staff_task(session: AsyncSession, task_id: int) -> StaffTaskItem | None:
+    task = await session.get(Task, task_id)
+    if task is None:
+        return None
+    return _staff_task_item_from_orm(task)
 
 
 def _staff_task_item_from_orm(t: Task) -> StaffTaskItem:

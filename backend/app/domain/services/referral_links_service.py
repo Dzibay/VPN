@@ -41,6 +41,14 @@ async def list_staff_referral_links(session: AsyncSession, cfg: object) -> list:
     return [referral_link_to_response(r, cfg) for r in rows]
 
 
+async def get_staff_referral_link_by_id(session: AsyncSession, link_id: int, cfg: object):
+    """Одна запись для админки; 404 если не найдена."""
+    row = await session.get(ReferralLink, link_id)
+    if row is None:
+        raise NotFoundError("Токен не найден")
+    return referral_link_to_response(row, cfg)
+
+
 async def delete_referral_link_row(session: AsyncSession, link_id: int) -> None:
     """Удалить запись по id; 404 если не найдена."""
     if not await delete_referral_link(session, link_id):

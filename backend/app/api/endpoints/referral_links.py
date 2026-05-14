@@ -29,6 +29,7 @@ from app.domain.referrals.repository import (
 )
 from app.domain.services.referral_links_service import (
     delete_referral_link_row,
+    get_staff_referral_link_by_id,
     list_staff_referral_links,
     referral_me_for_user,
     referral_me_user_id_from_bearer,
@@ -69,6 +70,18 @@ async def referral_funnel_summary(
     ] = None,
 ) -> ReferralFunnelSummary:
     return await referral_funnel_compute(session, referral_link_id, settings)
+
+
+@staff_router.get(
+    "/{link_id}",
+    response_model=ReferralLinkOut,
+    summary="Одна реферальная ссылка по id",
+)
+async def get_referral_link(
+    session: ReadonlySessionDep,
+    link_id: Annotated[int, Path(ge=1, description="Первичный ключ referral_links.id")],
+) -> ReferralLinkOut:
+    return await get_staff_referral_link_by_id(session, link_id, settings)
 
 
 @staff_router.post(

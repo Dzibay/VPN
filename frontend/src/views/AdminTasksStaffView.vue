@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
@@ -32,6 +33,9 @@ const TASK_STATUS_OPTIONS = [
   { value: 'completed', label: 'completed — выполнена' },
   { value: 'failed', label: 'failed — ошибка' },
 ]
+
+const route = useRoute()
+const router = useRouter()
 
 const loading = ref(false)
 const error = ref(null)
@@ -226,10 +230,6 @@ async function submitCreateTask() {
   }
 }
 
-onMounted(() => {
-  void load()
-})
-
 function openEditModal(row) {
   editError.value = null
   editTaskId.value = row.id
@@ -327,6 +327,45 @@ async function deleteEditTask() {
     editDeleteLoading.value = false
   }
 }
+
+function editTaskIdFromQuery() {
+  const raw = route.query.edit_task_id
+  const s = raw == null ? '' : Array.isArray(raw) ? raw[0] : String(raw)
+  const n = Number.parseInt(s, 10)
+  return Number.isFinite(n) && n >= 1 ? n : null
+}
+
+async function tryOpenTaskFromQuery() {
+  const tid = editTaskIdFromQuery()
+  if (tid == null || editModalOpen.value) return
+  let row = items.value.find((r) => r.id === tid)
+  if (!row) {
+    try {
+      row = await fetchJson(`/api/admin/tasks/${tid}`)
+    } catch {
+      return
+    }
+  }
+  openEditModal(row)
+  const q = { ...route.query }
+  delete q.edit_task_id
+  await router.replace({ path: route.path, query: q })
+}
+
+watch(
+  () =>
+    `${editTaskIdFromQuery() ?? ''}:${loading.value}:${items.value.map((r) => r.id).join(',')}`,
+  async () => {
+    if (loading.value) return
+    await nextTick()
+    await tryOpenTaskFromQuery()
+  },
+  { flush: 'post' },
+)
+
+onMounted(() => {
+  void load()
+})
 </script>
 
 <template>

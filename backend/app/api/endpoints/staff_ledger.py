@@ -18,6 +18,7 @@ from app.domain.models.staff_ledger import (
 from app.domain.services.staff_ledger_service import (
     create_staff_task,
     delete_staff_task,
+    get_staff_task,
     list_staff_payments,
     list_staff_tasks,
     staff_payments_finance_summary,
@@ -60,8 +61,14 @@ async def staff_list_payments(
     session: ReadonlySessionDep,
     limit: Annotated[int, Query(ge=1, le=5000, description="Максимум строк в ответе")] = 500,
     offset: Annotated[int, Query(ge=0, description="Смещение от новых к старым")] = 0,
+    user_id: Annotated[
+        int | None,
+        Query(ge=1, description="Только платежи этого пользователя (users.id)"),
+    ] = None,
 ) -> StaffPaymentsListResponse:
-    items, total = await list_staff_payments(session, limit=limit, offset=offset)
+    items, total = await list_staff_payments(
+        session, limit=limit, offset=offset, user_id=user_id
+    )
     return StaffPaymentsListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
@@ -74,9 +81,31 @@ async def staff_list_tasks(
     session: ReadonlySessionDep,
     limit: Annotated[int, Query(ge=1, le=5000, description="Максимум строк в ответе")] = 500,
     offset: Annotated[int, Query(ge=0, description="Смещение от новых к старым")] = 0,
+    user_id: Annotated[
+        int | None,
+        Query(ge=1, description="Только задачи с этим user_id"),
+    ] = None,
 ) -> StaffTasksListResponse:
-    items, total = await list_staff_tasks(session, limit=limit, offset=offset)
+    items, total = await list_staff_tasks(session, limit=limit, offset=offset, user_id=user_id)
     return StaffTasksListResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@tasks_staff_router.get(
+    "/{task_id}",
+    response_model=StaffTaskItem,
+    summary="Одна задача по id (для открытия формы из других экранов)",
+)
+async def staff_get_task(
+    session: ReadonlySessionDep,
+    task_id: Annotated[int, Path(ge=1, description="tasks.id")],
+) -> StaffTaskItem:
+    row = await get_staff_task(session, task_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Задача не найдена",
+        )
+    return row
 
 
 @tasks_staff_router.post(

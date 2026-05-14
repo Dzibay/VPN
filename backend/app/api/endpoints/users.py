@@ -30,6 +30,7 @@ from app.domain.services.users_service import (
     patch_staff_user,
     require_user_exists,
     search_staff_users,
+    staff_get_user_list_item,
     staff_list_users,
     users_count,
 )
@@ -170,9 +171,23 @@ async def extend_active_subscriptions_ep(
 
 
 @router.get(
+    "/{user_id}",
+    response_model=UserListItem,
+    summary="Карточка пользователя для админки (как строка в списке /users)",
+)
+async def get_staff_user(
+    user_id: int,
+    session: ReadonlySessionDep,
+    list_mode: Annotated[StaffUserListMode, Depends(require_staff_user_list_access)],
+) -> UserListItem:
+    show_secrets = list_mode in ("open", "admin")
+    return await staff_get_user_list_item(session, user_id, show_secrets=show_secrets)
+
+
+@router.get(
     "/{user_id}/traffic-by-server",
     response_model=UserTrafficByServersBundle,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_referrals_staff)],
     summary="Трафик пользователя по узлам (данные из базы)",
 )
 async def user_traffic_by_server(
@@ -185,7 +200,7 @@ async def user_traffic_by_server(
 @router.get(
     "/{user_id}/traffic-by-day",
     response_model=list[UserTrafficByDayRow],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_referrals_staff)],
     summary="Накопительный трафик по календарным дням (UTC)",
 )
 async def user_traffic_by_day(

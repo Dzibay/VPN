@@ -675,6 +675,13 @@ onMounted(() => {
           <div class="user-detail-panel__logs-footer">
             <RouterLink
               class="user-detail-panel__logs-link"
+              :to="`/admin/users/${selectedUser.id}/analytics`"
+              title="Трафик по дням и узлам, платежи, задачи, реферальная ссылка"
+            >
+              Аналитика
+            </RouterLink>
+            <RouterLink
+              class="user-detail-panel__logs-link"
               :to="{
                 path: '/admin/logs',
                 query: { user_id: String(selectedUser.id) },
@@ -969,6 +976,10 @@ tr.client-row-active-today.user-row--selected {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .user-detail-panel__logs-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1.1rem;
   margin-top: 0.75rem;
   padding-top: 0.75rem;
   border-top: 1px solid var(--border);

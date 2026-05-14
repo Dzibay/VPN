@@ -223,6 +223,7 @@ router.beforeEach(async (to, _from, next) => {
       }
       const isReferralsRoute = to.name === 'admin-referrals'
       const isUsersAnalyticsStaff = to.name === 'admin-users-staff-analytics'
+      const isUserPerAnalytics = to.name === 'admin-user-analytics'
       const isMarketingFunnel = to.name === 'admin-funnel'
       const isRegistrationsByDate = to.name === 'admin-users-registrations-by-date'
       const isHttpLogsStaff = to.name === 'admin-http-logs'
@@ -234,6 +235,7 @@ router.beforeEach(async (to, _from, next) => {
       if (
         isReferralsRoute ||
         isUsersAnalyticsStaff ||
+        isUserPerAnalytics ||
         isMarketingFunnel ||
         isRegistrationsByDate ||
         isHttpLogsStaff ||

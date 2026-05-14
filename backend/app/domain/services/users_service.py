@@ -32,8 +32,10 @@ from app.domain.models.users import (
 from app.domain.subscription.devices import list_subscription_connection_records_for_users
 from app.domain.user_traffic import (
     user_server_traffic_latest_subquery,
+    user_traffic_cumulative_for_user_at_calendar_boundary,
     user_traffic_total_by_user_as_of,
     user_traffic_total_by_user_strictly_before_calendar_day,
+    user_traffic_totals,
 )
 from app.domain.users.identifiers import new_subscription_token, new_vless_uuid
 from app.infrastructure.database.operations import table_insert
@@ -93,6 +95,63 @@ async def users_count(session: AsyncSession) -> UsersCountResponse:
     """Общее число записей в ``users``."""
     total = await session.scalar(select(func.count()).select_from(User))
     return UsersCountResponse(users_count=int(total or 0))
+
+
+async def staff_get_user_list_item(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    show_secrets: bool,
+) -> UserListItem:
+    """Одна строка пользователя в формате списка админки (агрегаты и устройства)."""
+    user = await session.get(User, user_id)
+    if user is None:
+        raise NotFoundError("Пользователь не найден")
+    _, _, total_raw = await user_traffic_totals(session, user_id)
+    total = int(total_raw or 0)
+    if total < 0:
+        total = 0
+    dev_stmt = select(func.coalesce(func.count(SubscriptionDevice.id), 0)).where(
+        SubscriptionDevice.user_id == user_id,
+    )
+    dev_n = int((await session.scalar(dev_stmt)) or 0)
+    if dev_n < 0:
+        dev_n = 0
+    devices_map = await list_subscription_connection_records_for_users(session, [user_id])
+    raw_devs = devices_map.get(int(user.id), [])
+    subs_devices = [SubscriptionConnectionItem(**r) for r in raw_devs]
+    today_utc = utc_today()
+    t_prev = await user_traffic_cumulative_for_user_at_calendar_boundary(
+        session,
+        user_id,
+        today_utc,
+        inclusive=False,
+    )
+    t_now = await user_traffic_cumulative_for_user_at_calendar_boundary(
+        session,
+        user_id,
+        today_utc,
+        inclusive=True,
+    )
+    active_today = t_now > t_prev
+    role = _normalize_account_role(user.account_role)
+    role_lit = type_cast(Literal["client", "manager", "admin"], role)
+    return UserListItem(
+        id=user.id,
+        registered_at=user.registered_at,
+        email=user.email,
+        account_role=role_lit,
+        telegram_id=user.telegram_id,
+        telegram_properties=user.telegram_properties,
+        subscription_until=user.subscription_until,
+        total_traffic_bytes=total,
+        active_today=active_today,
+        subscription_devices_count=dev_n,
+        subscription_devices=subs_devices,
+        referral_link_id=user.referral_link_id,
+        token=(user.token if show_secrets else None),
+        vless_uuid=(user.vless_uuid if show_secrets else None),
+    )
 
 
 async def staff_list_users(session: AsyncSession, *, show_secrets: bool) -> list[UserListItem]:

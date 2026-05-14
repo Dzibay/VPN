@@ -183,3 +183,53 @@ async def user_traffic_total_by_user_strictly_before_calendar_day(
         calendar_day_utc,
         inclusive=False,
     )
+
+
+async def user_traffic_cumulative_for_user_at_calendar_boundary(
+    session: AsyncSession,
+    user_id: int,
+    calendar_day_utc: date,
+    *,
+    inclusive: bool,
+) -> int:
+    """Как ``_user_traffic_total_by_user_at_cutoff``, но только для одного ``user_id`` (для карточки в админке)."""
+    cutoff = (
+        UserServerTraffic.traffic_date <= calendar_day_utc
+        if inclusive
+        else UserServerTraffic.traffic_date < calendar_day_utc
+    )
+    rn = (
+        func.row_number()
+        .over(
+            partition_by=(UserServerTraffic.user_id, UserServerTraffic.server_id),
+            order_by=UserServerTraffic.traffic_date.desc(),
+        )
+        .label("rn")
+    )
+    ranked = (
+        select(
+            UserServerTraffic.user_id,
+            UserServerTraffic.server_id,
+            UserServerTraffic.up_bytes,
+            UserServerTraffic.down_bytes,
+            rn,
+        )
+        .where(UserServerTraffic.user_id == user_id, cutoff)
+        .subquery()
+    )
+    latest = (
+        select(
+            ranked.c.user_id,
+            ranked.c.server_id,
+            ranked.c.up_bytes,
+            ranked.c.down_bytes,
+        )
+        .where(ranked.c.rn == 1)
+        .subquery()
+    )
+    stmt = select(
+        func.coalesce(func.sum(latest.c.up_bytes + latest.c.down_bytes), 0),
+    )
+    tot_raw = await session.scalar(stmt)
+    tot = int(tot_raw or 0)
+    return tot if tot >= 0 else 0

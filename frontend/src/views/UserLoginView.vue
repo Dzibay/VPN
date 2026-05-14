@@ -31,12 +31,16 @@ async function submit() {
         typeof r === 'string' && r.startsWith('/admin') ? r : '/admin/users',
       )
     } else if (data.role === 'manager') {
+      const rPath = typeof r === 'string' ? r.split('?')[0] : ''
+      const isUserPerAnalyticsRedirect =
+        typeof r === 'string' && /^\/admin\/users\/\d+\/analytics$/.test(rPath)
       const rOk =
         typeof r === 'string' &&
         (r.startsWith('/admin/referrals') ||
           r.startsWith('/admin/funnel') ||
           r.startsWith('/admin/users/registrations-by-date') ||
           r.startsWith('/admin/users/analytics') ||
+          isUserPerAnalyticsRedirect ||
           r.startsWith('/admin/users-analytics') ||
           r.startsWith('/admin/payments') ||
           r.startsWith('/admin/finance') ||
