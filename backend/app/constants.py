@@ -10,7 +10,8 @@ BRAND_NAME = "🍃Подорожник VPN"
 BRAND_NAME_ASCII = "Podorozhnik VPN"
 
 # Длина пробного периода подписки после регистрации (календарных дней).
-TRIAL_DAYS_AFTER_REGISTRATION = 14
+TRIAL_DAYS_AFTER_REGISTRATION = 3
+TRIAL_EXTRA_DAYS_USER_REFERRAL_REGISTRATION = 2
 
 # Срок жизни access-JWT (дни) — единый для портала и админ-API.
 JWT_TOKEN_TTL_DAYS = 14

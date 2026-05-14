@@ -61,6 +61,7 @@ from app.domain.referrals.repository import increment_referral_counter
 from app.domain.users.identifiers import new_subscription_token, new_vless_uuid
 from app.domain.subscription.validity import (
     subscription_until_after_registration,
+    trial_extra_days_for_referral_link,
     user_has_active_subscription,
 )
 from app.infrastructure.database.operations import table_insert
@@ -87,12 +88,21 @@ async def telegram_authenticate(
     user = (await session.scalars(stmt)).first()
     is_new_user = False
     if user is None:
+        rlink: ReferralLink | None = None
+        if body.referral_token:
+            rstmt = (
+                select(ReferralLink)
+                .where(ReferralLink.token == body.referral_token)
+                .limit(1)
+            )
+            rlink = (await session.scalars(rstmt)).first()
+        trial_extra = trial_extra_days_for_referral_link(rlink)
         user = User(
             email=None,
             password_hash=None,
             telegram_id=tid,
             telegram_properties=profile,
-            subscription_until=subscription_until_after_registration(),
+            subscription_until=subscription_until_after_registration(extra_trial_days=trial_extra),
             token=new_subscription_token(),
             vless_uuid=new_vless_uuid(),
         )
@@ -112,23 +122,16 @@ async def telegram_authenticate(
                 ) from e
         else:
             is_new_user = True
-            if body.referral_token:
-                rstmt = (
-                    select(ReferralLink)
-                    .where(ReferralLink.token == body.referral_token)
-                    .limit(1)
+            if rlink is not None:
+                user.referral_link_id = rlink.id
+                await increment_referral_counter(session, rlink.id, "clicks")
+                await increment_referral_counter(session, rlink.id, "registrations")
+                await session.flush()
+                await create_notify_ref_reg_task_if_applicable(
+                    session,
+                    referral_link=rlink,
+                    referee_user_id=int(user.id),
                 )
-                rlink = (await session.scalars(rstmt)).first()
-                if rlink is not None:
-                    user.referral_link_id = rlink.id
-                    await increment_referral_counter(session, rlink.id, "clicks")
-                    await increment_referral_counter(session, rlink.id, "registrations")
-                    await session.flush()
-                    await create_notify_ref_reg_task_if_applicable(
-                        session,
-                        referral_link=rlink,
-                        referee_user_id=int(user.id),
-                    )
     elif telegram_auth_has_profile_fields(body):
         user.telegram_properties = merge_telegram_auth_profile(body, user.telegram_properties)
         await session.flush()

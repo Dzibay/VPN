@@ -41,6 +41,7 @@ from app.domain.subscription.devices import (
 )
 from app.domain.subscription.validity import (
     subscription_until_after_registration,
+    trial_extra_days_for_referral_link,
     user_has_active_subscription,
 )
 from app.domain.user_traffic import user_traffic_totals
@@ -79,16 +80,23 @@ async def register_with_email(
     """Регистрация по email и паролю; ответ — JWT-токен.
 
     При наличии валидного ``referral_token`` инкремент счётчика регистраций по реферальной
-    ссылке делается в той же транзакции, что и вставка пользователя.
+    ссылке делается в той же транзакции, что и вставка пользователя. Если ссылка с
+    ``owner_kind=user``, к базовому триалу добавляются дни из
+    ``TRIAL_EXTRA_DAYS_USER_REFERRAL_REGISTRATION``.
     """
     email = normalize_email(str(body.email))
     pwd_hash = await run_in_threadpool(hash_password, body.password)
+    rlink: ReferralLink | None = None
+    if body.referral_token:
+        rstmt = select(ReferralLink).where(ReferralLink.token == body.referral_token).limit(1)
+        rlink = (await session.scalars(rstmt)).first()
+    trial_extra = trial_extra_days_for_referral_link(rlink)
     user = User(
         email=email,
         password_hash=pwd_hash,
         telegram_id=None,
         telegram_properties=None,
-        subscription_until=subscription_until_after_registration(),
+        subscription_until=subscription_until_after_registration(extra_trial_days=trial_extra),
         token=new_subscription_token(),
         vless_uuid=new_vless_uuid(),
     )
@@ -98,18 +106,15 @@ async def register_with_email(
         log.warning("register conflict: %s", e)
         raise ConflictError("Пользователь с таким email уже зарегистрирован") from e
 
-    if body.referral_token:
-        rstmt = select(ReferralLink).where(ReferralLink.token == body.referral_token).limit(1)
-        rlink = (await session.scalars(rstmt)).first()
-        if rlink is not None:
-            user.referral_link_id = rlink.id
-            await increment_referral_counter(session, rlink.id, "registrations")
-            await session.flush()
-            await create_notify_ref_reg_task_if_applicable(
-                session,
-                referral_link=rlink,
-                referee_user_id=int(user.id),
-            )
+    if rlink is not None:
+        user.referral_link_id = rlink.id
+        await increment_referral_counter(session, rlink.id, "registrations")
+        await session.flush()
+        await create_notify_ref_reg_task_if_applicable(
+            session,
+            referral_link=rlink,
+            referee_user_id=int(user.id),
+        )
 
     token = issue_access_token_or_http_error(cfg, role="user", user_id=user.id)
     bind_request_subject_user(int(user.id), source="register_email")
