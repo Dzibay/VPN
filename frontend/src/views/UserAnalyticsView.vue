@@ -896,7 +896,7 @@ onBeforeUnmount(() => {
       :has-data="trafficByDay.length > 0"
       title="Накопительный трафик по дням"
       unit-label="UTC · МиБ"
-      hint="На каждую дату снимков в БД: сумма по узлам последних накопленных значений up+down с traffic_date не позже этого дня (UTC)."
+      hint="На каждую дату"
       :labels="trafficDayLabels"
       :datasets="trafficDayDatasets"
       y-title="МиБ накопленно"
@@ -911,11 +911,6 @@ onBeforeUnmount(() => {
           <h3 class="chart-title">Распределение по узлам</h3>
           <span class="chart-unit">МиБ</span>
         </div>
-        <p class="chart-hint">
-          Данные из накопленных счётчиков в БД (после сбора
-          <code class="inline">xray api statsquery</code> на каждом узле). Узлы без записей
-          показываются с нулями.
-        </p>
         <div
           v-if="bundle.servers.length === 0"
           class="empty-hint"
