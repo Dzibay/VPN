@@ -4,9 +4,9 @@
 Список узлов строится из БД: сначала узлы без ``whitelist`` (по ``servers.load_percent``),
 затем с ``whitelist`` (тоже по нагрузке; актуализация из Prometheus — фоновый планировщик
 в процессе API, по умолчанию каждые 5 минут, см. ``SERVER_LOAD_PROMETHEUS_SYNC_*``).
-В начале списка дублируется первый подходящий VLESS с именем ``⚡ Auto (рекомендуемый)``
-(первый в этом порядке с валидным URI). Если среди узлов есть хотя бы один ``whitelist``,
-далее — дубликат лучшего по нагрузке среди whitelist-узлов — ``⚡ Auto (белый список)``.
+В начале списка — ``🔥 Auto (рекомендуемый)``: Xray JSON balancer ``leastPing`` по всем VLESS
+без ``whitelist`` (Happ) или группа ``url-test`` (Clash). Если есть ``whitelist``-VLESS —
+``📄 Auto (Белые списки)`` с тем же механизмом по whitelist-узлам.
 
 Ответы ``GET/HEAD /sub/{token}``, ``GET /sub/{token}/json`` отдают метаданные в HTTP-заголовках
 в форме Happ (``subscription-userinfo``, ``profile-update-interval``, ``profile-title``, …;
