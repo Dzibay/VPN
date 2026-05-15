@@ -3,7 +3,7 @@
  * Данные: options.plugins.staffChartMarkers.markers = [{ index, title, color }]
  */
 
-/** @typedef {{ index: number; title: string; color: string }} ChartEventMarker */
+/** @typedef {{ index: number; title: string; color: string; kind?: string }} ChartEventMarker */
 
 function utcHourFloorMs(ms) {
   const d = new Date(ms)
@@ -46,6 +46,53 @@ function dataPointCenterX(chart, dataIndex) {
   const pt = meta?.data?.[dataIndex]
   const x = pt?.x
   return typeof x === 'number' && Number.isFinite(x) ? x : null
+}
+
+function mskCalendarTodayYmd() {
+  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Moscow' })
+}
+
+function utcTodayYmd() {
+  const d = new Date()
+  const y = d.getUTCFullYear()
+  const mo = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(d.getUTCDate()).padStart(2, '0')
+  return `${y}-${mo}-${day}`
+}
+
+/**
+ * Вертикальная отметка «сегодня» на линейном графике: UTC-день в режиме по дням;
+ * в почасовом — только если выбран сегодняшний календарный день по МСК, тогда текущий час UTC.
+ * @param {Array<{ iso: string }>} chartPoints
+ * @param {'day'|'hour'} granularity
+ * @param {string} hourDayMsk
+ * @returns {ChartEventMarker | null}
+ */
+export function makeTodayLineChartMarker(chartPoints, granularity, hourDayMsk) {
+  if (!Array.isArray(chartPoints) || chartPoints.length === 0) return null
+  /** @type {ChartEventMarker} */
+  const base = { title: '', color: '#34d399' }
+
+  if (granularity === 'day') {
+    const key = utcTodayYmd()
+    const idx = chartPoints.findIndex(
+      (p) => String(p?.iso ?? '').slice(0, 10) === key,
+    )
+    if (idx < 0) return null
+    return { ...base, index: idx, title: 'Сегодня (UTC)', kind: 'today' }
+  }
+
+  if (granularity === 'hour') {
+    const sel = String(hourDayMsk ?? '').trim().slice(0, 10)
+    if (!sel || sel !== mskCalendarTodayYmd()) return null
+    const nowKey = utcHourIsoKeyFromEventIso(new Date().toISOString())
+    if (!nowKey) return null
+    const idx = chartPoints.findIndex((p) => String(p?.iso ?? '') === nowKey)
+    if (idx < 0) return null
+    return { ...base, index: idx, title: 'Сейчас (UTC)', kind: 'today' }
+  }
+
+  return null
 }
 
 /**

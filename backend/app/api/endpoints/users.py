@@ -13,6 +13,7 @@ from app.core.dependencies import (
 )
 from app.domain.models.server_traffic import UserTrafficByDayRow, UserTrafficByServersBundle
 from app.domain.models.users import (
+    DailyPaymentsExpiryStatsResponse,
     ExtendActiveSubscriptionsBody,
     ExtendActiveSubscriptionsResponse,
     StaffUserSearchItem,
@@ -34,7 +35,7 @@ from app.domain.services.users_service import (
     staff_list_users,
     users_count,
 )
-from app.domain.users.daily_stats import users_daily_stats
+from app.domain.users.daily_stats import daily_payments_expiry_stats, users_daily_stats
 from app.domain.users.traffic_breakdown import (
     user_traffic_by_servers_bundle,
     user_traffic_cumulative_by_day_rows,
@@ -131,6 +132,19 @@ async def users_daily_stats_ep(
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+@router.get(
+    "/daily-payments-expiry-bars",
+    response_model=DailyPaymentsExpiryStatsResponse,
+    dependencies=[Depends(require_referrals_staff)],
+    summary="Оплаты и окончания подписки по UTC-дням (для столбчатого графика)",
+)
+async def daily_payments_expiry_bars_ep(
+    session: ReadonlySessionDep,
+) -> DailyPaymentsExpiryStatsResponse:
+    rows = await daily_payments_expiry_stats(session)
+    return DailyPaymentsExpiryStatsResponse(rows=rows)
 
 
 @router.post(

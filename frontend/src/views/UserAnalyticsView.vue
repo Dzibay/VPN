@@ -1,7 +1,7 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import Chart from '../utils/chartSetup.js'
+import AdminBarChart from '../components/AdminBarChart.vue'
 import AdminLineChartPanel from '../components/AdminLineChartPanel.vue'
 import AdminPageHeader from '../components/AdminPageHeader.vue'
 import AdminPageShell from '../components/AdminPageShell.vue'
@@ -81,9 +81,6 @@ const {
   sortedRows: sortedTaskLedgerRows,
   toggleSort: toggleTaskLedgerSort,
 } = useTableSort(taskLedgerItems, taskLedgerSortAccessors)
-
-/** @type {Chart | null} */
-let chartInstance = null
 
 const userId = computed(() => {
   const raw = route.params.userId
@@ -186,17 +183,6 @@ function trafficDayTooltipLabel(ctx) {
   return `Накопленно: ${formatBytes(b)}`
 }
 
-function gridColor() {
-  return 'rgba(88, 214, 141, 0.12)'
-}
-
-function tickColor() {
-  return typeof window !== 'undefined' &&
-    window.matchMedia('(prefers-color-scheme: dark)').matches
-    ? 'rgba(200, 228, 210, 0.55)'
-    : 'rgba(45, 85, 65, 0.45)'
-}
-
 function serverLabel(row) {
   const n = row.name && String(row.name).trim()
   if (n) return n
@@ -281,80 +267,38 @@ async function loadReferralWidget() {
   }
 }
 
-function destroyChart() {
-  if (chartInstance) {
-    chartInstance.destroy()
-    chartInstance = null
-  }
-}
-
-function drawChart() {
-  const el = chartCanvas.value
-  if (!el) return
-  destroyChart()
+const serverBarLabels = computed(() => {
   const b = bundle.value
-  if (!b?.servers?.length) return
+  if (!b?.servers?.length) return []
+  return [...b.servers]
+    .sort((a, b) => b.total_bytes - a.total_bytes)
+    .map((r) => serverLabel(r))
+})
+
+const serverBarDatasets = computed(() => {
+  const b = bundle.value
+  if (!b?.servers?.length) return []
   const rows = [...b.servers].sort((a, b) => b.total_bytes - a.total_bytes)
   const mib = (x) => x / (1024 * 1024)
-  chartInstance = new Chart(el, {
-    type: 'bar',
-    data: {
-      labels: rows.map((r) => serverLabel(r)),
-      datasets: [
-        {
-          label: 'К клиенту (down), МиБ',
-          data: rows.map((r) => mib(r.down_bytes)),
-          backgroundColor: 'rgba(88, 214, 141, 0.78)',
-        },
-        {
-          label: 'От клиента (up), МиБ',
-          data: rows.map((r) => mib(r.up_bytes)),
-          backgroundColor: 'rgba(69, 179, 157, 0.78)',
-        },
-      ],
+  return [
+    {
+      label: 'К клиенту (down), МиБ',
+      data: rows.map((r) => mib(r.down_bytes)),
+      rgb: /** @type {[number, number, number]} */ ([88, 214, 141]),
     },
-    options: {
-      indexAxis: 'y',
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: 'top',
-          labels: {
-            color: tickColor(),
-            font: { family: 'var(--sans)', size: 12 },
-          },
-        },
-        tooltip: {
-          backgroundColor: 'rgba(4, 12, 9, 0.94)',
-          titleFont: { family: 'var(--sans)', size: 12 },
-          bodyFont: { family: 'var(--mono)', size: 12 },
-        },
-      },
-      scales: {
-        x: {
-          stacked: true,
-          min: 0,
-          ticks: { color: tickColor() },
-          grid: { color: gridColor(), drawBorder: false },
-          title: {
-            display: true,
-            text: 'МиБ',
-            color: tickColor(),
-            font: { size: 11, weight: '600' },
-          },
-        },
-        y: {
-          stacked: true,
-          ticks: { color: tickColor(), maxRotation: 0 },
-          grid: { color: gridColor(), drawBorder: false },
-        },
-      },
+    {
+      label: 'От клиента (up), МиБ',
+      data: rows.map((r) => mib(r.up_bytes)),
+      rgb: /** @type {[number, number, number]} */ ([69, 179, 157]),
     },
-  })
-}
+  ]
+})
 
-const chartCanvas = ref(null)
+function formatServerBarValueTick(v) {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return ''
+  return n.toLocaleString('ru-RU', { maximumFractionDigits: n < 10 ? 2 : 1 })
+}
 
 /** Лимит строк для платежей/задач на странице одного пользователя (совпадает с шагом пагинации в staff-вью). */
 const LEDGER_PAGE_LIMIT = 200
@@ -452,8 +396,6 @@ async function load() {
   } finally {
     loading.value = false
   }
-  await nextTick()
-  drawChart()
 }
 
 watch(
@@ -465,10 +407,6 @@ watch(
 
 onMounted(() => {
   void load()
-})
-
-onBeforeUnmount(() => {
-  destroyChart()
 })
 </script>
 
@@ -917,9 +855,19 @@ onBeforeUnmount(() => {
         >
           В базе нет серверов.
         </div>
-        <div v-else class="chart-wrap chart-wrap-tall">
-          <canvas ref="chartCanvas" />
-        </div>
+        <AdminBarChart
+          v-else
+          preset="finance"
+          aria-label="Распределение трафика по узлам, МиБ"
+          :has-data="serverBarLabels.length > 0"
+          :labels="serverBarLabels"
+          :datasets="serverBarDatasets"
+          stacked
+          index-axis="y"
+          value-axis-title="МиБ"
+          :value-axis-min="0"
+          :format-value-tick="formatServerBarValueTick"
+        />
       </div>
     </template>
   </AdminPageShell>
@@ -1260,13 +1208,6 @@ onBeforeUnmount(() => {
   color: var(--muted);
   line-height: 1.5;
   max-width: 52rem;
-}
-.chart-wrap {
-  position: relative;
-  min-height: 220px;
-}
-.chart-wrap-tall {
-  min-height: 320px;
 }
 .empty-hint {
   padding: 1rem 0;

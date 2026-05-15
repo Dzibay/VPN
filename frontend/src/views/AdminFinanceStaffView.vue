@@ -1,9 +1,9 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import AdminBarChart from '../components/AdminBarChart.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
-import Chart from '../utils/chartSetup.js'
 import { fetchJson } from '../api/client.js'
-import { adminChartTheme, rgba } from '../utils/adminChartTheme.js'
+import { adminChartTheme } from '../utils/adminChartTheme.js'
 
 /** @typedef {{ subscription: string[]; one_time: string[] }} FinanceBuckets */
 
@@ -28,11 +28,6 @@ const chartDistribution = ref(/** @type {'cash' | 'spread'} */ ('cash'))
 
 /** Вычитать 10% комиссии Tribute из суммы и графика (включено по умолчанию). */
 const deductTributeFee = ref(true)
-
-/** @type {Chart | null} */
-let chartInstance = null
-
-const chartCanvas = ref(null)
 
 /** Нижний слой стека → верхний (порядок важен для stacked bar). */
 const KIND_ORDER = /** @type {const} */ ([
@@ -95,130 +90,61 @@ const paymentCountLabel = computed(() => {
   return Number(n).toLocaleString('ru-RU')
 })
 
-function gridColor() {
-  return 'rgba(88, 214, 141, 0.12)'
-}
+const financeChartLabels = computed(() => {
+  const s = summary.value
+  if (!s?.months?.length) return []
+  return s.months.map(formatMonthLabel)
+})
 
-function tickColor() {
-  return typeof window !== 'undefined' &&
-    window.matchMedia('(prefers-color-scheme: dark)').matches
-    ? 'rgba(200, 228, 210, 0.55)'
-    : 'rgba(45, 85, 65, 0.45)'
-}
-
-function destroyChart() {
-  if (chartInstance) {
-    chartInstance.destroy()
-    chartInstance = null
-  }
-}
-
-function drawChart() {
-  const el = chartCanvas.value
-  if (!el) return
-  destroyChart()
+const financeChartDatasets = computed(() => {
   const s = summary.value
   const buckets = activeBuckets.value
-  if (!s?.months?.length || !buckets) return
-
+  if (!s?.months?.length || !buckets) return []
   const theme = adminChartTheme()
   /** @type {Record<string, [number, number, number]>} */
   const rgbByField = {
     subscription: theme.accent,
     one_time: theme.trafficOrange,
   }
-
-  const labels = s.months.map(formatMonthLabel)
-
   const factor = displayAmountFactor.value
-  const datasets = KIND_ORDER.map(({ field, label }) => ({
+  return KIND_ORDER.map(({ field, label }) => ({
     label,
     data: parseAmounts(buckets[field]).map((v) => v * factor),
-    backgroundColor: rgba(rgbByField[field] ?? theme.accent, 0.82),
+    rgb: rgbByField[field] ?? theme.accent,
     borderRadius: 4,
-    borderSkipped: false,
     maxBarThickness: 48,
   }))
+})
 
-  chartInstance = new Chart(el, {
-    type: 'bar',
-    data: { labels, datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      datasets: {
-        bar: {
-          categoryPercentage: 0.65,
-          barPercentage: 0.9,
-        },
-      },
-      plugins: {
-        legend: {
-          display: true,
-          position: 'top',
-          labels: {
-            color: tickColor(),
-            font: { family: 'var(--sans)', size: 12 },
-            boxWidth: 14,
-            boxHeight: 14,
-          },
-        },
-        tooltip: {
-          backgroundColor: 'rgba(4, 12, 9, 0.94)',
-          titleFont: { family: 'var(--sans)', size: 12 },
-          bodyFont: { family: 'var(--mono)', size: 12 },
-          filter: (item) => Number(item.raw) > 0,
-          callbacks: {
-            footer(items) {
-              const first = items?.[0]
-              if (!first) return ''
-              const idx = first.dataIndex
-              const chart = first.chart
-              let sum = 0
-              for (const ds of chart.data.datasets) {
-                const v = Number(ds.data[idx])
-                if (Number.isFinite(v)) sum += v
-              }
-              return `Всего: ${sum.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽`
-            },
-          },
-        },
-      },
-      scales: {
-        x: {
-          stacked: true,
-          ticks: { color: tickColor(), maxRotation: 45, minRotation: 0 },
-          grid: { color: gridColor(), drawBorder: false },
-        },
-        y: {
-          stacked: true,
-          beginAtZero: true,
-          ticks: {
-            color: tickColor(),
-            callback(v) {
-              const n = Number(v)
-              if (!Number.isFinite(n)) return ''
-              return n.toLocaleString('ru-RU', { maximumFractionDigits: 0 })
-            },
-          },
-          grid: { color: gridColor(), drawBorder: false },
-          title: {
-            display: true,
-            text: '₽',
-            color: tickColor(),
-            font: { size: 11, weight: '600' },
-          },
-        },
-      },
-    },
-  })
+function financeFormatValueTick(v) {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return ''
+  return n.toLocaleString('ru-RU', { maximumFractionDigits: 0 })
+}
+
+/** @param {import('chart.js').TooltipItem<'bar'>[]} items */
+function financeTooltipFooter(items) {
+  const first = items?.[0]
+  if (!first) return ''
+  const idx = first.dataIndex
+  const chart = first.chart
+  let sum = 0
+  for (const ds of chart.data.datasets) {
+    const v = Number(ds.data[idx])
+    if (Number.isFinite(v)) sum += v
+  }
+  return `Всего: ${sum.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽`
+}
+
+/** @param {import('chart.js').TooltipItem<'bar'>} item */
+function financeTooltipFilter(item) {
+  return Number(item.raw) > 0
 }
 
 async function load() {
   loading.value = true
   error.value = null
   summary.value = null
-  destroyChart()
   try {
     summary.value = await fetchJson('/api/admin/payments/finance-summary')
   } catch (e) {
@@ -227,26 +153,10 @@ async function load() {
   } finally {
     loading.value = false
   }
-  await nextTick()
-  drawChart()
 }
-
-watch(chartDistribution, async () => {
-  await nextTick()
-  drawChart()
-})
-
-watch(deductTributeFee, async () => {
-  await nextTick()
-  drawChart()
-})
 
 onMounted(() => {
   void load()
-})
-
-onBeforeUnmount(() => {
-  destroyChart()
 })
 </script>
 
@@ -306,9 +216,19 @@ onBeforeUnmount(() => {
       <div v-if="!summary.months.length" class="empty-box">
         <p class="muted">Платежей пока нет — график появится после первых оплат.</p>
       </div>
-      <div v-else class="chart-wrap">
-        <canvas ref="chartCanvas" />
-      </div>
+      <AdminBarChart
+        v-else
+        preset="finance"
+        aria-label="Доходы по месяцам (UTC), ₽"
+        :has-data="summary.months.length > 0"
+        :labels="financeChartLabels"
+        :datasets="financeChartDatasets"
+        stacked
+        value-axis-title="₽"
+        :format-value-tick="financeFormatValueTick"
+        :get-tooltip-footer="financeTooltipFooter"
+        :tooltip-filter="financeTooltipFilter"
+      />
     </template>
   </AdminStaffShell>
 </template>
@@ -429,13 +349,6 @@ onBeforeUnmount(() => {
   font-size: 0.82rem;
   color: var(--muted);
   line-height: 1.45;
-}
-
-.chart-wrap {
-  position: relative;
-  width: 100%;
-  height: min(420px, 55vh);
-  min-height: 280px;
 }
 
 .empty-box {

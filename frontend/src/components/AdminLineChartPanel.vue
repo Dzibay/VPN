@@ -4,7 +4,7 @@
  */
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import Chart from '../utils/chartSetup.js'
-import { adminChartTheme, rgba } from '../utils/adminChartTheme.js'
+import { adminChartTheme, chartTooltipColors, rgba, resolveBackgroundCss } from '../utils/adminChartTheme.js'
 
 /** @typedef {{ label: string; data: number[]; rgb: [number, number, number]; filled?: boolean; borderWidth?: number }} LineSeries */
 
@@ -70,6 +70,8 @@ function drawChart() {
 
   destroyChart()
   const theme = adminChartTheme()
+  const tipBgResolved = resolveBackgroundCss(theme.tooltipBg, theme.tooltipBg)
+  const tipColors = chartTooltipColors(tipBgResolved, theme)
   const surfaceBg = theme.surfaceBg
   const n = props.labels.length
 
@@ -150,10 +152,11 @@ function drawChart() {
           },
         },
         tooltip: {
-          backgroundColor: theme.tooltipBg,
-          titleColor: theme.textH,
-          bodyColor: theme.textH,
-          borderColor: theme.accentBorder,
+          backgroundColor: tipBgResolved,
+          titleColor: tipColors.titleColor,
+          bodyColor: tipColors.bodyColor,
+          footerColor: tipColors.footerColor,
+          borderColor: tipColors.borderColor,
           borderWidth: 1,
           padding: 12,
           cornerRadius: 12,
@@ -191,7 +194,9 @@ function drawChart() {
               const lines = []
               for (const m of props.eventMarkers) {
                 if (m.index === i && m.title) {
-                  lines.push(`Событие: ${m.title}`)
+                  lines.push(
+                    m.kind === 'today' ? m.title : `Событие: ${m.title}`,
+                  )
                 }
               }
               return lines
@@ -285,7 +290,7 @@ defineExpose({ drawChart, destroyChart })
         <p class="empty-hint">Нет данных для графика.</p>
       </slot>
     </template>
-    <div v-else class="chart-wrap chart-wrap-tall">
+    <div v-else class="admin-chart-wrap admin-chart-wrap--tall">
       <canvas ref="canvasEl" :aria-label="ariaLabel" />
     </div>
   </div>
@@ -330,15 +335,6 @@ defineExpose({ drawChart, destroyChart })
   color: var(--muted);
   line-height: 1.5;
   max-width: 52rem;
-}
-
-.chart-wrap {
-  position: relative;
-  min-height: 220px;
-}
-
-.chart-wrap-tall {
-  min-height: min(58vh, 440px);
 }
 
 .banner-err {

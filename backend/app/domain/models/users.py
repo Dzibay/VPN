@@ -163,6 +163,30 @@ class UsersDailyStatsResponse(BaseModel):
     )
 
 
+class DailyPaymentsExpiryStatsRow(BaseModel):
+    """Одна точка столбчатого графика: оплаты и окончание подписки по UTC-дню."""
+
+    stats_date: date
+    payments_count: int = Field(ge=0, description="Число строк payments за этот календарный день UTC")
+    subscriptions_expired_inactive_count: int = Field(
+        ge=0,
+        description="Истечение подписки в этот день без роста трафика в этот же день",
+    )
+    subscriptions_expired_active_count: int = Field(
+        ge=0,
+        description=(
+            "Истечение подписки (subscription_until = день) и рост суммарного трафика в этот UTC-день "
+            "(как «активные» на линейном графике)"
+        ),
+    )
+
+
+class DailyPaymentsExpiryStatsResponse(BaseModel):
+    rows: list[DailyPaymentsExpiryStatsRow] = Field(
+        description="Дни по возрастанию stats_date (UTC); пусто, если нет ни оплат, ни дат окончания в выборке",
+    )
+
+
 class ExtendActiveSubscriptionsBody(BaseModel):
     days: int = Field(
         ge=1,

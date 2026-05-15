@@ -14,7 +14,11 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time import as_calendar_date
-from app.domain.models.users import UserStatsByDateRow, UsersDailyStatsResponse
+from app.domain.models.users import (
+    DailyPaymentsExpiryStatsRow,
+    UserStatsByDateRow,
+    UsersDailyStatsResponse,
+)
 from app.infrastructure.persistence.models.subscription_device import SubscriptionDevice
 from app.infrastructure.persistence.models.user import User
 from app.infrastructure.persistence.models.user_server_traffic import UserServerTraffic
@@ -231,6 +235,28 @@ async def users_daily_stats(
         hour_day=None,
         stats_by_date=_with_day_period_start(dated),
     )
+
+
+async def daily_payments_expiry_stats(session: AsyncSession) -> list[DailyPaymentsExpiryStatsRow]:
+    """Столбчатый график: ``rpc_daily_payments_and_subscription_expirations()`` (UTC-дни)."""
+
+    stmt = text(
+        """
+        SELECT stats_date, payments_count,
+               subscriptions_expired_inactive_count, subscriptions_expired_active_count
+        FROM rpc_daily_payments_and_subscription_expirations()
+        """,
+    )
+    raw = (await session.execute(stmt)).all()
+    return [
+        DailyPaymentsExpiryStatsRow(
+            stats_date=row[0],
+            payments_count=int(row[1] or 0),
+            subscriptions_expired_inactive_count=int(row[2] or 0),
+            subscriptions_expired_active_count=int(row[3] or 0),
+        )
+        for row in raw
+    ]
 
 
 async def count_users_with_subscription_device(

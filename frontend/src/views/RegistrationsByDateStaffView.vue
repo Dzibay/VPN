@@ -1,14 +1,17 @@
 <script setup>
 import { computed, onMounted, ref, toRefs } from 'vue'
+import AdminBarChartPanel from '../components/AdminBarChartPanel.vue'
 import AdminLineChartPanel from '../components/AdminLineChartPanel.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import { fetchJson } from '../api/client.js'
-import { mapStaffChartEventsToMarkers } from '../utils/chartStaffMarkersPlugin.js'
+import { mapStaffChartEventsToMarkers, makeTodayLineChartMarker } from '../utils/chartStaffMarkersPlugin.js'
 import {
+  formatDayShort,
   mskTodayIso,
   utcTodayIso,
   useUsersDailyStatsChart,
 } from '../composables/useUsersDailyStatsChart.js'
+import { rgba } from '../utils/adminChartTheme.js'
 
 /** @typedef {{ id: number; event_at: string; title: string; color: string; created_at: string }} ChartEventRow */
 
@@ -131,17 +134,98 @@ const {
 
 const { setGranularity, load } = chart
 
-const chartEventMarkers = computed(() =>
-  mapStaffChartEventsToMarkers(
+const chartEventMarkers = computed(() => {
+  const manual = mapStaffChartEventsToMarkers(
     chartPoints.value,
     granularity.value,
     chartEvents.value,
-  ),
+  )
+  const today = makeTodayLineChartMarker(
+    chartPoints.value,
+    granularity.value,
+    hourDayMsk.value,
+  )
+  return today ? [today, ...manual] : manual
+})
+
+/** @typedef {{ stats_date: string; payments_count: number; subscriptions_expired_inactive_count: number; subscriptions_expired_active_count: number }} PayExpRow */
+
+const payExpRows = ref(/** @type {PayExpRow[]} */ ([]))
+const payExpLoading = ref(false)
+const payExpError = ref(null)
+
+const payExpXMarkers = computed(() => {
+  const key = utcTodayIso()
+  const idx = payExpRows.value.findIndex(
+    (r) => String(r.stats_date ?? '').slice(0, 10) === key,
+  )
+  if (idx < 0) return []
+  return [{ index: idx, title: 'Сегодня (UTC)', color: '#34d399', kind: 'today' }]
+})
+
+/** Как «С трафиком» на линейном графике (оранжевый). */
+const TRAFFIC_ORANGE_RGB = /** @type {const} */ ([251, 146, 60])
+const SUBSCRIPTION_EXPIRY_GRAY_RGB = /** @type {const} */ ([148, 163, 184])
+
+const payExpLabels = computed(() =>
+  payExpRows.value.map((r) => formatDayShort(String(r.stats_date).slice(0, 10))),
 )
+
+/** Как «Активные» на линейном графике (небо). */
+const ACTIVE_SKY_RGB = /** @type {const} */ ([56, 189, 248])
+
+const payExpDatasets = computed(() => {
+  const rows = payExpRows.value
+  return [
+    {
+      label: 'Оплаты',
+      data: rows.map((r) => Number(r.payments_count) || 0),
+      rgb: /** @type {[number, number, number]} */ ([...TRAFFIC_ORANGE_RGB]),
+    },
+    {
+      label: 'Окончание подписки',
+      data: rows.map((r) => Number(r.subscriptions_expired_inactive_count) || 0),
+      backgroundColor: rgba(SUBSCRIPTION_EXPIRY_GRAY_RGB, 0.45),
+      borderColor: rgba(SUBSCRIPTION_EXPIRY_GRAY_RGB, 0.68),
+      borderWidth: 1,
+      hoverBackgroundColor: rgba(SUBSCRIPTION_EXPIRY_GRAY_RGB, 0.58),
+      hoverBorderColor: rgba(SUBSCRIPTION_EXPIRY_GRAY_RGB, 0.88),
+    },
+    {
+      label: 'Окончание и активность',
+      data: rows.map((r) => Number(r.subscriptions_expired_active_count) || 0),
+      backgroundColor: rgba(ACTIVE_SKY_RGB, 0.45),
+      borderColor: rgba(ACTIVE_SKY_RGB, 0.7),
+      borderWidth: 1,
+      hoverBackgroundColor: rgba(ACTIVE_SKY_RGB, 0.6),
+      hoverBorderColor: rgba(ACTIVE_SKY_RGB, 0.9),
+    },
+  ]
+})
+
+async function loadPayExpBars() {
+  payExpLoading.value = true
+  payExpError.value = null
+  try {
+    const data = await fetchJson('/api/users/daily-payments-expiry-bars')
+    payExpRows.value = Array.isArray(data.rows) ? data.rows : []
+  } catch (e) {
+    payExpError.value = e.message || String(e)
+    payExpRows.value = []
+  } finally {
+    payExpLoading.value = false
+  }
+}
+
+async function refreshAllCharts() {
+  await load()
+  await loadPayExpBars()
+}
 
 onMounted(() => {
   void load()
   void loadChartEvents()
+  void loadPayExpBars()
 })
 </script>
 
@@ -190,10 +274,12 @@ onMounted(() => {
           <button
             type="button"
             class="btn-secondary"
-            :disabled="loading"
-            @click="load"
+            :disabled="loading || payExpLoading"
+            @click="refreshAllCharts"
           >
-            {{ loading ? 'Обновление…' : 'Обновить' }}
+            {{
+              loading || payExpLoading ? 'Обновление…' : 'Обновить'
+            }}
           </button>
         </div>
       </div>
@@ -369,6 +455,22 @@ onMounted(() => {
         </li>
       </ul>
     </section>
+
+    <div class="payments-expiry-wrap">
+      <AdminBarChartPanel
+        aria-label="По дням UTC: число оплат и пользователей с датой окончания подписки"
+        :loading="payExpLoading"
+        :error="payExpError"
+        :has-data="payExpRows.length > 0"
+        title="Оплаты и окончания подписки"
+        unit-label="UTC"
+        hint="Оранжевый — оплаты за день UTC. Серый — subscription_until в этот день, без роста трафика в этот день. Голубой — тот же день окончания и рост суммарного трафика (как «Активные» на графике выше)."
+        :labels="payExpLabels"
+        :datasets="payExpDatasets"
+        :x-markers="payExpXMarkers"
+        y-title="Количество"
+      />
+    </div>
   </AdminStaffShell>
 </template>
 
@@ -576,6 +678,10 @@ onMounted(() => {
   padding: 1rem 1.1rem;
   border-radius: 14px;
   border: 1px solid var(--card-border);
+}
+
+.payments-expiry-wrap {
+  margin-top: 1.25rem;
 }
 
 .chart-events-title {
