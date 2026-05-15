@@ -4,6 +4,7 @@
 
 1. ``🔥 Auto (рекомендуемый)`` — при одном VLESS без ``whitelist``: ``vless://``; при
    нескольких — JSON balancer ``leastPing`` (Happ). В Clash — ``url-test`` по пулу.
+   Узлы с ``include_in_auto=false`` в эти группы не входят (остаются отдельными строками).
 2. ``📄 Auto (Белые списки)`` — то же для VLESS с ``whitelist``, если такие узлы есть.
 3. Все узлы выдачи по одному разу с обычными именами: сначала без ``whitelist``,
    в конце списка — только с ``whitelist`` (внутри групп — по ``load_percent``).
@@ -367,6 +368,7 @@ def _vless_pool_for_auto(
         s
         for s in ctx.delivery_rows
         if _is_vless_server(s)
+        and bool(s.include_in_auto)
         and bool(s.whitelist) is whitelist
         and uri_by_id.get(s.id) is not None
     ]

@@ -98,6 +98,7 @@ const serverSortAccessors = {
   host: (s) => (s.host ?? '').toLowerCase(),
   status: (s) => String(s.provision_status ?? '').toLowerCase(),
   whitelist: (s) => (s.whitelist ? 1 : 0),
+  include_in_auto: (s) => (s.include_in_auto !== false ? 1 : 0),
 }
 
 const {
@@ -159,6 +160,8 @@ const formActive = ref(true)
 const formProxyKind = ref('vless')
 /** Узел помечен для белого списка (фильтрация в подписке — при реализации на бэкенде) */
 const formWhitelist = ref(false)
+/** Участвует в группах Auto (балансировка по пингу); выключено — узел только отдельной строкой */
+const formIncludeInAuto = ref(true)
 /** Override label instance в Prometheus; пусто — host + порт из PROVISION_NODE_EXPORTER_PORT API (часто 9100) */
 const formPrometheusInstance = ref('')
 const formNetworkCapMbps = ref('')
@@ -427,6 +430,7 @@ function openModal() {
     formActive.value = true
     formProxyKind.value = 'vless'
     formWhitelist.value = false
+    formIncludeInAuto.value = true
     formPrometheusInstance.value = ''
     formNetworkCapMbps.value = ''
     formVlessUuid.value = ''
@@ -449,6 +453,7 @@ function openEditServer(s) {
   formActive.value = Boolean(s.is_active)
   formProxyKind.value = s.proxy_kind === 'hysteria2' ? 'hysteria2' : 'vless'
   formWhitelist.value = Boolean(s.whitelist)
+  formIncludeInAuto.value = s.include_in_auto !== false
   formPrometheusInstance.value =
     (s.prometheus_instance && String(s.prometheus_instance).trim()) || ''
   formNetworkCapMbps.value =
@@ -808,6 +813,7 @@ async function submitSaveServer() {
         is_active: formActive.value,
         proxy_kind: formProxyKind.value,
         whitelist: formWhitelist.value,
+        include_in_auto: formIncludeInAuto.value,
       }
       if (formProxyKind.value === 'vless') {
         const rd = String(formRealityDest.value ?? '').trim()
@@ -846,6 +852,7 @@ async function submitSaveServer() {
         is_active: formActive.value,
         proxy_kind: formProxyKind.value,
         whitelist: formWhitelist.value,
+        include_in_auto: formIncludeInAuto.value,
       }
       if (formProxyKind.value === 'vless') {
         const rd = String(formRealityDest.value ?? '').trim()
@@ -1592,6 +1599,13 @@ watch(formIsCascadeRuEntry, (v) => {
                 @sort="toggleServerSort"
               />
               <AdminSortTh
+                label="Auto"
+                column-key="include_in_auto"
+                :sort-key="serverSortKey"
+                :sort-dir="serverSortDir"
+                @sort="toggleServerSort"
+              />
+              <AdminSortTh
                 label="Белый список"
                 column-key="whitelist"
                 :sort-key="serverSortKey"
@@ -1642,6 +1656,9 @@ watch(formIsCascadeRuEntry, (v) => {
               </td>
               <td class="mono tabular num">
                 {{ s.network_cap_mbps != null ? s.network_cap_mbps : '—' }}
+              </td>
+              <td class="tabular" title="Участие в группах Auto (балансировка по пингу)">
+                {{ s.include_in_auto !== false ? 'да' : '—' }}
               </td>
               <td class="tabular" title="Узел для белого списка">
                 {{ s.whitelist ? 'да' : '—' }}
@@ -2110,6 +2127,10 @@ watch(formIsCascadeRuEntry, (v) => {
               <label class="field field-check">
                 <input v-model="formWhitelist" type="checkbox" />
                 <span>Белый список (отметка узла; фильтрация выдачи — при настройке на сервере)</span>
+              </label>
+              <label class="field field-check">
+                <input v-model="formIncludeInAuto" type="checkbox" />
+                <span>Включать в Auto (рекомендуемый / белые списки — балансировка по пингу)</span>
               </label>
               <div class="field field-cascade">
                 <label class="field field-check">

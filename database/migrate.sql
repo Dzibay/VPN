@@ -1,6 +1,8 @@
 -- Одноразовые миграции уже применены; схема и догонка — в database/init.sql.
 -- Файл оставлен: ensure_schema и docker-entrypoint-initdb.d ожидают его наличие.
 
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS include_in_auto BOOLEAN NOT NULL DEFAULT TRUE;
+
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_type_check;
 ALTER TABLE tasks ADD CONSTRAINT tasks_type_check CHECK (
     type IN (

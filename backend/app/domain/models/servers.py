@@ -42,6 +42,10 @@ class ServerCreate(BaseModel):
         default=False,
         description="Узел для белого списка (выдача только отмеченным пользователям — при поддержке в приложении)",
     )
+    include_in_auto: bool = Field(
+        default=True,
+        description="Включать узел в группы Auto (рекомендуемый / белые списки) с балансировкой по пингу",
+    )
     proxy_kind: Literal["vless", "hysteria2"] = Field(
         default="vless",
         description="Тип прокси на узле: vless (Xray REALITY) или hysteria2",
@@ -228,6 +232,10 @@ class ServerUpdate(BaseModel):
         default=None,
         description="Флаг белого списка для узла",
     )
+    include_in_auto: bool | None = Field(
+        default=None,
+        description="Участие в группах Auto (балансировка по пингу)",
+    )
     proxy_kind: Literal["vless", "hysteria2"] | None = Field(
         default=None,
         description="Тип прокси на узле: vless или hysteria2",
@@ -383,6 +391,10 @@ class ServerRead(BaseModel):
     whitelist: bool = Field(
         default=False,
         description="Сервер помечен для выдачи в белом списке",
+    )
+    include_in_auto: bool = Field(
+        default=True,
+        description="Участвует в группах Auto (рекомендуемый / белые списки), не только отдельной строкой",
     )
     provision_ready: bool = Field(description="ПО на узле установлено (воркер завершил задачу)")
     provision_status: str = Field(
