@@ -97,13 +97,12 @@ const {
 
 const refereeSortAccessors = {
   id: (u) => Number(u.id) || 0,
+  email: (u) => String(u.email ?? '').toLowerCase(),
   telegram: (u) => u.telegram_id ?? -1,
   registered_at: (u) => Date.parse(String(u.registered_at ?? '')) || 0,
   subscription_until: (u) => Date.parse(String(u.subscription_until ?? '')) || 0,
   traffic: (u) => Number(u.total_traffic_bytes) || 0,
   devices: (u) => Number(u.subscription_devices_count) || 0,
-  referral_link_id: (u) =>
-    u.referral_link_id != null ? Number(u.referral_link_id) : -1,
 }
 
 const {
@@ -925,6 +924,13 @@ onMounted(() => {
                     @sort="toggleRefereeSort"
                   />
                   <AdminSortTh
+                    label="Email"
+                    column-key="email"
+                    :sort-key="refereeSortKey"
+                    :sort-dir="refereeSortDir"
+                    @sort="toggleRefereeSort"
+                  />
+                  <AdminSortTh
                     label="Telegram ID"
                     column-key="telegram"
                     :sort-key="refereeSortKey"
@@ -961,14 +967,6 @@ onMounted(() => {
                     :sort-dir="refereeSortDir"
                     @sort="toggleRefereeSort"
                   />
-                  <AdminSortTh
-                    label="ID реф. ссылки"
-                    column-key="referral_link_id"
-                    align="right"
-                    :sort-key="refereeSortKey"
-                    :sort-dir="refereeSortDir"
-                    @sort="toggleRefereeSort"
-                  />
                 </tr>
               </thead>
               <tbody>
@@ -993,28 +991,17 @@ onMounted(() => {
                       }"
                     >{{ u.id }}</RouterLink>
                   </td>
+                  <td
+                    class="email-cell"
+                    :title="u.email && String(u.email).trim() ? u.email : undefined"
+                  >{{
+                    u.email && String(u.email).trim() ? u.email : '—'
+                  }}</td>
                   <td class="tg-cell">{{ refereeTelegramCell(u) }}</td>
                   <td>{{ formatDate(u.registered_at) }}</td>
                   <td>{{ formatDate(u.subscription_until) }}</td>
                   <td class="num mono-num">{{ formatBytes(u.total_traffic_bytes) }}</td>
                   <td class="num mono-num">{{ u.subscription_devices_count ?? 0 }}</td>
-                  <td class="num ref-id-cell">
-                    <template v-if="u.referral_link_id != null">
-                      <span>{{ u.referral_link_id }}</span>
-                      <RouterLink
-                        class="ref-open-in-list"
-                        :to="{
-                          path: '/admin/referrals',
-                          query: { highlight: String(u.referral_link_id) },
-                        }"
-                        title="Открыть эту запись в списке реферальных ссылок"
-                        aria-label="Перейти к реферальной ссылке в таблице токенов"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" x2="21" y1="14" y2="3" /></svg>
-                      </RouterLink>
-                    </template>
-                    <template v-else>—</template>
-                  </td>
                 </tr>
                 </template>
               </tbody>
@@ -1396,15 +1383,17 @@ onMounted(() => {
 .referral-referee-user-link:hover {
   text-decoration: underline;
 }
-.referral-referees .tg-cell {
+.referral-referees .email-cell {
+  max-width: 14rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: middle;
 }
-.referral-referees .ref-id-cell {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.35rem;
+.referral-referees .tg-cell {
+  white-space: nowrap;
+  vertical-align: middle;
 }
 tr.referee-row-active-today {
   background-color: color-mix(in srgb, var(--success, #15803d) 10%, transparent);
