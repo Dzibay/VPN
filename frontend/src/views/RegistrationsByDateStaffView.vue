@@ -223,21 +223,21 @@ const payExpDatasets = computed(() => {
       maxBarThickness,
     },
     {
-      label: 'Окончание: есть трафик (не рост в этот день)',
+      label: 'Окончание: с трафиком',
       data: rows.map((r) => Number(r.subscription_expiring_has_traffic_count) || 0),
       rgb: /** @type {[number, number, number]} */ ([...TRAFFIC_ORANGE_RGB]),
       borderRadius,
       maxBarThickness,
     },
     {
-      label: 'Окончание: рост трафика в день окончания',
+      label: 'Окончание: активные в день окончания',
       data: rows.map((r) => Number(r.subscription_expiring_active_on_day_count) || 0),
       rgb: /** @type {[number, number, number]} */ ([...ACTIVE_SKY_RGB]),
       borderRadius,
       maxBarThickness,
     },
     {
-      label: 'Окончание: рост трафика сегодня (UTC)',
+      label: 'Окончание: активные сегодня',
       data: rows.map((r) => Number(r.subscription_expiring_active_today_count) || 0),
       rgb: /** @type {[number, number, number]} */ ([...ACTIVE_PAY_TEAL_RGB]),
       borderRadius,
@@ -538,13 +538,13 @@ watch(payExpMonth, () => {
         </label>
       </div>
       <AdminBarChartPanel
-        aria-label="По дням UTC: один столбец на день — оплаты и группы окончания подписки (слои)"
+        aria-label=""
         :loading="payExpLoading"
         :error="payExpError"
         :has-data="payExpRows.length > 0"
         title="Оплаты и окончания подписки"
-        unit-label="UTC"
-        hint="Один столбец на день (как «Финансы»): слои снизу вверх — оплаты, окончание без трафика, с трафиком, рост трафика в день окончания, рост трафика в **текущий** UTC-день (верхний слой для тех, у кого subscription_until = дата столбца: например, окончание 20-го, сегодня 15-е — при росте трафика 15-го попадут в верхний слой столбца 20-го). У каждого пользователя одна группа."
+        unit-label=""
+        hint=""
         :labels="payExpLabels"
         :datasets="payExpDatasets"
         :x-markers="payExpXMarkers"
