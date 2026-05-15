@@ -115,15 +115,6 @@ const {
   loading,
   error,
   chartPoints,
-  totalUsers,
-  totalWithTraffic,
-  totalWithSubscriptionDevices,
-  totalWithPayment,
-  activeUsersWidget,
-  activeUsersWithPaymentWidget,
-  activeSubscriptionWidget,
-  pluralRuBuckets,
-  bucketAxisLabel,
   chartAriaLabel,
   registrationChartLabels,
   registrationChartDatasets,
@@ -352,66 +343,6 @@ watch(payExpMonth, () => {
         </div>
       </div>
     </template>
-
-    <section class="stats" aria-live="polite">
-      <p v-if="loading" class="stats-status muted">Загрузка…</p>
-      <p v-else-if="error" class="stats-status stats-status--err">
-        Не удалось загрузить сводку (подробности ниже).
-      </p>
-      <dl v-else class="stats-grid">
-        <div class="stats-card">
-          <dt class="stats-label">{{ bucketAxisLabel }}</dt>
-          <dd class="stats-value">
-            {{ chartPoints.length.toLocaleString('ru-RU') }}
-            <span class="stats-unit">{{
-              pluralRuBuckets(chartPoints.length, granularity)
-            }}</span>
-          </dd>
-        </div>
-        <div class="stats-card">
-          <dt class="stats-label">Всего пользователей</dt>
-          <dd class="stats-value">
-            {{ totalUsers.toLocaleString('ru-RU') }}
-          </dd>
-        </div>
-        <div v-if="granularity === 'day'" class="stats-card">
-          <dt class="stats-label">С трафиком</dt>
-          <dd class="stats-value stats-value--traffic">
-            {{ totalWithTraffic.toLocaleString('ru-RU') }}
-          </dd>
-        </div>
-        <div v-if="granularity === 'day'" class="stats-card">
-          <dt class="stats-label">Активные сегодня</dt>
-          <dd class="stats-value stats-value--active">
-            {{ activeUsersWidget.today }}
-          </dd>
-        </div>
-        <div v-if="granularity === 'day'" class="stats-card">
-          <dt class="stats-label">С оплатой</dt>
-          <dd class="stats-value">
-            {{ totalWithPayment.toLocaleString('ru-RU') }}
-          </dd>
-        </div>
-        <div v-if="granularity === 'day'" class="stats-card">
-          <dt class="stats-label">Активные с оплатой</dt>
-          <dd class="stats-value stats-value--active">
-            {{ activeUsersWithPaymentWidget.today }}
-          </dd>
-        </div>
-        <div v-if="granularity === 'day'" class="stats-card">
-          <dt class="stats-label">С активной подпиской</dt>
-          <dd class="stats-value">
-            {{ activeSubscriptionWidget.today }}
-          </dd>
-        </div>
-        <div class="stats-card">
-          <dt class="stats-label">С записью устройства</dt>
-          <dd class="stats-value stats-value--devices">
-            {{ totalWithSubscriptionDevices.toLocaleString('ru-RU') }}
-          </dd>
-        </div>
-      </dl>
-    </section>
 
     <p v-if="granularity === 'hour'" class="stats-hint">
       Почасовой график за выбранный календарный день UTC (24 часа); время на оси — Москва (МСК). Накопительные регистрации и
@@ -654,91 +585,6 @@ watch(payExpMonth, () => {
   color: var(--text-h);
   font: inherit;
   font-size: 0.85rem;
-}
-
-.stats {
-  margin-bottom: 1rem;
-}
-
-.stats-status {
-  margin: 0;
-  font-size: 0.92rem;
-}
-
-.stats-status--err {
-  color: var(--danger);
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(11.5rem, 1fr));
-  gap: 0.75rem 1rem;
-  margin: 0;
-}
-
-.stats-card {
-  margin: 0;
-  padding: 0.65rem 0.75rem;
-  border-radius: 12px;
-  border: 1px solid var(--card-border);
-  background: var(--surface);
-}
-
-.stats-label {
-  margin: 0 0 0.35rem;
-  font-size: 0.68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-
-.stats-value {
-  margin: 0;
-  font-size: 1.12rem;
-  font-weight: 800;
-  font-family: var(--heading, inherit);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-h);
-  line-height: 1.2;
-}
-
-.stats-value--traffic {
-  color: #fb923c;
-}
-
-@media (prefers-color-scheme: light) {
-  .stats-value--traffic {
-    color: #ea580c;
-  }
-}
-
-.stats-value--active {
-  color: #38bdf8;
-}
-
-@media (prefers-color-scheme: light) {
-  .stats-value--active {
-    color: #0284c7;
-  }
-}
-
-.stats-value--devices {
-  color: #a78bfa;
-}
-
-@media (prefers-color-scheme: light) {
-  .stats-value--devices {
-    color: #7c3aed;
-  }
-}
-
-.stats-unit {
-  margin-left: 0.25rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--muted);
-  text-transform: lowercase;
 }
 
 .stats-hint {
