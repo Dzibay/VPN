@@ -137,6 +137,7 @@ async def create_server(
         is_active=body.is_active,
         whitelist=body.whitelist,
         include_in_auto=body.include_in_auto,
+        is_hidden=body.is_hidden,
         prometheus_instance=body.prometheus_instance,
         network_cap_mbps=body.network_cap_mbps,
         is_cascade_ru_entry=is_ru,

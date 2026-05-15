@@ -9,6 +9,8 @@
 3. Все узлы выдачи по одному разу с обычными именами: сначала без ``whitelist``,
    в конце списка — только с ``whitelist`` (внутри групп — по ``load_percent``).
 
+Узлы с ``is_hidden=true`` в подписку не попадают (только админка / метрики / провижининг).
+
 Каскад: внешние exit узлы из пар «РФ-вход → exit» в список не попадают
 (``subscription_servers_for_delivery``).
 
@@ -114,7 +116,8 @@ async def subscription_servers_from_db(session: AsyncSession) -> list[Server]:
     """
     Узлы для выдачи в подписке: только чтение из БД (servers.load_percent обновляет фоновый планировщик).
 
-    Узлы с ``whitelist`` идут после всех остальных (внутри каждой группы — по нагрузке и id).
+    Скрытые узлы (``is_hidden``) и неактивные не включаются. Узлы с ``whitelist`` идут после всех
+    остальных (внутри каждой группы — по нагрузке и id).
 
     Дальше ``subscription_servers_for_delivery`` убирает внешние exit из пар
     «РФ-вход → exit», чтобы в клиенте не дублировать прямой доступ к exit.
@@ -123,6 +126,7 @@ async def subscription_servers_from_db(session: AsyncSession) -> list[Server]:
         select(Server)
         .where(
             Server.is_active.is_(True),
+            Server.is_hidden.is_(False),
             Server.provision_ready.is_(True),
             or_(
                 Server.proxy_kind == "hysteria2",

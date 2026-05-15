@@ -46,6 +46,10 @@ class ServerCreate(BaseModel):
         default=True,
         description="Включать узел в группы Auto (рекомендуемый / белые списки) с балансировкой по пингу",
     )
+    is_hidden: bool = Field(
+        default=False,
+        description="Скрытый узел: не выдаётся в подписке; в админке скрыт из таблицы, пока не включён показ",
+    )
     proxy_kind: Literal["vless", "hysteria2"] = Field(
         default="vless",
         description="Тип прокси на узле: vless (Xray REALITY) или hysteria2",
@@ -236,6 +240,10 @@ class ServerUpdate(BaseModel):
         default=None,
         description="Участие в группах Auto (балансировка по пингу)",
     )
+    is_hidden: bool | None = Field(
+        default=None,
+        description="Скрытый узел (не в подписке; в админке по умолчанию не в таблице)",
+    )
     proxy_kind: Literal["vless", "hysteria2"] | None = Field(
         default=None,
         description="Тип прокси на узле: vless или hysteria2",
@@ -395,6 +403,10 @@ class ServerRead(BaseModel):
     include_in_auto: bool = Field(
         default=True,
         description="Участвует в группах Auto (рекомендуемый / белые списки), не только отдельной строкой",
+    )
+    is_hidden: bool = Field(
+        default=False,
+        description="Скрытый узел: не в подписке; в админке по умолчанию не показывается в таблице",
     )
     provision_ready: bool = Field(description="ПО на узле установлено (воркер завершил задачу)")
     provision_status: str = Field(

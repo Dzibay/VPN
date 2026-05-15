@@ -22,6 +22,12 @@ class Server(Base):
         default=True,
         doc="Участие в группах Auto (балансировка по пингу); false — только отдельная строка в подписке.",
     )
+    is_hidden: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        doc="Скрытый узел: не в подписке; в админке по умолчанию не показывается в таблице.",
+    )
     provision_ready: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     provision_status: Mapped[str] = mapped_column(Text, nullable=False, default="idle")
     provision_error: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -88,6 +88,12 @@ function serverCascadeSortKey(s) {
   return '2-ru-no-exit'
 }
 
+const showHiddenServers = ref(false)
+
+const serversForTable = computed(() =>
+  servers.value.filter((s) => showHiddenServers.value || !s.is_hidden),
+)
+
 const serverSortAccessors = {
   id: (s) => s.id,
   name: (s) => (s.name ?? '').toLowerCase(),
@@ -106,7 +112,7 @@ const {
   sortDir: serverSortDir,
   sortedRows: sortedServers,
   toggleSort: toggleServerSort,
-} = useTableSort(servers, serverSortAccessors)
+} = useTableSort(serversForTable, serverSortAccessors)
 
 const modalOpen = ref(false)
 const creating = ref(false)
@@ -162,6 +168,8 @@ const formProxyKind = ref('vless')
 const formWhitelist = ref(false)
 /** Участвует в группах Auto (балансировка по пингу); выключено — узел только отдельной строкой */
 const formIncludeInAuto = ref(true)
+/** Скрытый узел: не в подписке, в таблице по умолчанию не показывается */
+const formIsHidden = ref(false)
 /** Override label instance в Prometheus; пусто — host + порт из PROVISION_NODE_EXPORTER_PORT API (часто 9100) */
 const formPrometheusInstance = ref('')
 const formNetworkCapMbps = ref('')
@@ -220,6 +228,7 @@ const serverReachabilityMsg = ref(null)
 /** Подпункты ответа GET /servers/:id/ping (TCP, БД, каскад, node_exporter) */
 const serverHealthChecks = ref([])
 const deletingServerId = ref(null)
+const serverHiddenToggleId = ref(null)
 
 const loadSyncLoading = ref(false)
 const loadSyncError = ref(null)
@@ -431,6 +440,7 @@ function openModal() {
     formProxyKind.value = 'vless'
     formWhitelist.value = false
     formIncludeInAuto.value = true
+    formIsHidden.value = false
     formPrometheusInstance.value = ''
     formNetworkCapMbps.value = ''
     formVlessUuid.value = ''
@@ -454,6 +464,7 @@ function openEditServer(s) {
   formProxyKind.value = s.proxy_kind === 'hysteria2' ? 'hysteria2' : 'vless'
   formWhitelist.value = Boolean(s.whitelist)
   formIncludeInAuto.value = s.include_in_auto !== false
+  formIsHidden.value = Boolean(s.is_hidden)
   formPrometheusInstance.value =
     (s.prometheus_instance && String(s.prometheus_instance).trim()) || ''
   formNetworkCapMbps.value =
@@ -814,6 +825,7 @@ async function submitSaveServer() {
         proxy_kind: formProxyKind.value,
         whitelist: formWhitelist.value,
         include_in_auto: formIncludeInAuto.value,
+        is_hidden: formIsHidden.value,
       }
       if (formProxyKind.value === 'vless') {
         const rd = String(formRealityDest.value ?? '').trim()
@@ -853,6 +865,7 @@ async function submitSaveServer() {
         proxy_kind: formProxyKind.value,
         whitelist: formWhitelist.value,
         include_in_auto: formIncludeInAuto.value,
+        is_hidden: formIsHidden.value,
       }
       if (formProxyKind.value === 'vless') {
         const rd = String(formRealityDest.value ?? '').trim()
@@ -1220,6 +1233,26 @@ function cascadeExitCandidates(editingId) {
   )
 }
 
+const hiddenServersCount = computed(
+  () => servers.value.filter((s) => s.is_hidden).length,
+)
+
+async function toggleServerHidden(s) {
+  serverHiddenToggleId.value = s.id
+  provisionActionError.value = null
+  try {
+    await fetchJson(`/api/servers/${s.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_hidden: !Boolean(s.is_hidden) }),
+    })
+    await loadServers()
+  } catch (e) {
+    provisionActionError.value = e.message || String(e)
+  } finally {
+    serverHiddenToggleId.value = null
+  }
+}
+
 watch(formIsCascadeRuEntry, (v) => {
   if (!v) formCascadeNextServerId.value = ''
 })
@@ -1549,6 +1582,59 @@ watch(formIsCascadeRuEntry, (v) => {
             </li>
           </ul>
         </div>
+        <div class="servers-table-toolbar" role="toolbar" aria-label="Вид таблицы серверов">
+          <button
+            type="button"
+            class="btn-icon-toggle"
+            :class="{ 'btn-icon-toggle--active': showHiddenServers }"
+            :aria-pressed="showHiddenServers"
+            :title="
+              showHiddenServers
+                ? 'Скрыть в таблице узлы, помеченные как скрытые'
+                : 'Показать в таблице скрытые узлы (не исчезают из БД и каскада)'
+            "
+            @click="showHiddenServers = !showHiddenServers"
+          >
+            <svg
+              v-if="showHiddenServers"
+              class="btn-icon-toggle__svg"
+              viewBox="0 0 24 24"
+              width="20"
+              height="20"
+              aria-hidden="true"
+            >
+              <path
+                fill="currentColor"
+                d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-5-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"
+              />
+            </svg>
+            <svg
+              v-else
+              class="btn-icon-toggle__svg"
+              viewBox="0 0 24 24"
+              width="20"
+              height="20"
+              aria-hidden="true"
+            >
+              <path
+                fill="currentColor"
+                d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"
+              />
+            </svg>
+            <span class="btn-icon-toggle__text">{{
+              showHiddenServers ? 'Скрытые видны' : 'Скрытые скрыты'
+            }}</span>
+          </button>
+          <span v-if="hiddenServersCount > 0" class="servers-hidden-meta">
+            Скрытых в базе: {{ hiddenServersCount }}
+          </span>
+        </div>
+        <p
+          v-if="servers.length && !serversForTable.length && !showHiddenServers"
+          class="provision-banner"
+        >
+          Все серверы помечены как скрытые. Включите показ кнопкой с иконкой глаза выше.
+        </p>
         <AdminTableWrap aria-label="Таблица серверов">
         <table class="admin-table">
           <thead>
@@ -1630,9 +1716,20 @@ watch(formIsCascadeRuEntry, (v) => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="s in sortedServers" :key="s.id">
+            <tr
+              v-for="s in sortedServers"
+              :key="s.id"
+              :class="{ 'admin-table-row--hidden-server': s.is_hidden }"
+            >
               <td class="num">{{ s.id }}</td>
-              <td>{{ s.name ?? '—' }}</td>
+              <td>
+                <span>{{ s.name ?? '—' }}</span>
+                <span
+                  v-if="s.is_hidden"
+                  class="hidden-server-pill"
+                  title="Скрытый: не выдаётся в подписке"
+                >скрыт</span>
+              </td>
               <td>{{ s.country || '—' }}</td>
               <td class="cascade-col">
                 <span v-if="!s.is_cascade_ru_entry" class="cascade-pill">внешний</span>
@@ -1863,6 +1960,22 @@ watch(formIsCascadeRuEntry, (v) => {
             serverProvisionResetId === serverMenuTarget.id
               ? 'Сброс…'
               : 'Сброс очереди'
+          }}
+        </button>
+        <div class="dropdown-sep" role="separator" />
+        <button
+          type="button"
+          class="dropdown-item"
+          role="menuitem"
+          :disabled="serverHiddenToggleId === serverMenuTarget.id"
+          @click="withOpenServerMenu(toggleServerHidden)"
+        >
+          {{
+            serverHiddenToggleId === serverMenuTarget.id
+              ? 'Сохранение…'
+              : serverMenuTarget.is_hidden
+                ? 'Снять скрытие (подписка и строка в таблице)'
+                : 'Скрыть из подписки и таблицы'
           }}
         </button>
         <div class="dropdown-sep" role="separator" />
@@ -2131,6 +2244,10 @@ watch(formIsCascadeRuEntry, (v) => {
               <label class="field field-check">
                 <input v-model="formIncludeInAuto" type="checkbox" />
                 <span>Включать в Auto (рекомендуемый / белые списки — балансировка по пингу)</span>
+              </label>
+              <label class="field field-check">
+                <input v-model="formIsHidden" type="checkbox" />
+                <span>Скрытый узел (не в подписке; в таблице по умолчанию не показывается)</span>
               </label>
               <div class="field field-cascade">
                 <label class="field field-check">
@@ -2546,6 +2663,70 @@ watch(formIsCascadeRuEntry, (v) => {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
+}
+
+.servers-table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.85rem;
+}
+
+.btn-icon-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-icon-toggle:hover {
+  background: var(--surface);
+}
+
+.btn-icon-toggle--active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.btn-icon-toggle__svg {
+  flex-shrink: 0;
+  display: block;
+}
+
+.btn-icon-toggle__text {
+  white-space: nowrap;
+}
+
+.servers-hidden-meta {
+  font-size: 0.8rem;
+  color: var(--text-muted, #888);
+}
+
+.hidden-server-pill {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.08rem 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-radius: 6px;
+  vertical-align: middle;
+  color: var(--text-muted, #888);
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+}
+
+.admin-table-row--hidden-server {
+  opacity: 0.72;
 }
 
 .provision-banner {

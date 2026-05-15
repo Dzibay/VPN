@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS servers (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     whitelist BOOLEAN NOT NULL DEFAULT FALSE,
     include_in_auto BOOLEAN NOT NULL DEFAULT TRUE,
+    is_hidden BOOLEAN NOT NULL DEFAULT FALSE,
     provision_ready BOOLEAN NOT NULL DEFAULT FALSE,
     provision_status TEXT NOT NULL DEFAULT 'idle',
     provision_error TEXT,
