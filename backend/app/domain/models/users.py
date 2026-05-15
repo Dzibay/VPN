@@ -318,7 +318,20 @@ class UserListItem(BaseModel):
             "по убыванию updated_at"
         ),
     )
-    referral_link_id: int | None = None
+    referral_link_id: int | None = Field(
+        default=None,
+        description=(
+            "Идентификатор реферальной ссылки, зафиксированной при регистрации пользователя "
+            "(атрибуция / источник привлечения)"
+        ),
+    )
+    owned_referral_link_id: int | None = Field(
+        default=None,
+        description=(
+            "Персональная ссылка пользователя как владельца (referral_links.owner_kind=user); "
+            "null, если запись ещё не создавалась"
+        ),
+    )
     token: str | None = Field(
         default=None,
         description="Токен подписки; у менеджера всегда null",

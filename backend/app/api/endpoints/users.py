@@ -64,15 +64,31 @@ async def users_count_ep(session: ReadonlySessionDep) -> UsersCountResponse:
     response_model=list[UserListItem],
     summary=(
         "Список пользователей для административного и менеджерского интерфейса; "
-        "токен подписки и UUID VLESS возвращаются только при доступе администратора"
+        "токен подписки и UUID VLESS возвращаются только при доступе администратора. "
+        "Параметр referral_link_id — только пользователи, у которых при регистрации "
+        "зафиксирована указанная реферальная ссылка."
     ),
 )
 async def list_users(
     session: ReadonlySessionDep,
     list_mode: Annotated[StaffUserListMode, Depends(require_staff_user_list_access)],
+    referral_link_id: Annotated[
+        int | None,
+        Query(
+            ge=1,
+            description=(
+                "Если указан — только пользователи с таким users.referral_link_id "
+                "(пришли по этой реферальной ссылке при регистрации)"
+            ),
+        ),
+    ] = None,
 ) -> list[UserListItem]:
     show_secrets = list_mode in ("open", "admin")
-    return await staff_list_users(session, show_secrets=show_secrets)
+    return await staff_list_users(
+        session,
+        show_secrets=show_secrets,
+        referral_link_id=referral_link_id,
+    )
 
 
 @router.get(

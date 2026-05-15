@@ -29,6 +29,7 @@ from app.domain.models.users import (
     UsersCountResponse,
     UserUpdate,
 )
+from app.domain.referrals.repository import get_user_owned_referral_link
 from app.domain.subscription.devices import list_subscription_connection_records_for_users
 from app.domain.user_traffic import (
     user_server_traffic_latest_subquery,
@@ -52,11 +53,18 @@ def _normalize_account_role(raw: str | None) -> str:
     return "client"
 
 
-async def _user_rows_with_traffic(session: AsyncSession) -> list[tuple[User, int, int]]:
+async def _user_rows_with_traffic(
+    session: AsyncSession,
+    *,
+    referral_link_id: int | None = None,
+) -> list[tuple[User, int, int]]:
     """Список ``(user, total_bytes, devices_count)`` для админского экрана пользователей.
 
     Один запрос с outer-join'ами, чтобы не делать N+1 на каждого пользователя при подсчёте
     суммарного трафика и числа подписочных устройств.
+
+    При ``referral_link_id`` — только пользователи с таким ``users.referral_link_id``
+    (атрибуция при регистрации).
     """
     latest = user_server_traffic_latest_subquery()
     traffic_agg = (
@@ -88,6 +96,8 @@ async def _user_rows_with_traffic(session: AsyncSession) -> list[tuple[User, int
         .outerjoin(dev_agg, User.id == dev_agg.c.uid)
         .order_by(User.id.desc())
     )
+    if referral_link_id is not None:
+        stmt = stmt.where(User.referral_link_id == referral_link_id)
     return list((await session.execute(stmt)).all())
 
 
@@ -136,6 +146,8 @@ async def staff_get_user_list_item(
     active_today = t_now > t_prev
     role = _normalize_account_role(user.account_role)
     role_lit = type_cast(Literal["client", "manager", "admin"], role)
+    owned_row = await get_user_owned_referral_link(session, user_id)
+    owned_referral_link_id = int(owned_row.id) if owned_row is not None else None
     return UserListItem(
         id=user.id,
         registered_at=user.registered_at,
@@ -149,18 +161,27 @@ async def staff_get_user_list_item(
         subscription_devices_count=dev_n,
         subscription_devices=subs_devices,
         referral_link_id=user.referral_link_id,
+        owned_referral_link_id=owned_referral_link_id,
         token=(user.token if show_secrets else None),
         vless_uuid=(user.vless_uuid if show_secrets else None),
     )
 
 
-async def staff_list_users(session: AsyncSession, *, show_secrets: bool) -> list[UserListItem]:
+async def staff_list_users(
+    session: AsyncSession,
+    *,
+    show_secrets: bool,
+    referral_link_id: int | None = None,
+) -> list[UserListItem]:
     """Список пользователей для админ/менеджер интерфейса.
 
     ``show_secrets`` — раскрывать ли токен подписки и UUID VLESS (только для админа: для менеджера
     эти поля приходят как ``None``).
+
+    ``referral_link_id`` — если задан, только пользователи, у которых при регистрации
+    зафиксирована эта реферальная ссылка.
     """
-    rows = await _user_rows_with_traffic(session)
+    rows = await _user_rows_with_traffic(session, referral_link_id=referral_link_id)
     user_ids = [int(user.id) for user, _, _ in rows]
     devices_map = await list_subscription_connection_records_for_users(session, user_ids)
     today_utc = utc_today()
@@ -205,6 +226,7 @@ async def staff_list_users(session: AsyncSession, *, show_secrets: bool) -> list
                 subscription_devices_count=dev_n,
                 subscription_devices=subs_devices,
                 referral_link_id=user.referral_link_id,
+                owned_referral_link_id=None,
                 token=(user.token if show_secrets else None),
                 vless_uuid=(user.vless_uuid if show_secrets else None),
             ),

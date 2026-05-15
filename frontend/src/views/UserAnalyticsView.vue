@@ -29,11 +29,24 @@ const bundle = ref(null)
 const trafficByDay = ref([])
 const trafficByDayError = ref(null)
 
+/** Реферальная ссылка, зафиксированная при регистрации (источник). */
 /** @type {import('vue').Ref<Record<string, unknown> | null>} */
-const referralLink = ref(null)
-const referralLinkLoading = ref(false)
-const referralLinkError = ref(null)
+const sourceReferralLink = ref(null)
+const sourceReferralLinkLoading = ref(false)
+const sourceReferralLinkError = ref(null)
+
+/** Персональная ссылка пользователя (owner). */
+/** @type {import('vue').Ref<Record<string, unknown> | null>} */
+const ownedReferralLink = ref(null)
+const ownedReferralLinkLoading = ref(false)
+const ownedReferralLinkError = ref(null)
 const copyHint = ref(null)
+
+/** Пользователи с users.referral_link_id = личная ссылка текущей карточки. */
+/** @type {import('vue').Ref<Array<Record<string, unknown>>>} */
+const refereeUsers = ref([])
+const refereeUsersLoading = ref(false)
+const refereeUsersError = ref(null)
 
 /** @type {import('vue').Ref<Array<Record<string, unknown>>>} */
 const paymentLedgerItems = ref([])
@@ -82,6 +95,24 @@ const {
   toggleSort: toggleTaskLedgerSort,
 } = useTableSort(taskLedgerItems, taskLedgerSortAccessors)
 
+const refereeSortAccessors = {
+  email: (u) => String(u.email ?? '').toLowerCase(),
+  telegram: (u) => u.telegram_id ?? -1,
+  registered_at: (u) => Date.parse(String(u.registered_at ?? '')) || 0,
+  subscription_until: (u) => Date.parse(String(u.subscription_until ?? '')) || 0,
+  traffic: (u) => Number(u.total_traffic_bytes) || 0,
+  devices: (u) => Number(u.subscription_devices_count) || 0,
+  referral_link_id: (u) =>
+    u.referral_link_id != null ? Number(u.referral_link_id) : -1,
+}
+
+const {
+  sortKey: refereeSortKey,
+  sortDir: refereeSortDir,
+  sortedRows: sortedRefereeRows,
+  toggleSort: toggleRefereeSort,
+} = useTableSort(refereeUsers, refereeSortAccessors)
+
 const userId = computed(() => {
   const raw = route.params.userId
   const n = parseInt(String(raw), 10)
@@ -115,6 +146,25 @@ function telegramUsername(p) {
   if (typeof u !== 'string' || !u.trim()) return null
   const s = u.trim().replace(/^@+/, '')
   return s ? `@${s}` : null
+}
+
+/** Ячейка Telegram в таблице приглашённых (как в аналитике клиентов). */
+function refereeTelegramCell(u) {
+  const props = u?.telegram_properties
+  const nestedUsername =
+    props && typeof props === 'object'
+      ? props.username ?? props.user_name ?? props.telegram_username
+      : null
+  const directUsername = u?.username ?? u?.user_name ?? u?.telegram_username
+  const username = directUsername ?? nestedUsername
+  if (username != null && username !== '') {
+    const s = String(username)
+    return s.startsWith('@') ? s : `@${s}`
+  }
+  if (u.telegram_id != null && u.telegram_id !== '') {
+    return String(u.telegram_id)
+  }
+  return '—'
 }
 
 function formatConnectionOs(raw) {
@@ -236,6 +286,19 @@ function telegramUrlForReferralRow(r) {
   return r.telegram_deep_link || ''
 }
 
+function referralEntityDisplayId(row) {
+  if (row == null || row.id == null || row.id === '') return '—'
+  const n = Number(row.id)
+  return Number.isFinite(n) ? n : String(row.id)
+}
+
+/** Для query-параметров; при невалидном id — null. */
+function referralEntityNumericId(row) {
+  if (row == null || row.id == null || row.id === '') return null
+  const n = Number(row.id)
+  return Number.isFinite(n) ? n : null
+}
+
 async function copyReferralUrl(url) {
   if (!url) return
   try {
@@ -249,21 +312,60 @@ async function copyReferralUrl(url) {
   }
 }
 
-async function loadReferralWidget() {
-  referralLinkError.value = null
-  referralLink.value = null
+async function loadSourceReferralLink() {
+  sourceReferralLinkError.value = null
+  sourceReferralLink.value = null
   const rid = profile.value?.referral_link_id
   if (rid == null) {
-    referralLinkLoading.value = false
+    sourceReferralLinkLoading.value = false
     return
   }
-  referralLinkLoading.value = true
+  sourceReferralLinkLoading.value = true
   try {
-    referralLink.value = await fetchJson(`/api/referral-links/${rid}`)
+    sourceReferralLink.value = await fetchJson(`/api/referral-links/${rid}`)
   } catch (e) {
-    referralLinkError.value = e.message || String(e)
+    sourceReferralLinkError.value = e.message || String(e)
   } finally {
-    referralLinkLoading.value = false
+    sourceReferralLinkLoading.value = false
+  }
+}
+
+async function loadOwnedReferralLink() {
+  ownedReferralLinkError.value = null
+  ownedReferralLink.value = null
+  const oid = profile.value?.owned_referral_link_id
+  if (oid == null) {
+    ownedReferralLinkLoading.value = false
+    return
+  }
+  ownedReferralLinkLoading.value = true
+  try {
+    ownedReferralLink.value = await fetchJson(`/api/referral-links/${oid}`)
+  } catch (e) {
+    ownedReferralLinkError.value = e.message || String(e)
+  } finally {
+    ownedReferralLinkLoading.value = false
+  }
+}
+
+async function loadRefereesByOwnedLink() {
+  refereeUsersError.value = null
+  refereeUsers.value = []
+  const oid = profile.value?.owned_referral_link_id
+  if (oid == null) {
+    refereeUsersLoading.value = false
+    return
+  }
+  refereeUsersLoading.value = true
+  try {
+    const list = await fetchJson(
+      `/api/users?referral_link_id=${encodeURIComponent(String(oid))}`,
+    )
+    refereeUsers.value = Array.isArray(list) ? list : []
+  } catch (e) {
+    refereeUsersError.value = e.message || String(e)
+  } finally {
+    refereeUsersLoading.value = false
   }
 }
 
@@ -310,9 +412,15 @@ function resetAnalyticsPageState() {
   profile.value = null
   trafficByDay.value = []
   trafficByDayError.value = null
-  referralLink.value = null
-  referralLinkError.value = null
-  referralLinkLoading.value = false
+  sourceReferralLink.value = null
+  sourceReferralLinkError.value = null
+  sourceReferralLinkLoading.value = false
+  ownedReferralLink.value = null
+  ownedReferralLinkError.value = null
+  ownedReferralLinkLoading.value = false
+  refereeUsers.value = []
+  refereeUsersError.value = null
+  refereeUsersLoading.value = false
   copyHint.value = null
   paymentLedgerItems.value = []
   paymentLedgerTotal.value = 0
@@ -390,8 +498,12 @@ async function load() {
         rTasks.reason?.message ||
         String(rTasks.reason ?? 'Ошибка загрузки задач')
     }
-    if (profile.value?.referral_link_id != null) {
-      void loadReferralWidget()
+    if (profile.value) {
+      await Promise.all([
+        loadSourceReferralLink(),
+        loadOwnedReferralLink(),
+        loadRefereesByOwnedLink(),
+      ])
     }
   } finally {
     loading.value = false
@@ -480,27 +592,106 @@ onMounted(() => {
           </details>
         </dd>
       </dl>
+
+      <div class="personal-ref">
+        <h3 class="personal-ref__title">Источник</h3>
+        <p
+          v-if="profile.referral_link_id == null"
+          class="personal-ref__empty"
+        >
+          Не указан — регистрация без реферальной ссылки.
+        </p>
+        <template v-else>
+          <p v-if="sourceReferralLinkError" class="banner-err personal-ref__err">{{
+            sourceReferralLinkError
+          }}</p>
+          <p
+            v-else-if="sourceReferralLinkLoading"
+            class="personal-ref__hint muted-inline"
+          >
+            Загрузка…
+          </p>
+          <template v-else-if="sourceReferralLink">
+            <p v-if="copyHint" class="copy-hint personal-ref__copy-hint">{{
+              copyHint
+            }}</p>
+            <div class="personal-ref__row">
+              <span class="personal-ref__label">Сайт</span>
+              <code
+                class="personal-ref__url"
+                :title="siteUrlForReferralRow(sourceReferralLink)"
+              >{{ siteUrlForReferralRow(sourceReferralLink) }}</code>
+              <button
+                type="button"
+                class="btn-secondary btn-tiny personal-ref__btn"
+                title="Копировать ссылку на сайт (?ref)"
+                @click="
+                  copyReferralUrl(siteUrlForReferralRow(sourceReferralLink))
+                "
+              >
+                Копировать
+              </button>
+            </div>
+            <div
+              v-if="telegramUrlForReferralRow(sourceReferralLink)"
+              class="personal-ref__row personal-ref__row--tg"
+            >
+              <span class="personal-ref__label">Telegram</span>
+              <code
+                class="personal-ref__url"
+                :title="telegramUrlForReferralRow(sourceReferralLink)"
+              >{{ telegramUrlForReferralRow(sourceReferralLink) }}</code>
+              <button
+                type="button"
+                class="btn-secondary btn-tiny personal-ref__btn"
+                title="Копировать ссылку на бота (?start)"
+                @click="
+                  copyReferralUrl(
+                    telegramUrlForReferralRow(sourceReferralLink),
+                  )
+                "
+              >
+                Копировать
+              </button>
+            </div>
+            <p v-else class="personal-ref__no-tg muted-inline">
+              Deep link для Telegram не настроен.
+            </p>
+            <p class="personal-ref__actions">
+              <RouterLink
+                class="btn-secondary btn-tiny ref-list-link"
+                :to="{
+                  path: '/admin/referrals',
+                  query: { highlight: String(sourceReferralLink.id) },
+                }"
+              >
+                В списке токенов
+              </RouterLink>
+            </p>
+          </template>
+        </template>
+      </div>
     </div>
 
     <div
       v-if="!loading && profile"
       class="referral-widget glass"
     >
-      <h2 class="referral-widget__title">Реферальная ссылка</h2>
+      <h2 class="referral-widget__title">Личная реферальная ссылка</h2>
       <p
-        v-if="profile.referral_link_id == null"
+        v-if="profile.owned_referral_link_id == null"
         class="referral-widget__empty"
       >
-        Не привязана.
+        Ещё не создана.
       </p>
       <template v-else>
         <p v-if="copyHint" class="copy-hint">{{ copyHint }}</p>
-        <p v-if="referralLinkError" class="banner-err referral-widget__err">{{
-          referralLinkError
+        <p v-if="ownedReferralLinkError" class="banner-err referral-widget__err">{{
+          ownedReferralLinkError
         }}</p>
         <AdminTableWrap
-          v-else
-          aria-label="Реферальная ссылка пользователя"
+          v-if="!ownedReferralLinkError"
+          aria-label="Личная реферальная ссылка пользователя"
         >
           <table class="admin-table">
             <thead>
@@ -519,28 +710,28 @@ onMounted(() => {
               </tr>
             </thead>
             <tbody>
-              <tr v-if="referralLinkLoading">
+              <tr v-if="ownedReferralLinkLoading">
                 <td colspan="11" class="muted-cell">Загрузка…</td>
               </tr>
-              <tr v-else-if="referralLink">
-                <td class="num">{{ referralLink.id }}</td>
-                <td class="mono-cell">{{ referralLink.token }}</td>
+              <tr v-else-if="ownedReferralLink">
+                <td class="num">{{ referralEntityDisplayId(ownedReferralLink) }}</td>
+                <td class="mono-cell">{{ ownedReferralLink.token }}</td>
                 <td>
                   <span
                     class="pill pill-mono"
-                    :title="referralLink.owner_kind"
-                  >{{ referralLink.owner_kind }}</span>
+                    :title="ownedReferralLink.owner_kind"
+                  >{{ ownedReferralLink.owner_kind }}</span>
                 </td>
                 <td class="owner-user-id-cell">
                   <span class="owner-user-id-inner">
-                    <template v-if="referralLink.owner_user_id != null">
-                      <span>{{ referralLink.owner_user_id }}</span>
+                    <template v-if="ownedReferralLink.owner_user_id != null">
+                      <span>{{ ownedReferralLink.owner_user_id }}</span>
                       <RouterLink
                         class="ref-open-in-list"
                         :to="{
                           path: '/admin/users/analytics',
                           query: {
-                            highlight: String(referralLink.owner_user_id),
+                            highlight: String(ownedReferralLink.owner_user_id),
                           },
                         }"
                         title="Открыть этого пользователя в списке клиентов"
@@ -557,46 +748,181 @@ onMounted(() => {
                     type="button"
                     class="btn-secondary btn-tiny"
                     title="Копировать ссылку на сайт (?ref)"
-                    @click="copyReferralUrl(siteUrlForReferralRow(referralLink))"
+                    @click="
+                      copyReferralUrl(siteUrlForReferralRow(ownedReferralLink))
+                    "
                   >
                     Копировать
                   </button>
                 </td>
                 <td class="link-actions">
                   <button
-                    v-if="telegramUrlForReferralRow(referralLink)"
+                    v-if="telegramUrlForReferralRow(ownedReferralLink)"
                     type="button"
                     class="btn-secondary btn-tiny"
                     title="Копировать ссылку на Telegram-бота (?start)"
                     @click="
-                      copyReferralUrl(telegramUrlForReferralRow(referralLink))
+                      copyReferralUrl(
+                        telegramUrlForReferralRow(ownedReferralLink),
+                      )
                     "
                   >
                     Копировать
                   </button>
                   <span v-else class="muted-inline">—</span>
                 </td>
-                <td class="num">{{ referralLink.clicks_count }}</td>
-                <td class="num">{{ referralLink.registrations_count }}</td>
-                <td class="num">{{ referralLink.payments_count }}</td>
+                <td class="num">{{ ownedReferralLink.clicks_count }}</td>
+                <td class="num">{{ ownedReferralLink.registrations_count }}</td>
+                <td class="num">{{ ownedReferralLink.payments_count }}</td>
                 <td class="date-cell">{{
-                  formatRefTableDate(referralLink.created_at)
+                  formatRefTableDate(ownedReferralLink.created_at)
                 }}</td>
                 <td class="col-actions">
                   <RouterLink
                     class="btn-secondary btn-tiny ref-list-link"
                     :to="{
                       path: '/admin/referrals',
-                      query: { highlight: String(referralLink.id) },
+                      query: referralEntityNumericId(ownedReferralLink) != null
+                        ? { highlight: String(referralEntityNumericId(ownedReferralLink)) }
+                        : {},
                     }"
                   >
                     В списке токенов
                   </RouterLink>
                 </td>
               </tr>
+              <tr v-else>
+                <td colspan="11" class="muted-cell">Нет данных</td>
+              </tr>
             </tbody>
           </table>
         </AdminTableWrap>
+
+        <section
+          class="referral-referees"
+          aria-labelledby="referral-referees-heading"
+        >
+          <h3 id="referral-referees-heading" class="referral-referees__title">
+            Приглашённые по этой ссылке
+          </h3>
+          <p class="referral-referees__meta">
+            {{ refereeUsers.length }} пользователей
+          </p>
+          <p
+            v-if="refereeUsersError"
+            class="banner-err referral-referees__err"
+          >{{ refereeUsersError }}</p>
+          <AdminTableWrap
+            v-else
+            aria-label="Пользователи, зарегистрированные по личной реферальной ссылке"
+          >
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <AdminSortTh
+                    label="Email"
+                    column-key="email"
+                    :sort-key="refereeSortKey"
+                    :sort-dir="refereeSortDir"
+                    @sort="toggleRefereeSort"
+                  />
+                  <AdminSortTh
+                    label="Telegram ID"
+                    column-key="telegram"
+                    :sort-key="refereeSortKey"
+                    :sort-dir="refereeSortDir"
+                    @sort="toggleRefereeSort"
+                  />
+                  <AdminSortTh
+                    label="Регистрация"
+                    column-key="registered_at"
+                    :sort-key="refereeSortKey"
+                    :sort-dir="refereeSortDir"
+                    @sort="toggleRefereeSort"
+                  />
+                  <AdminSortTh
+                    label="Подписка до"
+                    column-key="subscription_until"
+                    :sort-key="refereeSortKey"
+                    :sort-dir="refereeSortDir"
+                    @sort="toggleRefereeSort"
+                  />
+                  <AdminSortTh
+                    label="Трафик (всего)"
+                    column-key="traffic"
+                    align="right"
+                    :sort-key="refereeSortKey"
+                    :sort-dir="refereeSortDir"
+                    @sort="toggleRefereeSort"
+                  />
+                  <AdminSortTh
+                    label="Устройства"
+                    column-key="devices"
+                    align="right"
+                    :sort-key="refereeSortKey"
+                    :sort-dir="refereeSortDir"
+                    @sort="toggleRefereeSort"
+                  />
+                  <AdminSortTh
+                    label="ID реф. ссылки"
+                    column-key="referral_link_id"
+                    align="right"
+                    :sort-key="refereeSortKey"
+                    :sort-dir="refereeSortDir"
+                    @sort="toggleRefereeSort"
+                  />
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="refereeUsersLoading">
+                  <td colspan="7" class="muted-cell">Загрузка…</td>
+                </tr>
+                <tr v-else-if="sortedRefereeRows.length === 0">
+                  <td colspan="7" class="muted-cell">Пока никого</td>
+                </tr>
+                <template v-else>
+                  <tr
+                    v-for="u in sortedRefereeRows"
+                    :key="u.id"
+                    :class="{ 'referee-row-active-today': u.active_today }"
+                  >
+                  <td class="email-cell">
+                    <RouterLink
+                      class="referral-referee-email"
+                      :to="{
+                        name: 'admin-user-analytics',
+                        params: { userId: String(u.id) },
+                      }"
+                    >{{ u.email && String(u.email).trim() ? u.email : '—' }}</RouterLink>
+                  </td>
+                  <td class="tg-cell">{{ refereeTelegramCell(u) }}</td>
+                  <td>{{ formatDate(u.registered_at) }}</td>
+                  <td>{{ formatDate(u.subscription_until) }}</td>
+                  <td class="num mono-num">{{ formatBytes(u.total_traffic_bytes) }}</td>
+                  <td class="num mono-num">{{ u.subscription_devices_count ?? 0 }}</td>
+                  <td class="num ref-id-cell">
+                    <template v-if="u.referral_link_id != null">
+                      <span>{{ u.referral_link_id }}</span>
+                      <RouterLink
+                        class="ref-open-in-list"
+                        :to="{
+                          path: '/admin/referrals',
+                          query: { highlight: String(u.referral_link_id) },
+                        }"
+                        title="Открыть эту запись в списке реферальных ссылок"
+                        aria-label="Перейти к реферальной ссылке в таблице токенов"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" x2="21" y1="14" y2="3" /></svg>
+                      </RouterLink>
+                    </template>
+                    <template v-else>—</template>
+                  </td>
+                </tr>
+                </template>
+              </tbody>
+            </table>
+          </AdminTableWrap>
+        </section>
       </template>
     </div>
 
@@ -892,6 +1218,79 @@ onMounted(() => {
   padding: 1rem 1.15rem 1.15rem;
   margin-bottom: 1.15rem;
 }
+.personal-ref {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--card-border) 85%, transparent);
+}
+.personal-ref__title {
+  margin: 0 0 0.65rem;
+  font-size: 0.95rem;
+  font-weight: 800;
+  font-family: var(--heading);
+  color: var(--text-h);
+}
+.personal-ref__empty {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.personal-ref__err {
+  margin: 0 0 0.65rem;
+}
+.personal-ref__hint {
+  margin: 0;
+  font-size: 0.88rem;
+}
+.personal-ref__copy-hint {
+  margin: 0 0 0.5rem;
+}
+.personal-ref__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.45rem 0.65rem;
+  margin-bottom: 0.55rem;
+}
+.personal-ref__row--tg {
+  margin-bottom: 0.35rem;
+}
+.personal-ref__label {
+  flex: 0 0 auto;
+  min-width: 4.5rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  padding-top: 0.28rem;
+}
+.personal-ref__url {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0.35rem 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  word-break: break-all;
+  background: var(--code-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  color: var(--text);
+}
+.personal-ref__btn {
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+.personal-ref__no-tg {
+  margin: 0 0 0.35rem;
+  font-size: 0.82rem;
+}
+.personal-ref__actions {
+  margin: 0.5rem 0 0;
+}
 .referral-widget {
   padding: 1rem 1.15rem 1.15rem;
   margin-bottom: 1.15rem;
@@ -907,6 +1306,58 @@ onMounted(() => {
   margin: 0;
   font-size: 0.9rem;
   color: var(--muted);
+}
+.referral-referees {
+  margin-top: 1.15rem;
+  padding-top: 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--card-border) 85%, transparent);
+}
+.referral-referees__title {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 800;
+  font-family: var(--heading);
+  color: var(--text-h);
+}
+.referral-referees__meta {
+  margin: 0 0 0.65rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.referral-referees__err {
+  margin: 0 0 0.65rem;
+}
+.referral-referees .email-cell {
+  max-width: 14rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.referral-referees .tg-cell {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.referral-referees .ref-id-cell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+.referral-referee-email {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+.referral-referee-email:hover {
+  text-decoration: underline;
+}
+tr.referee-row-active-today {
+  background-color: color-mix(in srgb, var(--success, #15803d) 10%, transparent);
+}
+.referral-referees .mono-num {
+  font-variant-numeric: tabular-nums;
 }
 .ledger-widget {
   padding: 1rem 1.15rem 1.15rem;
