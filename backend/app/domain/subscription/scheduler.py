@@ -16,6 +16,7 @@ from starlette.concurrency import run_in_threadpool
 from app.config import settings
 from app.core.time import seconds_until_next_local_time
 from app.domain.subscription.expiry_notify_jobs import (
+    enqueue_subscription_expired_7d_notification_tasks,
     enqueue_subscription_expired_notification_tasks,
 )
 from app.domain.users.xray_sync_queue import ensure_sync_xray_clients_all_servers_enqueued
@@ -31,10 +32,17 @@ def run_daily_xray_clients_sync_enqueue() -> None:
     """
     try:
         n_expire = enqueue_subscription_expired_notification_tasks()
-        if n_expire:
-            log.info("Ежедневный sync Xray: создано задач notify_sub_expire=%s", n_expire)
+        n_expire_7d = enqueue_subscription_expired_7d_notification_tasks()
+        if n_expire or n_expire_7d:
+            log.info(
+                "Ежедневный sync Xray: notify_sub_expire=%s, notify_sub_expired_7d=%s",
+                n_expire,
+                n_expire_7d,
+            )
     except Exception:
-        log.exception("Ежедневный sync Xray: ошибка при создании notify_sub_expire")
+        log.exception(
+            "Ежедневный sync Xray: ошибка при создании notify_sub_expire / notify_sub_expired_7d",
+        )
     try:
         jid = ensure_sync_xray_clients_all_servers_enqueued()
         log.info("Ежедневный sync клиентов Xray на всех серверах: job_id=%s", jid)

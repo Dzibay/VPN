@@ -11,7 +11,7 @@ import logging
 from collections.abc import Iterable
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import Date, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.time import utc_today
@@ -43,8 +43,8 @@ def _pending_expire_keys_for_users(session: Session, user_ids: list[int]) -> set
 
 
 def _task_types_for_delta(days_until_end: int) -> Iterable[str]:
-    # if days_until_end == 3:
-    #     yield "notify_sub_expire_3d"
+    if days_until_end == 3:
+        yield "notify_sub_expire_3d"
     if days_until_end == 1:
         yield "notify_sub_expire_1d"
     if days_until_end == 0:
@@ -107,44 +107,53 @@ def enqueue_subscription_expiry_notification_tasks() -> int:
 
 
 _SUB_EXPIRED_TASK_TYPE = "notify_sub_expire"
+_SUB_EXPIRED_7D_TASK_TYPE = "notify_sub_expired_7d"
 
 
-def _pending_sub_expired_keys(session: Session, user_ids: list[int]) -> set[int]:
+def _user_not_registered_on_utc_day(today: date):
+    """Пользователи, у которых UTC-день ``registered_at`` не совпадает с ``today`` (null — ок)."""
+    reg_utc_day = cast(func.timezone("UTC", User.registered_at), Date)
+    return or_(User.registered_at.is_(None), reg_utc_day != today)
+
+
+def _pending_sub_expired_keys(
+    session: Session,
+    user_ids: list[int],
+    task_type: str,
+) -> set[int]:
     if not user_ids:
         return set()
     rows = session.execute(
         select(Task.user_id).where(
             Task.user_id.in_(user_ids),
             Task.status == "pending",
-            Task.task_type == _SUB_EXPIRED_TASK_TYPE,
+            Task.task_type == task_type,
         ),
     ).all()
     return {int(uid) for uid, in rows}
 
 
-def enqueue_subscription_expired_notification_tasks() -> int:
-    """Создать ``notify_sub_expire`` для пользователей в первый UTC-день после окончания подписки.
-
-    Условие: ``subscription_until`` = вчера по UTC (последний оплаченный день был «вчера»), есть
-    ``telegram_id``. Идемпотентно: не дублирует pending-задачу того же типа.
-
-    Вызывается вместе с ежедневным sync Xray (снятие клиентов с узлов), не из ручного enqueue sync.
-    """
+def _enqueue_sub_expired_notification_tasks(
+    *,
+    days_after_last_paid: int,
+    task_type: str,
+    skip_registered_today: bool,
+) -> int:
+    """Задача оповещения после окончания подписки (``subscription_until`` = today − N UTC-дней)."""
 
     today = utc_today()
-    last_paid_day = today - timedelta(days=1)
+    last_paid_day = today - timedelta(days=days_after_last_paid)
     created = 0
     with SessionLocal() as db:
-        rows = list(
-            db.execute(
-                select(User.id).where(
-                    User.subscription_until == last_paid_day,
-                    User.telegram_id.isnot(None),
-                ),
-            ).all(),
-        )
+        filters = [
+            User.subscription_until == last_paid_day,
+            User.telegram_id.isnot(None),
+        ]
+        if skip_registered_today:
+            filters.append(_user_not_registered_on_utc_day(today))
+        rows = list(db.execute(select(User.id).where(*filters)).all())
         user_ids = [int(uid) for uid, in rows]
-        pending_uids = _pending_sub_expired_keys(db, user_ids)
+        pending_uids = _pending_sub_expired_keys(db, user_ids, task_type)
         staged: set[int] = set()
         for (user_id,) in rows:
             uid = int(user_id)
@@ -152,7 +161,7 @@ def enqueue_subscription_expired_notification_tasks() -> int:
                 continue
             db.add(
                 Task(
-                    task_type=_SUB_EXPIRED_TASK_TYPE,
+                    task_type=task_type,
                     user_id=uid,
                     referee_id=None,
                     bonus_days=None,
@@ -163,8 +172,8 @@ def enqueue_subscription_expired_notification_tasks() -> int:
         db.commit()
     if created:
         log.info(
-            "Подписка истекла (notify_sub_expire): создано задач=%s "
-            "(UTC-сегодня=%s, последний оплаченный день=%s, кандидатов=%s)",
+            "%s: создано задач=%s (UTC-сегодня=%s, последний оплаченный день=%s, кандидатов=%s)",
+            task_type,
             created,
             today.isoformat(),
             last_paid_day.isoformat(),
@@ -172,9 +181,34 @@ def enqueue_subscription_expired_notification_tasks() -> int:
         )
     else:
         log.debug(
-            "notify_sub_expire: новых задач нет (UTC-сегодня=%s, last_paid_day=%s, кандидатов=%s)",
+            "%s: новых задач нет (UTC-сегодня=%s, last_paid_day=%s, кандидатов=%s)",
+            task_type,
             today.isoformat(),
             last_paid_day.isoformat(),
             len(rows),
         )
     return created
+
+
+def enqueue_subscription_expired_notification_tasks() -> int:
+    """Создать ``notify_sub_expire`` в первый UTC-день после окончания подписки.
+
+    Условие: ``subscription_until`` = вчера по UTC, есть ``telegram_id``, UTC-день
+    ``registered_at`` не совпадает с днём проверки (чтобы не слать в день регистрации).
+    """
+
+    return _enqueue_sub_expired_notification_tasks(
+        days_after_last_paid=1,
+        task_type=_SUB_EXPIRED_TASK_TYPE,
+        skip_registered_today=True,
+    )
+
+
+def enqueue_subscription_expired_7d_notification_tasks() -> int:
+    """Создать ``notify_sub_expired_7d``, если подписка закончилась 7 UTC-дней назад."""
+
+    return _enqueue_sub_expired_notification_tasks(
+        days_after_last_paid=7,
+        task_type=_SUB_EXPIRED_7D_TASK_TYPE,
+        skip_registered_today=False,
+    )

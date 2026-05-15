@@ -17,6 +17,7 @@ StaffCreatableTaskType = Literal[
     "notify_sub_expire_1d",
     "notify_sub_expire_0d",
     "notify_sub_expire",
+    "notify_sub_expired_7d",
 ]
 
 

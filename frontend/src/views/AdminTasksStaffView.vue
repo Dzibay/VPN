@@ -26,6 +26,10 @@ const TASK_TYPE_OPTIONS = [
     label: 'Подписка: последний день (notify_sub_expire_0d)',
   },
   { value: 'notify_sub_expire', label: 'Подписка уже истекла (notify_sub_expire)' },
+  {
+    value: 'notify_sub_expired_7d',
+    label: 'Подписка истекла 7 дней назад (notify_sub_expired_7d)',
+  },
 ]
 
 const TASK_STATUS_OPTIONS = [
