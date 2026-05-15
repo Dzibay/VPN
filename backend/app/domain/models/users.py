@@ -164,37 +164,41 @@ class UsersDailyStatsResponse(BaseModel):
 
 
 class DailyPaymentsExpiryStatsRow(BaseModel):
-    """Одна точка столбчатого графика: оплаты и окончание подписки по UTC-дню."""
+    """Одна точка столбчатого графика: оплаты и разбивка по UTC-дню subscription_until."""
 
     stats_date: date
     payments_count: int = Field(ge=0, description="Число строк payments за этот календарный день UTC")
-    users_with_traffic_count: int = Field(
+    subscription_expiring_total_count: int = Field(
         ge=0,
-        description="Пользователи с трафиком за день (как в rpc_users_daily_stats), для столбца на графике",
+        description="Пользователи с subscription_until = этот UTC-день (сумма четырёх групп ниже)",
     )
-    active_users_count: int = Field(
-        ge=0,
-        description="Активные пользователи за UTC-день (как в rpc_users_daily_stats), для столбца на графике",
-    )
-    subscriptions_expired_inactive_count: int = Field(
+    subscription_expiring_active_today_count: int = Field(
         ge=0,
         description=(
-            "Истечение подписки в этот день без роста трафика в этот же день (как в RPC), "
-            "минус users_with_traffic_count и active_users_count за тот же день, не ниже нуля"
+            "Только если stats_date — сегодня по UTC: истекают в этот день и «активны» "
+            "(рост суммарного трафика в этот день, как active_users в daily_stats)"
         ),
     )
-    subscriptions_expired_active_count: int = Field(
+    subscription_expiring_active_on_day_count: int = Field(
         ge=0,
         description=(
-            "Истечение подписки (subscription_until = день) и рост суммарного трафика в этот UTC-день "
-            "(как «активные» на линейном графике)"
+            "Истекают в этот UTC-день, рост суммарного трафика в этот день, "
+            "и день не «сегодня» UTC (иначе попадают в subscription_expiring_active_today_count)"
         ),
+    )
+    subscription_expiring_has_traffic_count: int = Field(
+        ge=0,
+        description="Истекают в этот день, не активны в этот день, но когда-либо был ненулевой суммарный трафик",
+    )
+    subscription_expiring_no_traffic_count: int = Field(
+        ge=0,
+        description="Истекают в этот день, без трафика (как «серые» на графике)",
     )
 
 
 class DailyPaymentsExpiryStatsResponse(BaseModel):
     rows: list[DailyPaymentsExpiryStatsRow] = Field(
-        description="Дни по возрастанию stats_date (UTC); пусто, если нет ни оплат, ни дат окончания в выборке",
+        description="Дни по возрастанию stats_date (UTC); при month=YYYY-MM — все дни месяца; сумма четырёх групп окончания = subscription_expiring_total_count",
     )
 
 

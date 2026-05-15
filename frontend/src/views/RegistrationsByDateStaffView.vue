@@ -4,7 +4,7 @@ import AdminBarChartPanel from '../components/AdminBarChartPanel.vue'
 import AdminLineChartPanel from '../components/AdminLineChartPanel.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import { fetchJson } from '../api/client.js'
-import { mapStaffChartEventsToMarkers, makeTodayLineChartMarker } from '../utils/chartStaffMarkersPlugin.js'
+import { mapStaffChartEventsToMarkers } from '../utils/chartStaffMarkersPlugin.js'
 import {
   formatDayShort,
   mskTodayIso,
@@ -145,28 +145,23 @@ function utcMonthInputDefault() {
 const payExpMonth = ref(utcMonthInputDefault())
 const payExpMonthMax = computed(() => utcMonthInputDefault())
 
-const chartEventMarkers = computed(() => {
-  const manual = mapStaffChartEventsToMarkers(
+const chartEventMarkers = computed(() =>
+  mapStaffChartEventsToMarkers(
     chartPoints.value,
     granularity.value,
     chartEvents.value,
-  )
-  const today = makeTodayLineChartMarker(
-    chartPoints.value,
-    granularity.value,
-    hourDayMsk.value,
-  )
-  return today ? [today, ...manual] : manual
-})
+  ),
+)
 
 /**
  * @typedef {{
  *   stats_date: string
  *   payments_count: number
- *   users_with_traffic_count: number
- *   active_users_count: number
- *   subscriptions_expired_inactive_count: number
- *   subscriptions_expired_active_count: number
+ *   subscription_expiring_total_count: number
+ *   subscription_expiring_active_today_count: number
+ *   subscription_expiring_active_on_day_count: number
+ *   subscription_expiring_has_traffic_count: number
+ *   subscription_expiring_no_traffic_count: number
  * }} PayExpRow
  */
 
@@ -184,59 +179,91 @@ const payExpXMarkers = computed(() => {
   return [{ index: idx, title: 'Сегодня (UTC)', color: '#34d399', kind: 'today' }]
 })
 
-/** Оплаты на столбчатом графике (оранжевый, как «Оплаты» / акцент). */
+/** Как на линейном графике: «С оплатой» (амбар), не путать с «С трафиком». */
+const PAYMENT_AMBER_RGB = /** @type {const} */ ([245, 158, 11])
+/** «С оплатой активных» на линейном графике — «активны сегодня» при окончании в этот UTC-день. */
+const ACTIVE_PAY_TEAL_RGB = /** @type {const} */ ([45, 212, 191])
+/** «Активные» на линейном графике — рост трафика в день окончания (не сегодняшний UTC-день). */
+const ACTIVE_SKY_RGB = /** @type {const} */ ([56, 189, 248])
+/** «С трафиком» на линейном графике. */
 const TRAFFIC_ORANGE_RGB = /** @type {const} */ ([251, 146, 60])
 const SUBSCRIPTION_EXPIRY_GRAY_RGB = /** @type {const} */ ([148, 163, 184])
-/** Пользователи с трафиком за день — отдельный цвет от оплат. */
-const DAY_TRAFFIC_BAR_RGB = /** @type {const} */ ([34, 197, 94])
-/** Активные за день — отдельный оттенок от «окончание + активность». */
-const DAY_ACTIVE_BAR_RGB = /** @type {const} */ ([20, 184, 166])
+
+/** Как на графике «Финансы»: один столбец, скругление только снаружи у стека. */
+const PAY_EXP_BAR_STYLE = /** @type {const} */ ({
+  borderRadius: 4,
+  maxBarThickness: 48,
+})
 
 const payExpLabels = computed(() =>
   payExpRows.value.map((r) => formatDayShort(String(r.stats_date).slice(0, 10))),
 )
 
-/** Как «Активные» на линейном графике (небо) — «окончание подписки в этот день с ростом трафика». */
-const ACTIVE_SKY_RGB = /** @type {const} */ ([56, 189, 248])
-
+/** Нижний слой стека → верхний (как на странице «Финансы»). */
 const payExpDatasets = computed(() => {
   const rows = payExpRows.value
+  const { borderRadius, maxBarThickness } = PAY_EXP_BAR_STYLE
   return [
     {
       label: 'Оплаты',
       data: rows.map((r) => Number(r.payments_count) || 0),
-      rgb: /** @type {[number, number, number]} */ ([...TRAFFIC_ORANGE_RGB]),
+      rgb: /** @type {[number, number, number]} */ ([...PAYMENT_AMBER_RGB]),
+      borderRadius,
+      maxBarThickness,
     },
     {
-      label: 'С трафиком (день)',
-      data: rows.map((r) => Number(r.users_with_traffic_count) || 0),
-      rgb: /** @type {[number, number, number]} */ ([...DAY_TRAFFIC_BAR_RGB]),
-    },
-    {
-      label: 'Активные (день)',
-      data: rows.map((r) => Number(r.active_users_count) || 0),
-      rgb: /** @type {[number, number, number]} */ ([...DAY_ACTIVE_BAR_RGB]),
-    },
-    {
-      label: 'Окончание подписки (нет, за вычетом трафика и активных)',
-      data: rows.map((r) => Number(r.subscriptions_expired_inactive_count) || 0),
+      label: 'Окончание: без трафика',
+      data: rows.map((r) => Number(r.subscription_expiring_no_traffic_count) || 0),
       backgroundColor: rgba(SUBSCRIPTION_EXPIRY_GRAY_RGB, 0.45),
       borderColor: rgba(SUBSCRIPTION_EXPIRY_GRAY_RGB, 0.68),
-      borderWidth: 1,
+      borderWidth: 0,
       hoverBackgroundColor: rgba(SUBSCRIPTION_EXPIRY_GRAY_RGB, 0.58),
       hoverBorderColor: rgba(SUBSCRIPTION_EXPIRY_GRAY_RGB, 0.88),
+      borderRadius,
+      maxBarThickness,
     },
     {
-      label: 'Окончание и активность в этот день',
-      data: rows.map((r) => Number(r.subscriptions_expired_active_count) || 0),
-      backgroundColor: rgba(ACTIVE_SKY_RGB, 0.45),
-      borderColor: rgba(ACTIVE_SKY_RGB, 0.7),
-      borderWidth: 1,
-      hoverBackgroundColor: rgba(ACTIVE_SKY_RGB, 0.6),
-      hoverBorderColor: rgba(ACTIVE_SKY_RGB, 0.9),
+      label: 'Окончание: есть трафик (не рост в этот день)',
+      data: rows.map((r) => Number(r.subscription_expiring_has_traffic_count) || 0),
+      rgb: /** @type {[number, number, number]} */ ([...TRAFFIC_ORANGE_RGB]),
+      borderRadius,
+      maxBarThickness,
+    },
+    {
+      label: 'Окончание: активны в этот день',
+      data: rows.map((r) => Number(r.subscription_expiring_active_on_day_count) || 0),
+      rgb: /** @type {[number, number, number]} */ ([...ACTIVE_SKY_RGB]),
+      borderRadius,
+      maxBarThickness,
+    },
+    {
+      label: 'Окончание: активны сегодня (UTC)',
+      data: rows.map((r) => Number(r.subscription_expiring_active_today_count) || 0),
+      rgb: /** @type {[number, number, number]} */ ([...ACTIVE_PAY_TEAL_RGB]),
+      borderRadius,
+      maxBarThickness,
     },
   ]
 })
+
+/** @param {import('chart.js').TooltipItem<'bar'>[]} items */
+function payExpTooltipFooter(items) {
+  const first = items?.[0]
+  if (!first?.chart) return ''
+  const chart = first.chart
+  const idx = first.dataIndex
+  let sum = 0
+  for (const ds of chart.data.datasets) {
+    const v = Number(ds.data[idx])
+    if (Number.isFinite(v)) sum += v
+  }
+  return `Всего по столбцу: ${sum.toLocaleString('ru-RU')}`
+}
+
+/** @param {import('chart.js').TooltipItem<'bar'>} item */
+function payExpTooltipFilter(item) {
+  return Number(item.raw) > 0
+}
 
 async function loadPayExpBars() {
   payExpLoading.value = true
@@ -511,16 +538,19 @@ watch(payExpMonth, () => {
         </label>
       </div>
       <AdminBarChartPanel
-        aria-label="По дням UTC: оплаты, пользователи с трафиком и активные за день, окончания подписки"
+        aria-label="По дням UTC: один столбец на день — оплаты и группы окончания подписки (слои)"
         :loading="payExpLoading"
         :error="payExpError"
         :has-data="payExpRows.length > 0"
-        title="Оплаты, трафик, активность и окончания подписки"
+        title="Оплаты и окончания подписки"
         unit-label="UTC"
-        hint="Серый столбец: окончание без роста трафика в тот же день (как в RPC), минус «С трафиком» и «Активные» за тот же UTC-день, не ниже нуля."
+        hint="Один столбец на день (как «Финансы»): слои снизу вверх — оплаты, окончание без трафика, с трафиком, активны в день окончания, активны сегодня UTC. По каждому дню у пользователя с subscription_until = этот день UTC ровно одна группа (см. порядок приоритета в коде бэкенда)."
         :labels="payExpLabels"
         :datasets="payExpDatasets"
         :x-markers="payExpXMarkers"
+        stacked
+        :get-tooltip-footer="payExpTooltipFooter"
+        :tooltip-filter="payExpTooltipFilter"
         y-title="Количество"
       />
     </div>

@@ -21,6 +21,11 @@ defineProps({
   xMarkers: { type: Array, default: () => [] },
   yTitle: { type: String, default: '' },
   yGrace: { type: String, default: '8%' },
+  stacked: { type: Boolean, default: false },
+  /** @type {import('vue').PropType<(items: import('chart.js').TooltipItem<'bar'>[]) => string | string[] | void>} */
+  getTooltipFooter: { type: Function, default: null },
+  /** @type {import('vue').PropType<(item: import('chart.js').TooltipItem<'bar'>) => boolean>} */
+  tooltipFilter: { type: Function, default: null },
 })
 </script>
 
@@ -49,6 +54,9 @@ defineProps({
       :x-markers="xMarkers"
       :value-axis-title="yTitle"
       :y-grace="yGrace"
+      :stacked="stacked"
+      :get-tooltip-footer="getTooltipFooter"
+      :tooltip-filter="tooltipFilter"
     />
   </div>
 </template>
