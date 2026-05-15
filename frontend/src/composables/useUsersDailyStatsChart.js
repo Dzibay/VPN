@@ -506,7 +506,7 @@ export function useUsersDailyStatsChart() {
       trafficDs,
       devicesDs,
       {
-        label: 'С оплатой · накоп. (день первого платежа)',
+        label: 'С оплатой',
         data: pts.map((p) => p.totalPayment),
         rgb: paymentAmberRgb,
       },
@@ -517,7 +517,7 @@ export function useUsersDailyStatsChart() {
         filled: false,
       },
       {
-        label: 'Активные с оплатой',
+        label: 'С оплатой активных',
         data: pts.map((p) => p.dayActiveWithPayment),
         rgb: activePayTealRgb,
         filled: false,
@@ -602,7 +602,7 @@ export function useUsersDailyStatsChart() {
     }
     if (ctx.datasetIndex === 3) {
       return lineValueDelta(
-        'С оплатой (накоп.; + за день — первый платёж)',
+        'С оплатой',
         p.totalPayment,
         dPayment,
       )
@@ -616,7 +616,7 @@ export function useUsersDailyStatsChart() {
       const prevAp = i > 0 ? pts[i - 1].dayActiveWithPayment : 0
       const dAp = p.dayActiveWithPayment - prevAp
       return lineValueDelta(
-        'Активных (уже была оплата к этому дню)',
+        'С оплатой активных)',
         p.dayActiveWithPayment,
         dAp,
       )
