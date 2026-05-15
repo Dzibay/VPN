@@ -275,15 +275,37 @@ async def daily_payments_expiry_stats(
         DailyPaymentsExpiryStatsRow(
             stats_date=row[0],
             payments_count=int(row[1] or 0),
+            users_with_traffic_count=0,
+            active_users_count=0,
             subscriptions_expired_inactive_count=int(row[2] or 0),
             subscriptions_expired_active_count=int(row[3] or 0),
         )
         for row in raw
     ]
+    dated_stats = await stats_by_date_merged(session)
+    stats_by_date: dict[date, UserStatsByDateRow] = {
+        r.stats_date: r for r in dated_stats if r.stats_date is not None
+    }
+    merged: list[DailyPaymentsExpiryStatsRow] = []
+    for r in rows:
+        s = stats_by_date.get(r.stats_date)
+        traffic = int(s.users_with_traffic_count) if s else 0
+        active_n = int(s.active_users_count) if s else 0
+        raw_inactive = int(r.subscriptions_expired_inactive_count)
+        net_inactive = max(0, raw_inactive - traffic - active_n)
+        merged.append(
+            r.model_copy(
+                update={
+                    "users_with_traffic_count": traffic,
+                    "active_users_count": active_n,
+                    "subscriptions_expired_inactive_count": net_inactive,
+                },
+            ),
+        )
     if month is None:
-        return rows
+        return merged
     lo, hi = _utc_month_bounds(month)
-    return [r for r in rows if lo <= r.stats_date <= hi]
+    return [r for r in merged if lo <= r.stats_date <= hi]
 
 
 async def count_users_with_subscription_device(

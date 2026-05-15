@@ -138,7 +138,7 @@ async def users_daily_stats_ep(
     "/daily-payments-expiry-bars",
     response_model=DailyPaymentsExpiryStatsResponse,
     dependencies=[Depends(require_referrals_staff)],
-    summary="Оплаты и окончания подписки по UTC-дням (для столбчатого графика)",
+    summary="Оплаты, трафик/активные за день и окончания подписки по UTC-дням (столбчатый график)",
 )
 async def daily_payments_expiry_bars_ep(
     session: ReadonlySessionDep,

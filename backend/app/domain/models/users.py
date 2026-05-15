@@ -168,9 +168,20 @@ class DailyPaymentsExpiryStatsRow(BaseModel):
 
     stats_date: date
     payments_count: int = Field(ge=0, description="Число строк payments за этот календарный день UTC")
+    users_with_traffic_count: int = Field(
+        ge=0,
+        description="Пользователи с трафиком за день (как в rpc_users_daily_stats), для столбца на графике",
+    )
+    active_users_count: int = Field(
+        ge=0,
+        description="Активные пользователи за UTC-день (как в rpc_users_daily_stats), для столбца на графике",
+    )
     subscriptions_expired_inactive_count: int = Field(
         ge=0,
-        description="Истечение подписки в этот день без роста трафика в этот же день",
+        description=(
+            "Истечение подписки в этот день без роста трафика в этот же день (как в RPC), "
+            "минус users_with_traffic_count и active_users_count за тот же день, не ниже нуля"
+        ),
     )
     subscriptions_expired_active_count: int = Field(
         ge=0,

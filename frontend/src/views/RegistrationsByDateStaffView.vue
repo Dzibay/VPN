@@ -159,7 +159,16 @@ const chartEventMarkers = computed(() => {
   return today ? [today, ...manual] : manual
 })
 
-/** @typedef {{ stats_date: string; payments_count: number; subscriptions_expired_inactive_count: number; subscriptions_expired_active_count: number }} PayExpRow */
+/**
+ * @typedef {{
+ *   stats_date: string
+ *   payments_count: number
+ *   users_with_traffic_count: number
+ *   active_users_count: number
+ *   subscriptions_expired_inactive_count: number
+ *   subscriptions_expired_active_count: number
+ * }} PayExpRow
+ */
 
 const payExpRows = ref(/** @type {PayExpRow[]} */ ([]))
 const payExpLoading = ref(false)
@@ -175,15 +184,19 @@ const payExpXMarkers = computed(() => {
   return [{ index: idx, title: 'Сегодня (UTC)', color: '#34d399', kind: 'today' }]
 })
 
-/** Как «С трафиком» на линейном графике (оранжевый). */
+/** Оплаты на столбчатом графике (оранжевый, как «Оплаты» / акцент). */
 const TRAFFIC_ORANGE_RGB = /** @type {const} */ ([251, 146, 60])
 const SUBSCRIPTION_EXPIRY_GRAY_RGB = /** @type {const} */ ([148, 163, 184])
+/** Пользователи с трафиком за день — отдельный цвет от оплат. */
+const DAY_TRAFFIC_BAR_RGB = /** @type {const} */ ([34, 197, 94])
+/** Активные за день — отдельный оттенок от «окончание + активность». */
+const DAY_ACTIVE_BAR_RGB = /** @type {const} */ ([20, 184, 166])
 
 const payExpLabels = computed(() =>
   payExpRows.value.map((r) => formatDayShort(String(r.stats_date).slice(0, 10))),
 )
 
-/** Как «Активные» на линейном графике (небо). */
+/** Как «Активные» на линейном графике (небо) — «окончание подписки в этот день с ростом трафика». */
 const ACTIVE_SKY_RGB = /** @type {const} */ ([56, 189, 248])
 
 const payExpDatasets = computed(() => {
@@ -195,7 +208,17 @@ const payExpDatasets = computed(() => {
       rgb: /** @type {[number, number, number]} */ ([...TRAFFIC_ORANGE_RGB]),
     },
     {
-      label: 'Окончание подписки',
+      label: 'С трафиком (день)',
+      data: rows.map((r) => Number(r.users_with_traffic_count) || 0),
+      rgb: /** @type {[number, number, number]} */ ([...DAY_TRAFFIC_BAR_RGB]),
+    },
+    {
+      label: 'Активные (день)',
+      data: rows.map((r) => Number(r.active_users_count) || 0),
+      rgb: /** @type {[number, number, number]} */ ([...DAY_ACTIVE_BAR_RGB]),
+    },
+    {
+      label: 'Окончание подписки (нет, за вычетом трафика и активных)',
       data: rows.map((r) => Number(r.subscriptions_expired_inactive_count) || 0),
       backgroundColor: rgba(SUBSCRIPTION_EXPIRY_GRAY_RGB, 0.45),
       borderColor: rgba(SUBSCRIPTION_EXPIRY_GRAY_RGB, 0.68),
@@ -488,13 +511,13 @@ watch(payExpMonth, () => {
         </label>
       </div>
       <AdminBarChartPanel
-        aria-label="По дням UTC: число оплат и пользователей с датой окончания подписки"
+        aria-label="По дням UTC: оплаты, пользователи с трафиком и активные за день, окончания подписки"
         :loading="payExpLoading"
         :error="payExpError"
         :has-data="payExpRows.length > 0"
-        title="Оплаты и окончания подписки"
+        title="Оплаты, трафик, активность и окончания подписки"
         unit-label="UTC"
-        hint=""
+        hint="Серый столбец: окончание без роста трафика в тот же день (как в RPC), минус «С трафиком» и «Активные» за тот же UTC-день, не ниже нуля."
         :labels="payExpLabels"
         :datasets="payExpDatasets"
         :x-markers="payExpXMarkers"
