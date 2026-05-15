@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, toRefs } from 'vue'
+import { computed, onMounted, ref, toRefs, watch } from 'vue'
 import AdminBarChartPanel from '../components/AdminBarChartPanel.vue'
 import AdminLineChartPanel from '../components/AdminLineChartPanel.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
@@ -134,6 +134,17 @@ const {
 
 const { setGranularity, load } = chart
 
+/** Значение для `<input type="month">`: текущий календарный месяц UTC (YYYY-MM). */
+function utcMonthInputDefault() {
+  const d = new Date()
+  const y = d.getUTCFullYear()
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0')
+  return `${y}-${m}`
+}
+
+const payExpMonth = ref(utcMonthInputDefault())
+const payExpMonthMax = computed(() => utcMonthInputDefault())
+
 const chartEventMarkers = computed(() => {
   const manual = mapStaffChartEventsToMarkers(
     chartPoints.value,
@@ -155,9 +166,10 @@ const payExpLoading = ref(false)
 const payExpError = ref(null)
 
 const payExpXMarkers = computed(() => {
-  const key = utcTodayIso()
+  const today = utcTodayIso()
+  if (String(today).slice(0, 7) !== payExpMonth.value) return []
   const idx = payExpRows.value.findIndex(
-    (r) => String(r.stats_date ?? '').slice(0, 10) === key,
+    (r) => String(r.stats_date ?? '').slice(0, 10) === today,
   )
   if (idx < 0) return []
   return [{ index: idx, title: 'Сегодня (UTC)', color: '#34d399', kind: 'today' }]
@@ -192,7 +204,7 @@ const payExpDatasets = computed(() => {
       hoverBorderColor: rgba(SUBSCRIPTION_EXPIRY_GRAY_RGB, 0.88),
     },
     {
-      label: 'Окончание и активность',
+      label: 'Окончание и активность в этот день',
       data: rows.map((r) => Number(r.subscriptions_expired_active_count) || 0),
       backgroundColor: rgba(ACTIVE_SKY_RGB, 0.45),
       borderColor: rgba(ACTIVE_SKY_RGB, 0.7),
@@ -207,7 +219,9 @@ async function loadPayExpBars() {
   payExpLoading.value = true
   payExpError.value = null
   try {
-    const data = await fetchJson('/api/users/daily-payments-expiry-bars')
+    const data = await fetchJson(
+      `/api/users/daily-payments-expiry-bars?month=${encodeURIComponent(payExpMonth.value)}`,
+    )
     payExpRows.value = Array.isArray(data.rows) ? data.rows : []
   } catch (e) {
     payExpError.value = e.message || String(e)
@@ -225,6 +239,10 @@ async function refreshAllCharts() {
 onMounted(() => {
   void load()
   void loadChartEvents()
+  void loadPayExpBars()
+})
+
+watch(payExpMonth, () => {
   void loadPayExpBars()
 })
 </script>
@@ -457,6 +475,18 @@ onMounted(() => {
     </section>
 
     <div class="payments-expiry-wrap">
+      <div class="payments-expiry-toolbar">
+        <label class="pay-exp-month-label">
+          <input
+            v-model="payExpMonth"
+            type="month"
+            class="pay-exp-month-input"
+            min="2020-01"
+            :max="payExpMonthMax"
+            :disabled="payExpLoading"
+          />
+        </label>
+      </div>
       <AdminBarChartPanel
         aria-label="По дням UTC: число оплат и пользователей с датой окончания подписки"
         :loading="payExpLoading"
@@ -464,7 +494,7 @@ onMounted(() => {
         :has-data="payExpRows.length > 0"
         title="Оплаты и окончания подписки"
         unit-label="UTC"
-        hint="Оранжевый — оплаты за день UTC. Серый — subscription_until в этот день, без роста трафика в этот день. Голубой — тот же день окончания и рост суммарного трафика (как «Активные» на графике выше)."
+        hint=""
         :labels="payExpLabels"
         :datasets="payExpDatasets"
         :x-markers="payExpXMarkers"
@@ -682,6 +712,46 @@ onMounted(() => {
 
 .payments-expiry-wrap {
   margin-top: 1.25rem;
+}
+
+.payments-expiry-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.pay-exp-month-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.pay-exp-month-label-text {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.72rem;
+}
+
+.pay-exp-month-input {
+  font: inherit;
+  font-size: 0.88rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+  color: var(--text-h);
+}
+
+.pay-exp-month-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .chart-events-title {

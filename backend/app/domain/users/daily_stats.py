@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import calendar
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Literal
 
@@ -237,7 +238,29 @@ async def users_daily_stats(
     )
 
 
-async def daily_payments_expiry_stats(session: AsyncSession) -> list[DailyPaymentsExpiryStatsRow]:
+def _utc_month_bounds(month: str) -> tuple[date, date]:
+    """Первый и последний календарный день месяца UTC (YYYY-MM)."""
+    s = month.strip()
+    parts = s.split("-")
+    if len(parts) != 2:
+        raise ValueError("month: ожидается формат YYYY-MM")
+    try:
+        y = int(parts[0], 10)
+        mo = int(parts[1], 10)
+    except ValueError as e:
+        raise ValueError("month: неверные числа в YYYY-MM") from e
+    if y < 1970 or y > 2100 or mo < 1 or mo > 12:
+        raise ValueError("month: недопустимый год или месяц")
+    first = date(y, mo, 1)
+    last = date(y, mo, calendar.monthrange(y, mo)[1])
+    return first, last
+
+
+async def daily_payments_expiry_stats(
+    session: AsyncSession,
+    *,
+    month: str | None = None,
+) -> list[DailyPaymentsExpiryStatsRow]:
     """Столбчатый график: ``rpc_daily_payments_and_subscription_expirations()`` (UTC-дни)."""
 
     stmt = text(
@@ -248,7 +271,7 @@ async def daily_payments_expiry_stats(session: AsyncSession) -> list[DailyPaymen
         """,
     )
     raw = (await session.execute(stmt)).all()
-    return [
+    rows = [
         DailyPaymentsExpiryStatsRow(
             stats_date=row[0],
             payments_count=int(row[1] or 0),
@@ -257,6 +280,10 @@ async def daily_payments_expiry_stats(session: AsyncSession) -> list[DailyPaymen
         )
         for row in raw
     ]
+    if month is None:
+        return rows
+    lo, hi = _utc_month_bounds(month)
+    return [r for r in rows if lo <= r.stats_date <= hi]
 
 
 async def count_users_with_subscription_device(

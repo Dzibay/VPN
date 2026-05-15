@@ -77,7 +77,7 @@ def require_roles(
       UI /admin/referrals, /admin/logs, /admin/payments, /admin/tasks, /admin/users/analytics,
       /admin/users/{id}/analytics,
       /admin/users/registrations-by-date, /admin/users/subscription-user-agent-stats
-      (GET /api/users/daily-stats, stats_by_date), GET /api/users/daily-payments-expiry-bars, /admin/funnel,
+      (GET /api/users/daily-stats, stats_by_date), GET /api/users/daily-payments-expiry-bars (?month=YYYY-MM UTC), /admin/funnel,
       CRUD /api/staff/chart-events.
     - user — клиентский JWT (для эндпоинтов, где явно разрешён просмотр своих данных).
     """

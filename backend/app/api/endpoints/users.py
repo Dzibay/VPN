@@ -142,8 +142,17 @@ async def users_daily_stats_ep(
 )
 async def daily_payments_expiry_bars_ep(
     session: ReadonlySessionDep,
+    month: Annotated[
+        str | None,
+        Query(
+            description="Календарный месяц UTC в виде YYYY-MM; если не указан — все дни из RPC",
+        ),
+    ] = None,
 ) -> DailyPaymentsExpiryStatsResponse:
-    rows = await daily_payments_expiry_stats(session)
+    try:
+        rows = await daily_payments_expiry_stats(session, month=month)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     return DailyPaymentsExpiryStatsResponse(rows=rows)
 
 
