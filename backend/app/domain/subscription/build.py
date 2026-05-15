@@ -2,10 +2,9 @@
 
 Порядок записей в клиенте:
 
-1. ``⚡ Auto (рекомендуемый)`` — дубликат первого VLESS в выдаче с валидным URI
-   (выдача отсортирована: без ``whitelist`` по ``load_percent``, затем с ``whitelist``).
-2. ``⚡ Auto (белый список)`` — если среди узлов выдачи есть хотя бы один с
-   ``whitelist``, дубликат первого по нагрузке среди whitelist с валидным URI.
+1. ``🔥 Auto (рекомендуемый)`` — при одном VLESS без ``whitelist``: ``vless://``; при
+   нескольких — JSON balancer ``leastPing`` (Happ). В Clash — ``url-test`` по пулу.
+2. ``📄 Auto (Белые списки)`` — то же для VLESS с ``whitelist``, если такие узлы есть.
 3. Все узлы выдачи по одному разу с обычными именами: сначала без ``whitelist``,
    в конце списка — только с ``whitelist`` (внутри групп — по ``load_percent``).
 
@@ -19,6 +18,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import secrets
 from dataclasses import dataclass
@@ -39,6 +39,33 @@ log = logging.getLogger("app.subscription.build")
 
 SUBSCRIPTION_AUTO_RECOMMENDED_LABEL = "🔥 Auto (рекомендуемый)"
 SUBSCRIPTION_AUTO_WHITELIST_LABEL = "📄 Auto (Белые списки)"
+
+_AUTO_BALANCER_TAG_PREFIX_REC = "auto-rec-"
+_AUTO_BALANCER_TAG_PREFIX_WL = "auto-wl-"
+_AUTO_BALANCER_PROBE_URL = "https://www.gstatic.com/generate_204"
+_AUTO_BALANCER_PROBE_INTERVAL = "10s"
+
+_HAPP_JSON_SNIFFING: dict[str, Any] = {
+    "enabled": True,
+    "destOverride": ["http", "tls", "quic"],
+}
+_HAPP_JSON_INBOUNDS: list[dict[str, Any]] = [
+    {
+        "tag": "socks",
+        "port": 10808,
+        "listen": "127.0.0.1",
+        "protocol": "socks",
+        "settings": {"udp": True, "auth": "noauth"},
+        "sniffing": _HAPP_JSON_SNIFFING,
+    },
+    {
+        "tag": "http",
+        "port": 10809,
+        "listen": "127.0.0.1",
+        "protocol": "http",
+        "sniffing": _HAPP_JSON_SNIFFING,
+    },
+]
 
 # uTLS fingerprint в vless:// и Clash: не из БД, а случайный на каждую выдачу подписки (DPI).
 _SUBSCRIPTION_UTLS_FP_CHOICES: tuple[str, ...] = ("chrome", "firefox", "safari", "edge")
@@ -325,30 +352,248 @@ def _subscription_uri_and_fingerprint_by_server_id(
     return uri_by_id, fp_by_id
 
 
-def _pick_auto_duplicate_servers(
+def _is_vless_server(s: Server) -> bool:
+    return (s.proxy_kind or "vless").strip().lower() == "vless"
+
+
+def _vless_pool_for_auto(
     ctx: _SubscriptionDeliveryContext,
     uri_by_id: dict[int, str | None],
-) -> tuple[Server | None, Server | None]:
-    """
-    Auto-дубликаты выбираются только среди VLESS-узлов с рабочим URI.
-    Hysteria2 остаётся в обычной выдаче, но не становится "Auto".
-    """
-    vless_rows = [
-        s for s in ctx.delivery_rows if (s.proxy_kind or "vless").strip().lower() == "vless"
+    *,
+    whitelist: bool,
+) -> list[Server]:
+    """VLESS-узлы пула Auto с валидным URI (Hysteria2 не входит)."""
+    return [
+        s
+        for s in ctx.delivery_rows
+        if _is_vless_server(s)
+        and bool(s.whitelist) is whitelist
+        and uri_by_id.get(s.id) is not None
     ]
-    any_whitelist_in_delivery = any(s.whitelist for s in vless_rows)
-    auto_rec: Server | None = None
-    auto_wl: Server | None = None
-    for s in vless_rows:
-        if uri_by_id.get(s.id) is None:
+
+
+def _auto_member_outbound_tag(server_id: int, *, whitelist: bool) -> str:
+    prefix = _AUTO_BALANCER_TAG_PREFIX_WL if whitelist else _AUTO_BALANCER_TAG_PREFIX_REC
+    return f"{prefix}{int(server_id)}"
+
+
+def _auto_balancer_tag(*, whitelist: bool) -> str:
+    return f"{_AUTO_BALANCER_TAG_PREFIX_WL}balancer" if whitelist else f"{_AUTO_BALANCER_TAG_PREFIX_REC}balancer"
+
+
+def _server_to_vless_reality_outbound(
+    s: Server,
+    *,
+    client_uuid: str,
+    tag: str,
+    client_fingerprint: str,
+) -> dict[str, Any] | None:
+    pbk = (s.reality_public_key or "").strip()
+    if not pbk or "(" in pbk:
+        return None
+    sid = (s.reality_short_id or "").strip()
+    if not sid:
+        return None
+    flow = (s.vless_flow or "").strip() or "xtls-rprx-vision"
+    fp = (client_fingerprint or "").strip() or "chrome"
+    sni = _primary_sni(s.reality_server_names, s.reality_dest)
+    if not sni:
+        return None
+    host = (s.host or "").strip()
+    uid = (client_uuid or "").strip()
+    if not host or not uid:
+        return None
+    spx = normalize_reality_spider_x(s.reality_spider_x)
+    stream_settings: dict[str, Any] = {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+            "allowInsecure": False,
+            "fingerprint": fp,
+            "serverName": sni,
+            "publicKey": pbk,
+            "shortId": sid,
+            "spiderX": spx,
+            "show": False,
+        },
+        "tcpSettings": {"header": {"type": "none"}},
+    }
+    stream_settings.update(dict(_XRAY_VLESS_STREAM_SETTINGS_SOCKOPT))
+    return {
+        "tag": tag,
+        "protocol": "vless",
+        "settings": {
+            "vnext": [
+                {
+                    "address": host,
+                    "port": int(s.port),
+                    "users": [
+                        {
+                            "id": uid,
+                            "encryption": "none",
+                            "flow": flow,
+                            "level": 8,
+                            "security": "auto",
+                        }
+                    ],
+                }
+            ]
+        },
+        "streamSettings": stream_settings,
+    }
+
+
+def _happ_standard_outbound_tail() -> list[dict[str, Any]]:
+    return [
+        {"tag": "direct", "protocol": "freedom"},
+        {"tag": "block", "protocol": "blackhole"},
+    ]
+
+
+def _build_happ_multi_balancer_json(
+    remark: str,
+    pool: list[Server],
+    *,
+    client_uuid: str,
+    fp_by_id: dict[int, str],
+    whitelist: bool,
+) -> str | None:
+    """
+    Happ: JSON с inbounds, observatory и balancer ``leastPing`` (только при 2+ узлах в пуле).
+    """
+    if len(pool) < 2:
+        return None
+    balancer_tag = _auto_balancer_tag(whitelist=whitelist)
+    member_tags: list[str] = []
+    proxy_outbounds: list[dict[str, Any]] = []
+    for s in pool:
+        member_tag = _auto_member_outbound_tag(s.id, whitelist=whitelist)
+        ob = _server_to_vless_reality_outbound(
+            s,
+            client_uuid=client_uuid,
+            tag=member_tag,
+            client_fingerprint=fp_by_id[s.id],
+        )
+        if ob is None:
             continue
-        if auto_rec is None:
-            auto_rec = s
-        if s.whitelist and auto_wl is None:
-            auto_wl = s
-    if not any_whitelist_in_delivery:
-        auto_wl = None
-    return auto_rec, auto_wl
+        member_tags.append(member_tag)
+        proxy_outbounds.append(ob)
+    if len(member_tags) < 2:
+        return None
+
+    outbounds = [*proxy_outbounds, *_happ_standard_outbound_tail()]
+    doc: dict[str, Any] = {
+        "remarks": remark,
+        "inbounds": list(_HAPP_JSON_INBOUNDS),
+        "observatory": {
+            "subjectSelector": list(member_tags),
+            "probeUrl": _AUTO_BALANCER_PROBE_URL,
+            "probeInterval": _AUTO_BALANCER_PROBE_INTERVAL,
+            "enableConcurrency": True,
+        },
+        "routing": {
+            "domainStrategy": "AsIs",
+            "rules": [
+                {
+                    "type": "field",
+                    "network": "tcp,udp",
+                    "balancerTag": balancer_tag,
+                }
+            ],
+            "balancers": [
+                {
+                    "tag": balancer_tag,
+                    "selector": list(member_tags),
+                    "strategy": {"type": "leastPing"},
+                    "fallbackTag": member_tags[0],
+                }
+            ],
+        },
+        "outbounds": outbounds,
+    }
+    return json.dumps(doc, ensure_ascii=False, separators=(",", ":"))
+
+
+def _append_happ_auto_subscription_entry(
+    *,
+    uris: list[str],
+    servers_out: list[dict[str, Any]],
+    remark: str,
+    pool: list[Server],
+    client_uuid: str,
+    fp_by_id: dict[int, str],
+    exit_ids_referenced: set[int],
+    whitelist: bool,
+) -> None:
+    """
+    Auto в теле подписки.
+
+    - 1 узел: ``vless://`` (Happ стабильно импортирует share-ссылки; JSON без inbounds — нет).
+    - 2+ узла: JSON balancer + локальные inbounds.
+    """
+    if not pool:
+        return
+
+    if len(pool) == 1:
+        s = pool[0]
+        fp = fp_by_id[s.id]
+        uri = _vless_reality_share_uri(
+            s,
+            client_uuid=client_uuid,
+            exit_ids_referenced=exit_ids_referenced,
+            client_fingerprint=fp,
+            fragment_override=remark,
+        )
+        if not uri:
+            return
+        servers_out.append(
+            _server_to_subscription_dict(
+                s,
+                client_uuid=client_uuid,
+                exit_ids_referenced=exit_ids_referenced,
+                client_fingerprint=fp,
+                name_override=remark,
+            )
+        )
+        uris.append(uri)
+        return
+
+    line = _build_happ_multi_balancer_json(
+        remark,
+        pool,
+        client_uuid=client_uuid,
+        fp_by_id=fp_by_id,
+        whitelist=whitelist,
+    )
+    if not line:
+        return
+    servers_out.append(
+        _balancer_to_subscription_dict(remark, pool, whitelist=whitelist),
+    )
+    uris.append(line)
+
+
+def _balancer_to_subscription_dict(
+    remark: str,
+    pool: list[Server],
+    *,
+    whitelist: bool,
+) -> dict[str, Any]:
+    member_ids = [int(s.id) for s in pool]
+    if len(member_ids) == 1:
+        return {
+            "name": remark,
+            "protocol": "vless",
+            "whitelist": whitelist,
+            "member_server_ids": member_ids,
+        }
+    return {
+        "name": remark,
+        "protocol": "balancer",
+        "strategy": "leastPing",
+        "whitelist": whitelist,
+        "member_server_ids": member_ids,
+    }
 
 
 def _append_clash_proxy(
@@ -420,33 +665,19 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
     uri_by_id, fp_by_id = _subscription_uri_and_fingerprint_by_server_id(
         ctx, client_uuid=client_uuid
     )
-    auto_rec, auto_wl = _pick_auto_duplicate_servers(ctx, uri_by_id)
+    pool_rec = _vless_pool_for_auto(ctx, uri_by_id, whitelist=False)
+    pool_wl = _vless_pool_for_auto(ctx, uri_by_id, whitelist=True)
 
     proxies: list[dict[str, Any]] = []
     names_seen: dict[str, int] = {}
-
-    if auto_rec is not None:
-        _append_clash_proxy(
-            proxies,
-            auto_rec,
-            client_uuid=client_uuid,
-            clash_name=_unique_clash_proxy_name(SUBSCRIPTION_AUTO_RECOMMENDED_LABEL, names_seen),
-            client_fingerprint=fp_by_id[auto_rec.id],
-        )
-    if auto_wl is not None:
-        _append_clash_proxy(
-            proxies,
-            auto_wl,
-            client_uuid=client_uuid,
-            clash_name=_unique_clash_proxy_name(SUBSCRIPTION_AUTO_WHITELIST_LABEL, names_seen),
-            client_fingerprint=fp_by_id[auto_wl.id],
-        )
+    name_by_server_id: dict[int, str] = {}
 
     for s in ctx.delivery_rows:
         if uri_by_id.get(s.id) is None:
             continue
         label = _node_subscription_label(s, exit_ids_referenced=ctx.exit_ids_referenced)
         name = _unique_clash_proxy_name(label, names_seen)
+        name_by_server_id[s.id] = name
         _append_clash_proxy(
             proxies,
             s,
@@ -455,20 +686,46 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
             client_fingerprint=fp_by_id[s.id],
         )
 
+    proxy_groups: list[dict[str, Any]] = []
+    select_proxies: list[str] = []
+
+    def _append_url_test_group(label: str, pool: list[Server]) -> None:
+        member_names = [name_by_server_id[s.id] for s in pool if s.id in name_by_server_id]
+        if not member_names:
+            return
+        group_name = _unique_clash_proxy_name(label, names_seen)
+        proxy_groups.append(
+            {
+                "name": group_name,
+                "type": "url-test",
+                "proxies": member_names,
+                "url": _AUTO_BALANCER_PROBE_URL,
+                "interval": 300,
+                "tolerance": 50,
+            }
+        )
+        select_proxies.append(group_name)
+
+    _append_url_test_group(SUBSCRIPTION_AUTO_RECOMMENDED_LABEL, pool_rec)
+    if any(s.whitelist for s in ctx.delivery_rows if _is_vless_server(s)):
+        _append_url_test_group(SUBSCRIPTION_AUTO_WHITELIST_LABEL, pool_wl)
+
+    select_proxies.extend(p["name"] for p in proxies)
+
     group_name = BRAND_NAME
-    proxy_names = [p["name"] for p in proxies]
-    if not proxy_names:
+    if not select_proxies:
         doc: dict[str, Any] = {"proxies": [], "proxy-groups": [], "rules": []}
     else:
+        proxy_groups.append(
+            {
+                "name": group_name,
+                "type": "select",
+                "proxies": select_proxies,
+            }
+        )
         doc = {
             "proxies": proxies,
-            "proxy-groups": [
-                {
-                    "name": group_name,
-                    "type": "select",
-                    "proxies": proxy_names,
-                }
-            ],
+            "proxy-groups": proxy_groups,
             "rules": [f"MATCH,{group_name}"],
         }
     return yaml.safe_dump(
@@ -485,60 +742,37 @@ def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPa
     uri_by_id, fp_by_id = _subscription_uri_and_fingerprint_by_server_id(
         ctx, client_uuid=client_uuid
     )
-    auto_rec, auto_wl = _pick_auto_duplicate_servers(ctx, uri_by_id)
+    pool_rec = _vless_pool_for_auto(ctx, uri_by_id, whitelist=False)
+    pool_wl = _vless_pool_for_auto(ctx, uri_by_id, whitelist=True)
+    any_whitelist_vless = any(
+        s.whitelist for s in ctx.delivery_rows if _is_vless_server(s)
+    )
 
     servers_out: list[dict[str, Any]] = []
     uris: list[str] = []
 
-    if auto_rec is not None:
-        fp_ar = fp_by_id[auto_rec.id]
-        servers_out.append(
-            _server_to_subscription_dict(
-                auto_rec,
-                client_uuid=client_uuid,
-                exit_ids_referenced=ctx.exit_ids_referenced,
-                client_fingerprint=fp_ar,
-                name_override=SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
-            )
-        )
-        u = _vless_reality_share_uri(
-            auto_rec,
-            client_uuid=client_uuid,
-            exit_ids_referenced=ctx.exit_ids_referenced,
-            client_fingerprint=fp_ar,
-            fragment_override=SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
-        ) if (auto_rec.proxy_kind or "vless") != "hysteria2" else _hysteria2_share_uri(
-            auto_rec,
-            exit_ids_referenced=ctx.exit_ids_referenced,
-            fragment_override=SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
-        )
-        if u:
-            uris.append(u)
+    _append_happ_auto_subscription_entry(
+        uris=uris,
+        servers_out=servers_out,
+        remark=SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
+        pool=pool_rec,
+        client_uuid=client_uuid,
+        fp_by_id=fp_by_id,
+        exit_ids_referenced=ctx.exit_ids_referenced,
+        whitelist=False,
+    )
 
-    if auto_wl is not None:
-        fp_aw = fp_by_id[auto_wl.id]
-        servers_out.append(
-            _server_to_subscription_dict(
-                auto_wl,
-                client_uuid=client_uuid,
-                exit_ids_referenced=ctx.exit_ids_referenced,
-                client_fingerprint=fp_aw,
-                name_override=SUBSCRIPTION_AUTO_WHITELIST_LABEL,
-            )
-        )
-        u = _vless_reality_share_uri(
-            auto_wl,
+    if any_whitelist_vless:
+        _append_happ_auto_subscription_entry(
+            uris=uris,
+            servers_out=servers_out,
+            remark=SUBSCRIPTION_AUTO_WHITELIST_LABEL,
+            pool=pool_wl,
             client_uuid=client_uuid,
+            fp_by_id=fp_by_id,
             exit_ids_referenced=ctx.exit_ids_referenced,
-            client_fingerprint=fp_aw,
-            fragment_override=SUBSCRIPTION_AUTO_WHITELIST_LABEL,
-        ) if (auto_wl.proxy_kind or "vless") != "hysteria2" else _hysteria2_share_uri(
-            auto_wl,
-            exit_ids_referenced=ctx.exit_ids_referenced,
-            fragment_override=SUBSCRIPTION_AUTO_WHITELIST_LABEL,
+            whitelist=True,
         )
-        if u:
-            uris.append(u)
 
     for s in ctx.delivery_rows:
         servers_out.append(
