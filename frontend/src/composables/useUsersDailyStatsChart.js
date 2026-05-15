@@ -4,7 +4,7 @@ import { fetchJson } from '../api/client.js'
 
 /**
  * @typedef {'day' | 'hour'} StatsGranularity
- * @typedef {{ stats_date: string | null; period_start_utc?: string | null; users_count: number; users_with_traffic_count?: number; active_users_count?: number; subscription_devices_users_count?: number; users_cumulative_traffic_over_100_mbit_count?: number; persistent_traffic_users_count?: number }} DailyStatsRow
+ * @typedef {{ stats_date: string | null; period_start_utc?: string | null; users_count: number; users_with_traffic_count?: number; active_users_count?: number; subscription_devices_users_count?: number; users_cumulative_traffic_over_100_mbit_count?: number; persistent_traffic_users_count?: number; users_with_payment_count?: number; active_users_with_payment_count?: number; users_with_active_subscription_count?: number }} DailyStatsRow
  */
 
 /** Полночь текущего календарного дня UTC (YYYY-MM-DD). */
@@ -150,7 +150,7 @@ function utcHourFloorMs(ms) {
 
 /**
  * Достраивает календарные дни UTC между первым и последним бакетом.
- * @param {Array<{ iso: string; periodStart: string | null; dayUsers: number; dayTraffic: number; dayActive: number; dayDevices: number; dayOver100Mbit: number; dayPersistentTraffic: number }>} sortedRows
+ * @param {Array<{ iso: string; periodStart: string | null; dayUsers: number; dayTraffic: number; dayActive: number; dayDevices: number; dayOver100Mbit: number; dayPersistentTraffic: number; dayPayment: number; dayActiveWithPayment: number; dayActiveSubscription: number }>} sortedRows
  */
 function densifyUtcDays(sortedRows) {
   if (!sortedRows.length) return sortedRows
@@ -176,6 +176,9 @@ function densifyUtcDays(sortedRows) {
         dayDevices: 0,
         dayOver100Mbit: 0,
         dayPersistentTraffic: 0,
+        dayPayment: 0,
+        dayActiveWithPayment: 0,
+        dayActiveSubscription: 0,
       },
     )
   }
@@ -227,10 +230,16 @@ export function useUsersDailyStatsChart() {
     return row ? Number(row.users_with_traffic_count) || 0 : 0
   })
 
+  const undatedPaymentCount = computed(() => {
+    const row = rows.value.find((r) => isUndatedRow(r))
+    return row ? Number(row.users_with_payment_count) || 0 : 0
+  })
+
   const chartPoints = computed(() => {
     const gran = granularity.value
     const extraUsers = undatedCount.value
     const extraTraffic = undatedTrafficCount.value
+    const extraPayment = undatedPaymentCount.value
     const sorted = rows.value
       .filter((r) => hasChartBucket(r, gran))
       .map((r) => ({
@@ -242,6 +251,11 @@ export function useUsersDailyStatsChart() {
         dayDevices: Number(r.subscription_devices_users_count) || 0,
         dayOver100Mbit: Number(r.users_cumulative_traffic_over_100_mbit_count) || 0,
         dayPersistentTraffic: Number(r.persistent_traffic_users_count) || 0,
+        dayPayment: Number(r.users_with_payment_count) || 0,
+        dayActiveWithPayment:
+          Number(r.active_users_with_payment_count) || 0,
+        dayActiveSubscription:
+          Number(r.users_with_active_subscription_count) || 0,
       }))
       .filter((row) => row.iso != null)
       .sort((a, b) => String(a.iso).localeCompare(String(b.iso)))
@@ -261,22 +275,29 @@ export function useUsersDailyStatsChart() {
         dayDevices: row.dayDevices,
         dayOver100Mbit: 0,
         dayPersistentTraffic: 0,
+        dayPayment: 0,
+        dayActiveWithPayment: 0,
+        dayActiveSubscription: 0,
         cumDatedUsers: row.dayUsers,
         cumDatedTraffic: row.dayTraffic,
         cumDatedDevices: row.dayDevices,
+        cumDatedPayment: 0,
         totalUsers: row.dayUsers,
         totalTraffic: row.dayTraffic,
         totalDevices: row.dayDevices,
+        totalPayment: 0,
       }))
     }
 
     let cumDatedUsers = 0
     let cumDatedTraffic = 0
     let cumDatedDevices = 0
+    let cumDatedPayment = 0
     return dense.map((row) => {
       cumDatedUsers += row.dayUsers
       cumDatedTraffic += row.dayTraffic
       cumDatedDevices += row.dayDevices
+      cumDatedPayment += row.dayPayment
       return {
         iso: row.iso,
         periodStart: row.periodStart,
@@ -286,12 +307,17 @@ export function useUsersDailyStatsChart() {
         dayDevices: row.dayDevices,
         dayOver100Mbit: row.dayOver100Mbit,
         dayPersistentTraffic: row.dayPersistentTraffic,
+        dayPayment: row.dayPayment,
+        dayActiveWithPayment: row.dayActiveWithPayment,
+        dayActiveSubscription: row.dayActiveSubscription,
         cumDatedUsers,
         cumDatedTraffic,
         cumDatedDevices,
+        cumDatedPayment,
         totalUsers: cumDatedUsers + extraUsers,
         totalTraffic: cumDatedTraffic + extraTraffic,
         totalDevices: cumDatedDevices,
+        totalPayment: cumDatedPayment + extraPayment,
       }
     })
   })
@@ -340,6 +366,16 @@ export function useUsersDailyStatsChart() {
       )
   })
 
+  const totalWithPayment = computed(() => {
+    if (granularity.value === 'hour') {
+      return 0
+    }
+    return rows.value.reduce(
+      (acc, r) => acc + (Number(r.users_with_payment_count) || 0),
+      0,
+    )
+  })
+
   /** Значение «активных за день» для текущего календарного дня UTC (только режим по дням). */
   const activeUsersWidget = computed(() => {
     if (granularity.value === 'hour' || loading.value || error.value) {
@@ -347,6 +383,33 @@ export function useUsersDailyStatsChart() {
     }
     const row = rows.value.find((r) => String(r.stats_date) === utcTodayIso())
     const todayVal = row ? Number(row.active_users_count) || 0 : 0
+    return {
+      today: todayVal.toLocaleString('ru-RU'),
+    }
+  })
+
+  const activeUsersWithPaymentWidget = computed(() => {
+    if (granularity.value === 'hour' || loading.value || error.value) {
+      return { today: '—' }
+    }
+    const row = rows.value.find((r) => String(r.stats_date) === utcTodayIso())
+    const todayVal = row
+      ? Number(row.active_users_with_payment_count) || 0
+      : 0
+    return {
+      today: todayVal.toLocaleString('ru-RU'),
+    }
+  })
+
+  /** Снимок: пользователи с активной подпиской на конец сегодняшнего UTC-дня. */
+  const activeSubscriptionWidget = computed(() => {
+    if (granularity.value === 'hour' || loading.value || error.value) {
+      return { today: '—' }
+    }
+    const row = rows.value.find((r) => String(r.stats_date) === utcTodayIso())
+    const todayVal = row
+      ? Number(row.users_with_active_subscription_count) || 0
+      : 0
     return {
       today: todayVal.toLocaleString('ru-RU'),
     }
@@ -381,7 +444,7 @@ export function useUsersDailyStatsChart() {
   const chartAriaLabel = computed(() =>
     granularity.value === 'hour'
       ? `По часам за ${formatMskCalendarDayShort(hourDayMsk.value)} (МСК): накопление пользователей и первых подключений устройств`
-      : 'По дням UTC: накопление регистраций и клиентов с устройствами, активные по трафику, >100 Мбит накопленного объёма, возвращающиеся активные',
+      : 'По дням UTC: накопление регистраций и клиентов с устройствами, с оплатой, активные по трафику, активные с оплатой, с активной подпиской (снимок), >100 Мбит накопленного объёма, возвращающиеся активные',
   )
 
   function fmtRu(n) {
@@ -393,6 +456,11 @@ export function useUsersDailyStatsChart() {
     if (v > 0) return `+${fmtRu(v)}`
     if (v < 0) return fmtRu(v)
     return '0'
+  }
+
+  /** Одна строка тултипа: «Метрика: 12 (+3)». */
+  function lineValueDelta(label, value, delta) {
+    return [`${label}: ${fmtRu(value)} (${fmtDeltaRu(delta)})`]
   }
 
   const registrationChartLabels = computed(() =>
@@ -407,23 +475,26 @@ export function useUsersDailyStatsChart() {
   const deviceVioletRgb = [167, 139, 250]
   const over100EmeraldRgb = [52, 211, 153]
   const persistentPinkRgb = [244, 114, 182]
+  const paymentAmberRgb = [245, 158, 11]
+  const activePayTealRgb = [45, 212, 191]
+  const subscriptionIndigoRgb = [129, 140, 248]
 
   const registrationChartDatasets = computed(() => {
     const pts = chartPoints.value
     const accentRgb = rgbTupleFromVar('--accent', '#58d68d')
     const trafficOrange = [251, 146, 60]
     const registrationsDs = {
-      label: 'Всего пользователей · накопительно',
+      label: 'Всего пользователей',
       data: pts.map((p) => p.totalUsers),
       rgb: accentRgb,
     }
     const trafficDs = {
-      label: 'С трафиком · накопительно',
+      label: 'С трафиком',
       data: pts.map((p) => p.totalTraffic),
       rgb: trafficOrange,
     }
     const devicesDs = {
-      label: 'С подключением (устройства) · накопительно',
+      label: 'С подключением устройства',
       data: pts.map((p) => p.totalDevices),
       rgb: deviceVioletRgb,
     }
@@ -435,21 +506,38 @@ export function useUsersDailyStatsChart() {
       trafficDs,
       devicesDs,
       {
-        label: 'Активные · за день',
+        label: 'С оплатой',
+        data: pts.map((p) => p.totalPayment),
+        rgb: paymentAmberRgb,
+      },
+      {
+        label: 'Активные',
         data: pts.map((p) => p.dayActive),
         rgb: activeSkyRgb,
         filled: false,
       },
       {
-        label: 'Накоп. объём > 100 Мбит · на день',
+        label: 'Активные с оплатой',
+        data: pts.map((p) => p.dayActiveWithPayment),
+        rgb: activePayTealRgb,
+        filled: false,
+      },
+      {
+        label: 'С трафиком > 100 Мбит',
         data: pts.map((p) => p.dayOver100Mbit),
         rgb: over100EmeraldRgb,
         filled: false,
       },
       {
-        label: 'Возвращающиеся активные · за день',
+        label: 'Возвращающиеся активные',
         data: pts.map((p) => p.dayPersistentTraffic),
         rgb: persistentPinkRgb,
+        filled: false,
+      },
+      {
+        label: 'С активной подпиской',
+        data: pts.map((p) => p.dayActiveSubscription),
+        rgb: subscriptionIndigoRgb,
         filled: false,
       },
     ]
@@ -469,86 +557,96 @@ export function useUsersDailyStatsChart() {
     const pts = chartPoints.value
     const p = pts[i]
     if (!p) return ''
-    const und = undatedCount.value
-    const undT = undatedTrafficCount.value
-    const stepWord = gran === 'hour' ? 'часа' : 'дня'
 
     if (gran === 'hour') {
       if (ctx.datasetIndex === 0) {
         const prevUsers =
           i > 0 ? pts[i - 1].totalUsers : hourBaselineUsers.value
         const dUsers = p.totalUsers - prevUsers
-        const undMsk = hourUndatedUsers.value
-        return [
-          `Пользователи: ${fmtRu(p.totalUsers)}`,
-          `Без даты регистрации (учтены в сумме): ${fmtRu(undMsk)}`,
-          `Прирост с предыдущего ${stepWord}: ${fmtDeltaRu(dUsers)}`,
-        ]
+        return lineValueDelta('Пользователи', p.totalUsers, dUsers)
       }
       if (ctx.datasetIndex === 1) {
         const prevDev =
           i > 0 ? pts[i - 1].totalDevices : hourBaselineDevices.value
         const dDev = p.totalDevices - prevDev
-        return [
-          `С подключением (записи устройств): ${fmtRu(p.totalDevices)}`,
-          `Прирост с предыдущего ${stepWord}: ${fmtDeltaRu(dDev)}`,
-        ]
+        return lineValueDelta(
+          'С подключением',
+          p.totalDevices,
+          dDev,
+        )
       }
       return []
     }
 
-    const prevUsers = i > 0 ? pts[i - 1].totalUsers : und
-    const prevTraffic = i > 0 ? pts[i - 1].totalTraffic : undT
+    const prevUsers = i > 0 ? pts[i - 1].totalUsers : 0
+    const prevTraffic = i > 0 ? pts[i - 1].totalTraffic : 0
+    const prevPayment = i > 0 ? pts[i - 1].totalPayment : 0
     const dUsers = p.totalUsers - prevUsers
     const dTraffic = p.totalTraffic - prevTraffic
+    const dPayment = p.totalPayment - prevPayment
 
     if (ctx.datasetIndex === 0) {
-      return [
-        `Пользователи: ${fmtRu(p.totalUsers)}`,
-        `Без даты регистрации: ${fmtRu(und)}`,
-        `Прирост с предыдущего ${stepWord}: ${fmtDeltaRu(dUsers)}`,
-      ]
+      return lineValueDelta('Пользователи', p.totalUsers, dUsers)
     }
     if (ctx.datasetIndex === 1) {
-      return [
-        `С трафиком: ${fmtRu(p.totalTraffic)}`,
-        `Без даты регистрации: ${fmtRu(undT)}`,
-        `Прирост с предыдущего ${stepWord}: ${fmtDeltaRu(dTraffic)}`,
-      ]
+      return lineValueDelta('С трафиком', p.totalTraffic, dTraffic)
     }
     if (ctx.datasetIndex === 2) {
       const prevDev = i > 0 ? pts[i - 1].totalDevices : 0
       const dDev = p.totalDevices - prevDev
-      return [
-        `С подключением (записи устройств): ${fmtRu(p.totalDevices)}`,
-        `Прирост с предыдущего ${stepWord}: ${fmtDeltaRu(dDev)}`,
-      ]
+      return lineValueDelta(
+        'С подключением',
+        p.totalDevices,
+        dDev,
+      )
     }
     if (ctx.datasetIndex === 3) {
-      const prevA = i > 0 ? pts[i - 1].dayActive : 0
-      const dA = p.dayActive - prevA
-      return [
-        `Активных за день: ${fmtRu(p.dayActive)}`,
-        `К предыдущему дню: ${fmtDeltaRu(dA)}`,
-      ]
+      return lineValueDelta(
+        'С оплатой',
+        p.totalPayment,
+        dPayment,
+      )
     }
     if (ctx.datasetIndex === 4) {
-      const prevH = i > 0 ? pts[i - 1].dayOver100Mbit : 0
-      const dH = p.dayOver100Mbit - prevH
-      return [
-        `С накоп. трафиком > 100 Мбит (объём данных): ${fmtRu(p.dayOver100Mbit)}`,
-        `К предыдущему дню: ${fmtDeltaRu(dH)}`,
-      ]
+      const prevA = i > 0 ? pts[i - 1].dayActive : 0
+      const dA = p.dayActive - prevA
+      return lineValueDelta('Активных', p.dayActive, dA)
     }
     if (ctx.datasetIndex === 5) {
+      const prevAp = i > 0 ? pts[i - 1].dayActiveWithPayment : 0
+      const dAp = p.dayActiveWithPayment - prevAp
+      return lineValueDelta(
+        'Активных с оплатой',
+        p.dayActiveWithPayment,
+        dAp,
+      )
+    }
+    if (ctx.datasetIndex === 6) {
+      const prevH = i > 0 ? pts[i - 1].dayOver100Mbit : 0
+      const dH = p.dayOver100Mbit - prevH
+      return lineValueDelta(
+        'С трафиком > 100 Мбит',
+        p.dayOver100Mbit,
+        dH,
+      )
+    }
+    if (ctx.datasetIndex === 7) {
       const prevP = i > 0 ? pts[i - 1].dayPersistentTraffic : 0
       const dP = p.dayPersistentTraffic - prevP
-      return [
-        `Возвращающиеся активные (рост трафика не в первый раз): ${fmtRu(
-          p.dayPersistentTraffic,
-        )}`,
-        `К предыдущему дню: ${fmtDeltaRu(dP)}`,
-      ]
+      return lineValueDelta(
+        'Возвращающиеся активные',
+        p.dayPersistentTraffic,
+        dP,
+      )
+    }
+    if (ctx.datasetIndex === 8) {
+      const prevS = i > 0 ? pts[i - 1].dayActiveSubscription : 0
+      const dS = p.dayActiveSubscription - prevS
+      return lineValueDelta(
+        'С активной подпиской',
+        p.dayActiveSubscription,
+        dS,
+      )
     }
     return []
   }
@@ -606,11 +704,15 @@ export function useUsersDailyStatsChart() {
     load,
     undatedCount,
     undatedTrafficCount,
+    undatedPaymentCount,
     chartPoints,
     totalUsers,
     totalWithTraffic,
     totalWithSubscriptionDevices,
+    totalWithPayment,
     activeUsersWidget,
+    activeUsersWithPaymentWidget,
+    activeSubscriptionWidget,
     pluralRuDays,
     pluralRuBuckets,
     bucketAxisLabel,

@@ -134,7 +134,9 @@ async def stats_by_date_merged(session: AsyncSession) -> list[UserStatsByDateRow
         SELECT stats_date, users_count, users_with_traffic_count,
                active_users_count, subscription_devices_users_count,
                users_cumulative_traffic_over_100_mbit_count,
-               persistent_traffic_users_count
+               persistent_traffic_users_count,
+               users_with_payment_count, active_users_with_payment_count,
+               users_with_active_subscription_count
         FROM rpc_users_daily_stats()
         """,
     )
@@ -149,6 +151,9 @@ async def stats_by_date_merged(session: AsyncSession) -> list[UserStatsByDateRow
             subscription_devices_users_count=int(row[4] or 0),
             users_cumulative_traffic_over_100_mbit_count=int(row[5] or 0),
             persistent_traffic_users_count=int(row[6] or 0),
+            users_with_payment_count=int(row[7] or 0),
+            active_users_with_payment_count=int(row[8] or 0),
+            users_with_active_subscription_count=int(row[9] or 0),
         )
         for row in rows
     ]
@@ -206,6 +211,9 @@ async def users_daily_stats(
                     subscription_devices_users_count=int(row[4] or 0),
                     users_cumulative_traffic_over_100_mbit_count=0,
                     persistent_traffic_users_count=0,
+                    users_with_payment_count=0,
+                    active_users_with_payment_count=0,
+                    users_with_active_subscription_count=0,
                 ),
             )
         return UsersDailyStatsResponse(

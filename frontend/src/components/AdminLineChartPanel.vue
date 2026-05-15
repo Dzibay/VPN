@@ -161,6 +161,8 @@ function drawChart() {
           boxPadding: 6,
           titleFont: { family: 'var(--sans)', size: 13, weight: '700' },
           bodyFont: { family: 'var(--mono)', size: 12 },
+          itemSort: (a, b) =>
+            Number(b?.parsed?.y ?? 0) - Number(a?.parsed?.y ?? 0),
           callbacks: {
             title(items) {
               const i = items[0]?.dataIndex

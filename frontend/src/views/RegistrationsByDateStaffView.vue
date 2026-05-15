@@ -115,7 +115,10 @@ const {
   totalUsers,
   totalWithTraffic,
   totalWithSubscriptionDevices,
+  totalWithPayment,
   activeUsersWidget,
+  activeUsersWithPaymentWidget,
+  activeSubscriptionWidget,
   pluralRuBuckets,
   bucketAxisLabel,
   chartAriaLabel,
@@ -218,15 +221,33 @@ onMounted(() => {
           </dd>
         </div>
         <div v-if="granularity === 'day'" class="stats-card">
-          <dt class="stats-label">С ненулевым трафиком</dt>
+          <dt class="stats-label">С трафиком</dt>
           <dd class="stats-value stats-value--traffic">
             {{ totalWithTraffic.toLocaleString('ru-RU') }}
           </dd>
         </div>
         <div v-if="granularity === 'day'" class="stats-card">
-          <dt class="stats-label">Активные сегодня (UTC)</dt>
+          <dt class="stats-label">Активные сегодня</dt>
           <dd class="stats-value stats-value--active">
             {{ activeUsersWidget.today }}
+          </dd>
+        </div>
+        <div v-if="granularity === 'day'" class="stats-card">
+          <dt class="stats-label">С оплатой</dt>
+          <dd class="stats-value">
+            {{ totalWithPayment.toLocaleString('ru-RU') }}
+          </dd>
+        </div>
+        <div v-if="granularity === 'day'" class="stats-card">
+          <dt class="stats-label">Активные с оплатой</dt>
+          <dd class="stats-value stats-value--active">
+            {{ activeUsersWithPaymentWidget.today }}
+          </dd>
+        </div>
+        <div v-if="granularity === 'day'" class="stats-card">
+          <dt class="stats-label">С активной подпиской</dt>
+          <dd class="stats-value">
+            {{ activeSubscriptionWidget.today }}
           </dd>
         </div>
         <div class="stats-card">

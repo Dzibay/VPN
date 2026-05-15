@@ -92,6 +92,31 @@ class UserStatsByDateRow(BaseModel):
             "раньше уже был день с ростом. При hour — 0."
         ),
     )
+    users_with_payment_count: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "При granularity=day — пользователи с этим днём регистрации (UTC), у которых есть "
+            "хотя бы одна строка в payments. При hour — 0 (не считается в почасовой сводке)."
+        ),
+    )
+    active_users_with_payment_count: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Только granularity=day: как active_users_count, но только пользователи с оплатой "
+            "(таблица payments). При hour — 0."
+        ),
+    )
+    users_with_active_subscription_count: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Только granularity=day: число пользователей с активной подпиской на конец "
+            "этого UTC-календарного дня (subscription_until IS NULL или >= дня; учтены только "
+            "уже зарегистрированные к этому дню). При hour — 0."
+        ),
+    )
 
 
 class UsersDailyStatsResponse(BaseModel):
