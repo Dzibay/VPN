@@ -24,6 +24,22 @@ WITH eligible_users AS (
     WHERE u.registered_at IS NOT NULL
       AND u.subscription_until IS NOT NULL
 ),
+-- Первый платёж (UTC-календарный день): накопление «с оплатой» на графике с дня оплаты.
+first_payment AS (
+    SELECT
+        p.user_id,
+        MIN((p.created_at AT TIME ZONE 'UTC')::date) AS first_pay_day
+    FROM payments p
+    INNER JOIN eligible_users eu ON eu.id = p.user_id
+    GROUP BY p.user_id
+),
+new_payers_by_day AS (
+    SELECT
+        fp.first_pay_day AS pay_day,
+        COUNT(*)::bigint AS users_with_payment_count
+    FROM first_payment fp
+    GROUP BY fp.first_pay_day
+),
 latest_traffic AS (
     SELECT DISTINCT ON (t.user_id, t.server_id)
         t.user_id,
@@ -46,11 +62,9 @@ reg AS (
         COUNT(*)::bigint AS users_count,
         SUM(
             CASE WHEN COALESCE(utt.total_bytes, 0) > 0 THEN 1 ELSE 0 END
-        )::bigint AS users_with_traffic_count,
-        COUNT(pay.user_id)::bigint AS users_with_payment_count
+        )::bigint AS users_with_traffic_count
     FROM users u
     LEFT JOIN user_traffic_total utt ON utt.user_id = u.id
-    LEFT JOIN (SELECT DISTINCT user_id FROM payments) pay ON pay.user_id = u.id
     WHERE u.registered_at IS NOT NULL
       AND u.subscription_until IS NOT NULL
     GROUP BY (u.registered_at AT TIME ZONE 'UTC')::date
@@ -112,13 +126,18 @@ active_by_day AS (
 ),
 active_users_with_payment_by_day AS (
     SELECT
-        cal_day,
+        w.cal_day,
         COUNT(*) FILTER (
-            WHERE total > COALESCE(prev_total, 0)
-              AND EXISTS (SELECT 1 FROM payments p WHERE p.user_id = with_prev.user_id)
+            WHERE w.total > COALESCE(w.prev_total, 0)
+              AND EXISTS (
+                  SELECT 1
+                  FROM first_payment fp
+                  WHERE fp.user_id = w.user_id
+                    AND fp.first_pay_day <= w.cal_day
+              )
         )::bigint AS active_users_with_payment_count
-    FROM with_prev
-    GROUP BY cal_day
+    FROM with_prev w
+    GROUP BY w.cal_day
 ),
 -- Порог объёма: 100 Мбит (десятичных, 100×10⁶ бит) → байты.
 high_traffic_users_by_day AS (
@@ -177,6 +196,8 @@ dated_keys AS (
     SELECT cal_day FROM persistent_traffic_users_by_day
     UNION
     SELECT cal_day FROM active_users_with_payment_by_day
+    UNION
+    SELECT pay_day FROM new_payers_by_day
 ),
 day_span AS (
     SELECT MIN(dk) AS d0, MAX(dk) AS d1 FROM dated_keys
@@ -213,7 +234,7 @@ merged AS (
             AS users_cumulative_traffic_over_100_mbit_count,
         COALESCE(p.persistent_traffic_users_count, 0)::bigint
             AS persistent_traffic_users_count,
-        COALESCE(r.users_with_payment_count, 0)::bigint AS users_with_payment_count,
+        COALESCE(np.users_with_payment_count, 0)::bigint AS users_with_payment_count,
         COALESCE(apay.active_users_with_payment_count, 0)::bigint
             AS active_users_with_payment_count,
         COALESCE(sub.users_with_active_subscription_count, 0)::bigint
@@ -225,6 +246,7 @@ merged AS (
     LEFT JOIN high_traffic_users_by_day h ON h.cal_day = dc.cal_day
     LEFT JOIN persistent_traffic_users_by_day p ON p.cal_day = dc.cal_day
     LEFT JOIN active_users_with_payment_by_day apay ON apay.cal_day = dc.cal_day
+    LEFT JOIN new_payers_by_day np ON np.pay_day = dc.cal_day
     LEFT JOIN subscription_active_by_day sub ON sub.cal_day = dc.cal_day
 ),
 undated AS (
@@ -236,7 +258,7 @@ undated AS (
         0::bigint AS subscription_devices_users_count,
         0::bigint AS users_cumulative_traffic_over_100_mbit_count,
         0::bigint AS persistent_traffic_users_count,
-        r.users_with_payment_count,
+        0::bigint AS users_with_payment_count,
         0::bigint AS active_users_with_payment_count,
         0::bigint AS users_with_active_subscription_count
     FROM reg r

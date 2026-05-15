@@ -96,16 +96,18 @@ class UserStatsByDateRow(BaseModel):
         default=0,
         ge=0,
         description=(
-            "При granularity=day — пользователи с этим днём регистрации (UTC), у которых есть "
-            "хотя бы одна строка в payments. При hour — 0 (не считается в почасовой сводке)."
+            "При granularity=day — число пользователей, у которых первый платёж "
+            "(минимум payments.created_at в календарном дне UTC) приходится на этот stats_date. "
+            "При hour — 0."
         ),
     )
     active_users_with_payment_count: int = Field(
         default=0,
         ge=0,
         description=(
-            "Только granularity=day: как active_users_count, но только пользователи с оплатой "
-            "(таблица payments). При hour — 0."
+            "Только granularity=day: как active_users_count, но только пользователи, у которых "
+            "к концу этого UTC-дня уже была хотя бы одна оплата (первая оплата не позже этого дня). "
+            "При hour — 0."
         ),
     )
     users_with_active_subscription_count: int = Field(
