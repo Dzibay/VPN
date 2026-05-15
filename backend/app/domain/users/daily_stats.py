@@ -326,9 +326,11 @@ async def daily_payments_expiry_stats(
     ``subscription_until = stats_date`` (и ``registered_at`` задан).
     Каждый такой пользователь попадает ровно в одну из четырёх групп (приоритет сверху вниз):
 
-    1. «Активные сегодня» — только если ``stats_date`` — текущий календарный день UTC и в этот день
-       вырос суммарный трафик (как ``active_users_count`` в ``rpc_users_daily_stats``).
-    2. «Активные в день окончания» — рост суммарного трафика в ``stats_date``, но день не «сегодня» UTC.
+    1. «Активные сегодня» — в **текущий** календарный день UTC вырос суммарный трафик (как
+       ``active_users_count`` за сегодня в ``rpc_users_daily_stats``), независимо от того,
+       каким днём в будущем или прошлом является ``stats_date`` (день окончания подписки).
+    2. «Активные в день окончания» — иначе, рост суммарного трафика в календарный день
+       ``stats_date`` (= ``subscription_until``).
     3. «С трафиком» — иначе, если когда-либо был ненулевой суммарный трафик по данным ``user_server_traffic``.
     4. «Без трафика» — иначе.
 
@@ -445,11 +447,11 @@ async def daily_payments_expiry_stats(
             if not sm or not any(series for series in sm.values()):
                 n_none += 1
                 continue
-            active_here = _user_active_on_expiry_day(sm, su_day)
+            active_on_column_day = _user_active_on_expiry_day(sm, su_day)
             has_tr = ever_positive(uid, sm)
-            if active_here and su_day == utc_td:
+            if _user_active_on_expiry_day(sm, utc_td):
                 n_today += 1
-            elif active_here:
+            elif active_on_column_day:
                 n_day += 1
             elif has_tr:
                 n_traffic += 1

@@ -175,20 +175,24 @@ class DailyPaymentsExpiryStatsRow(BaseModel):
     subscription_expiring_active_today_count: int = Field(
         ge=0,
         description=(
-            "Только если stats_date — сегодня по UTC: истекают в этот день и «активны» "
-            "(рост суммарного трафика в этот день, как active_users в daily_stats)"
+            "С subscription_until = этот stats_date: рост суммарного трафика в **текущий** "
+            "календарный день UTC (как «активные сегодня» в daily_stats), в том числе для столбца будущего "
+            "окончания — уже «живые» пользователи по трафику сегодня"
         ),
     )
     subscription_expiring_active_on_day_count: int = Field(
         ge=0,
         description=(
-            "Истекают в этот UTC-день, рост суммарного трафика в этот день, "
-            "и день не «сегодня» UTC (иначе попадают в subscription_expiring_active_today_count)"
+            "Истекают в этот UTC-день: рост суммарного трафика в день stats_date, "
+            "и при этом нет роста в текущий UTC-день (иначе — в subscription_expiring_active_today_count)"
         ),
     )
     subscription_expiring_has_traffic_count: int = Field(
         ge=0,
-        description="Истекают в этот день, не активны в этот день, но когда-либо был ненулевой суммарный трафик",
+        description=(
+            "Истекают в этот день: без роста трафика ни в текущий UTC-день, ни в день stats_date, "
+            "но когда-либо был ненулевой суммарный трафик"
+        ),
     )
     subscription_expiring_no_traffic_count: int = Field(
         ge=0,

@@ -181,7 +181,7 @@ const payExpXMarkers = computed(() => {
 
 /** Как на линейном графике: «С оплатой» (амбар), не путать с «С трафиком». */
 const PAYMENT_AMBER_RGB = /** @type {const} */ ([245, 158, 11])
-/** «С оплатой активных» на линейном графике — «активны сегодня» при окончании в этот UTC-день. */
+/** «С оплатой активных» на линейном графике — слой «активны по трафику в текущий UTC-день» для столбца даты окончания. */
 const ACTIVE_PAY_TEAL_RGB = /** @type {const} */ ([45, 212, 191])
 /** «Активные» на линейном графике — рост трафика в день окончания (не сегодняшний UTC-день). */
 const ACTIVE_SKY_RGB = /** @type {const} */ ([56, 189, 248])
@@ -230,14 +230,14 @@ const payExpDatasets = computed(() => {
       maxBarThickness,
     },
     {
-      label: 'Окончание: активны в этот день',
+      label: 'Окончание: рост трафика в день окончания',
       data: rows.map((r) => Number(r.subscription_expiring_active_on_day_count) || 0),
       rgb: /** @type {[number, number, number]} */ ([...ACTIVE_SKY_RGB]),
       borderRadius,
       maxBarThickness,
     },
     {
-      label: 'Окончание: активны сегодня (UTC)',
+      label: 'Окончание: рост трафика сегодня (UTC)',
       data: rows.map((r) => Number(r.subscription_expiring_active_today_count) || 0),
       rgb: /** @type {[number, number, number]} */ ([...ACTIVE_PAY_TEAL_RGB]),
       borderRadius,
@@ -544,7 +544,7 @@ watch(payExpMonth, () => {
         :has-data="payExpRows.length > 0"
         title="Оплаты и окончания подписки"
         unit-label="UTC"
-        hint="Один столбец на день (как «Финансы»): слои снизу вверх — оплаты, окончание без трафика, с трафиком, активны в день окончания, активны сегодня UTC. По каждому дню у пользователя с subscription_until = этот день UTC ровно одна группа (см. порядок приоритета в коде бэкенда)."
+        hint="Один столбец на день (как «Финансы»): слои снизу вверх — оплаты, окончание без трафика, с трафиком, рост трафика в день окончания, рост трафика в **текущий** UTC-день (верхний слой для тех, у кого subscription_until = дата столбца: например, окончание 20-го, сегодня 15-е — при росте трафика 15-го попадут в верхний слой столбца 20-го). У каждого пользователя одна группа."
         :labels="payExpLabels"
         :datasets="payExpDatasets"
         :x-markers="payExpXMarkers"
