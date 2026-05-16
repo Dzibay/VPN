@@ -78,7 +78,7 @@ const routeBanner = computed(() => {
     return {
       kind: 'danger',
       text:
-        'Не удалось проверить ссылку подписки. Попробуйте открыть снова или установите клиент.',
+        'Не удалось проверить ссылку настройки. Попробуйте обновить страницу или установить приложение вручную.',
     }
   }
   if (page.value?.state === 'invalid_token') {
@@ -86,7 +86,7 @@ const routeBanner = computed(() => {
       kind: 'danger',
       text:
         page.value.message
-        || 'Ссылка недействительна. Получите новую в боте или в личном кабинете.',
+        || 'Ссылка устарела или недействительна. Получите новую ссылку в Telegram-боте.',
     }
   }
   return null
@@ -107,24 +107,16 @@ const storeRowSingle = computed(() => {
 const openInClientLabel = computed(() => {
   const p = page.value
   if (!p || typeof p.open_button_label !== 'string' || !p.open_button_label) {
-    return 'Открыть с подпиской'
+    return 'Подключить автоматически'
   }
   return p.open_button_label
 })
 
-/**
- * На мобильном после диплинка — переход в магазин, если вкладка так и осталась на переднем плане
- * (клиент не установлен / ОС не передала фокус приложению сразу).
- * Слишком короткий интервал даёт ложное срабатывание в обычном Chrome при переходе с сайта:
- * фокус уходит в приложение позже, чем срабатывал таймер. Отмена при visibility/pagehide
- * закрывает гонку, когда приложение открылось, но document ещё «visible».
- */
 const OPEN_MOBILE_STORE_FALLBACK_MS = 1000
 
 let loadGeneration = 0
 let openTimer = null
 let deeplinkIframe = null
-/** Снятие слушателей, отменяющих fallback при уходе со страницы / в фон (приложение перехватило экран). */
 let cancelMobileFallbackWatchers = null
 
 function removeDeeplinkIframe() {
@@ -191,7 +183,6 @@ function scheduleMobileStoreFallback() {
   }, OPEN_MOBILE_STORE_FALLBACK_MS)
 }
 
-/** Телефон — верхнее окно + таймер в магазин; ПК — iframe, страница не уезжает. */
 function invokeDeeplink(url) {
   removeDeeplinkIframe()
   const u = String(url)
@@ -343,7 +334,7 @@ onBeforeUnmount(() => {
       <div class="app-dl-card">
         <template v-if="localSubError && !page">
           <h1 class="app-dl-h1">
-            Не удалось загрузить
+            Не удалось загрузить данные
           </h1>
           <p
             v-if="routeBanner"
@@ -353,6 +344,7 @@ onBeforeUnmount(() => {
             {{ routeBanner.text }}
           </p>
         </template>
+        
         <template v-else>
           <div
             v-if="routeBanner"
@@ -366,63 +358,77 @@ onBeforeUnmount(() => {
           >
             {{ routeBanner.text }}
           </div>
+          
           <h1 class="app-dl-h1">
             {{ displayTitle }}
           </h1>
-          <p
-            v-if="page?.lead && page.state === 'ok'"
-            class="app-dl-lead app-dl-lead--tight"
-          >
-            {{ page.lead }}
-          </p>
-          <p
-            v-else
-            class="app-dl-lead"
-          >
-            Скачайте приложение для вашей системы или перейдите на официальный сайт.
+          
+          <p class="app-dl-lead">
+            Мы пытаемся запустить приложение для автоматической настройки. Если ничего не произошло, выполните два простых шага:
           </p>
 
-          <div
-            v-if="showStoreRow"
-            class="app-dl-actions"
-          >
+          <div class="app-dl-steps">
+            <div class="app-dl-step">
+              <div class="app-dl-step-number">1</div>
+              <div class="app-dl-step-content">
+                <p class="app-dl-step-text">
+                  Скачайте и установите приложение на ваше устройство:
+                </p>
+                
+                <div
+                  v-if="showStoreRow"
+                  class="app-dl-actions"
+                >
+                  <div
+                    class="app-dl-actions-row"
+                    :class="{ 'app-dl-actions-row--single': storeRowSingle }"
+                  >
+                    <a
+                      v-if="storeRef?.download"
+                      class="btn-primary app-dl-btn"
+                      :href="storeRef.download"
+                    >Скачать программу</a>
+                    <a
+                      v-if="storeRef?.site"
+                      class="btn-secondary app-dl-btn"
+                      :href="storeRef.site"
+                    >Официальный сайт</a>
+                  </div>
+                </div>
+                <p
+                  v-else
+                  class="app-dl-muted"
+                >
+                  Для вашей платформы нет прямой ссылки. Пожалуйста, откройте сайт разработчика вручную.
+                </p>
+              </div>
+            </div>
+
             <div
-              class="app-dl-actions-row"
-              :class="{ 'app-dl-actions-row--single': storeRowSingle }"
+              v-if="page?.deeplink && page.state === 'ok'"
+              class="app-dl-step"
             >
-              <a
-                v-if="storeRef?.download"
-                class="btn-primary app-dl-btn"
-                :href="storeRef.download"
-              >Скачать</a>
-              <a
-                v-if="storeRef?.site"
-                class="btn-secondary app-dl-btn"
-                :href="storeRef.site"
-              >Перейти на сайт</a>
+              <div class="app-dl-step-number">2</div>
+              <div class="app-dl-step-content">
+                <p class="app-dl-step-text">
+                  Откройте установленное приложение, вернитесь на этот экран и нажмите кнопку ниже для мгновенной настройки сети:
+                </p>
+                <button
+                  type="button"
+                  class="btn-primary app-dl-open-full"
+                  @click="retryOpenInClient"
+                >
+                  {{ openInClientLabel }}
+                </button>
+              </div>
             </div>
           </div>
-          <p
-            v-else
-            class="app-dl-muted"
-          >
-            Для этой платформы нет прямой ссылки в каталоге — откройте сайт разработчика вручную.
-          </p>
 
-          <div
-            v-if="page?.deeplink && page.state === 'ok'"
-            class="app-dl-open-block"
+          <div 
+            v-if="page?.lead && page.state === 'ok'" 
+            class="app-dl-extra-lead"
           >
-            <p class="app-dl-hint">
-              Уже установили клиент — импортируйте подписку:
-            </p>
-            <button
-              type="button"
-              class="btn-primary app-dl-open-full"
-              @click="retryOpenInClient"
-            >
-              {{ openInClientLabel }}
-            </button>
+            {{ page.lead }}
           </div>
         </template>
       </div>
@@ -489,7 +495,7 @@ onBeforeUnmount(() => {
 }
 
 .app-dl-h1 {
-  margin: 0 0 0.65rem;
+  margin: 0 0 0.75rem;
   font-family: var(--heading);
   font-size: 1.35rem;
   font-weight: 600;
@@ -498,20 +504,51 @@ onBeforeUnmount(() => {
 }
 
 .app-dl-lead {
-  margin: 0 0 1.1rem;
+  margin: 0 0 1.25rem;
   color: var(--muted);
   font-size: 0.95rem;
   line-height: 1.5;
 }
 
-.app-dl-lead--tight {
-  margin-bottom: 0.85rem;
+/* Стилизация пошаговой инструкции */
+.app-dl-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-bottom: 0.5rem;
 }
 
-.app-dl-open-block {
-  margin-top: 1.25rem;
-  padding-top: 1.15rem;
-  border-top: 1px solid var(--card-border);
+.app-dl-step {
+  display: flex;
+  gap: 0.85rem;
+  align-items: flex-start;
+}
+
+.app-dl-step-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  background: var(--accent-soft, rgba(59, 130, 246, 0.1));
+  color: var(--text-h);
+  font-weight: 700;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+  border: 1px solid var(--card-border);
+}
+
+.app-dl-step-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.app-dl-step-text {
+  margin: 0 0 0.65rem;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--text);
 }
 
 .app-dl-open-full {
@@ -523,16 +560,13 @@ onBeforeUnmount(() => {
   font: inherit;
   cursor: pointer;
   border: none;
+  margin-top: 0.25rem;
 }
 
 .app-dl-muted {
   margin: 0;
   color: var(--muted);
-  font-size: 0.95rem;
-}
-
-.app-dl-actions {
-  margin-bottom: 0;
+  font-size: 0.9rem;
 }
 
 .app-dl-actions-row {
@@ -563,8 +597,10 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
 }
 
-.app-dl-hint {
-  margin: 0 0 0.65rem;
+.app-dl-extra-lead {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--card-border);
   font-size: 0.88rem;
   color: var(--muted);
   line-height: 1.45;
