@@ -17,6 +17,9 @@ const filterUserId = ref('')
 const filterPathContains = ref('')
 const filterStatusCodes = ref([])
 const filterSubjectSources = ref([])
+const filterTraceDate = ref('')
+const filterTimeFrom = ref('')
+const filterTimeTo = ref('')
 
 const loading = ref(false)
 const error = ref(null)
@@ -36,14 +39,13 @@ function httpTraceCreatedAtTs(iso) {
   return Number.isFinite(t) ? t : NaN
 }
 
-/** Только время в ячейке; полная дата — в title. */
-function formatHttpTraceTimeOnly(iso) {
+/** Дата и время в ячейке; развёрнутый формат — в title. */
+function formatHttpTraceDateTime(iso) {
   const ts = httpTraceCreatedAtTs(iso)
   if (!Number.isFinite(ts)) return '—'
-  return new Date(ts).toLocaleTimeString(HTTP_TRACE_DT_LOCALE, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
+  return new Date(ts).toLocaleString(HTTP_TRACE_DT_LOCALE, {
+    dateStyle: 'short',
+    timeStyle: 'medium',
   })
 }
 
@@ -59,6 +61,59 @@ function formatHttpTraceFullDateTime(iso) {
 function fullHttpTracePath(path) {
   return String(path ?? '')
 }
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+const ISO_TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/
+
+function normalizeTraceDate(raw) {
+  const s = String(raw ?? '').trim()
+  return ISO_DATE_RE.test(s) ? s : ''
+}
+
+function normalizeTraceTime(raw) {
+  const s = String(raw ?? '').trim()
+  return ISO_TIME_RE.test(s) ? s : ''
+}
+
+/** День + опциональный интервал времени (локальное время браузера) → ISO UTC для API. */
+function buildHttpTraceCreatedRange(dateStr, timeFromStr, timeToStr) {
+  const date = normalizeTraceDate(dateStr)
+  if (!date) {
+    return { createdFrom: null, createdTo: null, error: null }
+  }
+  const timeFrom = normalizeTraceTime(timeFromStr)
+  const timeTo = normalizeTraceTime(timeToStr)
+  const from = new Date(`${date}T${timeFrom || '00:00'}`)
+  const to = new Date(`${date}T${timeTo || '23:59'}`)
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+    return {
+      createdFrom: null,
+      createdTo: null,
+      error: 'Некорректная дата или время в фильтре',
+    }
+  }
+  to.setSeconds(59, 999)
+  if (from.getTime() > to.getTime()) {
+    return {
+      createdFrom: null,
+      createdTo: null,
+      error: 'Время «с» не может быть позже времени «до»',
+    }
+  }
+  return {
+    createdFrom: from.toISOString(),
+    createdTo: to.toISOString(),
+    error: null,
+  }
+}
+
+const httpTraceCreatedRange = computed(() =>
+  buildHttpTraceCreatedRange(
+    filterTraceDate.value,
+    filterTimeFrom.value,
+    filterTimeTo.value,
+  ),
+)
 
 /** Нормализация: при type="number" во Vue v-model иногда даёт number — без String() ломается .trim() */
 function rawUserIdTrimmed() {
@@ -87,6 +142,14 @@ function buildQueryForUrl(overrides = {}) {
   }
   if (filterSubjectSources.value.length > 0) {
     q.subject_source = [...filterSubjectSources.value]
+  }
+  const traceDate = normalizeTraceDate(filterTraceDate.value)
+  if (traceDate) {
+    q.trace_date = traceDate
+    const timeFrom = normalizeTraceTime(filterTimeFrom.value)
+    const timeTo = normalizeTraceTime(filterTimeTo.value)
+    if (timeFrom) q.time_from = timeFrom
+    if (timeTo) q.time_to = timeTo
   }
   return q
 }
@@ -119,6 +182,9 @@ async function syncFromRoute() {
   const pcf = q.path_contains
   filterPathContains.value =
     pcf != null && String(pcf).trim() !== '' ? String(pcf).trim() : ''
+  filterTraceDate.value = normalizeTraceDate(q.trace_date)
+  filterTimeFrom.value = normalizeTraceTime(q.time_from)
+  filterTimeTo.value = normalizeTraceTime(q.time_to)
   const lim = q.limit != null ? Number.parseInt(String(q.limit), 10) : 50
   limit.value =
     Number.isFinite(lim) && lim >= 1 && lim <= 200 ? lim : 50
@@ -140,6 +206,23 @@ async function syncFromRoute() {
   if (pathTrimSync) {
     params.set('path_contains', pathTrimSync)
   }
+  const range = buildHttpTraceCreatedRange(
+    filterTraceDate.value,
+    filterTimeFrom.value,
+    filterTimeTo.value,
+  )
+  if (range.error) {
+    error.value = range.error
+    page.value = { items: [], total: 0, limit: limit.value, offset: offset.value }
+    loading.value = false
+    return
+  }
+  if (range.createdFrom) {
+    params.set('created_from', range.createdFrom)
+  }
+  if (range.createdTo) {
+    params.set('created_to', range.createdTo)
+  }
   try {
     const data = await fetchJson(
       `/api/admin/http-request-traces?${params.toString()}`,
@@ -154,6 +237,12 @@ async function syncFromRoute() {
 }
 
 function applyFilters() {
+  const range = httpTraceCreatedRange.value
+  if (range.error) {
+    error.value = range.error
+    return
+  }
+  error.value = null
   router.replace({
     path: '/admin/logs',
     query: buildQueryForUrl({ offset: 0 }),
@@ -165,6 +254,9 @@ function resetFilters() {
   filterPathContains.value = ''
   filterStatusCodes.value = []
   filterSubjectSources.value = []
+  filterTraceDate.value = ''
+  filterTimeFrom.value = ''
+  filterTimeTo.value = ''
   limit.value = 50
   router.replace({ path: '/admin/logs', query: {} })
 }
@@ -323,6 +415,35 @@ watch(
             placeholder="любой"
           />
         </label>
+        <label class="f-label narrow">
+          <span>День</span>
+          <input
+            v-model="filterTraceDate"
+            type="date"
+            class="f-input f-input--date"
+            autocomplete="off"
+          />
+        </label>
+        <label class="f-label narrow" :class="{ 'f-label--disabled': !filterTraceDate }">
+          <span>С</span>
+          <input
+            v-model="filterTimeFrom"
+            type="time"
+            class="f-input f-input--time"
+            :disabled="!filterTraceDate"
+            step="60"
+          />
+        </label>
+        <label class="f-label narrow" :class="{ 'f-label--disabled': !filterTraceDate }">
+          <span>До</span>
+          <input
+            v-model="filterTimeTo"
+            type="time"
+            class="f-input f-input--time"
+            :disabled="!filterTraceDate"
+            step="60"
+          />
+        </label>
         <label class="f-label f-label--path">
           <span>Путь содержит</span>
           <input
@@ -479,7 +600,7 @@ watch(
               class="mono nowrap"
               :title="formatHttpTraceFullDateTime(row.created_at)"
             >
-              {{ formatHttpTraceTimeOnly(row.created_at) }}
+              {{ formatHttpTraceDateTime(row.created_at) }}
             </td>
             <td class="mono num">
               {{
@@ -550,6 +671,18 @@ watch(
 .f-input--path {
   width: 100%;
   min-width: 12rem;
+}
+
+.f-input--date {
+  width: 10.5rem;
+}
+
+.f-input--time {
+  width: 6.5rem;
+}
+
+.f-label--disabled {
+  opacity: 0.55;
 }
 
 .pager-top {

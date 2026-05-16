@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -31,10 +32,19 @@ router = APIRouter(
 )
 
 
+def _coerce_trace_dt_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 @router.get(
     "",
     response_model=HttpRequestTraceStaffPage,
-    summary="Логи (пагинация, фильтры: user_id, анонимные, status_code[], subject_source[], path_contains)",
+    summary=(
+        "Логи (пагинация, фильтры: user_id, анонимные, status_code[], "
+        "subject_source[], path_contains, created_from, created_to)"
+    ),
 )
 async def list_http_request_traces(
     session: ReadonlySessionDep,
@@ -63,6 +73,14 @@ async def list_http_request_traces(
             max_length=512,
         ),
     ] = None,
+    created_from: Annotated[
+        datetime | None,
+        Query(description="Нижняя граница created_at (включительно), ISO 8601"),
+    ] = None,
+    created_to: Annotated[
+        datetime | None,
+        Query(description="Верхняя граница created_at (включительно), ISO 8601"),
+    ] = None,
 ) -> HttpRequestTraceStaffPage:
     if user_id is not None and only_without_user:
         raise BadRequestError(
@@ -85,6 +103,17 @@ async def list_http_request_traces(
     path_sub = str(path_contains).strip() if path_contains is not None else ""
     path_filter = path_sub or None
 
+    created_from_utc = (
+        _coerce_trace_dt_utc(created_from) if created_from is not None else None
+    )
+    created_to_utc = _coerce_trace_dt_utc(created_to) if created_to is not None else None
+    if (
+        created_from_utc is not None
+        and created_to_utc is not None
+        and created_from_utc > created_to_utc
+    ):
+        raise BadRequestError("created_from не может быть позже created_to")
+
     rows, total = await staff_list_http_request_traces(
         session,
         limit=limit,
@@ -94,6 +123,8 @@ async def list_http_request_traces(
         status_codes=status_codes or None,
         subject_sources=subject_sources or None,
         path_contains=path_filter,
+        created_from=created_from_utc,
+        created_to=created_to_utc,
     )
     return HttpRequestTraceStaffPage(
         items=[HttpRequestTraceStaffItem.model_validate(r) for r in rows],
