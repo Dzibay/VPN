@@ -11,11 +11,7 @@ import {
 } from '../api/client.js'
 import AppTooltip from '../components/AppTooltip.vue'
 import { formatTrafficBytes } from '../utils/formatTraffic.js'
-import {
-  closeDeepLinkPopup,
-  navigateDeepLink,
-  openDeepLinkPopupPlaceholder,
-} from '../util/openDeepLink.js'
+import { navigateDeepLink } from '../util/openDeepLink.js'
 import { Check, CreditCard, Link2, Loader2, Send } from 'lucide-vue-next'
 
 /** Подсказки к строкам исх./вх. в блоке трафика */
@@ -255,7 +251,6 @@ const telegramSyncError = ref(null)
 async function openTelegramSyncLink() {
   telegramSyncBusy.value = true
   telegramSyncError.value = null
-  const popup = openDeepLinkPopupPlaceholder()
   try {
     const data = await fetchJson('/api/me/telegram-sync-start', {
       method: 'POST',
@@ -263,13 +258,11 @@ async function openTelegramSyncLink() {
     })
     const url = data?.telegram_deep_link
     if (typeof url === 'string' && url.trim()) {
-      navigateDeepLink(url.trim(), { popup })
+      navigateDeepLink(url.trim())
     } else {
-      closeDeepLinkPopup(popup)
       telegramSyncError.value = 'Сервер не вернул ссылку на бота'
     }
   } catch (e) {
-    closeDeepLinkPopup(popup)
     telegramSyncError.value = e.message || String(e)
   } finally {
     telegramSyncBusy.value = false
