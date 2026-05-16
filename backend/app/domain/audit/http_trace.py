@@ -35,6 +35,9 @@ def http_audit_skip_persist_for_path(path_with_query: str, *, api_prefix: str) -
     prom_root = f"{pfx}/prometheus"
     if normalized == prom_root or normalized.startswith(prom_root + "/"):
         return True
+    notify_tasks = f"{pfx}/telegram/notification-tasks"
+    if normalized == notify_tasks:
+        return True
     return False
 
 
