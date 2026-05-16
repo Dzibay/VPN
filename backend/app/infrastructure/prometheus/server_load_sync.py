@@ -152,7 +152,7 @@ def sync_all_servers_load_from_prometheus(
     hours: int = 24,
 ) -> ServerLoadSyncReport:
     report = ServerLoadSyncReport(hours=hours)
-    stmt = select(Server).order_by(Server.id.asc())
+    stmt = select(Server).where(Server.id > 0).order_by(Server.id.asc())
     skip_remaining = False
     for server in session.scalars(stmt):
         if skip_remaining:

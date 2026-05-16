@@ -169,6 +169,60 @@ CREATE INDEX IF NOT EXISTS idx_users_referral_link_id ON users (referral_link_id
 
 CREATE INDEX IF NOT EXISTS idx_users_registered_at ON users (registered_at DESC NULLS LAST);
 
+-- Служебный узел id=0: накопление трафика с удалённых серверов (не в подписке, скрыт в админке).
+INSERT INTO servers (
+    id,
+    name,
+    host,
+    port,
+    country,
+    load_percent,
+    is_active,
+    whitelist,
+    include_in_auto,
+    is_hidden,
+    provision_ready,
+    provision_status,
+    proxy_kind,
+    vless_uuid,
+    reality_short_id,
+    reality_dest,
+    reality_server_names,
+    reality_fingerprint,
+    reality_spider_x,
+    vless_flow,
+    is_cascade_ru_entry
+)
+SELECT
+    0,
+    'Архив (удалённые узлы)',
+    '__traffic_archive__',
+    1,
+    '',
+    0,
+    FALSE,
+    FALSE,
+    FALSE,
+    TRUE,
+    FALSE,
+    'idle',
+    'vless',
+    '00000000-0000-0000-0000-000000000001',
+    '00000000',
+    'www.amazon.com:443',
+    'www.amazon.com,amazon.com',
+    'chrome',
+    '/',
+    'xtls-rprx-vision',
+    FALSE
+WHERE NOT EXISTS (SELECT 1 FROM servers WHERE id = 0);
+
+SELECT setval(
+    pg_get_serial_sequence('servers', 'id'),
+    (SELECT COALESCE(MAX(id), 0) FROM servers WHERE id > 0),
+    TRUE
+);
+
 CREATE INDEX IF NOT EXISTS idx_servers_is_active ON servers (is_active);
 
 CREATE INDEX IF NOT EXISTS idx_servers_cascade_next ON servers (cascade_next_server_id)

@@ -45,6 +45,12 @@ from app.domain.servers.provision_queue import (
     provision_command_blocks_split_install,
 )
 from app.domain.servers.reality_defaults import reality_defaults_for_create
+from app.domain.servers.traffic_archive import (
+    assert_deletable_server_id,
+    ensure_traffic_archive_server,
+    relocate_server_traffic_to_archive,
+    TRAFFIC_ARCHIVE_SERVER_ID,
+)
 from app.domain.users.xray_sync_queue import (
     ensure_sync_xray_clients_all_servers_enqueued,
     ensure_sync_xray_clients_to_server_enqueued,
@@ -65,14 +71,22 @@ log = logging.getLogger("app.servers_service")
 
 
 async def servers_count(session: AsyncSession) -> ServersCountResponse:
-    """Общее число записей в таблице ``servers``."""
-    total = await session.scalar(select(func.count()).select_from(Server))
+    """Общее число записей в таблице ``servers`` (без служебного архива id=0)."""
+    total = await session.scalar(
+        select(func.count())
+        .select_from(Server)
+        .where(Server.id != TRAFFIC_ARCHIVE_SERVER_ID),
+    )
     return ServersCountResponse(servers_count=int(total or 0))
 
 
 async def list_servers(session: AsyncSession) -> list[Server]:
     """Список всех серверов; новейшие первыми (для админки)."""
-    stmt = select(Server).order_by(Server.id.desc())
+    stmt = (
+        select(Server)
+        .where(Server.id != TRAFFIC_ARCHIVE_SERVER_ID)
+        .order_by(Server.id.desc())
+    )
     return list((await session.scalars(stmt)).all())
 
 
@@ -416,7 +430,11 @@ async def servers_reachability_summary(
     hours: float,
 ) -> ServersReachabilitySummaryRead:
     """Сводные проценты и последний статус по всем серверам (Redis pipeline)."""
-    stmt = select(Server).order_by(Server.id.asc())
+    stmt = (
+        select(Server)
+        .where(Server.id != TRAFFIC_ARCHIVE_SERVER_ID)
+        .order_by(Server.id.asc())
+    )
     servers = list((await session.scalars(stmt)).all())
     ids = [int(s.id) for s in servers]
     retention = int(settings.server_reachability_history_retention_seconds)
@@ -466,10 +484,19 @@ async def servers_reachability_summary(
 
 
 async def delete_server(session: AsyncSession, server_id: int) -> None:
-    """Удалить запись сервера; вызывающий код решает, нужен ли каскадный sync Xray."""
+    """Удалить запись сервера; трафик пользователей переносится на служебный узел id=0."""
+    assert_deletable_server_id(server_id)
     server = await session.get(Server, server_id)
     if server is None:
         raise NotFoundError("Сервер не найден")
+    await ensure_traffic_archive_server(session)
+    moved = await relocate_server_traffic_to_archive(session, server_id)
+    if moved:
+        log.info(
+            "delete_server: перенесено %s строк user_server_traffic server_id=%s → id=0",
+            moved,
+            server_id,
+        )
     await session.delete(server)
     await session.flush()
     delete_server_reachability_key(get_redis(), server_id)
