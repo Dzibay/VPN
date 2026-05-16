@@ -259,21 +259,7 @@ CREATE INDEX IF NOT EXISTS idx_staff_chart_events_event_at
 CREATE INDEX IF NOT EXISTS idx_payments_user_created_at
     ON payments (user_id, created_at DESC);
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_tribute_digital_purchase
-    ON payments ((tribute_webhook->'payload'->>'purchase_id'))
-    WHERE provider = 'tribute'
-        AND tribute_webhook->>'name' = 'new_digital_product'
-        AND tribute_webhook->'payload'->>'purchase_id' IS NOT NULL;
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_tribute_subscription_period
-    ON payments (
-        (tribute_webhook->'payload'->>'subscription_id'),
-        (tribute_webhook->'payload'->>'expires_at')
-    )
-    WHERE provider = 'tribute'
-        AND tribute_webhook->>'name' IN ('new_subscription', 'renewed_subscription')
-        AND tribute_webhook->'payload'->>'subscription_id' IS NOT NULL
-        AND tribute_webhook->'payload'->>'expires_at' IS NOT NULL;
+-- Индексы по tribute_webhook — в migrate.sql (после ADD COLUMN на существующих БД).
 
 CREATE INDEX IF NOT EXISTS idx_tasks_user_created_at
     ON tasks (user_id, created_at DESC);
