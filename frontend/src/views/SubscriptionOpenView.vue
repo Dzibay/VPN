@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import AppActionButton from '../components/AppActionButton.vue'
 import CabinetBackLink from '../components/CabinetBackLink.vue'
 import { fetchJson, subscriptionPublicUrl } from '../api/client.js'
 import {
@@ -412,18 +413,24 @@ onBeforeUnmount(() => {
                     class="app-dl-actions-row"
                     :class="{ 'app-dl-actions-row--single': storeRowSingle }"
                   >
-                    <a
+                    <AppActionButton
                       v-if="storeRef?.download"
-                      class="btn-primary app-dl-btn"
+                      variant="primary"
+                      block
                       :href="storeRef.download"
-                    >Скачать программу</a>
-                    <a
+                    >
+                      Скачать программу
+                    </AppActionButton>
+                    <AppActionButton
                       v-if="storeRef?.site"
-                      class="btn-secondary app-dl-btn"
+                      variant="secondary"
+                      block
                       :href="storeRef.site"
                       target="_blank"
                       rel="noopener noreferrer"
-                    >Официальный сайт</a>
+                    >
+                      Официальный сайт
+                    </AppActionButton>
                   </div>
                 </div>
                 <p
@@ -444,13 +451,14 @@ onBeforeUnmount(() => {
                 <p class="app-dl-step-text">
                   Откройте установленное приложение, вернитесь на этот экран и нажмите кнопку ниже для мгновенной настройки сети:
                 </p>
-                <button
-                  type="button"
-                  class="btn-primary app-dl-open-full"
+                <AppActionButton
+                  variant="primary"
+                  block
+                  class="app-dl-open-full"
                   @click="retryOpenInClient"
                 >
                   {{ openInClientLabel }}
-                </button>
+                </AppActionButton>
               </div>
             </div>
           </div>
@@ -466,13 +474,13 @@ onBeforeUnmount(() => {
               Скопируйте ссылку подписки и вставьте её в {{ displayTitle }} вручную:
               в приложении откройте раздел добавления подписки по ссылке и вставьте скопированный адрес.
             </p>
-            <button
-              type="button"
-              class="btn-secondary app-dl-copy-btn"
+            <AppActionButton
+              variant="secondary"
+              block
               @click="copySubscriptionUrl"
             >
               {{ subscriptionCopied ? 'Скопировано' : 'Скопировать ссылку подписки' }}
-            </button>
+            </AppActionButton>
           </div>
         </template>
       </div>
@@ -596,14 +604,6 @@ onBeforeUnmount(() => {
 }
 
 .app-dl-open-full {
-  display: flex;
-  width: 100%;
-  box-sizing: border-box;
-  justify-content: center;
-  text-align: center;
-  font: inherit;
-  cursor: pointer;
-  border: none;
   margin-top: 0.25rem;
 }
 
@@ -621,24 +621,13 @@ onBeforeUnmount(() => {
   flex-wrap: nowrap;
 }
 
-.app-dl-actions-row :deep(.btn-primary),
-.app-dl-actions-row :deep(.btn-secondary) {
+.app-dl-actions-row :deep(.app-action-btn) {
   flex: 1;
   min-width: 0;
-  text-align: center;
-  text-decoration: none;
 }
 
-.app-dl-actions-row--single :deep(.btn-primary),
-.app-dl-actions-row--single :deep(.btn-secondary) {
+.app-dl-actions-row--single :deep(.app-action-btn) {
   max-width: 100%;
-}
-
-.app-dl-btn {
-  display: inline-flex;
-  justify-content: center;
-  text-decoration: none;
-  box-sizing: border-box;
 }
 
 .app-dl-fallback {
@@ -663,13 +652,4 @@ onBeforeUnmount(() => {
   line-height: 1.45;
 }
 
-.app-dl-copy-btn {
-  display: flex;
-  width: 100%;
-  box-sizing: border-box;
-  justify-content: center;
-  text-align: center;
-  font: inherit;
-  cursor: pointer;
-}
 </style>

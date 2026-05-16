@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
+import AppActionButton from '../components/AppActionButton.vue'
 import SitePageLayout from '../components/SitePageLayout.vue'
 import {
   detectStorePlatform,
@@ -666,43 +667,44 @@ onMounted(() => {
               </div>
             </dl>
             <div class="cabinet-sub-action-stack">
-              <button
-                type="button"
-                class="copy-sub-btn"
+              <AppActionButton
+                variant="accent"
+                block
+                stacked
                 :disabled="!subscriptionUrl"
                 @click="copySubscriptionUrl"
               >
-                <Check
-                  v-if="subscriptionCopied"
-                  class="cabinet-sub-action-stack__icon"
-                  :size="18"
-                  :stroke-width="2"
-                  aria-hidden="true"
-                />
-                <Link2
-                  v-else
-                  class="cabinet-sub-action-stack__icon"
-                  :size="18"
-                  :stroke-width="2"
-                  aria-hidden="true"
-                />
-                <span class="cabinet-sub-action-stack__label">{{
-                  subscriptionCopied ? 'Скопировано' : 'Скопировать ссылку подписки'
-                }}</span>
-              </button>
-              <button
-                type="button"
-                class="cabinet-pay-btn"
+                <template #icon>
+                  <Check
+                    v-if="subscriptionCopied"
+                    :size="18"
+                    :stroke-width="2"
+                    aria-hidden="true"
+                  />
+                  <Link2
+                    v-else
+                    :size="18"
+                    :stroke-width="2"
+                    aria-hidden="true"
+                  />
+                </template>
+                {{ subscriptionCopied ? 'Скопировано' : 'Скопировать ссылку подписки' }}
+              </AppActionButton>
+              <AppActionButton
+                variant="pay"
+                block
+                stacked
                 @click="goCabinetPay"
               >
-                <CreditCard
-                  class="cabinet-sub-action-stack__icon"
-                  :size="18"
-                  :stroke-width="2"
-                  aria-hidden="true"
-                />
-                <span class="cabinet-sub-action-stack__label">Оплата и продление</span>
-              </button>
+                <template #icon>
+                  <CreditCard
+                    :size="18"
+                    :stroke-width="2"
+                    aria-hidden="true"
+                  />
+                </template>
+                Оплата и продление
+              </AppActionButton>
             </div>
           </div>
 
@@ -881,32 +883,34 @@ onMounted(() => {
                     <p v-if="telegramSyncError" class="err profile-tg-sync-err">
                       {{ telegramSyncError }}
                     </p>
-                    <button
-                      type="button"
-                      class="copy-sub-btn profile-tg-open-btn"
+                    <AppActionButton
+                      variant="telegram"
+                      block
+                      class="profile-tg-open-btn"
                       :disabled="telegramSyncBusy"
                       @click="openTelegramSyncLink"
                     >
-                      <Loader2
-                        v-if="telegramSyncBusy"
-                        class="profile-tg-open-btn__icon profile-tg-open-btn__icon--spin"
-                        :size="20"
-                        :stroke-width="2"
-                        aria-hidden="true"
-                      />
-                      <Send
-                        v-else
-                        class="profile-tg-open-btn__icon"
-                        :size="20"
-                        :stroke-width="2"
-                        aria-hidden="true"
-                      />
-                      <span class="profile-tg-open-btn__label">{{
+                      <template #icon>
+                        <Loader2
+                          v-if="telegramSyncBusy"
+                          class="profile-tg-open-btn__icon--spin"
+                          :size="20"
+                          :stroke-width="2"
+                          aria-hidden="true"
+                        />
+                        <Send
+                          v-else
+                          :size="20"
+                          :stroke-width="2"
+                          aria-hidden="true"
+                        />
+                      </template>
+                      {{
                         telegramSyncBusy
                           ? 'Готовим ссылку…'
                           : 'Привязать телеграм бота'
-                      }}</span>
-                    </button>
+                      }}
+                    </AppActionButton>
                     <p
                       v-if="telegramSyncFallbackLink && isMobileDevice()"
                       class="hint profile-tg-fallback-hint"
@@ -1061,9 +1065,9 @@ onMounted(() => {
                   </div>
                 </dl>
                 <div class="referral-copy-stack">
-                  <button
-                    type="button"
-                    class="btn-secondary referral-copy-wide"
+                  <AppActionButton
+                    variant="secondary"
+                    block
                     :disabled="!effectiveReferralSiteUrl"
                     @click="copyReferralSite"
                   >
@@ -1072,7 +1076,7 @@ onMounted(() => {
                         ? 'Скопировано'
                         : 'Скопировать ссылку на сайт'
                     }}
-                  </button>
+                  </AppActionButton>
                   <p
                     v-if="!effectiveReferralSiteUrl"
                     class="hint referral-copy-warn"
@@ -1080,9 +1084,9 @@ onMounted(() => {
                     Не удалось собрать ссылку: задайте в .env API переменную
                     <code class="inline-code">SITE_ADDRESS</code> (публичный URL сайта).
                   </p>
-                  <button
-                    type="button"
-                    class="btn-secondary referral-copy-wide"
+                  <AppActionButton
+                    variant="secondary"
+                    block
                     :disabled="!effectiveReferralTelegramUrl"
                     @click="copyReferralTelegram"
                   >
@@ -1091,7 +1095,7 @@ onMounted(() => {
                         ? 'Скопировано'
                         : 'Скопировать ссылку на бота (Telegram)'
                     }}
-                  </button>
+                  </AppActionButton>
                   <p
                     v-if="!effectiveReferralTelegramUrl"
                     class="hint referral-copy-warn"
@@ -1228,12 +1232,6 @@ onMounted(() => {
   flex-direction: column;
   gap: 0.5rem;
   margin-top: 0.85rem;
-}
-
-.referral-copy-wide {
-  width: 100%;
-  box-sizing: border-box;
-  justify-content: center;
 }
 
 .referral-copy-warn {
@@ -1518,39 +1516,6 @@ dd {
   font-weight: 500;
 }
 
-.copy-sub-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  box-sizing: border-box;
-  margin: 1rem 0 0;
-  padding: 0.5rem 1rem;
-  border-radius: var(--radius);
-  font: inherit;
-  font-size: 0.88rem;
-  font-weight: 600;
-  cursor: pointer;
-  color: var(--on-accent);
-  background: color-mix(in srgb, var(--accent) 78%, #050a08 22%);
-  border: 1px solid color-mix(in srgb, var(--accent-border) 75%, #020403 25%);
-  transition:
-    filter 0.15s ease,
-    background 0.15s ease,
-    opacity 0.15s ease;
-}
-
-.copy-sub-btn:hover:not(:disabled) {
-  filter: brightness(1.04);
-  background: color-mix(in srgb, var(--accent-hover) 80%, #050a08 20%);
-}
-
-.copy-sub-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* После базовых правил .copy-sub-btn — иначе border: 1px снова перебивает «слитый» блок */
 .cabinet-sub-action-stack {
   margin-top: 1rem;
   display: flex;
@@ -1560,76 +1525,6 @@ dd {
   overflow: hidden;
   border: 1px solid var(--card-border);
   box-shadow: var(--shadow-sm);
-}
-
-.cabinet-sub-action-stack > .copy-sub-btn,
-.cabinet-sub-action-stack > .cabinet-pay-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  min-width: 0;
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
-  margin: 0;
-  border: 0;
-  border-radius: 0;
-  min-height: 2.625rem;
-  padding: 0.5rem 1rem;
-  line-height: 1.3;
-  font-family: inherit;
-  font-size: 0.88rem;
-  font-weight: 600;
-}
-
-.cabinet-sub-action-stack__icon {
-  flex-shrink: 0;
-  color: currentColor;
-  opacity: 0.95;
-}
-
-.cabinet-sub-action-stack__label {
-  min-width: 0;
-}
-
-.cabinet-sub-action-stack > .copy-sub-btn {
-  box-shadow: none;
-  appearance: none;
-  -webkit-appearance: none;
-}
-
-.cabinet-sub-action-stack > .cabinet-pay-btn {
-  text-align: center;
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  box-shadow: inset 0 1px 0 0 var(--nav-border);
-  color: #dbeafe;
-  background: linear-gradient(
-    168deg,
-    rgba(99, 102, 234, 0.38) 0%,
-    rgba(45, 179, 157, 0.14) 42%,
-    rgba(15, 23, 42, 0.92) 100%
-  );
-  transition:
-    filter 0.15s ease,
-    background 0.2s ease,
-    color 0.2s ease;
-}
-
-.cabinet-sub-action-stack > .cabinet-pay-btn:hover {
-  filter: brightness(1.07);
-  color: #f0f9ff;
-}
-
-.cabinet-sub-action-stack > .cabinet-pay-btn:focus-visible {
-  outline: none;
-  position: relative;
-  z-index: 1;
-  box-shadow:
-    inset 0 1px 0 0 var(--nav-border),
-    inset 0 0 0 2px rgba(129, 140, 248, 0.65);
 }
 
 .profile-pay-tg-callout {
@@ -1679,51 +1574,10 @@ dd {
 }
 
 .profile-tg-open-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
   margin-top: 0.35rem;
-  padding: 0.72rem 1rem;
   min-height: 3rem;
-  border: none;
+  padding: 0.72rem 1rem;
   border-radius: 10px;
-  font: inherit;
-  font-size: 0.88rem;
-  font-weight: 600;
-  line-height: 1.3;
-  cursor: pointer;
-  text-decoration: none;
-  color: #fff;
-  background: #229ed9;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
-  transition:
-    filter 0.15s ease,
-    background 0.15s ease,
-    box-shadow 0.15s ease,
-    opacity 0.15s ease;
-}
-
-.profile-tg-open-btn:hover:not(:disabled) {
-  filter: brightness(1.06);
-  background: #1f8fc7;
-  box-shadow: 0 2px 8px rgba(34, 158, 217, 0.35);
-}
-
-.profile-tg-open-btn:focus-visible {
-  outline: none;
-  box-shadow:
-    0 0 0 2px var(--card-bg),
-    0 0 0 4px #229ed9;
-}
-
-.profile-tg-open-btn:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-  filter: none;
 }
 
 .profile-tg-open-btn__icon {
@@ -1863,58 +1717,6 @@ dd {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-}
-
-.copy-sub-btn:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.cabinet-sub-action-stack > .copy-sub-btn:focus-visible {
-  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.35), var(--focus-ring);
-}
-
-@media (prefers-color-scheme: light) {
-  .cabinet-sub-action-stack > .cabinet-pay-btn {
-    color: #1e3a5f;
-    background: linear-gradient(
-      168deg,
-      rgba(99, 102, 234, 0.2) 0%,
-      rgba(45, 179, 157, 0.12) 45%,
-      rgba(248, 250, 252, 0.98) 100%
-    );
-    box-shadow: inset 0 1px 0 0 rgba(29, 154, 92, 0.18);
-  }
-
-  .cabinet-sub-action-stack > .cabinet-pay-btn:hover {
-    color: #0f172a;
-    filter: brightness(1.02);
-  }
-
-  .cabinet-sub-action-stack > .cabinet-pay-btn:focus-visible {
-    box-shadow:
-      inset 0 1px 0 0 rgba(29, 154, 92, 0.18),
-      inset 0 0 0 2px rgba(99, 102, 234, 0.45);
-  }
-
-  .copy-sub-btn {
-    background: var(--accent);
-    border-color: var(--accent-border);
-  }
-
-  .copy-sub-btn:hover:not(:disabled) {
-    background: var(--accent-hover);
-  }
-
-  .copy-sub-btn.profile-tg-open-btn {
-    background: #229ed9;
-    color: #fff;
-    border-color: transparent;
-  }
-
-  .copy-sub-btn.profile-tg-open-btn:hover:not(:disabled) {
-    background: #1f8fc7;
-  }
 }
 
 .banner-warn {
