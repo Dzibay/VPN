@@ -26,6 +26,10 @@ class SubscriptionOpenPageData(BaseModel):
         description="Текст при invalid_token / inactive (основной абзац).",
     )
     deeplink: str | None = Field(None, description="Схема клиента для открытия; null если недоступно.")
+    subscription_url: str | None = Field(
+        None,
+        description="HTTPS-ссылка подписки для ручного импорта в клиент (как в диплинке); null при invalid_token.",
+    )
     open_button_label: str = Field("", description="Подпись основной кнопки «Открыть в …».")
     lead: str | None = Field(
         None,

@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import CabinetBackLink from '../components/CabinetBackLink.vue'
-import { fetchJson } from '../api/client.js'
+import { fetchJson, subscriptionPublicUrl } from '../api/client.js'
 import {
   forcedStoreRefs,
   getMobileStoreRedirectUrl,
@@ -111,6 +111,31 @@ const openInClientLabel = computed(() => {
   }
   return p.open_button_label
 })
+
+const subscriptionUrl = computed(() => {
+  const fromPage = page.value?.subscription_url
+  if (typeof fromPage === 'string' && fromPage) return fromPage
+  return token.value ? subscriptionPublicUrl(token.value) : ''
+})
+
+const subscriptionCopied = ref(false)
+let subscriptionCopiedTimer = null
+
+async function copySubscriptionUrl() {
+  const url = subscriptionUrl.value
+  if (!url) return
+  try {
+    await navigator.clipboard.writeText(url)
+    subscriptionCopied.value = true
+    if (subscriptionCopiedTimer) clearTimeout(subscriptionCopiedTimer)
+    subscriptionCopiedTimer = setTimeout(() => {
+      subscriptionCopied.value = false
+      subscriptionCopiedTimer = null
+    }, 2000)
+  } catch {
+    /* ignore */
+  }
+}
 
 const OPEN_MOBILE_STORE_FALLBACK_MS = 1000
 
@@ -320,6 +345,10 @@ onBeforeUnmount(() => {
   clearOpenTimer()
   clearMobileFallbackWatchers()
   removeDeeplinkIframe()
+  if (subscriptionCopiedTimer) {
+    clearTimeout(subscriptionCopiedTimer)
+    subscriptionCopiedTimer = null
+  }
 })
 </script>
 
@@ -392,6 +421,8 @@ onBeforeUnmount(() => {
                       v-if="storeRef?.site"
                       class="btn-secondary app-dl-btn"
                       :href="storeRef.site"
+                      target="_blank"
+                      rel="noopener noreferrer"
                     >Официальный сайт</a>
                   </div>
                 </div>
@@ -424,11 +455,24 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <div 
-            v-if="page?.lead && page.state === 'ok'" 
-            class="app-dl-extra-lead"
+          <div
+            v-if="page?.state === 'ok' && subscriptionUrl"
+            class="app-dl-fallback"
           >
-            {{ page.lead }}
+            <h2 class="app-dl-fallback-title">
+              Приложение не открылось?
+            </h2>
+            <p class="app-dl-fallback-text">
+              Скопируйте ссылку подписки и вставьте её в {{ displayTitle }} вручную:
+              в приложении откройте раздел добавления подписки по ссылке и вставьте скопированный адрес.
+            </p>
+            <button
+              type="button"
+              class="btn-secondary app-dl-copy-btn"
+              @click="copySubscriptionUrl"
+            >
+              {{ subscriptionCopied ? 'Скопировано' : 'Скопировать ссылку подписки' }}
+            </button>
           </div>
         </template>
       </div>
@@ -597,12 +641,35 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
 }
 
-.app-dl-extra-lead {
+.app-dl-fallback {
   margin-top: 1.25rem;
   padding-top: 1rem;
   border-top: 1px solid var(--card-border);
+}
+
+.app-dl-fallback-title {
+  margin: 0 0 0.5rem;
+  font-family: var(--heading);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-h);
+  line-height: 1.3;
+}
+
+.app-dl-fallback-text {
+  margin: 0 0 0.85rem;
   font-size: 0.88rem;
   color: var(--muted);
   line-height: 1.45;
+}
+
+.app-dl-copy-btn {
+  display: flex;
+  width: 100%;
+  box-sizing: border-box;
+  justify-content: center;
+  text-align: center;
+  font: inherit;
+  cursor: pointer;
 }
 </style>
