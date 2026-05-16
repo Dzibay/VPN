@@ -11,7 +11,11 @@ import {
 } from '../api/client.js'
 import AppTooltip from '../components/AppTooltip.vue'
 import { formatTrafficBytes } from '../utils/formatTraffic.js'
-import { navigateDeepLink } from '../util/openDeepLink.js'
+import { isMobileDevice } from '../util/mobileDevice.js'
+import {
+  openDeepLinkDesktop,
+  openDeepLinkMobile,
+} from '../util/openDeepLink.js'
 import { Check, CreditCard, Link2, Loader2, Send } from 'lucide-vue-next'
 
 /** Подсказки к строкам исх./вх. в блоке трафика */
@@ -247,20 +251,30 @@ async function load() {
 
 const telegramSyncBusy = ref(false)
 const telegramSyncError = ref(null)
+/** На телефоне: запасная нативная ссылка, если авто-переход заблокирован */
+const telegramSyncManualLink = ref(null)
 
 async function openTelegramSyncLink() {
+  const mobile = isMobileDevice()
   telegramSyncBusy.value = true
   telegramSyncError.value = null
+  if (!mobile) telegramSyncManualLink.value = null
   try {
     const data = await fetchJson('/api/me/telegram-sync-start', {
       method: 'POST',
       body: '{}',
     })
     const url = data?.telegram_deep_link
-    if (typeof url === 'string' && url.trim()) {
-      navigateDeepLink(url.trim())
-    } else {
+    if (typeof url !== 'string' || !url.trim()) {
       telegramSyncError.value = 'Сервер не вернул ссылку на бота'
+      return
+    }
+    const link = url.trim()
+    if (mobile) {
+      telegramSyncManualLink.value = link
+      openDeepLinkMobile(link)
+    } else {
+      openDeepLinkDesktop(link)
     }
   } catch (e) {
     telegramSyncError.value = e.message || String(e)
@@ -268,6 +282,15 @@ async function openTelegramSyncLink() {
     telegramSyncBusy.value = false
   }
 }
+
+watch(
+  () => [activeCabinetTab.value, profileTelegramLinked.value],
+  ([tab, linked]) => {
+    if (tab !== 'profile' || linked) {
+      telegramSyncManualLink.value = null
+    }
+  },
+)
 
 const pwdCurrent = ref('')
 const pwdNew = ref('')
@@ -871,7 +894,24 @@ onMounted(() => {
                     <p v-if="telegramSyncError" class="err profile-tg-sync-err">
                       {{ telegramSyncError }}
                     </p>
+                    <a
+                      v-if="telegramSyncManualLink"
+                      :href="telegramSyncManualLink"
+                      class="copy-sub-btn profile-tg-open-btn profile-tg-open-btn--link"
+                      rel="noopener noreferrer"
+                    >
+                      <Send
+                        class="profile-tg-open-btn__icon"
+                        :size="20"
+                        :stroke-width="2"
+                        aria-hidden="true"
+                      />
+                      <span class="profile-tg-open-btn__label"
+                        >Открыть Telegram</span
+                      >
+                    </a>
                     <button
+                      v-else
                       type="button"
                       class="copy-sub-btn profile-tg-open-btn"
                       :disabled="telegramSyncBusy"
@@ -897,6 +937,13 @@ onMounted(() => {
                           : 'Привязать телеграм бота'
                       }}</span>
                     </button>
+                    <p
+                      v-if="telegramSyncManualLink"
+                      class="hint profile-tg-manual-hint"
+                    >
+                      Если Telegram не открылся автоматически — нажмите кнопку
+                      выше ещё раз.
+                    </p>
                   </template>
                 </dd>
               </div>
@@ -1638,6 +1685,16 @@ dd {
 .profile-tg-sync-err {
   margin: 0 0 0.5rem;
   font-size: 0.88rem;
+}
+
+.profile-tg-manual-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.profile-tg-open-btn--link:visited {
+  color: #fff;
 }
 
 .profile-tg-open-btn {

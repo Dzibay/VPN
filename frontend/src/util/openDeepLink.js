@@ -1,23 +1,40 @@
-import { isMobileAppStoreDevice } from './subscriptionOpenStores.js'
+/**
+ * Открытие внешних ссылок (t.me и т.п.) — разная логика для телефона и ПК.
+ */
 
 /**
- * t.me и прочие внешние ссылки.
- * Телефон: location.assign (window.open после await блокирует Safari).
- * ПК: window.open после ответа API (на десктопе обычно не блокируется).
- *
+ * Телефон: переход в том же окне (после await window.open блокируется).
  * @param {string} url
  */
-export function navigateDeepLink(url) {
+export function openDeepLinkMobile(url) {
   const u = String(url).trim()
   if (!u) return
-  if (isMobileAppStoreDevice()) {
-    try {
-      window.location.assign(u)
-    } catch {
-      /* ignore */
-    }
+  try {
+    window.location.replace(u)
     return
+  } catch {
+    /* ignore */
   }
+  try {
+    const a = document.createElement('a')
+    a.href = u
+    a.rel = 'noopener noreferrer'
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * ПК: новая вкладка (после await на десктопе обычно не блокируется).
+ * @param {string} url
+ */
+export function openDeepLinkDesktop(url) {
+  const u = String(url).trim()
+  if (!u) return
   try {
     window.open(u, '_blank', 'noopener,noreferrer')
   } catch {
