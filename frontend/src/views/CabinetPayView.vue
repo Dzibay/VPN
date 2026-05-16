@@ -1,8 +1,9 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { Send } from 'lucide-vue-next'
 import { fetchJson } from '../api/client.js'
+import AppActionButton from '../components/AppActionButton.vue'
 import CabinetBackLink from '../components/CabinetBackLink.vue'
-import SitePageLayout from '../components/SitePageLayout.vue'
 
 const loading = ref(true)
 const error = ref(null)
@@ -46,64 +47,25 @@ onMounted(() => {
 </script>
 
 <template>
-  <SitePageLayout
-    as="main"
-    compact-top
-  >
-    <template #header>
-      <header class="head">
-        <div class="page-back">
-          <CabinetBackLink :to="{ name: 'cabinet', query: { tab: 'subscription' } }" />
-        </div>
-        <h1>Тарифы и оплата</h1>
-        <p class="sub-head">Высокоскоростной VPN на базе современных протоколов Xray / Sing-box. Выберите удобный формат подписки.</p>
-      </header>
-    </template>
+  <main class="app-dl">
+    <div class="app-dl-wrap">
+      <CabinetBackLink :to="{ name: 'cabinet', query: { tab: 'subscription' } }" />
 
-    <div v-if="loading" class="card card-pad muted loader-block">
-      <div class="spinner"></div>
-      <span>Загрузка доступных тарифов…</span>
-    </div>
-    
-    <div v-else-if="error" class="card card-pad err" role="alert">
-      {{ error }}
-    </div>
-    
-    <div v-else class="stack">
-      <p v-if="!hasAnyOption" class="card card-pad muted pay-empty">
+      <div v-if="loading" class="card card-pad muted loader-block">
+          <div class="spinner" />
+          <span>Загрузка доступных тарифов…</span>
+      </div>
+
+      <div v-else-if="error" class="card card-pad err" role="alert">
+        {{ error }}
+      </div>
+
+      <div v-else class="stack">
+          <p v-if="!hasAnyOption" class="card card-pad muted pay-empty">
         Способы оплаты на сервере пока не настроены. Напишите в поддержку или попробуйте позже.
       </p>
 
-      <div v-if="hasAnyOption" class="benefits-grid">
-        <div class="benefit-item">
-          <span class="benefit-icon">⚡</span>
-          <div>
-            <h3>До 1 Гбит/с</h3>
-            <p>Безлимитный трафик и высокая скорость соединения</p>
-          </div>
-        </div>
-        <div class="benefit-item">
-          <span class="benefit-icon">📱</span>
-          <div>
-            <h3>До 5 устройств</h3>
-            <p>Используйте на телефоне, ПК, планшете или роутере</p>
-          </div>
-        </div>
-        <div class="benefit-item">
-          <span class="benefit-icon">🛡️</span>
-          <div>
-            <h3>Умный обход</h3>
-            <p>Маршрутизация работает незаметно и не разряжает батарею</p>
-          </div>
-        </div>
-      </div>
-
       <section v-if="hasRecurring" class="pay-group">
-        <div class="section-header">
-          <h2 class="section-title">Автоматическая подписка</h2>
-          <p class="section-desc">Удобный вариант: карта привязывается для последующих продлений. Вы всегда на связи.</p>
-        </div>
-        
         <div class="recurring-grid">
           <div
             v-for="(rec, i) in recurringOptions"
@@ -117,28 +79,36 @@ onMounted(() => {
               <span class="price-amount">{{ rec.price }} ₽</span>
               <span class="price-period">/ месяц</span>
             </div>
-            <div class="product-price-block" v-else>
-              <span class="price-fallback">Подписка</span>
-            </div>
-
-            <p class="product-hint">Можно оформить в браузере или напрямую через Telegram-бота.</p>
+            <p class="product-hint">Можно оформить в браузере или через Telegram с привязкой карты для ежемесячного списания. Будьте всегда на связи.</p>
 
             <div class="recurring-actions">
-              <a
+              <AppActionButton
                 v-if="rec.tg_link"
-                class="btn-primary recurring-btn tg-btn"
+                variant="telegram"
+                block
+                class="pay-tg-open-btn"
                 :href="rec.tg_link"
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <span class="btn-icon">✈️</span> Оплатить в Telegram
-              </a>
-              <a
-                class="btn-secondary recurring-btn"
+                <template #icon>
+                  <Send
+                    :size="20"
+                    :stroke-width="2"
+                    aria-hidden="true"
+                  />
+                </template>
+                Оплатить в Telegram
+              </AppActionButton>
+              <AppActionButton
+                variant="secondary"
+                block
                 :href="rec.web_link"
                 target="_blank"
                 rel="noopener noreferrer"
-              >Оплатить картой на сайте</a>
+              >
+                Оплатить картой на сайте
+              </AppActionButton>
             </div>
           </div>
         </div>
@@ -146,8 +116,8 @@ onMounted(() => {
 
       <section v-if="hasSingles" class="pay-group">
         <div class="section-header">
-          <h2 class="section-title">Разовые тарифы</h2>
-          <p class="section-desc">Оплачивайте фиксированный период в браузере. Без привязки карты и автоматических списаний.</p>
+          <h2 class="section-title">Разовые тарифы (СПБ)</h2>
+          <p class="section-desc">Оплачивайте фиксированный период в браузере. Без привязки карты и автоматических списаний. Доступна оплата через СПБ.</p>
         </div>
         
         <div class="tariffs-grid">
@@ -163,7 +133,6 @@ onMounted(() => {
               <span class="product-duration">
                 {{ row.months ? formatPeriod(row.months) : row.name }}
               </span>
-              <p class="product-subtext" v-if="row.months">{{ row.name }}</p>
             </div>
 
             <div class="product-price-block" v-if="row.price">
@@ -173,12 +142,15 @@ onMounted(() => {
               </span>
             </div>
 
-            <a
-              class="btn-primary tariff-action-link"
+            <AppActionButton
+              variant="primary"
+              block
               :href="row.web_link"
               target="_blank"
               rel="noopener noreferrer"
-            >Выбрать тариф</a>
+            >
+              Выбрать тариф
+            </AppActionButton>
           </div>
         </div>
       </section>
@@ -189,48 +161,48 @@ onMounted(() => {
       <p v-if="hasAnyOption && !hasRecurring" class="hint foot-hint">
         Автоматическая подписка сейчас не настроена — доступны только разовые пакеты дней.
       </p>
+      </div>
     </div>
-  </SitePageLayout>
+  </main>
 </template>
 
 <style scoped>
-.page-back {
-  width: 100%;
-  max-width: min(var(--page-content-max, 25rem), 100%);
-  align-self: start;
-  text-align: left;
-  margin-bottom: 0.25rem;
+.app-dl {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-gradient);
 }
 
-.head {
+.app-dl-wrap {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 1.25rem;
+  justify-content: center;
+  width: 100%;
+  max-width: min(var(--page-content-max, 25rem), 100%);
+  min-width: 0;
+  margin-inline: auto;
+  padding: 1.5rem max(1rem, env(safe-area-inset-left, 0px)) 2.5rem
+    max(1rem, env(safe-area-inset-right, 0px));
+  box-sizing: border-box;
+  gap: 0.75rem;
 }
 
-h1 {
-  font-size: 1.65rem;
-  margin: 0;
-  color: var(--text-h);
-  text-align: center;
-  font-weight: 700;
-}
-
-.sub-head {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.92rem;
-  line-height: 1.45;
-  text-align: center;
-  max-width: 28rem;
+.app-dl-wrap > .card {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .stack {
   display: flex;
   flex-direction: column;
   gap: 1.75rem;
+  width: 100%;
   min-width: 0;
 }
 
@@ -246,49 +218,6 @@ h1 {
 
 .card-pad {
   padding: 1.25rem 1.35rem;
-}
-
-/* Блок преимуществ */
-.benefits-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.75rem;
-  background: var(--surface-glass, rgba(255, 255, 255, 0.03));
-  border: 1px solid var(--card-border);
-  border-radius: 14px;
-  padding: 1rem;
-}
-
-@media (min-width: 480px) {
-  .benefits-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-.benefit-item {
-  display: flex;
-  gap: 0.65rem;
-  align-items: flex-start;
-}
-
-.benefit-icon {
-  font-size: 1.2rem;
-  line-height: 1;
-  padding-top: 0.1rem;
-}
-
-.benefit-item h3 {
-  margin: 0 0 0.15rem;
-  font-size: 0.88rem;
-  color: var(--text-h);
-  font-weight: 600;
-}
-
-.benefit-item p {
-  margin: 0;
-  font-size: 0.78rem;
-  line-height: 1.35;
-  color: var(--muted);
 }
 
 /* Группировка секций */
@@ -378,15 +307,10 @@ h1 {
 }
 
 .product-duration {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--text-h);
-}
-
-.product-subtext {
-  margin: 0.15rem 0 0;
-  font-size: 0.82rem;
+  font-size: 0.88rem;
+  font-weight: 500;
   color: var(--muted);
+  line-height: 1.35;
 }
 
 /* Блок цены */
@@ -398,9 +322,10 @@ h1 {
 }
 
 .price-amount {
-  font-size: 1.45rem;
-  font-weight: 800;
+  font-size: 1.15rem;
+  font-weight: 600;
   color: var(--text-h);
+  letter-spacing: -0.01em;
 }
 
 .price-period {
@@ -414,33 +339,11 @@ h1 {
   font-weight: 500;
 }
 
-.price-fallback {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--text-h);
-}
-
 .product-hint {
   margin: -0.25rem 0 0.25rem;
   font-size: 0.82rem;
   line-height: 1.4;
   color: var(--muted);
-}
-
-/* Кнопки */
-.tariff-action-link {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 2.5rem;
-  padding: 0.5rem 1rem;
-  border-radius: 10px;
-  font-weight: 600;
-  font-size: 0.88rem;
-  text-decoration: none;
-  text-align: center;
-  box-sizing: border-box;
-  width: 100%;
 }
 
 .recurring-actions {
@@ -450,36 +353,10 @@ h1 {
   width: 100%;
 }
 
-.recurring-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  text-align: center;
-  text-decoration: none;
-  box-sizing: border-box;
-  padding: 0.6rem 1rem;
+.pay-tg-open-btn {
+  min-height: 3rem;
+  padding: 0.72rem 1rem;
   border-radius: 10px;
-  font: inherit;
-  font-weight: 600;
-  font-size: 0.88rem;
-  cursor: pointer;
-}
-
-.tg-btn {
-  background: #24A1DE;
-  border-color: #24A1DE;
-  color: #fff;
-}
-
-.tg-btn:hover {
-  background: #2094cb;
-  border-color: #2094cb;
-}
-
-.btn-icon {
-  margin-right: 0.4rem;
-  font-size: 1rem;
 }
 
 /* Вспомогательные элементы */

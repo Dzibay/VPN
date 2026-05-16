@@ -13,6 +13,7 @@ import {
 import AppTooltip from '../components/AppTooltip.vue'
 import { formatTrafficBytes } from '../utils/formatTraffic.js'
 import { isMobileDevice, openTelegramDeepLink } from '../util/openDeepLink.js'
+import { payRequiresTelegramBinding } from '../util/payRequiresTelegram.js'
 import { Check, CreditCard, Link2, Loader2, Send } from 'lucide-vue-next'
 
 /** Подсказки к строкам исх./вх. в блоке трафика */
@@ -123,9 +124,9 @@ const profileTelegramUsername = computed(() => {
   return raw.startsWith('@') ? raw : `@${raw}`
 })
 
-/** Редирект с /cabinet/pay: просим привязать Telegram (совпадает с webhook Tribute по telegram_id). */
+/** Редирект с /cabinet/pay: просим привязать Telegram, если бот настроен на API. */
 const payNeedTelegramBanner = computed(
-  () => payNeedTelegramQuery() && me.value && me.value.telegram_id == null,
+  () => payNeedTelegramQuery() && payRequiresTelegramBinding(me.value),
 )
 
 /** @type {import('vue').Ref<null | Record<string, unknown>>} */
@@ -476,7 +477,7 @@ async function copySubscriptionUrl() {
 }
 
 function goCabinetPay() {
-  if (me.value?.telegram_id == null) {
+  if (payRequiresTelegramBinding(me.value)) {
     void router.push({
       path: '/cabinet',
       query: { tab: 'profile', pay_need_telegram: '1' },

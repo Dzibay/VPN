@@ -11,6 +11,7 @@ import {
   isAdminJwtRequired,
 } from '../auth/session.js'
 import { fetchJson } from '../api/client.js'
+import { payRequiresTelegramBinding } from '../util/payRequiresTelegram.js'
 
 /**
  * Ленивые импорты вью: каждый роут — отдельный chunk.
@@ -177,7 +178,7 @@ router.beforeEach(async (to, _from, next) => {
   if (to.name === 'cabinet-pay' && token) {
     try {
       const me = await fetchJson('/api/me')
-      if (me?.telegram_id == null) {
+      if (payRequiresTelegramBinding(me)) {
         return next({
           name: 'cabinet',
           query: { tab: 'profile', pay_need_telegram: '1' },
