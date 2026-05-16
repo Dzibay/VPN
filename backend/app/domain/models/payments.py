@@ -53,17 +53,14 @@ class TributeWebhookSubscriptionTestPayload(BaseModel):
 
     subscription_id: int = Field(
         ge=1,
-        description="Tribute Subscription ID (внешний ключ в external_id для подписки).",
+        description="Tribute Subscription ID (в payload webhook подписки).",
     )
     telegram_user_id: int = Field(
         ge=1,
         description="Telegram user id; должен совпадать с users.telegram_id в БД.",
     )
     expires_at: datetime = Field(
-        description=(
-            "Дата окончания периода в Tribute (ISO-8601 UTC). "
-            "Входит в external_id вместе с subscription_id."
-        ),
+        description="Дата окончания периода в Tribute (ISO-8601 UTC); сохраняется в tribute_webhook.",
     )
     period: Literal["monthly", "quarterly", "yearly"] = Field(
         default="monthly",
@@ -83,7 +80,7 @@ class TributeWebhookSubscriptionTestPayload(BaseModel):
 class TributeWebhookDigitalTestPayload(BaseModel):
     """Тест ``new_digital_product`` (разовая покупка)."""
 
-    purchase_id: int = Field(ge=1, description="Уникальный purchase_id Tribute (external_id dp:…).")
+    purchase_id: int = Field(ge=1, description="Уникальный purchase_id Tribute (дедупликация в tribute_webhook).")
     product_id: int = Field(ge=1, description="ID цифрового товара в Tribute.")
     amount: int = Field(default=19900, ge=0, description="Сумма в минорных единицах.")
     telegram_user_id: int = Field(ge=1, description="Telegram user id в БД.")

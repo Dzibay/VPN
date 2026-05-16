@@ -65,7 +65,7 @@ const paymentLedgerSortAccessors = {
   months: (r) => Number(r.months) || 0,
   provider: (r) => String(r.provider ?? '').toLowerCase(),
   payment_kind: (r) => String(r.payment_kind ?? '').toLowerCase(),
-  external_id: (r) => String(r.external_id ?? '').toLowerCase(),
+  tribute_webhook: (r) => JSON.stringify(r.tribute_webhook ?? '').toLowerCase(),
   created_at: (r) => String(r.created_at ?? ''),
 }
 
@@ -1073,8 +1073,8 @@ onMounted(() => {
                 @sort="togglePayLedgerSort"
               />
               <AdminSortTh
-                label="Внешний id"
-                column-key="external_id"
+                label="Webhook Tribute"
+                column-key="tribute_webhook"
                 :sort-key="paySortKey"
                 :sort-dir="paySortDir"
                 @sort="togglePayLedgerSort"
@@ -1107,8 +1107,14 @@ onMounted(() => {
                   row.provider
                 }}</span>
               </td>
-              <td class="mono-cell" :title="row.external_id || ''">
-                {{ row.external_id || '—' }}
+              <td
+                class="mono-cell"
+                :title="row.tribute_webhook ? JSON.stringify(row.tribute_webhook) : ''"
+              >
+                {{
+                  row.tribute_webhook?.name ||
+                  (row.tribute_webhook ? JSON.stringify(row.tribute_webhook).slice(0, 80) : '—')
+                }}
               </td>
               <td class="date-cell">{{ formatRefTableDate(row.created_at) }}</td>
             </tr>

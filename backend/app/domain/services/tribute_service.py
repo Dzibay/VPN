@@ -7,6 +7,9 @@
 ``TRIBUTE_API_KEY``.
 
 ``cancelled_subscription`` и ``digital_product_refunded`` — без изменений в БД (заглушки).
+
+Успешные оплаты пишутся в ``payments.tribute_webhook`` (JSONB ``{name, payload}`` — полное тело webhook).
+Дедупликация: ``purchase_id`` для ``new_digital_product``; ``subscription_id`` + ``expires_at`` для подписки.
 """
 
 from __future__ import annotations
@@ -95,12 +98,6 @@ def _period_to_months(period: str) -> int | None:
     return _PERIOD_TO_MONTHS.get((period or "").strip().lower())
 
 
-def _expires_at_iso_compact(expires_at: datetime) -> str:
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    return expires_at.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-
-
 def _extend_subscription_until(base: date | None, *, days: int) -> date:
     if days < 1:
         raise ValueError("days must be >= 1")
@@ -175,6 +172,54 @@ def _resolve_new_digital_product_months(p: _DigitalProductPaidPayload) -> int | 
     return None
 
 
+def _tribute_webhook_envelope(*, event_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return {"name": event_name, "payload": payload}
+
+
+async def _tribute_payment_duplicate(
+    session: AsyncSession,
+    *,
+    webhook: dict[str, Any],
+) -> bool:
+    name = (webhook.get("name") or "").strip()
+    payload = webhook.get("payload")
+    if not isinstance(payload, dict):
+        return False
+
+    if name == "new_digital_product":
+        purchase_id = payload.get("purchase_id")
+        if purchase_id is None:
+            return False
+        stmt = (
+            select(Payment.id)
+            .where(
+                Payment.provider == "tribute",
+                Payment.tribute_webhook["name"].astext == name,
+                Payment.tribute_webhook["payload"]["purchase_id"].as_integer() == int(purchase_id),
+            )
+            .limit(1)
+        )
+    elif name in ("new_subscription", "renewed_subscription"):
+        subscription_id = payload.get("subscription_id")
+        expires_at = payload.get("expires_at")
+        if subscription_id is None or expires_at is None:
+            return False
+        stmt = (
+            select(Payment.id)
+            .where(
+                Payment.provider == "tribute",
+                Payment.tribute_webhook["payload"]["subscription_id"].as_integer()
+                == int(subscription_id),
+                Payment.tribute_webhook["payload"]["expires_at"].astext == str(expires_at),
+            )
+            .limit(1)
+        )
+    else:
+        return False
+
+    return (await session.scalars(stmt)).first() is not None
+
+
 async def _commit_tribute_paid_months(
     session: AsyncSession,
     settings: Settings,
@@ -182,16 +227,11 @@ async def _commit_tribute_paid_months(
     telegram_user_id: int,
     months: int,
     amount_minor: int,
-    external_id: str,
+    tribute_webhook: dict[str, Any],
     payment_kind: Literal["subscription", "one_time"],
     event_name: str,
 ) -> TributeWebhookAck:
-    dup_stmt = (
-        select(Payment.id)
-        .where(Payment.provider == "tribute", Payment.external_id == external_id)
-        .limit(1)
-    )
-    if (await session.scalars(dup_stmt)).first() is not None:
+    if await _tribute_payment_duplicate(session, webhook=tribute_webhook):
         return TributeWebhookAck(ok=True, event=event_name, duplicate=True)
 
     user = await require_user_by_telegram_id(session, int(telegram_user_id))
@@ -213,7 +253,7 @@ async def _commit_tribute_paid_months(
             months=months,
             provider="tribute",
             payment_kind=payment_kind,
-            external_id=external_id,
+            tribute_webhook=tribute_webhook,
         ),
     )
     session.add(
@@ -265,7 +305,7 @@ async def _handle_subscription_paid(
         )
         return TributeWebhookAck(ok=True, event=event_name, duplicate=False)
 
-    ext = f"sub:{int(p.subscription_id)}:{_expires_at_iso_compact(p.expires_at)}"
+    webhook = _tribute_webhook_envelope(event_name=event_name, payload=payload)
 
     return await _commit_tribute_paid_months(
         session,
@@ -273,7 +313,7 @@ async def _handle_subscription_paid(
         telegram_user_id=int(p.telegram_user_id),
         months=months,
         amount_minor=int(p.price),
-        external_id=ext,
+        tribute_webhook=webhook,
         payment_kind="subscription",
         event_name=event_name,
     )
@@ -305,7 +345,7 @@ async def _handle_digital_product_paid(
         )
         return TributeWebhookAck(ok=True, event=event_name, duplicate=False)
 
-    ext = f"dp:{int(p.purchase_id)}"
+    webhook = _tribute_webhook_envelope(event_name=event_name, payload=payload)
 
     return await _commit_tribute_paid_months(
         session,
@@ -313,7 +353,7 @@ async def _handle_digital_product_paid(
         telegram_user_id=int(p.telegram_user_id),
         months=months,
         amount_minor=int(p.amount),
-        external_id=ext,
+        tribute_webhook=webhook,
         payment_kind="one_time",
         event_name=event_name,
     )

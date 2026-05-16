@@ -8,7 +8,7 @@ import { useTableSort } from '../utils/adminTableSort.js'
 
 const loading = ref(false)
 const error = ref(null)
-/** @type {import('vue').Ref<Array<{ id: number, user_id: number, amount: string | number, months: number, provider: string, payment_kind: string, external_id: string | null, created_at: string }>>} */
+/** @type {import('vue').Ref<Array<{ id: number, user_id: number, amount: string | number, months: number, provider: string, payment_kind: string, tribute_webhook: Record<string, unknown> | null, created_at: string }>>} */
 const items = ref([])
 const total = ref(0)
 const limit = 200
@@ -21,7 +21,7 @@ const sortAccessors = {
   months: (r) => Number(r.months) || 0,
   provider: (r) => String(r.provider ?? '').toLowerCase(),
   payment_kind: (r) => String(r.payment_kind ?? '').toLowerCase(),
-  external_id: (r) => String(r.external_id ?? '').toLowerCase(),
+  tribute_webhook: (r) => JSON.stringify(r.tribute_webhook ?? '').toLowerCase(),
   created_at: (r) => String(r.created_at ?? ''),
 }
 
@@ -53,6 +53,18 @@ function fmtDate(iso) {
     })
   } catch {
     return String(iso)
+  }
+}
+
+function tributeWebhookPreview(webhook) {
+  if (!webhook || typeof webhook !== 'object') return '—'
+  const name = webhook.name
+  if (name) return String(name)
+  try {
+    const s = JSON.stringify(webhook)
+    return s.length > 80 ? `${s.slice(0, 77)}…` : s
+  } catch {
+    return '—'
   }
 }
 
@@ -191,8 +203,8 @@ onMounted(() => {
                 @sort="toggleSort"
               />
               <AdminSortTh
-                label="Внешний id"
-                column-key="external_id"
+                label="Webhook Tribute"
+                column-key="tribute_webhook"
                 :sort-key="sortKey"
                 :sort-dir="sortDir"
                 @sort="toggleSort"
@@ -224,8 +236,11 @@ onMounted(() => {
                 <td>
                   <span class="pill pill-mono" :title="row.provider">{{ row.provider }}</span>
                 </td>
-                <td class="mono-cell" :title="row.external_id || ''">
-                  {{ row.external_id || '—' }}
+                <td
+                  class="mono-cell"
+                  :title="row.tribute_webhook ? JSON.stringify(row.tribute_webhook) : ''"
+                >
+                  {{ tributeWebhookPreview(row.tribute_webhook) }}
                 </td>
                 <td class="date-cell">{{ fmtDate(row.created_at) }}</td>
               </tr>

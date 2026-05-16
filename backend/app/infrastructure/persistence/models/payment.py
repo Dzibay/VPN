@@ -1,7 +1,10 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 
+from typing import Any
+
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, Numeric, Text, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.base import Base
@@ -33,7 +36,8 @@ class Payment(Base):
         nullable=False,
         server_default=text("'subscription'"),
     )
-    external_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Полное тело webhook Tribute ``{name, payload}``; null для manual.
+    tribute_webhook: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

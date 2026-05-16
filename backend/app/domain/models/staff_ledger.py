@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -31,7 +31,7 @@ class StaffPaymentItem(BaseModel):
     provider: str
     #: ``subscription`` (Tribute) | ``one_time`` (Tribute цифровой товар).
     payment_kind: str
-    external_id: str | None = None
+    tribute_webhook: dict[str, Any] | None = None
     created_at: datetime
 
 
