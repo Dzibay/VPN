@@ -11,11 +11,7 @@ import {
 } from '../api/client.js'
 import AppTooltip from '../components/AppTooltip.vue'
 import { formatTrafficBytes } from '../utils/formatTraffic.js'
-import { isMobileDevice } from '../util/mobileDevice.js'
-import {
-  openDeepLinkDesktop,
-  openDeepLinkMobile,
-} from '../util/openDeepLink.js'
+import { isMobileDevice, openTelegramDeepLink } from '../util/openDeepLink.js'
 import { Check, CreditCard, Link2, Loader2, Send } from 'lucide-vue-next'
 
 /** Подсказки к строкам исх./вх. в блоке трафика */
@@ -251,14 +247,14 @@ async function load() {
 
 const telegramSyncBusy = ref(false)
 const telegramSyncError = ref(null)
-/** На телефоне: запасная нативная ссылка, если авто-переход заблокирован */
-const telegramSyncManualLink = ref(null)
+/** На телефоне: запасная ссылка под кнопкой (нативный тап, если авто-переход не сработал) */
+const telegramSyncFallbackLink = ref(null)
 
 async function openTelegramSyncLink() {
   const mobile = isMobileDevice()
   telegramSyncBusy.value = true
   telegramSyncError.value = null
-  if (!mobile) telegramSyncManualLink.value = null
+  telegramSyncFallbackLink.value = null
   try {
     const data = await fetchJson('/api/me/telegram-sync-start', {
       method: 'POST',
@@ -270,12 +266,8 @@ async function openTelegramSyncLink() {
       return
     }
     const link = url.trim()
-    if (mobile) {
-      telegramSyncManualLink.value = link
-      openDeepLinkMobile(link)
-    } else {
-      openDeepLinkDesktop(link)
-    }
+    if (mobile) telegramSyncFallbackLink.value = link
+    openTelegramDeepLink(link, { mobile })
   } catch (e) {
     telegramSyncError.value = e.message || String(e)
   } finally {
@@ -283,14 +275,9 @@ async function openTelegramSyncLink() {
   }
 }
 
-watch(
-  () => [activeCabinetTab.value, profileTelegramLinked.value],
-  ([tab, linked]) => {
-    if (tab !== 'profile' || linked) {
-      telegramSyncManualLink.value = null
-    }
-  },
-)
+watch(profileTelegramLinked, (linked) => {
+  if (linked) telegramSyncFallbackLink.value = null
+})
 
 const pwdCurrent = ref('')
 const pwdNew = ref('')
@@ -894,24 +881,7 @@ onMounted(() => {
                     <p v-if="telegramSyncError" class="err profile-tg-sync-err">
                       {{ telegramSyncError }}
                     </p>
-                    <a
-                      v-if="telegramSyncManualLink"
-                      :href="telegramSyncManualLink"
-                      class="copy-sub-btn profile-tg-open-btn profile-tg-open-btn--link"
-                      rel="noopener noreferrer"
-                    >
-                      <Send
-                        class="profile-tg-open-btn__icon"
-                        :size="20"
-                        :stroke-width="2"
-                        aria-hidden="true"
-                      />
-                      <span class="profile-tg-open-btn__label"
-                        >Открыть Telegram</span
-                      >
-                    </a>
                     <button
-                      v-else
                       type="button"
                       class="copy-sub-btn profile-tg-open-btn"
                       :disabled="telegramSyncBusy"
@@ -938,11 +908,16 @@ onMounted(() => {
                       }}</span>
                     </button>
                     <p
-                      v-if="telegramSyncManualLink"
-                      class="hint profile-tg-manual-hint"
+                      v-if="telegramSyncFallbackLink && isMobileDevice()"
+                      class="hint profile-tg-fallback-hint"
                     >
-                      Если Telegram не открылся автоматически — нажмите кнопку
-                      выше ещё раз.
+                      Если Telegram не открылся —
+                      <a
+                        :href="telegramSyncFallbackLink"
+                        class="profile-tg-fallback-hint__link"
+                        rel="noopener noreferrer"
+                        >откройте ссылку вручную</a
+                      >.
                     </p>
                   </template>
                 </dd>
@@ -1687,14 +1662,20 @@ dd {
   font-size: 0.88rem;
 }
 
-.profile-tg-manual-hint {
+.profile-tg-fallback-hint {
   margin: 0.5rem 0 0;
   font-size: 0.82rem;
   line-height: 1.4;
 }
 
-.profile-tg-open-btn--link:visited {
-  color: #fff;
+.profile-tg-fallback-hint__link {
+  color: #229ed9;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.profile-tg-fallback-hint__link:hover {
+  color: #1f8fc7;
 }
 
 .profile-tg-open-btn {

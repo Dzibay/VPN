@@ -1,40 +1,41 @@
 /**
- * Открытие внешних ссылок (t.me и т.п.) — разная логика для телефона и ПК.
+ * Открытие внешних deep link (t.me и т.п.).
+ * Телефон: переход в том же окне (window.open после await блокируется в Safari).
+ * ПК: новая вкладка.
  */
 
-/**
- * Телефон: переход в том же окне (после await window.open блокируется).
- * @param {string} url
- */
-export function openDeepLinkMobile(url) {
-  const u = String(url).trim()
-  if (!u) return
-  try {
-    window.location.replace(u)
-    return
-  } catch {
-    /* ignore */
+/** @returns {boolean} */
+export function isMobileDevice() {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  if (
+    /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile/i.test(
+      ua,
+    )
+  ) {
+    return true
   }
-  try {
-    const a = document.createElement('a')
-    a.href = u
-    a.rel = 'noopener noreferrer'
-    a.style.display = 'none'
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-  } catch {
-    /* ignore */
+  if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) {
+    return true
   }
+  return false
 }
 
 /**
- * ПК: новая вкладка (после await на десктопе обычно не блокируется).
  * @param {string} url
+ * @param {{ mobile?: boolean }} [options] — mobile по умолчанию из UA
  */
-export function openDeepLinkDesktop(url) {
+export function openTelegramDeepLink(url, { mobile = isMobileDevice() } = {}) {
   const u = String(url).trim()
   if (!u) return
+  if (mobile) {
+    try {
+      window.location.replace(u)
+    } catch {
+      /* ignore */
+    }
+    return
+  }
   try {
     window.open(u, '_blank', 'noopener,noreferrer')
   } catch {

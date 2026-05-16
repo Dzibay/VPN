@@ -34,10 +34,10 @@ from app.domain.auth.sync_tokens import (
     delete_site_cred_token,
     delete_telegram_link_token,
     generate_sync_token_value,
+    get_or_issue_telegram_link_token,
     get_telegram_link_user_id,
     resolve_site_cred_user_id,
     store_site_cred_token,
-    store_telegram_link_token,
     sync_start_payload,
 )
 from app.domain.models.auth import (
@@ -393,9 +393,8 @@ async def telegram_sync_start_link(
     if not base:
         raise ServiceUnavailableError("TELEGRAM_BOT_USERNAME не задан — ссылка на бота недоступна")
 
-    token_val = generate_sync_token_value()
     try:
-        store_telegram_link_token(redis_conn, token_val, int(user.id))
+        token_val = get_or_issue_telegram_link_token(redis_conn, int(user.id))
     except TelegramSyncRedisError:
         raise ServiceUnavailableError("Не удалось сохранить токен привязки (проверьте Redis)") from None
 

@@ -5,6 +5,8 @@
 * ``vpn:tg_sync:{value}`` — пользователь жмёт «Привязать Telegram» в личном кабинете,
   получает deep link на бота: бот по своей стороне вызывает API и обменивает токен на
   ``user_id``.
+* ``vpn:tg_sync_pending:{user_id}`` — обратный индекс: пока токен жив, повторный запрос
+  из кабинета возвращает ту же ссылку (TTL 15 мин, продлевается при повторном нажатии).
 * ``vpn:tg_site_cred:{value}`` — пользователь нажал «Привязать аккаунт сайта» внутри бота,
   бот выдал ему ссылку на сайт с одноразовым токеном; на сайте по нему резолвится
   ``user_id`` и собирается форма ввода email и пароля.
@@ -30,6 +32,7 @@ _TOKEN_ALPHABET = string.ascii_letters + string.digits + "_"
 _TOKEN_LEN = 32
 _TTL_SEC = 900
 _KEY_PREFIX_TELEGRAM_LINK = "vpn:tg_sync:"
+_KEY_PREFIX_TELEGRAM_LINK_USER = "vpn:tg_sync_pending:"
 _KEY_PREFIX_SITE_CRED = "vpn:tg_site_cred:"
 
 
@@ -50,6 +53,13 @@ def sync_start_payload(token_value: str) -> str:
 def _setex_user_mapping(redis: Redis, full_key: str, user_id: int) -> None:
     try:
         redis.setex(full_key, _TTL_SEC, str(int(user_id)))
+    except RedisError as e:
+        raise TelegramSyncRedisError(str(e)) from e
+
+
+def _setex_str_mapping(redis: Redis, full_key: str, value: str) -> None:
+    try:
+        redis.setex(full_key, _TTL_SEC, value)
     except RedisError as e:
         raise TelegramSyncRedisError(str(e)) from e
 
@@ -76,7 +86,40 @@ def _delete_mapping(redis: Redis, full_key: str) -> None:
 
 def store_telegram_link_token(redis: Redis, token_value: str, user_id: int) -> None:
     """Запомнить связку ``token → user_id`` для deep link на бота из личного кабинета."""
-    _setex_user_mapping(redis, _KEY_PREFIX_TELEGRAM_LINK + token_value, user_id)
+    uid = int(user_id)
+    _setex_user_mapping(redis, _KEY_PREFIX_TELEGRAM_LINK + token_value, uid)
+    _setex_str_mapping(redis, _KEY_PREFIX_TELEGRAM_LINK_USER + str(uid), token_value)
+
+
+def _get_pending_telegram_link_token(redis: Redis, user_id: int) -> str | None:
+    """Активный токен привязки для пользователя (None — нет или истёк)."""
+    uid = int(user_id)
+    pending_key = _KEY_PREFIX_TELEGRAM_LINK_USER + str(uid)
+    try:
+        raw = redis.get(pending_key)
+    except RedisError as e:
+        raise TelegramSyncRedisError(str(e)) from e
+    if raw is None:
+        return None
+    token = raw.decode() if isinstance(raw, bytes) else str(raw)
+    if not token:
+        return None
+    mapped_uid = get_telegram_link_user_id(redis, token)
+    if mapped_uid != uid:
+        _delete_mapping(redis, pending_key)
+        return None
+    return token
+
+
+def get_or_issue_telegram_link_token(redis: Redis, user_id: int) -> str:
+    """Вернуть действующий токен или создать новый (TTL обновляется при повторном запросе)."""
+    existing = _get_pending_telegram_link_token(redis, user_id)
+    if existing:
+        store_telegram_link_token(redis, existing, user_id)
+        return existing
+    token_val = generate_sync_token_value()
+    store_telegram_link_token(redis, token_val, user_id)
+    return token_val
 
 
 def get_telegram_link_user_id(redis: Redis, token_value: str) -> int | None:
@@ -86,7 +129,10 @@ def get_telegram_link_user_id(redis: Redis, token_value: str) -> int | None:
 
 def delete_telegram_link_token(redis: Redis, token_value: str) -> None:
     """Удалить токен после успешной привязки Telegram (или ручной отмены)."""
+    uid = get_telegram_link_user_id(redis, token_value)
     _delete_mapping(redis, _KEY_PREFIX_TELEGRAM_LINK + token_value)
+    if uid is not None:
+        _delete_mapping(redis, _KEY_PREFIX_TELEGRAM_LINK_USER + str(uid))
 
 
 def store_site_cred_token(redis: Redis, token_value: str, user_id: int) -> None:
