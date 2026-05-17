@@ -20,6 +20,10 @@ from app.infrastructure.persistence.models.server import Server
 _COMPETITOR_BALANCER_TAG = "auto-balance"
 _COMPETITOR_PROBE_URL = "http://1.1.1.1/generate_204"
 _COMPETITOR_PROBE_INTERVAL = "10s"
+_COMPETITOR_DNS_TAG = "dns-out"
+_DIRECT_SERVICE_PORTS = (
+    "22,25,135-139,465,587,593,2525,3306,3389,5432,6379,11211,1900"
+)
 _COMPETITOR_SNIFFING: dict[str, Any] = {
     "enabled": True,
     "routeOnly": False,
@@ -93,9 +97,16 @@ def server_to_competitor_vless_outbound(
 
 def _competitor_dns() -> dict[str, Any]:
     return {
+        "disableCache": False,
+        "disableFallback": False,
+        "disableFallbackIfMatch": True,
+        "enableParallelQuery": False,
         "queryStrategy": "UseIPv4",
+        "serveExpiredTTL": 0,
+        "serveStale": True,
         "servers": ["1.1.1.1", "8.8.8.8"],
-        "tag": "dns-in",
+        "tag": _COMPETITOR_DNS_TAG,
+        "useSystemHosts": False,
     }
 
 
@@ -209,8 +220,14 @@ def _competitor_routing(
 
     rules: list[dict[str, Any]] = [
         {
-            "port": "22,25,135-139,465,587,593,2525,3306,3389,5432,6379,11211,1900",
+            "type": "field",
+            "inboundTag": [_COMPETITOR_DNS_TAG],
+            "balancerTag": balancer_tag,
+        },
+        {
+            "type": "field",
             "outboundTag": "direct",
+            "port": _DIRECT_SERVICE_PORTS,
         },
         {
             "type": "field",
@@ -375,6 +392,11 @@ def build_happ_plain_vless_profile(
             "domainMatcher": "hybrid",
             "domainStrategy": "IPIfNonMatch",
             "rules": [
+                {
+                    "type": "field",
+                    "inboundTag": [_COMPETITOR_DNS_TAG],
+                    "outboundTag": "proxy",
+                },
                 {
                     "type": "field",
                     "protocol": ["bittorrent"],
