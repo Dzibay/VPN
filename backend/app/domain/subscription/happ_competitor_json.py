@@ -18,8 +18,8 @@ from app.domain.subscription.build import (
 from app.infrastructure.persistence.models.server import Server
 
 _COMPETITOR_BALANCER_TAG = "auto-balance"
-_COMPETITOR_PROBE_URL = "https://1.1.1.1"
-_COMPETITOR_PROBE_INTERVAL = "30s"
+_COMPETITOR_PROBE_URL = "http://1.1.1.1/generate_204"
+_COMPETITOR_PROBE_INTERVAL = "10s"
 _COMPETITOR_SNIFFING: dict[str, Any] = {
     "enabled": True,
     "routeOnly": False,
@@ -93,21 +93,9 @@ def server_to_competitor_vless_outbound(
 
 def _competitor_dns() -> dict[str, Any]:
     return {
-        "tag": "dns-in",
-        "servers": [
-            {
-                "address": "https://1.1.1.1/dns-query",
-                "timeoutMs": 5000,
-            },
-        ],
-        "serveStale": True,
-        "disableCache": False,
         "queryStrategy": "UseIPv4",
-        "useSystemHosts": False,
-        "disableFallback": False,
-        "serveExpiredTTL": 0,
-        "enableParallelQuery": False,
-        "disableFallbackIfMatch": True,
+        "servers": ["1.1.1.1", "8.8.8.8"],
+        "tag": "dns-in",
     }
 
 
