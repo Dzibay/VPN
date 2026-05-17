@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import json
 import logging
 from typing import Any
@@ -24,7 +23,15 @@ from app.domain.subscription.build import (
 from app.domain.subscription.happ_competitor_json import (
     build_happ_competitor_balanced_profile_json,
 )
-from app.domain.subscription.happ_mobile_json import build_happ_mobile_profile_json
+from app.domain.subscription.happ_mobile_json import (
+    build_happ_mobile_profile,
+    build_happ_mobile_profile_json,
+)
+from app.domain.subscription.happ_subscription_encode import (
+    HappSubscriptionBodyFormat,
+    encode_happ_subscription_body,
+    parse_json_profile_line,
+)
 from app.domain.subscription.happ_balancer_json import build_happ_balancer_json
 from app.infrastructure.persistence.models.server import Server
 from app.infrastructure.persistence.models.user import User
@@ -384,7 +391,12 @@ def _variant_12_competitor_leastload(
     )
 
 
-def build_test_happ_variants_payload(user: User, rows: list[Server]) -> SubscriptionPayload:
+def build_test_happ_variants_payload(
+    user: User,
+    rows: list[Server],
+    *,
+    happ_body: HappSubscriptionBodyFormat = "json_array_b64",
+) -> SubscriptionPayload:
     """
     Подписка только для диагностики Happ mobile.
 
@@ -421,20 +433,31 @@ def build_test_happ_variants_payload(user: User, rows: list[Server]) -> Subscrip
         ("12", _variant_12_competitor_leastload),
     ]
 
-    uris: list[str] = [
-        "# Happ JSON variants: compare with CONTROL vless on phone",
-        "# Expected on mobile: TEST-12 (competitor); TEST-11 single; TEST-01..10 leastPing",
+    text_lines: list[str] = [
+        "# Happ JSON variants",
+        "# json-array (default): Happ mobile JSON array in Base64",
+        "# ?happ_body=lines — legacy postрочный формат",
     ]
+    json_profiles: list[dict] = []
 
-    control = _vless_reality_share_uri(
+    control_vless = _vless_reality_share_uri(
         rec,
         client_uuid=client_uuid,
         exit_ids_referenced=ctx.exit_ids_referenced,
         client_fingerprint=fp_by_id[rec.id],
         fragment_override=_CONTROL_VLESS_LABEL,
     )
-    if control:
-        uris.append(control)
+    if control_vless:
+        text_lines.append(control_vless)
+    control_json = build_happ_mobile_profile(
+        _CONTROL_VLESS_LABEL,
+        rec,
+        client_uuid=client_uuid,
+        client_fingerprint=fp_by_id[rec.id],
+        server_description="control single vless",
+    )
+    if control_json:
+        json_profiles.append(control_json)
 
     for _num, fn in builders:
         try:
@@ -459,14 +482,21 @@ def build_test_happ_variants_payload(user: User, rows: list[Server]) -> Subscrip
             log.warning("Skip happ variant %s: %s", _num, exc)
             continue
         if line:
-            uris.append(line)
+            text_lines.append(line)
+            doc = parse_json_profile_line(line)
+            if doc:
+                json_profiles.append(doc)
 
-    raw = "\n".join(uris) + ("\n" if uris else "")
-    b64 = base64.standard_b64encode(raw.encode("utf-8")).decode("ascii") if raw else ""
+    body, media_type = encode_happ_subscription_body(
+        fmt=happ_body,
+        json_profiles=json_profiles,
+        text_lines=text_lines if happ_body == "lines" else None,
+    )
     return SubscriptionPayload(
         valid_until=user.subscription_until,
         subscription_active=True,
         servers=[],
-        vless_uris=uris,
-        subscription_base64=b64,
+        vless_uris=text_lines,
+        subscription_base64=body,
+        subscription_media_type=media_type,
     )

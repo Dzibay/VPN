@@ -181,3 +181,23 @@ def build_happ_mobile_profile_json(
         doc["meta"] = {"serverDescription": server_description}
 
     return json.dumps(doc, ensure_ascii=False, separators=(",", ":"))
+
+
+def build_happ_mobile_profile(
+    remark: str,
+    server: Server,
+    *,
+    client_uuid: str,
+    client_fingerprint: str,
+    server_description: str | None = None,
+) -> dict[str, Any] | None:
+    line = build_happ_mobile_profile_json(
+        remark,
+        server,
+        client_uuid=client_uuid,
+        client_fingerprint=client_fingerprint,
+        server_description=server_description,
+    )
+    if line is None:
+        return None
+    return json.loads(line)

@@ -146,6 +146,13 @@ def _competitor_inbounds() -> list[dict[str, Any]]:
     ]
 
 
+def _competitor_log() -> dict[str, Any]:
+    return {
+        "loglevel": "Warning",
+        "dnsLog": True,
+    }
+
+
 def _competitor_tail_outbounds() -> list[dict[str, Any]]:
     return [
         {"tag": "block", "protocol": "blackhole"},
@@ -311,7 +318,33 @@ def build_happ_competitor_balanced_profile_json(
         "remarks": remark,
         "routing": routing,
         "inbounds": _competitor_inbounds(),
+        "log": _competitor_log(),
         "outbounds": outbounds,
         "observatory": _competitor_observatory(observatory_tags),
     }
     return json.dumps(doc, ensure_ascii=False, separators=(",", ":"))
+
+
+def build_happ_competitor_balanced_profile(
+    remark: str,
+    pool: list[Server],
+    *,
+    client_uuid: str,
+    fp_by_id: dict[int, str],
+    pool_whitelist: bool,
+    fallback_server: Server | None = None,
+    balancer_tag: str = _COMPETITOR_BALANCER_TAG,
+) -> dict[str, Any] | None:
+    """Тот же профиль, что ``build_happ_competitor_balanced_profile_json``, как dict."""
+    line = build_happ_competitor_balanced_profile_json(
+        remark,
+        pool,
+        client_uuid=client_uuid,
+        fp_by_id=fp_by_id,
+        pool_whitelist=pool_whitelist,
+        fallback_server=fallback_server,
+        balancer_tag=balancer_tag,
+    )
+    if line is None:
+        return None
+    return json.loads(line)

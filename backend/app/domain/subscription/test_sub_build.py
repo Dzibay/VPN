@@ -1,8 +1,7 @@
-"""Сборка тестовой подписки /test-sub: профили Happ (competitor JSON + vless)."""
+"""Сборка тестовой подписки /test-sub для Happ (JSON array + competitor balancer)."""
 
 from __future__ import annotations
 
-import base64
 import logging
 from typing import Any
 
@@ -17,7 +16,12 @@ from app.domain.subscription.build import (
     _vless_pool_for_auto,
 )
 from app.domain.subscription.happ_competitor_json import (
-    build_happ_competitor_balanced_profile_json,
+    build_happ_competitor_balanced_profile,
+)
+from app.domain.subscription.happ_mobile_json import build_happ_mobile_profile
+from app.domain.subscription.happ_subscription_encode import (
+    HappSubscriptionBodyFormat,
+    encode_happ_subscription_body,
 )
 from app.infrastructure.persistence.models.server import Server
 from app.infrastructure.persistence.models.user import User
@@ -31,41 +35,82 @@ def _best_server_by_load(servers: list[Server]) -> Server | None:
     return min(servers, key=lambda s: (int(s.load_percent), int(s.id)))
 
 
-def _append_competitor_profile(
+def _collect_test_sub_json_profiles(
     *,
-    uris: list[str],
-    remark: str,
-    pool: list[Server],
+    ctx,
+    pool_rec: list[Server],
+    pool_wl: list[Server],
     client_uuid: str,
     fp_by_id: dict[int, str],
-    pool_whitelist: bool,
-    fallback_server: Server | None = None,
-    balancer_tag: str | None = None,
-) -> None:
-    kwargs: dict[str, Any] = {}
-    if balancer_tag is not None:
-        kwargs["balancer_tag"] = balancer_tag
-    line = build_happ_competitor_balanced_profile_json(
-        remark,
-        pool,
-        client_uuid=client_uuid,
-        fp_by_id=fp_by_id,
-        pool_whitelist=pool_whitelist,
-        fallback_server=fallback_server,
-        **kwargs,
-    )
-    if line:
-        uris.append(line)
+) -> list[dict[str, Any]]:
+    profiles: list[dict[str, Any]] = []
+    best_wl = _best_server_by_load(pool_wl)
+
+    if pool_rec:
+        doc = build_happ_competitor_balanced_profile(
+            SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
+            pool_rec,
+            client_uuid=client_uuid,
+            fp_by_id=fp_by_id,
+            pool_whitelist=False,
+            fallback_server=best_wl,
+        )
+        if doc:
+            profiles.append(doc)
+
+    if pool_wl:
+        doc = build_happ_competitor_balanced_profile(
+            SUBSCRIPTION_AUTO_WHITELIST_LABEL,
+            pool_wl,
+            client_uuid=client_uuid,
+            fp_by_id=fp_by_id,
+            pool_whitelist=True,
+            fallback_server=_best_server_by_load(pool_wl),
+        )
+        if doc:
+            profiles.append(doc)
+
+    for s in ctx.delivery_rows:
+        if s.whitelist:
+            continue
+        doc = build_happ_mobile_profile(
+            _node_subscription_label(s, exit_ids_referenced=ctx.exit_ids_referenced),
+            s,
+            client_uuid=client_uuid,
+            client_fingerprint=fp_by_id[s.id],
+        )
+        if doc:
+            profiles.append(doc)
+
+    for wl in pool_wl:
+        if not pool_rec:
+            continue
+        remark = _node_subscription_label(wl, exit_ids_referenced=ctx.exit_ids_referenced)
+        doc = build_happ_competitor_balanced_profile(
+            remark,
+            pool_rec,
+            client_uuid=client_uuid,
+            fp_by_id=fp_by_id,
+            pool_whitelist=False,
+            fallback_server=wl,
+            balancer_tag=f"wl-{int(wl.id)}-balance",
+        )
+        if doc:
+            profiles.append(doc)
+
+    return profiles
 
 
-def build_test_sub_payload(user: User, rows: list[Server]) -> SubscriptionPayload:
+def build_test_sub_payload(
+    user: User,
+    rows: list[Server],
+    *,
+    happ_body: HappSubscriptionBodyFormat = "json_array_b64",
+) -> SubscriptionPayload:
     """
-    Подписка для Happ mobile (формат конкурентов).
+    Подписка для Happ mobile: ``json_array_b64`` (массив JSON-профилей в Base64).
 
-    1. Auto (рекомендуемый) — один JSON: ``pool_rec`` + ``leastLoad`` + fallback на лучший WL.
-    2. Auto (белые списки) — один JSON: ``pool_wl`` (balancer внутри профиля).
-    3. Обычные узлы — ``vless://``.
-    4. Каждый WL — JSON ``pool_rec`` + fallback на этот WL.
+    ``happ_body=lines`` — legacy (``vless://`` + сырой JSON построчно; mobile игнорирует JSON).
     """
     ctx = _subscription_delivery_context(rows)
     client_uuid = (user.vless_uuid or "").strip()
@@ -74,53 +119,29 @@ def build_test_sub_payload(user: User, rows: list[Server]) -> SubscriptionPayloa
     )
     pool_rec = _vless_pool_for_auto(ctx, uri_by_id, whitelist=False)
     pool_wl = _vless_pool_for_auto(ctx, uri_by_id, whitelist=True)
-    best_wl = _best_server_by_load(pool_wl)
 
-    uris: list[str] = []
+    json_profiles = _collect_test_sub_json_profiles(
+        ctx=ctx,
+        pool_rec=pool_rec,
+        pool_wl=pool_wl,
+        client_uuid=client_uuid,
+        fp_by_id=fp_by_id,
+    )
 
-    if pool_rec:
-        _append_competitor_profile(
-            uris=uris,
-            remark=SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
-            pool=pool_rec,
-            client_uuid=client_uuid,
-            fp_by_id=fp_by_id,
-            pool_whitelist=False,
-            fallback_server=best_wl,
-        )
+    vless_lines: list[str] = []
+    if happ_body == "lines":
+        for s in ctx.delivery_rows:
+            if s.whitelist:
+                continue
+            u = uri_by_id.get(s.id)
+            if u:
+                vless_lines.append(u)
 
-    if pool_wl:
-        _append_competitor_profile(
-            uris=uris,
-            remark=SUBSCRIPTION_AUTO_WHITELIST_LABEL,
-            pool=pool_wl,
-            client_uuid=client_uuid,
-            fp_by_id=fp_by_id,
-            pool_whitelist=True,
-            fallback_server=_best_server_by_load(pool_wl),
-        )
-
-    for s in ctx.delivery_rows:
-        if s.whitelist:
-            continue
-        u = uri_by_id.get(s.id)
-        if u:
-            uris.append(u)
-
-    for wl in pool_wl:
-        if not pool_rec:
-            continue
-        remark = _node_subscription_label(wl, exit_ids_referenced=ctx.exit_ids_referenced)
-        _append_competitor_profile(
-            uris=uris,
-            remark=remark,
-            pool=pool_rec,
-            client_uuid=client_uuid,
-            fp_by_id=fp_by_id,
-            pool_whitelist=False,
-            fallback_server=wl,
-            balancer_tag=f"wl-{int(wl.id)}-balance",
-        )
+    body, media_type = encode_happ_subscription_body(
+        fmt=happ_body,
+        json_profiles=json_profiles,
+        text_lines=vless_lines if happ_body == "lines" else None,
+    )
 
     servers_out: list[dict[str, Any]] = []
     for s in ctx.delivery_rows:
@@ -135,12 +156,21 @@ def build_test_sub_payload(user: User, rows: list[Server]) -> SubscriptionPayloa
             )
         )
 
-    raw = "\n".join(uris) + ("\n" if uris else "")
-    b64 = base64.standard_b64encode(raw.encode("utf-8")).decode("ascii") if raw else ""
+    vless_uris = (
+        vless_lines
+        if happ_body == "lines"
+        else [
+            p.get("remarks", "json")
+            for p in json_profiles
+            if isinstance(p.get("remarks"), str)
+        ]
+    )
+
     return SubscriptionPayload(
         valid_until=user.subscription_until,
         subscription_active=True,
         servers=servers_out,
-        vless_uris=uris,
-        subscription_base64=b64,
+        vless_uris=vless_uris,
+        subscription_base64=body,
+        subscription_media_type=media_type,
     )

@@ -67,5 +67,9 @@ class SubscriptionPayload(BaseModel):
     )
     subscription_base64: str = Field(
         default="",
-        description="Base64 от UTF-8 текста: по одной share-ссылке (vless:// / hysteria2://) на строку",
+        description="Тело подписки: Base64 (строки vless:// или JSON array) либо сырой JSON array",
+    )
+    subscription_media_type: str = Field(
+        default="text/plain; charset=utf-8",
+        description="Content-Type ответа GET /sub/…",
     )

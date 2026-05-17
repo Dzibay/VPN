@@ -55,6 +55,7 @@ from app.domain.services.subscription_service import (
     subscription_payload_rows_for_resolved_user,
     test_happ_variants_client_metadata_headers,
     test_happ_variants_payload_from_db,
+    normalize_happ_body_format,
     test_sub_client_metadata_headers,
     test_sub_payload_from_db,
     test_subscription_client_metadata_headers,
@@ -239,15 +240,23 @@ async def test_sub_head(request: Request) -> Response:
 async def test_sub_get(
     request: Request,
     session: ReadonlySessionDep,
+    happ_body: str | None = Query(
+        None,
+        alias="happ_body",
+        description="Формат тела: json-array (по умолчанию), lines, json-array-raw",
+    ),
 ) -> Response:
     try:
-        payload = await test_sub_payload_from_db(session)
+        payload = await test_sub_payload_from_db(
+            session,
+            happ_body=normalize_happ_body_format(happ_body),
+        )
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     headers = test_sub_client_metadata_headers(request=request)
     return Response(
         content=payload.subscription_base64,
-        media_type="text/plain; charset=utf-8",
+        media_type=payload.subscription_media_type,
         headers=headers,
     )
 
@@ -286,15 +295,23 @@ async def test_happ_variants_head(request: Request) -> Response:
 async def test_happ_variants_get(
     request: Request,
     session: ReadonlySessionDep,
+    happ_body: str | None = Query(
+        None,
+        alias="happ_body",
+        description="Формат тела: json-array (по умолчанию), lines, json-array-raw",
+    ),
 ) -> Response:
     try:
-        payload = await test_happ_variants_payload_from_db(session)
+        payload = await test_happ_variants_payload_from_db(
+            session,
+            happ_body=normalize_happ_body_format(happ_body),
+        )
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     headers = test_happ_variants_client_metadata_headers(request=request)
     return Response(
         content=payload.subscription_base64,
-        media_type="text/plain; charset=utf-8",
+        media_type=payload.subscription_media_type,
         headers=headers,
     )
 
