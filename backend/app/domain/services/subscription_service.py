@@ -214,7 +214,7 @@ def test_happ_variants_client_metadata_headers(
     headers = test_sub_client_metadata_headers(request=request)
     headers["profile-title"] = f"{BRAND_NAME_ASCII} happ-json-test"
     headers["announce"] = subscription_announce_header_value(
-        "Тест JSON для Happ: ищите CONTROL vless и TEST-01..10"
+        "Тест JSON для Happ: CONTROL vless, TEST-12 competitor, TEST-01..11"
     )
     return headers
 

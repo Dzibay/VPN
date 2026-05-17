@@ -225,8 +225,8 @@ async def test_sub_head(request: Request) -> Response:
 @router.get(
     "/sub/test-sub",
     summary=(
-        "Тестовая подписка из БД: Auto (рекомендуемый) с fallback на лучший WL по нагрузке, "
-        "Auto (белые списки), обычные узлы, per-WL balancer→fallback"
+        "Тестовая подписка: Auto JSON (leastLoad+observatory+fallback как у конкурентов), "
+        "vless узлы, per-WL профили"
     ),
     response_class=Response,
 )

@@ -21,6 +21,9 @@ from app.domain.subscription.build import (
     _vless_pool_for_auto,
     _vless_reality_share_uri,
 )
+from app.domain.subscription.happ_competitor_json import (
+    build_happ_competitor_balanced_profile_json,
+)
 from app.domain.subscription.happ_mobile_json import build_happ_mobile_profile_json
 from app.domain.subscription.happ_balancer_json import build_happ_balancer_json
 from app.infrastructure.persistence.models.server import Server
@@ -360,6 +363,27 @@ def _variant_11_happ_mobile_format(
     )
 
 
+def _variant_12_competitor_leastload(
+    rec: Server,
+    wl: Server | None,
+    *,
+    client_uuid: str,
+    fp_by_id: dict[int, str],
+    pool_rec: list[Server] | None = None,
+) -> str | None:
+    """Как vhub: leastLoad + observatory + fallbackTag + geosite routing."""
+    pool = pool_rec if pool_rec else [rec]
+    return build_happ_competitor_balanced_profile_json(
+        "TEST-12 competitor leastLoad",
+        pool,
+        client_uuid=client_uuid,
+        fp_by_id=fp_by_id,
+        pool_whitelist=False,
+        fallback_server=wl,
+        balancer_tag="test-12-balance",
+    )
+
+
 def build_test_happ_variants_payload(user: User, rows: list[Server]) -> SubscriptionPayload:
     """
     Подписка только для диагностики Happ mobile.
@@ -367,7 +391,7 @@ def build_test_happ_variants_payload(user: User, rows: list[Server]) -> Subscrip
     Строки:
     - комментарий ``# ...`` (игнорируется клиентом);
     - ``CONTROL vless`` — эталонная share-ссылка (должна быть видна всегда);
-    - TEST-01 … TEST-11 — варианты JSON.
+    - TEST-01 … TEST-12 — варианты JSON.
     """
     ctx = _subscription_delivery_context(rows)
     client_uuid = (user.vless_uuid or "").strip()
@@ -394,11 +418,12 @@ def build_test_happ_variants_payload(user: User, rows: list[Server]) -> Subscrip
         ("09", _variant_09_single_outbound),
         ("10", _variant_10_emoji_remark),
         ("11", _variant_11_happ_mobile_format),
+        ("12", _variant_12_competitor_leastload),
     ]
 
     uris: list[str] = [
         "# Happ JSON variants: compare with CONTROL vless on phone",
-        "# Expected on mobile: TEST-11 (like other VPN); old balancer: TEST-01..10",
+        "# Expected on mobile: TEST-12 (competitor); TEST-11 single; TEST-01..10 leastPing",
     ]
 
     control = _vless_reality_share_uri(
@@ -415,6 +440,14 @@ def build_test_happ_variants_payload(user: User, rows: list[Server]) -> Subscrip
         try:
             if fn is _variant_09_single_outbound:
                 line = fn(rec, client_uuid=client_uuid, fp_by_id=fp_by_id)
+            elif fn is _variant_12_competitor_leastload:
+                line = fn(
+                    rec,
+                    wl,
+                    client_uuid=client_uuid,
+                    fp_by_id=fp_by_id,
+                    pool_rec=pool_rec,
+                )
             else:
                 line = fn(
                     rec,
