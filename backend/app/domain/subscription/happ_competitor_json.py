@@ -18,7 +18,8 @@ from app.domain.subscription.build import (
 from app.infrastructure.persistence.models.server import Server
 
 _COMPETITOR_BALANCER_TAG = "auto-balance"
-_COMPETITOR_PROBE_INTERVAL = "2m"
+_COMPETITOR_PROBE_URL = "https://1.1.1.1"
+_COMPETITOR_PROBE_INTERVAL = "30s"
 _COMPETITOR_SNIFFING: dict[str, Any] = {
     "enabled": True,
     "routeOnly": False,
@@ -96,7 +97,7 @@ def _competitor_dns() -> dict[str, Any]:
         "servers": [
             {
                 "address": "https://1.1.1.1/dns-query",
-                "timeoutMs": 1000,
+                "timeoutMs": 5000,
             },
         ],
         "serveStale": True,
@@ -267,10 +268,10 @@ def _competitor_routing(
 
 def _competitor_observatory(subject_tags: list[str]) -> dict[str, Any]:
     return {
-        "probeUrl": "http://cp.cloudflare.com/generate_204",
-        "probeInterval": _COMPETITOR_PROBE_INTERVAL,
-        "subjectSelector": list(subject_tags),
         "enableConcurrency": True,
+        "probeInterval": _COMPETITOR_PROBE_INTERVAL,
+        "probeUrl": _COMPETITOR_PROBE_URL,
+        "subjectSelector": list(subject_tags),
     }
 
 
