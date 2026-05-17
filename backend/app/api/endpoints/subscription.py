@@ -28,6 +28,7 @@ Stash / Clash Verge / v2rayNG. Подробнее: ``app.domain.subscription.use
 Тестовые конфигурации (файл ``backend/configurations/test_configurations.json``):
 
 - GET/HEAD ``/sub/test-configurations`` — как обычная подписка: Base64 со строками ``vless://`` или YAML при User-Agent с ``clash`` / ``hiddify``.
+- GET/HEAD ``/test-sub`` — тестовая подписка из БД (Auto с fallback на WL, per-WL профили); Base64 ``text/plain``.
 
 Каждая запись в JSON должна содержать клиентский outbound VLESS+REALITY (TCP); берётся узел с ``tag: proxy`` или первый не-служебный outbound.
 """
@@ -51,6 +52,8 @@ from app.domain.services.subscription_service import (
     subscription_client_metadata_headers,
     subscription_maybe_register_device,
     subscription_payload_rows_for_resolved_user,
+    test_sub_client_metadata_headers,
+    test_sub_payload_from_db,
     test_subscription_client_metadata_headers,
 )
 from app.domain.services.test_configurations_service import (
@@ -189,6 +192,44 @@ async def subscription_test_configs_get(request: Request) -> Response:
             headers=headers,
         )
     payload = build_test_subscription_payload(items)
+    return Response(
+        content=payload.subscription_base64,
+        media_type="text/plain; charset=utf-8",
+        headers=headers,
+    )
+
+
+@router.head(
+    "/test-sub",
+    summary="HEAD тестовой подписки из БД (/test-sub)",
+    response_class=Response,
+)
+async def test_sub_head(request: Request) -> Response:
+    headers = test_sub_client_metadata_headers(request=request)
+    return Response(
+        content="",
+        media_type="text/plain; charset=utf-8",
+        headers=headers,
+    )
+
+
+@router.get(
+    "/test-sub",
+    summary=(
+        "Тестовая подписка из БД: Auto (рекомендуемый) с fallback на лучший WL по нагрузке, "
+        "Auto (белые списки), обычные узлы, per-WL balancer→fallback"
+    ),
+    response_class=Response,
+)
+async def test_sub_get(
+    request: Request,
+    session: ReadonlySessionDep,
+) -> Response:
+    try:
+        payload = await test_sub_payload_from_db(session)
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    headers = test_sub_client_metadata_headers(request=request)
     return Response(
         content=payload.subscription_base64,
         media_type="text/plain; charset=utf-8",

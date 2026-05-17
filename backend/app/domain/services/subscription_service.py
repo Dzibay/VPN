@@ -15,6 +15,7 @@ import base64
 import json
 import logging
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
@@ -25,6 +26,7 @@ from app.domain.subscription.build import (
     build_subscription_payload,
     subscription_servers_from_db,
 )
+from app.domain.subscription.test_sub_build import build_test_sub_payload
 from app.domain.subscription.devices import (
     register_or_touch_subscription_device,
 )
@@ -169,6 +171,29 @@ def test_subscription_client_metadata_headers(*, request: Request | None = None)
         "announce-url": "",
         "routing": routing_header,
     }
+
+
+def test_sub_client_metadata_headers(*, request: Request | None = None) -> dict[str, str]:
+    """Заголовки для GET /test-sub (подписка из БД с tiered fallback)."""
+    headers = test_subscription_client_metadata_headers(request=request)
+    headers["profile-title"] = f"{BRAND_NAME_ASCII} test-sub"
+    headers["announce"] = subscription_announce_header_value("Тестовая подписка /test-sub")
+    return headers
+
+
+async def test_sub_payload_from_db(session: AsyncSession) -> SubscriptionPayload:
+    """Тестовая подписка: узлы из БД, UUID — первый пользователь с ``vless_uuid``."""
+    uuid_val = await session.scalar(
+        select(User.vless_uuid)
+        .where(User.vless_uuid.isnot(None), User.vless_uuid != "")
+        .order_by(User.id)
+        .limit(1)
+    )
+    if not uuid_val or not str(uuid_val).strip():
+        raise ValueError("Нет пользователя с vless_uuid для тестовой подписки")
+    user = User(vless_uuid=str(uuid_val).strip(), subscription_until=None)
+    rows = await subscription_servers_from_db(session)
+    return build_test_sub_payload(user, rows)
 
 
 async def subscription_client_metadata_headers(
