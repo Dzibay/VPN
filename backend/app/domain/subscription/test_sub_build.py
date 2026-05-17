@@ -17,7 +17,6 @@ from app.domain.subscription.build import (
     _auto_balancer_tag,
     _auto_member_outbound_tag,
     _happ_standard_outbound_tail,
-    _is_vless_server,
     _node_subscription_label,
     _server_to_subscription_dict,
     _server_to_vless_reality_outbound,
@@ -38,19 +37,6 @@ def _best_server_by_load(servers: list[Server]) -> Server | None:
     return min(servers, key=lambda s: (int(s.load_percent), int(s.id)))
 
 
-def _whitelist_vless_with_uri(
-    ctx: Any,
-    uri_by_id: dict[int, str | None],
-) -> list[Server]:
-    return [
-        s
-        for s in ctx.delivery_rows
-        if _is_vless_server(s)
-        and bool(s.whitelist)
-        and uri_by_id.get(s.id) is not None
-    ]
-
-
 def _build_happ_balancer_json(
     remark: str,
     pool: list[Server],
@@ -61,8 +47,16 @@ def _build_happ_balancer_json(
     fallback_server: Server | None = None,
     balancer_tag: str | None = None,
 ) -> str | None:
-    """JSON balancer ``leastPing``; ``fallbackTag`` — явный WL-outbound или первый член пула."""
-    if len(pool) < 2:
+    """
+    JSON balancer ``leastPing``.
+
+    При 2+ узлах в пуле — полноценный balancer. При одном узле и ``fallback_server`` —
+    один outbound в ``selector`` + ``fallbackTag`` на WL (tiered fallback без leastPing между regular).
+    """
+    if not pool:
+        return None
+    allow_single_member = fallback_server is not None
+    if len(pool) < 2 and not allow_single_member:
         return None
 
     bal_tag = balancer_tag or _auto_balancer_tag(whitelist=pool_whitelist)
@@ -82,7 +76,9 @@ def _build_happ_balancer_json(
         member_tags.append(member_tag)
         proxy_outbounds.append(ob)
 
-    if len(member_tags) < 2:
+    if len(member_tags) < 1:
+        return None
+    if len(member_tags) < 2 and not allow_single_member:
         return None
 
     fallback_tag = member_tags[0]
@@ -146,7 +142,7 @@ def _append_balancer_or_vless(
     if not pool:
         return
 
-    if len(pool) == 1:
+    if len(pool) == 1 and fallback_server is None:
         s = pool[0]
         uri = _vless_reality_share_uri(
             s,
@@ -172,14 +168,44 @@ def _append_balancer_or_vless(
         uris.append(line)
 
 
+def _append_pool_rec_with_wl_fallback(
+    *,
+    uris: list[str],
+    remark: str,
+    pool_rec: list[Server],
+    best_wl: Server | None,
+    client_uuid: str,
+    fp_by_id: dict[int, str],
+    exit_ids_referenced: set[int],
+    balancer_tag: str | None = None,
+) -> None:
+    """``pool_rec`` (2+ → balancer, 1 → JSON/vless) + ``fallbackTag`` на ``best_wl``."""
+    if not pool_rec:
+        return
+    _append_balancer_or_vless(
+        uris=uris,
+        remark=remark,
+        pool=pool_rec,
+        client_uuid=client_uuid,
+        fp_by_id=fp_by_id,
+        exit_ids_referenced=exit_ids_referenced,
+        pool_whitelist=False,
+        fallback_server=best_wl,
+        balancer_tag=balancer_tag,
+    )
+
+
 def build_test_sub_payload(user: User, rows: list[Server]) -> SubscriptionPayload:
     """
-    Порядок строк в Base64-подписке:
+    Порядок строк в Base64-подписке (только ``include_in_auto`` в пулах).
 
-    1. Auto (рекомендуемый) — balancer обычных; fallback на WL с минимальным ``load_percent``.
-    2. Auto (белые списки) — balancer только WL-узлов.
-    3. Обычные узлы по одной ``vless://`` строке (без ``whitelist``).
-    4. Для каждого WL-узла — balancer обычных с fallback на этот WL.
+    ``pool_rec`` / ``pool_wl`` — VLESS с ``include_in_auto``; ``best_rec`` / ``best_wl`` — минимум
+    ``load_percent`` в соответствующем пуле.
+
+    1. Auto (рекомендуемый) — ``pool_rec``, fallback ``best_wl``.
+    2. Auto (белые списки) — ``pool_rec``, fallback ``best_wl``.
+    3. Обычные узлы — все без ``whitelist``, по одной ``vless://`` (без balancer).
+    4. Серверы белых списков — для каждого из ``pool_wl``: ``pool_rec``, fallback на этот WL.
     """
     ctx = _subscription_delivery_context(rows)
     client_uuid = (user.vless_uuid or "").strip()
@@ -188,33 +214,30 @@ def build_test_sub_payload(user: User, rows: list[Server]) -> SubscriptionPayloa
     )
     pool_rec = _vless_pool_for_auto(ctx, uri_by_id, whitelist=False)
     pool_wl = _vless_pool_for_auto(ctx, uri_by_id, whitelist=True)
-    wl_all = _whitelist_vless_with_uri(ctx, uri_by_id)
-    best_wl = _best_server_by_load(wl_all)
+    best_wl = _best_server_by_load(pool_wl)
 
     uris: list[str] = []
 
-    if pool_rec:
-        _append_balancer_or_vless(
-            uris=uris,
-            remark=SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
-            pool=pool_rec,
-            client_uuid=client_uuid,
-            fp_by_id=fp_by_id,
-            exit_ids_referenced=ctx.exit_ids_referenced,
-            pool_whitelist=False,
-            fallback_server=best_wl,
-        )
+    _append_pool_rec_with_wl_fallback(
+        uris=uris,
+        remark=SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
+        pool_rec=pool_rec,
+        best_wl=best_wl,
+        client_uuid=client_uuid,
+        fp_by_id=fp_by_id,
+        exit_ids_referenced=ctx.exit_ids_referenced,
+    )
 
-    if pool_wl:
-        _append_balancer_or_vless(
+    if pool_rec:
+        _append_pool_rec_with_wl_fallback(
             uris=uris,
             remark=SUBSCRIPTION_AUTO_WHITELIST_LABEL,
-            pool=pool_wl,
+            pool_rec=pool_rec,
+            best_wl=best_wl,
             client_uuid=client_uuid,
             fp_by_id=fp_by_id,
             exit_ids_referenced=ctx.exit_ids_referenced,
-            pool_whitelist=True,
-            fallback_server=None,
+            balancer_tag=_auto_balancer_tag(whitelist=True),
         )
 
     for s in ctx.delivery_rows:
@@ -224,22 +247,16 @@ def build_test_sub_payload(user: User, rows: list[Server]) -> SubscriptionPayloa
         if u:
             uris.append(u)
 
-    for wl in wl_all:
-        if not pool_rec:
-            u = uri_by_id.get(wl.id)
-            if u:
-                uris.append(u)
-            continue
+    for wl in pool_wl:
         remark = _node_subscription_label(wl, exit_ids_referenced=ctx.exit_ids_referenced)
-        _append_balancer_or_vless(
+        _append_pool_rec_with_wl_fallback(
             uris=uris,
             remark=remark,
-            pool=pool_rec,
+            pool_rec=pool_rec,
+            best_wl=wl,
             client_uuid=client_uuid,
             fp_by_id=fp_by_id,
             exit_ids_referenced=ctx.exit_ids_referenced,
-            pool_whitelist=False,
-            fallback_server=wl,
             balancer_tag=f"test-per-wl-{int(wl.id)}-balancer",
         )
 
