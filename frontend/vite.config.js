@@ -162,6 +162,10 @@ export default defineConfig(({ mode }) => {
             if (/^\/sub\/[^/]+\/open\/[^/]+$/.test(path)) return '/index.html'
           },
         },
+        '/test-sub': {
+          target: API_TARGET,
+          changeOrigin: true,
+        },
         '/swagger': {
           target: API_TARGET,
           changeOrigin: true,

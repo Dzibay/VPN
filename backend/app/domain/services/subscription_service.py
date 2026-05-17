@@ -177,7 +177,7 @@ def test_sub_client_metadata_headers(*, request: Request | None = None) -> dict[
     """Заголовки для GET /test-sub (подписка из БД с tiered fallback)."""
     headers = test_subscription_client_metadata_headers(request=request)
     headers["profile-title"] = f"{BRAND_NAME_ASCII} test-sub"
-    headers["announce"] = subscription_announce_header_value("Тестовая подписка /test-sub")
+    headers["announce"] = subscription_announce_header_value("Тестовая подписка /sub/test-sub")
     return headers
 
 
