@@ -1,11 +1,11 @@
 """
 Кодирование тела подписки для Happ.
 
-Стандартная подписка: Base64(текст со строками ``vless://`` …).
+Стандартная подписка (v2rayNG и др.): Base64(текст со строками ``vless://`` …).
 
-Happ mobile при **синхронизации** подписки не импортирует сырые строки ``{...}`` в теле —
-только URI-схемы. Полные JSON-профили (как при вставке из буфера) нужно отдавать
-массивом конфигураций: Base64(UTF-8 JSON array) — см. Happ «JSON array» subscription.
+Happ «JSON array» (как у vpnhub): тело ответа — **сырой** ``[{...},{...}]``,
+``Content-Type: application/json`` (без дополнительного Base64 поверх массива).
+``json_array_b64`` — эксперимент; Happ mobile на нём падает с ошибкой импорта.
 """
 
 from __future__ import annotations
@@ -37,8 +37,9 @@ def encode_happ_subscription_body(
     """
     Возвращает ``(тело ответа, Content-Type)``.
 
-    ``json_array_b64`` — по умолчанию для Happ mobile (JSON array внутри Base64).
-    ``lines`` — legacy: Base64(``vless://`` + сырой JSON построчно).
+    ``json_array_raw`` — как vpnhub: ``application/json``, массив профилей.
+    ``json_array_b64`` — Base64(JSON array) в text/plain (Happ не принимает).
+    ``lines`` — Base64(``vless://`` построчно).
   """
     if fmt == "lines":
         lines: list[str] = list(text_lines or [])

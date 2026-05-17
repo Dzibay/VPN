@@ -55,6 +55,7 @@ from app.domain.services.subscription_service import (
     subscription_payload_rows_for_resolved_user,
     test_happ_variants_client_metadata_headers,
     test_happ_variants_payload_from_db,
+    happ_body_format_for_request,
     normalize_happ_body_format,
     test_sub_client_metadata_headers,
     test_sub_payload_from_db,
@@ -243,14 +244,16 @@ async def test_sub_get(
     happ_body: str | None = Query(
         None,
         alias="happ_body",
-        description="Формат тела: json-array (по умолчанию), lines, json-array-raw",
+        description="Формат: json-array (сырой JSON, по умолчанию), lines, json-array-b64",
     ),
 ) -> Response:
+    fmt = (
+        normalize_happ_body_format(happ_body)
+        if happ_body
+        else happ_body_format_for_request(request)
+    )
     try:
-        payload = await test_sub_payload_from_db(
-            session,
-            happ_body=normalize_happ_body_format(happ_body),
-        )
+        payload = await test_sub_payload_from_db(session, happ_body=fmt)
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     headers = test_sub_client_metadata_headers(request=request)
@@ -298,14 +301,16 @@ async def test_happ_variants_get(
     happ_body: str | None = Query(
         None,
         alias="happ_body",
-        description="Формат тела: json-array (по умолчанию), lines, json-array-raw",
+        description="Формат: json-array (сырой JSON), lines, json-array-b64",
     ),
 ) -> Response:
+    fmt = (
+        normalize_happ_body_format(happ_body)
+        if happ_body
+        else happ_body_format_for_request(request)
+    )
     try:
-        payload = await test_happ_variants_payload_from_db(
-            session,
-            happ_body=normalize_happ_body_format(happ_body),
-        )
+        payload = await test_happ_variants_payload_from_db(session, happ_body=fmt)
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     headers = test_happ_variants_client_metadata_headers(request=request)

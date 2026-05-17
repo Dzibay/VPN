@@ -200,21 +200,31 @@ async def _test_sub_user_and_rows(session: AsyncSession) -> tuple[User, list[Ser
 
 
 def normalize_happ_body_format(raw: str | None) -> HappSubscriptionBodyFormat:
-    """``json-array`` (по умолчанию), ``lines``, ``json-array-raw``."""
+    """``json-array`` → сырой JSON (как vpnhub); ``lines``; ``json-array-b64``."""
     key = (raw or "json-array").strip().lower().replace("_", "-")
     mapping: dict[str, HappSubscriptionBodyFormat] = {
-        "json-array": "json_array_b64",
+        "json-array": "json_array_raw",
+        "json-array-raw": "json_array_raw",
         "json-array-b64": "json_array_b64",
         "lines": "lines",
-        "json-array-raw": "json_array_raw",
     }
-    return mapping.get(key, "json_array_b64")
+    return mapping.get(key, "json_array_raw")
+
+
+def happ_body_format_for_request(request: Request | None) -> HappSubscriptionBodyFormat:
+    """Happ в UA → json_array_raw; иначе можно переопределить query ``happ_body``."""
+    if request is None:
+        return "json_array_raw"
+    ua = (request.headers.get("user-agent") or "").lower()
+    if "happ" in ua:
+        return "json_array_raw"
+    return "json_array_raw"
 
 
 async def test_sub_payload_from_db(
     session: AsyncSession,
     *,
-    happ_body: HappSubscriptionBodyFormat = "json_array_b64",
+    happ_body: HappSubscriptionBodyFormat = "json_array_raw",
 ) -> SubscriptionPayload:
     """Тестовая подписка: узлы из БД, UUID — первый пользователь с ``vless_uuid``."""
     user, rows = await _test_sub_user_and_rows(session)
@@ -224,7 +234,7 @@ async def test_sub_payload_from_db(
 async def test_happ_variants_payload_from_db(
     session: AsyncSession,
     *,
-    happ_body: HappSubscriptionBodyFormat = "json_array_b64",
+    happ_body: HappSubscriptionBodyFormat = "json_array_raw",
 ) -> SubscriptionPayload:
     """Диагностика Happ: варианты JSON + CONTROL."""
     user, rows = await _test_sub_user_and_rows(session)

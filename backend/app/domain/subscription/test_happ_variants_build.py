@@ -395,7 +395,7 @@ def build_test_happ_variants_payload(
     user: User,
     rows: list[Server],
     *,
-    happ_body: HappSubscriptionBodyFormat = "json_array_b64",
+    happ_body: HappSubscriptionBodyFormat = "json_array_raw",
 ) -> SubscriptionPayload:
     """
     Подписка только для диагностики Happ mobile.

@@ -105,12 +105,12 @@ def build_test_sub_payload(
     user: User,
     rows: list[Server],
     *,
-    happ_body: HappSubscriptionBodyFormat = "json_array_b64",
+    happ_body: HappSubscriptionBodyFormat = "json_array_raw",
 ) -> SubscriptionPayload:
     """
-    Подписка для Happ mobile: ``json_array_b64`` (массив JSON-профилей в Base64).
+    Подписка для Happ: ``application/json`` — массив полных Xray-профилей (как vpnhub).
 
-    ``happ_body=lines`` — legacy (``vless://`` + сырой JSON построчно; mobile игнорирует JSON).
+    ``happ_body=lines`` — Base64(``vless://`` построчно); ``json-array-b64`` — не для Happ.
     """
     ctx = _subscription_delivery_context(rows)
     client_uuid = (user.vless_uuid or "").strip()
