@@ -21,7 +21,8 @@ from app.domain.subscription.build import (
     _vless_pool_for_auto,
     _vless_reality_share_uri,
 )
-from app.domain.subscription.test_sub_build import _build_happ_balancer_json
+from app.domain.subscription.happ_mobile_json import build_happ_mobile_profile_json
+from app.domain.subscription.happ_balancer_json import build_happ_balancer_json
 from app.infrastructure.persistence.models.server import Server
 from app.infrastructure.persistence.models.user import User
 
@@ -91,7 +92,7 @@ def _variant_01_full(
 ) -> str | None:
     """Как в /test-sub: inbounds + observatory + balancer + fallback."""
     pool = [rec]
-    return _build_happ_balancer_json(
+    return build_happ_balancer_json(
         "TEST-01 full (prod format)",
         pool,
         client_uuid=client_uuid,
@@ -243,7 +244,7 @@ def _variant_06_unique_ports(
     fp_by_id: dict[int, str],
 ) -> str | None:
     """Полный balancer; inbounds на 10810/10811 (нет конфликта с 10808)."""
-    line = _build_happ_balancer_json(
+    line = build_happ_balancer_json(
         "TEST-06 ports 10810",
         [rec],
         client_uuid=client_uuid,
@@ -267,7 +268,7 @@ def _variant_07_pretty_json(
     fp_by_id: dict[int, str],
 ) -> str | None:
     """Тот же full, но с отступами (не minified)."""
-    line = _build_happ_balancer_json(
+    line = build_happ_balancer_json(
         "TEST-07 pretty JSON",
         [rec],
         client_uuid=client_uuid,
@@ -330,7 +331,7 @@ def _variant_10_emoji_remark(
     fp_by_id: dict[int, str],
 ) -> str | None:
     """Full + emoji в remarks (проверка UTF-8)."""
-    return _build_happ_balancer_json(
+    return build_happ_balancer_json(
         "TEST-10 emoji 🔥📄🇳🇱",
         [rec],
         client_uuid=client_uuid,
@@ -341,6 +342,24 @@ def _variant_10_emoji_remark(
     )
 
 
+def _variant_11_happ_mobile_format(
+    rec: Server,
+    wl: Server | None,
+    *,
+    client_uuid: str,
+    fp_by_id: dict[int, str],
+) -> str | None:
+    """Как сторонние VPN: dns + log + inbounds + proxy + routing (без balancer)."""
+    _ = wl
+    return build_happ_mobile_profile_json(
+        "TEST-11 happ mobile (like other VPN)",
+        rec,
+        client_uuid=client_uuid,
+        client_fingerprint=fp_by_id[rec.id],
+        server_description="VLESS",
+    )
+
+
 def build_test_happ_variants_payload(user: User, rows: list[Server]) -> SubscriptionPayload:
     """
     Подписка только для диагностики Happ mobile.
@@ -348,7 +367,7 @@ def build_test_happ_variants_payload(user: User, rows: list[Server]) -> Subscrip
     Строки:
     - комментарий ``# ...`` (игнорируется клиентом);
     - ``CONTROL vless`` — эталонная share-ссылка (должна быть видна всегда);
-    - TEST-01 … TEST-10 — варианты JSON.
+    - TEST-01 … TEST-11 — варианты JSON.
     """
     ctx = _subscription_delivery_context(rows)
     client_uuid = (user.vless_uuid or "").strip()
@@ -374,11 +393,12 @@ def build_test_happ_variants_payload(user: User, rows: list[Server]) -> Subscrip
         ("08", _variant_08_meta_block),
         ("09", _variant_09_single_outbound),
         ("10", _variant_10_emoji_remark),
+        ("11", _variant_11_happ_mobile_format),
     ]
 
     uris: list[str] = [
         "# Happ JSON variants: compare with CONTROL vless on phone",
-        "# Expected on mobile if JSON works: TEST-01 .. TEST-10",
+        "# Expected on mobile: TEST-11 (like other VPN); old balancer: TEST-01..10",
     ]
 
     control = _vless_reality_share_uri(
