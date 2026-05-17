@@ -61,10 +61,10 @@ def build_test_sub_payload(user: User, rows: list[Server]) -> SubscriptionPayloa
     """
     Порядок профилей в JSON array (``application/json``):
 
-    1. Auto (рекомендуемый) — ``pool_rec``, fallback ``best_wl``.
-    2. Auto (белые списки) — ``pool_rec``, fallback ``best_wl``.
-    3. Обычные узлы — по одному профилю на сервер (без balancer).
-    4. Каждый ``pool_wl`` — ``pool_rec``, fallback на этот WL.
+    1. Auto (рекомендуемый) — ``pool_rec`` + ``best_wl`` в balancer (regular приоритет, иначе WL).
+    2. Auto (белые списки) — то же.
+    3. Обычные узлы — прямой профиль (без balancer).
+    4. Каждый ``pool_wl`` — прямой WL (ping) + tiered ``pool_rec`` → этот WL.
     """
     ctx = _subscription_delivery_context(rows)
     client_uuid = (user.vless_uuid or "").strip()
@@ -109,18 +109,25 @@ def build_test_sub_payload(user: User, rows: list[Server]) -> SubscriptionPayloa
             profiles.append(doc)
 
     for wl in pool_wl:
-        if not pool_rec:
-            continue
         remark = _node_subscription_label(wl, exit_ids_referenced=ctx.exit_ids_referenced)
-        _append_auto_profile(
-            profiles,
-            remark=remark,
-            pool_rec=pool_rec,
-            best_wl=wl,
+        direct_wl = build_happ_plain_vless_profile(
+            remark,
+            wl,
             client_uuid=client_uuid,
-            fp_by_id=fp_by_id,
-            balancer_tag=f"wl-{int(wl.id)}-balance",
+            client_fingerprint=fp_by_id[wl.id],
         )
+        if direct_wl:
+            profiles.append(direct_wl)
+        if pool_rec:
+            _append_auto_profile(
+                profiles,
+                remark=f"{remark} · Auto",
+                pool_rec=pool_rec,
+                best_wl=wl,
+                client_uuid=client_uuid,
+                fp_by_id=fp_by_id,
+                balancer_tag=f"wl-{int(wl.id)}-balance",
+            )
 
     body, media_type = encode_happ_subscription_body(
         fmt="json_array_raw",

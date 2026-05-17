@@ -174,6 +174,27 @@ def _least_load_costs(pool: list[Server], *, whitelist: bool) -> list[dict[str, 
     return costs
 
 
+def _tiered_rec_wl_costs(pool_rec: list[Server], wl: Server) -> list[dict[str, Any]]:
+    """
+    Приоритет regular (меньший cost), WL — запасной (больший cost).
+
+    При недоступности rec observatory + leastLoad переключаются на WL.
+    """
+    costs: list[dict[str, Any]] = []
+    for s in pool_rec:
+        tag = competitor_outbound_tag(s.id, whitelist=False)
+        costs.append(
+            {
+                "match": tag,
+                "value": max(1, int(s.load_percent) + 1),
+                "regexp": False,
+            }
+        )
+    wl_tag = competitor_outbound_tag(wl.id, whitelist=True)
+    costs.append({"match": wl_tag, "value": 100, "regexp": False})
+    return costs
+
+
 def _competitor_routing(
     *,
     member_tags: list[str],
@@ -181,9 +202,16 @@ def _competitor_routing(
     balancer_tag: str = _COMPETITOR_BALANCER_TAG,
     pool_for_costs: list[Server] | None = None,
     costs_whitelist: bool = False,
+    tiered_costs: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     strategy: dict[str, Any] = {"type": "leastLoad"}
-    if pool_for_costs and len(pool_for_costs) > 1:
+    if tiered_costs:
+        strategy["settings"] = {
+            "costs": tiered_costs,
+            "maxRTT": "10s",
+            "expected": 1,
+        }
+    elif pool_for_costs and len(pool_for_costs) > 1:
         strategy["settings"] = {
             "costs": _least_load_costs(pool_for_costs, whitelist=costs_whitelist),
             "maxRTT": "10s",
@@ -301,14 +329,21 @@ def build_happ_competitor_balanced_profile_json(
                 proxy_outbounds.append(fb_ob)
                 fallback_tag = fb_tag
                 observatory_tags.append(fb_tag)
+                member_tags.append(fb_tag)
 
+    tiered_costs = (
+        _tiered_rec_wl_costs(pool, fallback_server)
+        if fallback_server is not None
+        else None
+    )
     outbounds = [*proxy_outbounds, *_competitor_tail_outbounds()]
     routing = _competitor_routing(
         member_tags=member_tags,
         fallback_tag=fallback_tag,
         balancer_tag=balancer_tag,
-        pool_for_costs=pool if len(pool) > 1 else None,
+        pool_for_costs=pool if len(pool) > 1 and tiered_costs is None else None,
         costs_whitelist=pool_whitelist,
+        tiered_costs=tiered_costs,
     )
 
     doc: dict[str, Any] = {
