@@ -477,6 +477,7 @@ onMounted(() => {
                 'client-row-highlight': highlightUserId === u.id,
                 'user-row--selected': selectedUserId === u.id,
                 'client-row-active-today': u.active_today,
+                'client-row-has-payments': u.has_payments,
               }"
               title="Нажмите строку, чтобы открыть или закрыть карточку пользователя справа"
               @click="toggleUserRowSelect(u.id, $event)"
@@ -869,6 +870,36 @@ tr.client-row-active-today.client-row-toggle:hover {
     color-mix(in srgb, var(--accent) 8%, transparent)
   );
 }
+/* Хотя бы одна оплата (has_payments в GET /api/users) — amber как «С оплатой» на графиках */
+tr.client-row-has-payments {
+  --client-payment-amber: rgb(245, 158, 11);
+  background-color: color-mix(in srgb, var(--client-payment-amber) 12%, transparent);
+}
+tr.client-row-has-payments.client-row-toggle:hover {
+  background-color: color-mix(
+    in srgb,
+    var(--client-payment-amber) 14%,
+    color-mix(in srgb, var(--accent) 8%, transparent)
+  );
+}
+tr.client-row-has-payments.client-row-active-today {
+  background-color: color-mix(
+    in srgb,
+    var(--client-payment-amber) 11%,
+    color-mix(in srgb, var(--success, #15803d) 10%, transparent)
+  );
+}
+tr.client-row-has-payments.client-row-active-today.client-row-toggle:hover {
+  background-color: color-mix(
+    in srgb,
+    var(--client-payment-amber) 13%,
+    color-mix(
+      in srgb,
+      var(--success, #15803d) 11%,
+      color-mix(in srgb, var(--accent) 8%, transparent)
+    )
+  );
+}
 .user-row--selected {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
@@ -877,6 +908,24 @@ tr.client-row-active-today.user-row--selected {
     in srgb,
     var(--success, #15803d) 11%,
     color-mix(in srgb, var(--accent) 9%, transparent)
+  );
+}
+tr.client-row-has-payments.user-row--selected {
+  background-color: color-mix(
+    in srgb,
+    var(--client-payment-amber, rgb(245, 158, 11)) 11%,
+    color-mix(in srgb, var(--accent) 9%, transparent)
+  );
+}
+tr.client-row-has-payments.client-row-active-today.user-row--selected {
+  background-color: color-mix(
+    in srgb,
+    var(--client-payment-amber, rgb(245, 158, 11)) 10%,
+    color-mix(
+      in srgb,
+      var(--success, #15803d) 10%,
+      color-mix(in srgb, var(--accent) 9%, transparent)
+    )
   );
 }
 .analytics-main {

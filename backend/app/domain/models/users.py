@@ -307,6 +307,10 @@ class UserListItem(BaseModel):
             "а не только относительно строки с датой «вчера»"
         ),
     )
+    has_payments: bool = Field(
+        default=False,
+        description="Есть хотя бы одна запись в таблице payments",
+    )
     subscription_devices_count: int = Field(
         ge=0,
         description="Число записей subscription_devices (подключённых устройств по подписке)",

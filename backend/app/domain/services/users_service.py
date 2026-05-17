@@ -40,6 +40,7 @@ from app.domain.user_traffic import (
 )
 from app.domain.users.identifiers import new_subscription_token, new_vless_uuid
 from app.infrastructure.database.operations import table_insert
+from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.subscription_device import SubscriptionDevice
 from app.infrastructure.persistence.models.user import User
 
@@ -101,6 +102,17 @@ async def _user_rows_with_traffic(
     return list((await session.execute(stmt)).all())
 
 
+async def _user_ids_with_any_payment(
+    session: AsyncSession,
+    user_ids: list[int],
+) -> set[int]:
+    """Пользователи с хотя бы одной строкой в ``payments``."""
+    if not user_ids:
+        return set()
+    stmt = select(Payment.user_id).where(Payment.user_id.in_(user_ids)).distinct()
+    return {int(uid) for uid in (await session.scalars(stmt)).all()}
+
+
 async def users_count(session: AsyncSession) -> UsersCountResponse:
     """Общее число записей в ``users``."""
     total = await session.scalar(select(func.count()).select_from(User))
@@ -144,6 +156,8 @@ async def staff_get_user_list_item(
         inclusive=True,
     )
     active_today = t_now > t_prev
+    paid_ids = await _user_ids_with_any_payment(session, [user_id])
+    has_payments = user_id in paid_ids
     role = _normalize_account_role(user.account_role)
     role_lit = type_cast(Literal["client", "manager", "admin"], role)
     owned_row = await get_user_owned_referral_link(session, user_id)
@@ -158,6 +172,7 @@ async def staff_get_user_list_item(
         subscription_until=user.subscription_until,
         total_traffic_bytes=total,
         active_today=active_today,
+        has_payments=has_payments,
         subscription_devices_count=dev_n,
         subscription_devices=subs_devices,
         referral_link_id=user.referral_link_id,
@@ -190,6 +205,7 @@ async def staff_list_users(
         today_utc,
     )
     totals_through_today = await user_traffic_total_by_user_as_of(session, today_utc)
+    paid_user_ids = await _user_ids_with_any_payment(session, user_ids)
     out: list[UserListItem] = []
     for user, total_raw, dev_raw in rows:
         try:
@@ -212,6 +228,7 @@ async def staff_list_users(
         t_prev = int(totals_last_before_today.get(uid, 0))
         t_now = int(totals_through_today.get(uid, 0))
         active_today = t_now > t_prev
+        has_payments = uid in paid_user_ids
         out.append(
             UserListItem(
                 id=user.id,
@@ -223,6 +240,7 @@ async def staff_list_users(
                 subscription_until=user.subscription_until,
                 total_traffic_bytes=total,
                 active_today=active_today,
+                has_payments=has_payments,
                 subscription_devices_count=dev_n,
                 subscription_devices=subs_devices,
                 referral_link_id=user.referral_link_id,
