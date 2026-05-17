@@ -29,6 +29,7 @@ Stash / Clash Verge / v2rayNG. Подробнее: ``app.domain.subscription.use
 
 - GET/HEAD ``/sub/test-configurations`` — как обычная подписка: Base64 со строками ``vless://`` или YAML при User-Agent с ``clash`` / ``hiddify``.
 - GET/HEAD ``/sub/test-sub`` (и ``/test-sub`` при проксировании в nginx) — тестовая подписка из БД; Base64 ``text/plain``.
+- GET/HEAD ``/sub/test-happ-variants`` — 10 вариантов JSON + CONTROL vless для диагностики Happ mobile.
 
 Каждая запись в JSON должна содержать клиентский outbound VLESS+REALITY (TCP); берётся узел с ``tag: proxy`` или первый не-служебный outbound.
 """
@@ -52,6 +53,8 @@ from app.domain.services.subscription_service import (
     subscription_client_metadata_headers,
     subscription_maybe_register_device,
     subscription_payload_rows_for_resolved_user,
+    test_happ_variants_client_metadata_headers,
+    test_happ_variants_payload_from_db,
     test_sub_client_metadata_headers,
     test_sub_payload_from_db,
     test_subscription_client_metadata_headers,
@@ -242,6 +245,53 @@ async def test_sub_get(
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     headers = test_sub_client_metadata_headers(request=request)
+    return Response(
+        content=payload.subscription_base64,
+        media_type="text/plain; charset=utf-8",
+        headers=headers,
+    )
+
+
+@router.head(
+    "/sub/test-happ-variants",
+    summary="HEAD: тест JSON-вариантов Happ",
+    response_class=Response,
+)
+@router.head(
+    "/test-happ-variants",
+    summary="HEAD алиас",
+    response_class=Response,
+    include_in_schema=False,
+)
+async def test_happ_variants_head(request: Request) -> Response:
+    headers = test_happ_variants_client_metadata_headers(request=request)
+    return Response(
+        content="",
+        media_type="text/plain; charset=utf-8",
+        headers=headers,
+    )
+
+
+@router.get(
+    "/sub/test-happ-variants",
+    summary="Подписка с 10 JSON-вариантами для проверки импорта в Happ (mobile vs desktop)",
+    response_class=Response,
+)
+@router.get(
+    "/test-happ-variants",
+    summary="Алиас /sub/test-happ-variants",
+    response_class=Response,
+    include_in_schema=False,
+)
+async def test_happ_variants_get(
+    request: Request,
+    session: ReadonlySessionDep,
+) -> Response:
+    try:
+        payload = await test_happ_variants_payload_from_db(session)
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    headers = test_happ_variants_client_metadata_headers(request=request)
     return Response(
         content=payload.subscription_base64,
         media_type="text/plain; charset=utf-8",

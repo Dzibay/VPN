@@ -27,6 +27,7 @@ from app.domain.subscription.build import (
     subscription_servers_from_db,
 )
 from app.domain.subscription.test_sub_build import build_test_sub_payload
+from app.domain.subscription.test_happ_variants_build import build_test_happ_variants_payload
 from app.domain.subscription.devices import (
     register_or_touch_subscription_device,
 )
@@ -181,8 +182,7 @@ def test_sub_client_metadata_headers(*, request: Request | None = None) -> dict[
     return headers
 
 
-async def test_sub_payload_from_db(session: AsyncSession) -> SubscriptionPayload:
-    """Тестовая подписка: узлы из БД, UUID — первый пользователь с ``vless_uuid``."""
+async def _test_sub_user_and_rows(session: AsyncSession) -> tuple[User, list[Server]]:
     uuid_val = await session.scalar(
         select(User.vless_uuid)
         .where(User.vless_uuid.isnot(None), User.vless_uuid != "")
@@ -193,7 +193,30 @@ async def test_sub_payload_from_db(session: AsyncSession) -> SubscriptionPayload
         raise ValueError("Нет пользователя с vless_uuid для тестовой подписки")
     user = User(vless_uuid=str(uuid_val).strip(), subscription_until=None)
     rows = await subscription_servers_from_db(session)
+    return user, rows
+
+
+async def test_sub_payload_from_db(session: AsyncSession) -> SubscriptionPayload:
+    """Тестовая подписка: узлы из БД, UUID — первый пользователь с ``vless_uuid``."""
+    user, rows = await _test_sub_user_and_rows(session)
     return build_test_sub_payload(user, rows)
+
+
+async def test_happ_variants_payload_from_db(session: AsyncSession) -> SubscriptionPayload:
+    """Диагностика Happ: 10 вариантов JSON + контрольная vless://."""
+    user, rows = await _test_sub_user_and_rows(session)
+    return build_test_happ_variants_payload(user, rows)
+
+
+def test_happ_variants_client_metadata_headers(
+    *, request: Request | None = None
+) -> dict[str, str]:
+    headers = test_sub_client_metadata_headers(request=request)
+    headers["profile-title"] = f"{BRAND_NAME_ASCII} happ-json-test"
+    headers["announce"] = subscription_announce_header_value(
+        "Тест JSON для Happ: ищите CONTROL vless и TEST-01..10"
+    )
+    return headers
 
 
 async def subscription_client_metadata_headers(
