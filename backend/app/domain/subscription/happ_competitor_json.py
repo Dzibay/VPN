@@ -2,8 +2,7 @@
 JSON-профиль Happ в стиле конкурентов: один конфиг, несколько outbounds,
 ``routing.balancers`` (``leastLoad``), ``observatory``, ``fallbackTag``.
 
-Отличается от ``happ_balancer_json`` (``leastPing``, минимальный routing):
-полные ``dns`` / ``policy`` / ``inbounds``, трафик через balancer по правилам routing.
+Полные ``dns`` / ``policy`` / ``inbounds``, трафик через balancer по правилам routing.
 """
 
 from __future__ import annotations
@@ -323,6 +322,53 @@ def build_happ_competitor_balanced_profile_json(
         "observatory": _competitor_observatory(observatory_tags),
     }
     return json.dumps(doc, ensure_ascii=False, separators=(",", ":"))
+
+
+def build_happ_plain_vless_profile(
+    remark: str,
+    server: Server,
+    *,
+    client_uuid: str,
+    client_fingerprint: str,
+) -> dict[str, Any] | None:
+    """Один узел: outbound ``proxy``, без balancer и observatory."""
+    proxy = server_to_competitor_vless_outbound(
+        server,
+        client_uuid=client_uuid,
+        tag="proxy",
+        client_fingerprint=client_fingerprint,
+    )
+    if proxy is None:
+        return None
+    return {
+        "dns": _competitor_dns(),
+        "policy": _competitor_policy(),
+        "remarks": remark,
+        "inbounds": _competitor_inbounds(),
+        "log": _competitor_log(),
+        "outbounds": [proxy, *_competitor_tail_outbounds()],
+        "routing": {
+            "domainMatcher": "hybrid",
+            "domainStrategy": "IPIfNonMatch",
+            "rules": [
+                {
+                    "type": "field",
+                    "protocol": ["bittorrent"],
+                    "outboundTag": "direct",
+                },
+                {
+                    "type": "field",
+                    "ip": ["geoip:private"],
+                    "outboundTag": "direct",
+                },
+                {
+                    "type": "field",
+                    "network": "tcp,udp",
+                    "outboundTag": "proxy",
+                },
+            ],
+        },
+    }
 
 
 def build_happ_competitor_balanced_profile(

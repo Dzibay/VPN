@@ -166,14 +166,6 @@ export default defineConfig(({ mode }) => {
           target: API_TARGET,
           changeOrigin: true,
         },
-        '/test-happ-variants': {
-          target: API_TARGET,
-          changeOrigin: true,
-        },
-        '/sub/test-happ-variants': {
-          target: API_TARGET,
-          changeOrigin: true,
-        },
         '/swagger': {
           target: API_TARGET,
           changeOrigin: true,

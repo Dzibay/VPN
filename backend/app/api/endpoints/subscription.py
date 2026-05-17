@@ -9,7 +9,7 @@
 Если есть VLESS с ``whitelist`` и ``include_in_auto`` — ``📄 Auto (Белые списки)`` с тем же механизмом.
 Узлы с ``include_in_auto=false`` в группы Auto не попадают (остаются отдельными строками).
 
-Ответы ``GET/HEAD /sub/{token}``, ``GET /sub/{token}/json`` отдают метаданные в HTTP-заголовках
+Ответы ``GET /sub/{token}``, ``GET /sub/{token}/json`` отдают метаданные в HTTP-заголовках
 в форме Happ (``subscription-userinfo``, ``profile-update-interval``, ``profile-title``, …;
 см. https://www.happ.su/main/ru/dev-docs/app-management#standartnye-parametry) и тот же
 формат ``subscription-userinfo`` (upload, download, total, expire), что используют
@@ -27,11 +27,8 @@ Stash / Clash Verge / v2rayNG. Подробнее: ``app.domain.subscription.use
 
 Тестовые конфигурации (файл ``backend/configurations/test_configurations.json``):
 
-- GET/HEAD ``/sub/test-configurations`` — как обычная подписка: Base64 со строками ``vless://`` или YAML при User-Agent с ``clash`` / ``hiddify``.
-- GET/HEAD ``/sub/test-sub`` (и ``/test-sub`` при проксировании в nginx) — тестовая подписка из БД; Base64 ``text/plain``.
-- GET/HEAD ``/sub/test-happ-variants`` — 10 вариантов JSON + CONTROL vless для диагностики Happ mobile.
-
-Каждая запись в JSON должна содержать клиентский outbound VLESS+REALITY (TCP); берётся узел с ``tag: proxy`` или первый не-служебный outbound.
+- GET ``/sub/test-configurations`` — как обычная подписка: Base64 со строками ``vless://`` или YAML при User-Agent с ``clash`` / ``hiddify``.
+- GET ``/sub/test-sub`` (и ``/test-sub`` в nginx) — тестовая подписка Happ (JSON array).
 """
 
 from __future__ import annotations
@@ -53,10 +50,6 @@ from app.domain.services.subscription_service import (
     subscription_client_metadata_headers,
     subscription_maybe_register_device,
     subscription_payload_rows_for_resolved_user,
-    test_happ_variants_client_metadata_headers,
-    test_happ_variants_payload_from_db,
-    happ_body_format_for_request,
-    normalize_happ_body_format,
     test_sub_client_metadata_headers,
     test_sub_payload_from_db,
     test_subscription_client_metadata_headers,
@@ -160,23 +153,6 @@ def _load_test_configuration_items():
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.head(
-    "/sub/test-configurations",
-    summary="HEAD тестовой подписки: без тела; те же заголовки метаданных, что у /sub/{token}",
-    response_class=Response,
-)
-async def subscription_test_configs_head(request: Request) -> Response:
-    _load_test_configuration_items()
-    want_yaml = _user_agent_requests_clash_yaml(request)
-    headers = test_subscription_client_metadata_headers(request=request)
-    media = (
-        "text/yaml; charset=utf-8"
-        if want_yaml
-        else "text/plain; charset=utf-8"
-    )
-    return Response(content="", media_type=media, headers=headers)
-
-
 @router.get(
     "/sub/test-configurations",
     summary=(
@@ -204,32 +180,9 @@ async def subscription_test_configs_get(request: Request) -> Response:
     )
 
 
-@router.head(
-    "/sub/test-sub",
-    summary="HEAD тестовой подписки из БД",
-    response_class=Response,
-)
-@router.head(
-    "/test-sub",
-    summary="HEAD тестовой подписки (алиас; в проде нужен proxy в nginx)",
-    response_class=Response,
-    include_in_schema=False,
-)
-async def test_sub_head(request: Request) -> Response:
-    headers = test_sub_client_metadata_headers(request=request)
-    return Response(
-        content="",
-        media_type="text/plain; charset=utf-8",
-        headers=headers,
-    )
-
-
 @router.get(
     "/sub/test-sub",
-    summary=(
-        "Тестовая подписка: Auto JSON (leastLoad+observatory+fallback как у конкурентов), "
-        "vless узлы, per-WL профили"
-    ),
+    summary="Тестовая подписка Happ: pool_rec+best_wl Auto, обычные узлы, per-WL",
     response_class=Response,
 )
 @router.get(
@@ -241,79 +194,12 @@ async def test_sub_head(request: Request) -> Response:
 async def test_sub_get(
     request: Request,
     session: ReadonlySessionDep,
-    happ_body: str | None = Query(
-        None,
-        alias="happ_body",
-        description="Формат: json-array (сырой JSON, по умолчанию), lines, json-array-b64",
-    ),
 ) -> Response:
-    fmt = (
-        normalize_happ_body_format(happ_body)
-        if happ_body
-        else happ_body_format_for_request(request)
-    )
     try:
-        payload = await test_sub_payload_from_db(session, happ_body=fmt)
+        payload = await test_sub_payload_from_db(session)
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     headers = test_sub_client_metadata_headers(request=request)
-    return Response(
-        content=payload.subscription_base64,
-        media_type=payload.subscription_media_type,
-        headers=headers,
-    )
-
-
-@router.head(
-    "/sub/test-happ-variants",
-    summary="HEAD: тест JSON-вариантов Happ",
-    response_class=Response,
-)
-@router.head(
-    "/test-happ-variants",
-    summary="HEAD алиас",
-    response_class=Response,
-    include_in_schema=False,
-)
-async def test_happ_variants_head(request: Request) -> Response:
-    headers = test_happ_variants_client_metadata_headers(request=request)
-    return Response(
-        content="",
-        media_type="text/plain; charset=utf-8",
-        headers=headers,
-    )
-
-
-@router.get(
-    "/sub/test-happ-variants",
-    summary="Подписка с 10 JSON-вариантами для проверки импорта в Happ (mobile vs desktop)",
-    response_class=Response,
-)
-@router.get(
-    "/test-happ-variants",
-    summary="Алиас /sub/test-happ-variants",
-    response_class=Response,
-    include_in_schema=False,
-)
-async def test_happ_variants_get(
-    request: Request,
-    session: ReadonlySessionDep,
-    happ_body: str | None = Query(
-        None,
-        alias="happ_body",
-        description="Формат: json-array (сырой JSON), lines, json-array-b64",
-    ),
-) -> Response:
-    fmt = (
-        normalize_happ_body_format(happ_body)
-        if happ_body
-        else happ_body_format_for_request(request)
-    )
-    try:
-        payload = await test_happ_variants_payload_from_db(session, happ_body=fmt)
-    except ValueError as e:
-        raise HTTPException(status_code=503, detail=str(e)) from e
-    headers = test_happ_variants_client_metadata_headers(request=request)
     return Response(
         content=payload.subscription_base64,
         media_type=payload.subscription_media_type,
@@ -389,36 +275,6 @@ async def subscription_open_in_app(
             ),
         )
     return RedirectResponse(url=url, status_code=302)
-
-
-@router.head(
-    "/sub/{subscription_token}",
-    summary="HEAD подписки: без тела; Content-Type hint — text/yaml при User-Agent с clash/hiddify, иначе text/plain",
-    response_class=Response,
-)
-async def subscription_head_by_token(
-    request: Request,
-    session: SessionDep,
-    subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
-) -> Response:
-    user = await user_by_subscription_token(session, subscription_token)
-    if user is None:
-        raise HTTPException(status_code=404, detail="Неизвестный токен")
-    device_ok = await subscription_maybe_register_device(
-        session=session, request=request, user=user, cfg=settings,
-    )
-    headers = await subscription_client_metadata_headers(
-        session,
-        user,
-        request=request,
-        device_limit_rejected=not device_ok,
-    )
-    media = (
-        "text/yaml; charset=utf-8"
-        if _user_agent_requests_clash_yaml(request)
-        else "text/plain; charset=utf-8"
-    )
-    return Response(content="", media_type=media, headers=headers)
 
 
 @router.get(

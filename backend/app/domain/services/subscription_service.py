@@ -27,8 +27,6 @@ from app.domain.subscription.build import (
     subscription_servers_from_db,
 )
 from app.domain.subscription.test_sub_build import build_test_sub_payload
-from app.domain.subscription.happ_subscription_encode import HappSubscriptionBodyFormat
-from app.domain.subscription.test_happ_variants_build import build_test_happ_variants_payload
 from app.domain.subscription.devices import (
     register_or_touch_subscription_device,
 )
@@ -179,9 +177,7 @@ def test_sub_client_metadata_headers(*, request: Request | None = None) -> dict[
     """Заголовки для GET /test-sub (подписка из БД с tiered fallback)."""
     headers = test_subscription_client_metadata_headers(request=request)
     headers["profile-title"] = f"{BRAND_NAME_ASCII} test-sub"
-    headers["announce"] = subscription_announce_header_value(
-        "Тест /sub/test-sub — JSON array для Happ mobile (параметр happ_body)"
-    )
+    headers["announce"] = subscription_announce_header_value("Тестовая подписка /sub/test-sub")
     return headers
 
 
@@ -199,57 +195,10 @@ async def _test_sub_user_and_rows(session: AsyncSession) -> tuple[User, list[Ser
     return user, rows
 
 
-def normalize_happ_body_format(raw: str | None) -> HappSubscriptionBodyFormat:
-    """``json-array`` → сырой JSON (как vpnhub); ``lines``; ``json-array-b64``."""
-    key = (raw or "json-array").strip().lower().replace("_", "-")
-    mapping: dict[str, HappSubscriptionBodyFormat] = {
-        "json-array": "json_array_raw",
-        "json-array-raw": "json_array_raw",
-        "json-array-b64": "json_array_b64",
-        "lines": "lines",
-    }
-    return mapping.get(key, "json_array_raw")
-
-
-def happ_body_format_for_request(request: Request | None) -> HappSubscriptionBodyFormat:
-    """Happ в UA → json_array_raw; иначе можно переопределить query ``happ_body``."""
-    if request is None:
-        return "json_array_raw"
-    ua = (request.headers.get("user-agent") or "").lower()
-    if "happ" in ua:
-        return "json_array_raw"
-    return "json_array_raw"
-
-
-async def test_sub_payload_from_db(
-    session: AsyncSession,
-    *,
-    happ_body: HappSubscriptionBodyFormat = "json_array_raw",
-) -> SubscriptionPayload:
+async def test_sub_payload_from_db(session: AsyncSession) -> SubscriptionPayload:
     """Тестовая подписка: узлы из БД, UUID — первый пользователь с ``vless_uuid``."""
     user, rows = await _test_sub_user_and_rows(session)
-    return build_test_sub_payload(user, rows, happ_body=happ_body)
-
-
-async def test_happ_variants_payload_from_db(
-    session: AsyncSession,
-    *,
-    happ_body: HappSubscriptionBodyFormat = "json_array_raw",
-) -> SubscriptionPayload:
-    """Диагностика Happ: варианты JSON + CONTROL."""
-    user, rows = await _test_sub_user_and_rows(session)
-    return build_test_happ_variants_payload(user, rows, happ_body=happ_body)
-
-
-def test_happ_variants_client_metadata_headers(
-    *, request: Request | None = None
-) -> dict[str, str]:
-    headers = test_sub_client_metadata_headers(request=request)
-    headers["profile-title"] = f"{BRAND_NAME_ASCII} happ-json-test"
-    headers["announce"] = subscription_announce_header_value(
-        "Happ: JSON array в Base64 (?happ_body=lines — старый формат). TEST-12 + Auto"
-    )
-    return headers
+    return build_test_sub_payload(user, rows)
 
 
 async def subscription_client_metadata_headers(
