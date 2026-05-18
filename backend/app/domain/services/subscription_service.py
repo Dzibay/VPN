@@ -218,6 +218,7 @@ async def subscription_client_metadata_headers(
     *,
     request: Request | None = None,
     device_limit_rejected: bool = False,
+    include_happ_routing: bool = True,
 ) -> dict[str, str]:
     up_b, down_b, _ = await user_traffic_totals(session, int(user.id))
     userinfo = build_subscription_userinfo_header_value(
@@ -234,8 +235,12 @@ async def subscription_client_metadata_headers(
     else:
         announce_raw = ANNOUNCE_RAW
     ua = ((request.headers.get("user-agent") or "") if request is not None else "").lower()
-    routing_header = _happ_routing_header_value() if "happ" in ua else ""
-    return {
+    routing_header = (
+        _happ_routing_header_value()
+        if include_happ_routing and "happ" in ua
+        else ""
+    )
+    headers: dict[str, str] = {
         "subscription-userinfo": userinfo,
         "profile-update-interval": "1",
         "profile-title": BRAND_NAME_ASCII,
@@ -243,9 +248,11 @@ async def subscription_client_metadata_headers(
         "profile-web-page-url": "https://cool-vpn.ru",
         "announce": subscription_announce_header_value(announce_raw),
         "announce-url": "https://t.me/Podoroznik_Support",
-        "routing": routing_header,
         **_happ_advanced_subscription_headers(),
     }
+    if routing_header:
+        headers["routing"] = routing_header
+    return headers
 
 
 def subscription_build_open_page_data(

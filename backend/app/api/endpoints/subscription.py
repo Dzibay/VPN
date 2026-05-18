@@ -18,6 +18,8 @@ Stash / Clash Verge / v2rayNG. Подробнее: ``app.domain.subscription.use
 ``GET /sub/{token}``: при ``User-Agent``, содержащем подстроку ``clash`` или ``hiddify`` (без учёта регистра), тело — YAML (Clash Meta);
 иначе — одна строка Base64 (как ранее). Явный YAML: ``GET /sub/{token}/clash``.
 
+``GET /sub/{token}/no-routing`` — то же, что ``/sub/{token}``, но без заголовка ``routing`` (Happ routing profile).
+
 При истечении подписки или исчерпании лимита устройств (``SUBSCRIPTION_MAX_DEVICES``) ответ остаётся 200:
 в теле — три информационные заглушки вместо узлов, в заголовке ``announce`` — пояснение, без HTTP 403.
 
@@ -278,15 +280,12 @@ async def subscription_open_in_app(
     return RedirectResponse(url=url, status_code=302)
 
 
-@router.get(
-    "/sub/{subscription_token}",
-    summary="Подписка: text/plain Base64, либо text/yaml при User-Agent с подстрокой clash или hiddify",
-    response_class=Response,
-)
-async def subscription_base64_by_token(
+async def _subscription_by_token_response(
     request: Request,
     session: SessionDep,
-    subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
+    subscription_token: str,
+    *,
+    include_happ_routing: bool,
 ) -> Response:
     user = await user_by_subscription_token(session, subscription_token)
     if user is None:
@@ -300,6 +299,7 @@ async def subscription_base64_by_token(
         user,
         request=request,
         device_limit_rejected=not device_ok,
+        include_happ_routing=include_happ_routing,
     )
     if want_yaml:
         _payload, user, rows, block_reason = await subscription_payload_rows_for_resolved_user(
@@ -325,6 +325,42 @@ async def subscription_base64_by_token(
         content=payload.subscription_base64,
         media_type="text/plain; charset=utf-8",
         headers=headers,
+    )
+
+
+@router.get(
+    "/sub/{subscription_token}/no-routing",
+    summary="Подписка как /sub/{token}, без заголовка routing (Happ)",
+    response_class=Response,
+)
+async def subscription_base64_by_token_no_routing(
+    request: Request,
+    session: SessionDep,
+    subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
+) -> Response:
+    return await _subscription_by_token_response(
+        request,
+        session,
+        subscription_token,
+        include_happ_routing=False,
+    )
+
+
+@router.get(
+    "/sub/{subscription_token}",
+    summary="Подписка: text/plain Base64, либо text/yaml при User-Agent с подстрокой clash или hiddify",
+    response_class=Response,
+)
+async def subscription_base64_by_token(
+    request: Request,
+    session: SessionDep,
+    subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
+) -> Response:
+    return await _subscription_by_token_response(
+        request,
+        session,
+        subscription_token,
+        include_happ_routing=True,
     )
 
 
