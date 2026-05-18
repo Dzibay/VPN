@@ -9,24 +9,24 @@ from __future__ import annotations
 import json
 from typing import Any
 
-# Палитра: Mint Glow
-_MINT = "#7CF0ABFF"
-_MINT_SOFT = "#7CF0ABB3"
-_TEAL = "#5BD68DFF"
-_TEAL_DARK = "#0F3A29FF"
-_FOREST = "#08140FFF"
-_SURFACE = "#0A0F0CFF"
-_SURFACE_GLASS = "#0A0F0CCC"
-_TEXT = "#F1FFF6FF"
-_TEXT_MUTED = "#A7C4B3FF"
-_ON_ACCENT = "#00150AFF"
-_VIOLET_GLOW = "#7C3AED88"
-_BG_DEEP = "#010302FF"
-_BG_MID = "#041009FF"
-_BG_TEAL = "#0B2117FF"
+# Палитра: Emerald Premium
+_MINT = "#3DDC97FF"
+_MINT_SOFT = "#3DDC97B3"
+_TEAL = "#22C55EFF"
+_TEAL_DARK = "#0B2E1FFF"
+_FOREST = "#06120CFF"
+_SURFACE = "#08100BFF"
+_SURFACE_GLASS = "#08100BCC"
+_TEXT = "#E9FFF1FF"
+_TEXT_MUTED = "#92B3A0FF"
+_ON_ACCENT = "#000F08FF"
+_VIOLET_GLOW = "#22C55E66"
+_BG_DEEP = "#000000FF"
+_BG_MID = "#031009FF"
+_BG_TEAL = "#072015FF"
 
 HAPP_PODOROZNIK_COLOR_PROFILE = {
-    "backgroundGradientRotationAngle": 168.0,
+    "backgroundGradientRotationAngle": 160.0,
     "backgroundGradientColorIntensity": 1,
     "backgroundImageType": "system",
     "backgroundColors": [
@@ -38,7 +38,7 @@ HAPP_PODOROZNIK_COLOR_PROFILE = {
     ],
     "elipseColors": [
         _MINT,
-        _TEAL,
+        "#16A34AFF",
         _VIOLET_GLOW,
     ],
     "buttonColor": _MINT,
@@ -49,10 +49,10 @@ HAPP_PODOROZNIK_COLOR_PROFILE = {
     "subsHeaderColor": _TEAL_DARK,
     "subHeaderButtonColor": _TEXT,
     "subscriptionInfoBackgroundColor": _FOREST,
-    "subscriptionTrafficBackgroundColor": _TEAL,
+    "subscriptionTrafficBackgroundColor": "#16A34AFF",
     "subscriptionInfoTextColor": _TEXT,
     "serverRowBackgroundColor": _SURFACE_GLASS,
-    "selectedServerRowColor": "#39A76CB5",
+    "selectedServerRowColor": "#1F9D5AB5",
     "serverRowTitleTextColor": _TEXT,
     "serverRowSubTitleTextColor": _TEXT_MUTED,
     "serverRowChevronColor": _MINT_SOFT,
