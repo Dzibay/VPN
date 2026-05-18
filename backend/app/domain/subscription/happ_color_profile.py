@@ -9,23 +9,23 @@ from __future__ import annotations
 import json
 from typing import Any
 
-# Палитра: #RRGGBB + альфа FF (формат Happ iOS).
-_MINT = "#58D68DFF"
-_MINT_SOFT = "#58D68DB3"
-_TEAL = "#45B39DFF"
-_TEAL_DARK = "#1A4D3AFF"
-_FOREST = "#0C1814FF"
-_SURFACE = "#0C100EFF"
-_SURFACE_GLASS = "#0C100ECC"
-_TEXT = "#E8F4ECFF"
-_TEXT_MUTED = "#A8B8B0FF"
-_ON_ACCENT = "#000000FF"
-_VIOLET_GLOW = "#7C3AED99"
-_BG_DEEP = "#020203FF"
-_BG_MID = "#040806FF"
-_BG_TEAL = "#0A1A14FF"
+# Палитра: Mint Glow
+_MINT = "#7CF0ABFF"
+_MINT_SOFT = "#7CF0ABB3"
+_TEAL = "#5BD68DFF"
+_TEAL_DARK = "#0F3A29FF"
+_FOREST = "#08140FFF"
+_SURFACE = "#0A0F0CFF"
+_SURFACE_GLASS = "#0A0F0CCC"
+_TEXT = "#F1FFF6FF"
+_TEXT_MUTED = "#A7C4B3FF"
+_ON_ACCENT = "#00150AFF"
+_VIOLET_GLOW = "#7C3AED88"
+_BG_DEEP = "#010302FF"
+_BG_MID = "#041009FF"
+_BG_TEAL = "#0B2117FF"
 
-HAPP_PODOROZNIK_COLOR_PROFILE: dict[str, Any] = {
+HAPP_PODOROZNIK_COLOR_PROFILE = {
     "backgroundGradientRotationAngle": 168.0,
     "backgroundGradientColorIntensity": 1,
     "backgroundImageType": "system",
@@ -52,7 +52,7 @@ HAPP_PODOROZNIK_COLOR_PROFILE: dict[str, Any] = {
     "subscriptionTrafficBackgroundColor": _TEAL,
     "subscriptionInfoTextColor": _TEXT,
     "serverRowBackgroundColor": _SURFACE_GLASS,
-    "selectedServerRowColor": "#2D7A5AB5",
+    "selectedServerRowColor": "#39A76CB5",
     "serverRowTitleTextColor": _TEXT,
     "serverRowSubTitleTextColor": _TEXT_MUTED,
     "serverRowChevronColor": _MINT_SOFT,
