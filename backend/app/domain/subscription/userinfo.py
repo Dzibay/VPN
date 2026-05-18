@@ -38,26 +38,40 @@ from datetime import date, datetime, time, timedelta, timezone
 _HAPP_ANNOUNCE_MAX_CHARS = 200
 
 
-def subscription_announce_header_value(text: str) -> str:
+def happ_utf8_header_value(text: str, *, max_chars: int | None = None) -> str:
     """
-    Значение для HTTP-заголовка ``announce`` (Happ и др.).
+    UTF-8 в HTTP-заголовках подписки Happ (``profile-title``, ``announce``, …).
 
-    Starlette кодирует заголовки как latin-1 — сырой кириллический текст даёт ``UnicodeEncodeError``.
-    Happ принимает текст в форме ``base64:<Base64(UTF-8)>`` (см. их dev-docs app-management).
-
-    Длина после декодирования — не более 200 символов (ограничение Happ).
+    Starlette кодирует заголовки как latin-1 — сырой кириллический текст и эмодзи дают
+    ``UnicodeEncodeError``. Happ принимает ``base64:<Base64(UTF-8)>`` (dev-docs app-management).
     """
     if not (text or "").strip():
         return ""
     t = text.strip()
-    if len(t) > _HAPP_ANNOUNCE_MAX_CHARS:
-        t = t[:_HAPP_ANNOUNCE_MAX_CHARS]
+    if max_chars is not None and len(t) > max_chars:
+        t = t[:max_chars]
     try:
         t.encode("latin-1")
         return t
     except UnicodeEncodeError:
         payload = base64.b64encode(t.encode("utf-8")).decode("ascii")
         return f"base64:{payload}"
+
+
+def subscription_profile_title_header_value(title: str | None = None) -> str:
+    """Заголовок ``profile-title`` — имя профиля подписки в Happ и совместимых клиентах."""
+    from app.constants import BRAND_NAME
+
+    return happ_utf8_header_value(title if title is not None else BRAND_NAME)
+
+
+def subscription_announce_header_value(text: str) -> str:
+    """
+    Значение для HTTP-заголовка ``announce`` (Happ и др.).
+
+    Длина после декодирования — не более 200 символов (ограничение Happ).
+    """
+    return happ_utf8_header_value(text, max_chars=_HAPP_ANNOUNCE_MAX_CHARS)
 
 
 def subscription_valid_until_to_expire_unix(valid_until: date | None) -> int | None:

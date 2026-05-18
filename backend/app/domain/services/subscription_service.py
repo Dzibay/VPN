@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from app.config import Settings, settings
-from app.constants import BRAND_NAME_ASCII
+from app.constants import BRAND_NAME
 from app.domain.models.subscription import SubscriptionOpenPageData, SubscriptionPayload
 from app.domain.subscription.build import (
     build_subscription_payload,
@@ -43,6 +43,7 @@ from app.domain.subscription.open_apps import AppStoreLinks
 from app.domain.subscription.userinfo import (
     build_subscription_userinfo_header_value,
     subscription_announce_header_value,
+    subscription_profile_title_header_value,
 )
 from app.domain.subscription.validity import user_has_active_subscription
 from app.domain.user_traffic import user_traffic_totals
@@ -175,7 +176,7 @@ def test_subscription_client_metadata_headers(*, request: Request | None = None)
     return {
         "subscription-userinfo": "",
         "profile-update-interval": "",
-        "profile-title": f"{BRAND_NAME_ASCII} test",
+        "profile-title": subscription_profile_title_header_value(f"{BRAND_NAME} test"),
         "support-url": "",
         "profile-web-page-url": "",
         "announce": subscription_announce_header_value(announce_raw),
@@ -187,7 +188,9 @@ def test_subscription_client_metadata_headers(*, request: Request | None = None)
 def test_sub_client_metadata_headers(*, request: Request | None = None) -> dict[str, str]:
     """Заголовки для GET /test-sub (подписка из БД с tiered fallback)."""
     headers = test_subscription_client_metadata_headers(request=request)
-    headers["profile-title"] = f"{BRAND_NAME_ASCII} test-sub"
+    headers["profile-title"] = subscription_profile_title_header_value(
+        f"{BRAND_NAME} test-sub"
+    )
     headers["announce"] = subscription_announce_header_value("Тестовая подписка /sub/test-sub")
     return headers
 
@@ -243,7 +246,7 @@ async def subscription_client_metadata_headers(
     headers: dict[str, str] = {
         "subscription-userinfo": userinfo,
         "profile-update-interval": "1",
-        "profile-title": BRAND_NAME_ASCII,
+        "profile-title": subscription_profile_title_header_value(),
         "support-url": "https://t.me/Podoroznik_Support",
         "profile-web-page-url": "https://cool-vpn.ru",
         "announce": subscription_announce_header_value(announce_raw),

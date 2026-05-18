@@ -6,8 +6,7 @@ from __future__ import annotations
 BIGINT_MAX = 9_223_372_036_854_775_807
 
 # Имя бренда для UI, YAML подписки и деплинков (UTF-8).
-BRAND_NAME = "🍃Подорожник VPN"
-BRAND_NAME_ASCII = "Podorozhnik VPN"
+BRAND_NAME = "🍃 Подорожник VPN"
 
 # Длина пробного периода подписки после регистрации (календарных дней).
 TRIAL_DAYS_AFTER_REGISTRATION = 3
