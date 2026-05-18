@@ -196,6 +196,11 @@ function telegramUsernameCell(u) {
   return telegramCell(u)
 }
 
+function telegramCellTitle(u) {
+  const v = telegramUsernameCell(u)
+  return v === '—' ? undefined : v
+}
+
 function toggleUserRowSelect(userId, event) {
   if (event?.target?.closest?.('a, button')) return
   selectedUserId.value = selectedUserId.value === userId ? null : userId
@@ -494,7 +499,7 @@ onMounted(() => {
             >
               <td class="num mono-num">{{ u.id }}</td>
               <td class="email-cell" :title="u.email || undefined">{{ u.email ?? '—' }}</td>
-              <td class="tg-cell">{{ telegramUsernameCell(u) }}</td>
+              <td class="tg-cell" :title="telegramCellTitle(u)">{{ telegramUsernameCell(u) }}</td>
               <td>{{ formatDate(u.registered_at) }}</td>
               <td>{{ formatDate(u.subscription_until) }}</td>
               <td class="num mono-num">{{ formatTrafficBytes(u.total_traffic_bytes) }}</td>
@@ -1169,8 +1174,12 @@ tr.client-row-has-payments.client-row-active-today.user-row--selected {
   white-space: nowrap;
   vertical-align: middle;
 }
-/* Одна строка по ширине контента; на узком экране таблица скроллится в AdminTableWrap */
+/* Telegram ID / @username: ограничение ширины, длинные значения — с многоточием */
 .tg-cell {
+  max-width: 10rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: middle;
 }
