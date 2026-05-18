@@ -53,7 +53,7 @@ class SubscriptionPayload(BaseModel):
         description="Подписка действительна до (включительно, календарная дата), null — без ограничения",
     )
     subscription_active: bool = Field(
-        description="Если false (срок истёк), servers / vless_uris / subscription_base64 пустые",
+        description="Если false (срок истёк), вместо узлов — информационные заглушки в servers / vless_uris / subscription_base64",
     )
     servers: list[dict[str, Any]] = Field(
         default_factory=list,

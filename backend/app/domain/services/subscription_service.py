@@ -26,6 +26,10 @@ from app.domain.subscription.build import (
     build_subscription_payload,
     subscription_servers_from_db,
 )
+from app.domain.subscription.placeholders import (
+    SubscriptionPlaceholderReason,
+    build_subscription_placeholder_payload,
+)
 from app.domain.subscription.test_sub_build import build_test_sub_payload
 from app.domain.subscription.devices import (
     register_or_touch_subscription_device,
@@ -107,35 +111,25 @@ async def subscription_payload_rows_for_resolved_user(
     user: User,
     *,
     device_allowed: bool = True,
-) -> tuple[SubscriptionPayload, User, list[Server]]:
+) -> tuple[SubscriptionPayload, User, list[Server], SubscriptionPlaceholderReason | None]:
     if not user_has_active_subscription(user):
         return (
-            SubscriptionPayload(
-                valid_until=user.subscription_until,
-                subscription_active=False,
-                servers=[],
-                vless_uris=[],
-                subscription_base64="",
-            ),
+            build_subscription_placeholder_payload(user, reason="expired"),
             user,
             [],
+            "expired",
         )
 
     if not device_allowed:
         return (
-            SubscriptionPayload(
-                valid_until=user.subscription_until,
-                subscription_active=True,
-                servers=[],
-                vless_uris=[],
-                subscription_base64="",
-            ),
+            build_subscription_placeholder_payload(user, reason="device_limit"),
             user,
             [],
+            "device_limit",
         )
 
     rows = await subscription_servers_from_db(session)
-    return build_subscription_payload(user, rows), user, rows
+    return build_subscription_payload(user, rows), user, rows, None
 
 
 async def subscription_maybe_register_device(
@@ -233,6 +227,7 @@ async def subscription_client_metadata_headers(
         "announce": subscription_announce_header_value(announce_raw),
         "announce-url": "https://t.me/Podoroznik_Support",
         "routing": routing_header,
+        "hide-settings": "true",
     }
 
 

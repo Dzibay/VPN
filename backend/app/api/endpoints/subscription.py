@@ -18,8 +18,8 @@ Stash / Clash Verge / v2rayNG. Подробнее: ``app.domain.subscription.use
 ``GET /sub/{token}``: при ``User-Agent``, содержащем подстроку ``clash`` или ``hiddify`` (без учёта регистра), тело — YAML (Clash Meta);
 иначе — одна строка Base64 (как ранее). Явный YAML: ``GET /sub/{token}/clash``.
 
-При исчерпании лимита устройств (``SUBSCRIPTION_MAX_DEVICES``) ответ остаётся 200 с пустым списком узлов
-и текстом в заголовке ``announce``, без HTTP 403.
+При истечении подписки или исчерпании лимита устройств (``SUBSCRIPTION_MAX_DEVICES``) ответ остаётся 200:
+в теле — три информационные заглушки вместо узлов, в заголовке ``announce`` — пояснение, без HTTP 403.
 
 - GET /sub/{subscription_token}/open/{client} — 302 на ту же страницу на origin SPA (если API и сайт разъехались).
 - GET /sub/{subscription_token}/open/{client}/data — JSON для страницы открытия (Vue /sub/…/open/…: карточка клиента, диплинк, магазины); публичное имя и магазины также в GET /api/public/client-apps/{code}.
@@ -59,6 +59,7 @@ from app.domain.services.test_configurations_service import (
     load_test_configurations,
 )
 from app.domain.subscription.build import build_clash_subscription_yaml
+from app.domain.subscription.placeholders import build_clash_subscription_placeholder_yaml
 from app.domain.subscription.test_config_share import (
     build_test_configs_clash_yaml,
     build_test_subscription_payload,
@@ -301,18 +302,21 @@ async def subscription_base64_by_token(
         device_limit_rejected=not device_ok,
     )
     if want_yaml:
-        _payload, user, rows = await subscription_payload_rows_for_resolved_user(
+        _payload, user, rows, block_reason = await subscription_payload_rows_for_resolved_user(
             session,
             user,
             device_allowed=device_ok,
         )
-        yaml_body = build_clash_subscription_yaml(user, rows)
+        if block_reason:
+            yaml_body = build_clash_subscription_placeholder_yaml(block_reason)
+        else:
+            yaml_body = build_clash_subscription_yaml(user, rows)
         return Response(
             content=yaml_body,
             media_type="text/yaml; charset=utf-8",
             headers=headers,
         )
-    payload, user, _rows = await subscription_payload_rows_for_resolved_user(
+    payload, user, _rows, _block_reason = await subscription_payload_rows_for_resolved_user(
         session,
         user,
         device_allowed=device_ok,
@@ -340,7 +344,7 @@ async def subscription_clash_by_token(
     device_ok = await subscription_maybe_register_device(
         session=session, request=request, user=user, cfg=settings,
     )
-    _payload, user, rows = await subscription_payload_rows_for_resolved_user(
+    _payload, user, rows, block_reason = await subscription_payload_rows_for_resolved_user(
         session,
         user,
         device_allowed=device_ok,
@@ -351,7 +355,10 @@ async def subscription_clash_by_token(
         request=request,
         device_limit_rejected=not device_ok,
     )
-    yaml_body = build_clash_subscription_yaml(user, rows)
+    if block_reason:
+        yaml_body = build_clash_subscription_placeholder_yaml(block_reason)
+    else:
+        yaml_body = build_clash_subscription_yaml(user, rows)
     return Response(
         content=yaml_body,
         media_type="text/yaml; charset=utf-8",
@@ -376,7 +383,7 @@ async def subscription_json_by_token(
     device_ok = await subscription_maybe_register_device(
         session=session, request=request, user=user, cfg=settings,
     )
-    payload, user, _rows = await subscription_payload_rows_for_resolved_user(
+    payload, user, _rows, _block_reason = await subscription_payload_rows_for_resolved_user(
         session,
         user,
         device_allowed=device_ok,
