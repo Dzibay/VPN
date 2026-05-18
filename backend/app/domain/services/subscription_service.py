@@ -106,6 +106,20 @@ def _happ_routing_header_value(cfg: Settings | None = None) -> str:
     return f"happ://routing/onadd/{payload}"
 
 
+def _happ_advanced_subscription_headers(cfg: Settings | None = None) -> dict[str, str]:
+    """Расширенные параметры Happ; требуют ``providerid`` (``HAPP_PROVIDER_ID``)."""
+    cfg = cfg or settings
+    provider_id = (cfg.happ_provider_id or "").strip()
+    if not provider_id:
+        return {}
+    return {
+        "providerid": provider_id,
+        "hide-settings": "1",
+        "subscription-ping-onopen-enabled": "1",
+        "subscription-pin": "1",
+    }
+
+
 async def subscription_payload_rows_for_resolved_user(
     session: AsyncSession,
     user: User,
@@ -227,7 +241,7 @@ async def subscription_client_metadata_headers(
         "announce": subscription_announce_header_value(announce_raw),
         "announce-url": "https://t.me/Podoroznik_Support",
         "routing": routing_header,
-        "hide-settings": "1",
+        **_happ_advanced_subscription_headers(),
     }
 
 

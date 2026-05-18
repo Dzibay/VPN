@@ -390,6 +390,14 @@ class Settings(BaseSettings):
             "Переменная окружения: SUBSCRIPTION_MAX_DEVICES."
         ),
     )
+    happ_provider_id: str = Field(
+        default="",
+        description=(
+            "Provider ID с happ-proxy.com для расширенных параметров подписки Happ "
+            "(hide-settings, subscription-ping-onopen-enabled и т.д.). Пусто — не отдавать providerid. "
+            "Переменная окружения: HAPP_PROVIDER_ID."
+        ),
+    )
 
     prometheus_base_url: str = Field(
         default="",
