@@ -34,6 +34,7 @@ from app.domain.subscription.test_sub_build import build_test_sub_payload
 from app.domain.subscription.devices import (
     register_or_touch_subscription_device,
 )
+from app.domain.subscription.happ_color_profile import happ_color_profile_header_value
 from app.domain.subscription.links import (
     normalize_subscription_store_platform,
     subscription_public_base_url,
@@ -114,9 +115,11 @@ def _happ_advanced_subscription_headers(cfg: Settings | None = None) -> dict[str
         return {}
     return {
         "providerid": provider_id,
+        "color-profile": happ_color_profile_header_value(),
         "hide-settings": "1",
         "subscription-ping-onopen-enabled": "1",
         "subscription-pin": "1",
+        "manual-block-user-agent": "1",
     }
 
 
