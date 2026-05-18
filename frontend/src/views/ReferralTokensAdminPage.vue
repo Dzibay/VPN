@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { useRoute } from 'vue-router'
+import AdminHighlightListLink from '../components/AdminHighlightListLink.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
@@ -392,7 +393,7 @@ onMounted(() => {
             v-for="r in sortedRows"
             :key="r.id"
             :id="'ref-' + r.id"
-            :class="{ 'ref-row-highlight': highlightRowId === r.id }"
+            :class="{ 'admin-row-highlight': highlightRowId === r.id }"
           >
             <td class="num">{{ r.id }}</td>
             <td class="mono-cell">{{ r.token }}</td>
@@ -403,17 +404,7 @@ onMounted(() => {
               <span class="owner-user-id-inner">
                 <template v-if="r.owner_user_id != null">
                   <span>{{ r.owner_user_id }}</span>
-                  <RouterLink
-                    class="ref-open-in-list"
-                    :to="{
-                      path: '/admin/users/analytics',
-                      query: { highlight: String(r.owner_user_id) },
-                    }"
-                    title="Открыть этого пользователя в списке клиентов"
-                    aria-label="Перейти к пользователю в таблице клиентов"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" x2="21" y1="14" y2="3" /></svg>
-                  </RouterLink>
+                  <AdminHighlightListLink list="users" :highlight="r.owner_user_id" />
                 </template>
                 <template v-else>—</template>
               </span>
@@ -615,49 +606,6 @@ onMounted(() => {
   font-size: 0.82rem;
   color: var(--accent);
   font-weight: 600;
-}
-.owner-user-id-cell {
-  vertical-align: middle;
-}
-.owner-user-id-inner {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 0.35rem;
-}
-.ref-open-in-list {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  margin-left: 0.1rem;
-  padding: 0.12rem;
-  border-radius: 6px;
-  color: var(--accent);
-  line-height: 0;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-.ref-open-in-list:hover {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--text-h);
-}
-.ref-open-in-list:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.admin-table tbody tr.ref-row-highlight td {
-  animation: refRowHighlight 3.2s ease-out forwards;
-}
-@keyframes refRowHighlight {
-  0% {
-    background-color: color-mix(in srgb, var(--accent) 30%, transparent);
-  }
-  35% {
-    background-color: color-mix(in srgb, var(--accent) 18%, transparent);
-  }
-  100% {
-    background-color: transparent;
-  }
 }
 .muted {
   color: var(--muted);

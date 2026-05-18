@@ -89,3 +89,46 @@
   width: 1%;
   white-space: nowrap;
 }
+
+.owner-user-id-cell {
+  vertical-align: middle;
+}
+
+.owner-user-id-inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.35rem;
+}
+
+.owner-user-id-cell.num .owner-user-id-inner {
+  justify-content: flex-end;
+}
+
+.traffic-user-id-cell {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+/* Подсветка строки после перехода по AdminHighlightListLink */
+.admin-table tbody tr.admin-row-highlight {
+  --admin-list-highlight: #a855f7;
+  animation: adminListRowHighlight 3.4s ease-out forwards;
+}
+
+@keyframes adminListRowHighlight {
+  0% {
+    background-color: color-mix(in srgb, var(--admin-list-highlight) 52%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--admin-list-highlight) 65%, transparent);
+  }
+  40% {
+    background-color: color-mix(in srgb, var(--admin-list-highlight) 36%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--admin-list-highlight) 45%, transparent);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+}

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
+import AdminHighlightListLink from '../components/AdminHighlightListLink.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
@@ -483,7 +484,7 @@ onMounted(() => {
               :key="u.id"
               class="client-row-toggle"
               :class="{
-                'client-row-highlight': highlightUserId === u.id,
+                'admin-row-highlight': highlightUserId === u.id,
                 'user-row--selected': selectedUserId === u.id,
                 'client-row-active-today': u.active_today,
                 'client-row-has-payments': u.has_payments,
@@ -501,18 +502,11 @@ onMounted(() => {
               <td class="num ref-id-cell">
                 <template v-if="u.referral_link_id != null">
                   <span>{{ u.referral_link_id }}</span>
-                  <RouterLink
-                    class="ref-open-in-list"
-                    :to="{
-                      path: '/admin/referrals',
-                      query: { highlight: String(u.referral_link_id) },
-                    }"
-                    title="Открыть эту запись в списке реферальных ссылок"
-                    aria-label="Перейти к реферальной ссылке в таблице токенов"
-                    @click.stop
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" x2="21" y1="14" y2="3" /></svg>
-                  </RouterLink>
+                  <AdminHighlightListLink
+                    list="referrals"
+                    :highlight="u.referral_link_id"
+                    stop-propagation
+                  />
                 </template>
                 <template v-else>—</template>
               </td>
@@ -664,17 +658,13 @@ onMounted(() => {
                       <span class="tg-props-value mono-num">{{
                         selectedUser.referral_link_id
                       }}</span>
-                      <RouterLink
-                        class="ref-open-in-list ref-open-in-list--panel"
-                        :to="{
-                          path: '/admin/referrals',
-                          query: { highlight: String(selectedUser.referral_link_id) },
-                        }"
+                      <AdminHighlightListLink
+                        list="referrals"
+                        :highlight="selectedUser.referral_link_id"
                         title="Открыть в списке реферальных ссылок"
                         aria-label="Перейти к реферальной ссылке"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" x2="21" y1="14" y2="3" /></svg>
-                      </RouterLink>
+                        panel
+                      />
                     </template>
                     <span v-else class="tg-props-value">—</span>
                   </div>
@@ -825,40 +815,6 @@ onMounted(() => {
   align-items: center;
   justify-content: flex-end;
   gap: 0.35rem;
-}
-.ref-open-in-list {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  margin-left: 0.1rem;
-  padding: 0.12rem;
-  border-radius: 6px;
-  color: var(--accent);
-  line-height: 0;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-.ref-open-in-list:hover {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--text-h);
-}
-.ref-open-in-list:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.admin-table tbody tr.client-row-highlight td {
-  animation: clientRowHighlight 3.2s ease-out forwards;
-}
-@keyframes clientRowHighlight {
-  0% {
-    background-color: color-mix(in srgb, var(--accent) 30%, transparent);
-  }
-  35% {
-    background-color: color-mix(in srgb, var(--accent) 18%, transparent);
-  }
-  100% {
-    background-color: transparent;
-  }
 }
 .mono-num {
   font-variant-numeric: tabular-nums;
@@ -1163,9 +1119,6 @@ tr.client-row-has-payments.client-row-active-today.user-row--selected {
 .user-detail-panel .connections-expand__dot {
   color: color-mix(in srgb, var(--muted) 65%, transparent);
   font-weight: 400;
-}
-.ref-open-in-list--panel {
-  margin-left: 0;
 }
 .user-detail-panel .tg-props-value {
   display: block;

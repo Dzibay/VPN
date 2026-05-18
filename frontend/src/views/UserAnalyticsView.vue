@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
+import AdminHighlightListLink from '../components/AdminHighlightListLink.vue'
 import AdminBarChart from '../components/AdminBarChart.vue'
 import AdminLineChartPanel from '../components/AdminLineChartPanel.vue'
 import AdminPageHeader from '../components/AdminPageHeader.vue'
@@ -686,21 +687,10 @@ onMounted(() => {
                           v-if="sourceReferralLink.owner_user_id != null"
                         >
                           <span>{{ sourceReferralLink.owner_user_id }}</span>
-                          <RouterLink
-                            class="ref-open-in-list"
-                            :to="{
-                              path: '/admin/users/analytics',
-                              query: {
-                                highlight: String(
-                                  sourceReferralLink.owner_user_id,
-                                ),
-                              },
-                            }"
-                            title="Открыть этого пользователя в списке клиентов"
-                            aria-label="Перейти к пользователю в таблице клиентов"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" x2="21" y1="14" y2="3" /></svg>
-                          </RouterLink>
+                          <AdminHighlightListLink
+                            list="users"
+                            :highlight="sourceReferralLink.owner_user_id"
+                          />
                         </template>
                         <template v-else>—</template>
                       </span>
@@ -822,19 +812,10 @@ onMounted(() => {
                   <span class="owner-user-id-inner">
                     <template v-if="ownedReferralLink.owner_user_id != null">
                       <span>{{ ownedReferralLink.owner_user_id }}</span>
-                      <RouterLink
-                        class="ref-open-in-list"
-                        :to="{
-                          path: '/admin/users/analytics',
-                          query: {
-                            highlight: String(ownedReferralLink.owner_user_id),
-                          },
-                        }"
-                        title="Открыть этого пользователя в списке клиентов"
-                        aria-label="Перейти к пользователю в таблице клиентов"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" x2="21" y1="14" y2="3" /></svg>
-                      </RouterLink>
+                      <AdminHighlightListLink
+                        list="users"
+                        :highlight="ownedReferralLink.owner_user_id"
+                      />
                     </template>
                     <template v-else>—</template>
                   </span>
@@ -1468,35 +1449,6 @@ tr.referee-row-active-today {
 .muted-inline {
   color: var(--muted);
   font-size: 0.85rem;
-}
-.owner-user-id-cell {
-  vertical-align: middle;
-}
-.owner-user-id-inner {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-.ref-open-in-list {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  padding: 0.12rem;
-  border-radius: 6px;
-  color: var(--accent);
-  line-height: 0;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
-}
-.ref-open-in-list:hover {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--text-h);
-}
-.ref-open-in-list:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 .mono-cell {
   font-family: var(--mono);
