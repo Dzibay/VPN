@@ -52,6 +52,10 @@ class StaffCreateTributePaymentBody(BaseModel):
         default="one_time",
         description="subscription — рекуррент; one_time — разовая покупка",
     )
+    created_at: datetime | None = Field(
+        default=None,
+        description="Дата и время платежа (UTC); по умолчанию — сейчас. Также в notify_payment.",
+    )
 
 
 class StaffCreateTributePaymentResponse(BaseModel):

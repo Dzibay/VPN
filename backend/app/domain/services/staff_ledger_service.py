@@ -53,6 +53,7 @@ async def create_staff_tribute_payment(
     months: int,
     amount_rub: Decimal,
     payment_kind: Literal["subscription", "one_time"],
+    created_at: datetime | None = None,
 ) -> StaffCreateTributePaymentResponse:
     amount_minor = int((amount_rub * Decimal("100")).quantize(Decimal("1")))
     ack = await staff_apply_tribute_payment(
@@ -62,6 +63,7 @@ async def create_staff_tribute_payment(
         months=int(months),
         amount_minor=amount_minor,
         payment_kind=payment_kind,
+        created_at=created_at,
     )
     payment: StaffPaymentItem | None = None
     if not ack.duplicate:

@@ -16,6 +16,7 @@ const formUserId = ref('')
 const formMonths = ref('1')
 const formAmountRub = ref('')
 const formPaymentKind = ref('one_time')
+const formCreatedAt = ref('')
 /** @type {import('vue').Ref<Array<{ id: number, user_id: number | null, amount: string | number, months: number, provider: string, payment_kind: string, tribute_webhook: Record<string, unknown> | null, created_at: string }>>} */
 const items = ref([])
 const total = ref(0)
@@ -83,6 +84,18 @@ function paymentKindLabel(k) {
   return s || '—'
 }
 
+/** Локальное время браузера → значение для input[type=datetime-local]. */
+function toDatetimeLocalValue(isoOrDate) {
+  const d = isoOrDate instanceof Date ? isoOrDate : new Date(isoOrDate)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function nowDatetimeLocal() {
+  return toDatetimeLocalValue(new Date())
+}
+
 async function load() {
   loading.value = true
   error.value = null
@@ -119,6 +132,7 @@ function openCreateModal() {
   formMonths.value = '1'
   formAmountRub.value = ''
   formPaymentKind.value = 'one_time'
+  formCreatedAt.value = nowDatetimeLocal()
   modalOpen.value = true
 }
 
@@ -152,11 +166,23 @@ async function submitCreatePayment() {
     return
   }
 
+  const createdTrim = String(formCreatedAt.value ?? '').trim()
+  if (!createdTrim) {
+    createError.value = 'Укажите дату и время платежа.'
+    return
+  }
+  const createdDate = new Date(createdTrim)
+  if (Number.isNaN(createdDate.getTime())) {
+    createError.value = 'Некорректная дата и время.'
+    return
+  }
+
   const body = {
     user_id: uid,
     months,
     amount_rub: amountRub,
     payment_kind: formPaymentKind.value,
+    created_at: createdDate.toISOString(),
   }
 
   createLoading.value = true
@@ -385,6 +411,16 @@ onMounted(() => {
                 placeholder="Например 199"
                 autocomplete="off"
               />
+            </label>
+            <label class="field">
+              <span>Дата и время платежа</span>
+              <input
+                v-model="formCreatedAt"
+                type="datetime-local"
+                class="input-like"
+                required
+              />
+              <span class="field-hint">Локальное время браузера; в БД сохраняется как UTC.</span>
             </label>
             <p v-if="createError" class="form-err">{{ createError }}</p>
             <div class="modal-actions">

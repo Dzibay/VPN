@@ -96,6 +96,7 @@ async def staff_create_tribute_payment(
             months=body.months,
             amount_rub=body.amount_rub,
             payment_kind=body.payment_kind,
+            created_at=body.created_at,
         )
     except LookupError as err:
         code = err.args[0] if err.args else ""

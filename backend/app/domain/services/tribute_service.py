@@ -19,7 +19,6 @@ import hashlib
 import hmac
 import json
 import logging
-import time
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -102,6 +101,17 @@ def verify_tribute_webhook_signature(*, raw_body: bytes, header_signature: str |
 
 def _amount_from_minor_units(amount_minor: int) -> Decimal:
     return (Decimal(int(amount_minor)) * Decimal("0.01")).quantize(Decimal("0.01"))
+
+
+def _ensure_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _iso_utc(dt: datetime) -> str:
+    """ISO-8601 UTC для JSONB tribute_webhook (как в теле webhook Tribute)."""
+    return _ensure_utc(dt).isoformat().replace("+00:00", "Z")
 
 
 def _period_to_months(period: str) -> int | None:
@@ -240,11 +250,13 @@ async def _commit_tribute_paid_months(
     tribute_webhook: dict[str, Any],
     payment_kind: Literal["subscription", "one_time"],
     event_name: str,
+    created_at: datetime | None = None,
 ) -> TributeWebhookAck:
     if await _tribute_payment_duplicate(session, webhook=tribute_webhook):
         return TributeWebhookAck(ok=True, event=event_name, duplicate=True)
 
     amount_decimal = _amount_from_minor_units(int(amount_minor))
+    paid_at = _ensure_utc(created_at) if created_at is not None else None
 
     if telegram_user_id is None:
         log.warning(
@@ -259,6 +271,7 @@ async def _commit_tribute_paid_months(
                 provider="tribute",
                 payment_kind=payment_kind,
                 tribute_webhook=tribute_webhook,
+                **({"created_at": paid_at} if paid_at is not None else {}),
             ),
         )
         await session.flush()
@@ -283,6 +296,7 @@ async def _commit_tribute_paid_months(
             provider="tribute",
             payment_kind=payment_kind,
             tribute_webhook=tribute_webhook,
+            **({"created_at": paid_at} if paid_at is not None else {}),
         ),
     )
     session.add(
@@ -292,6 +306,7 @@ async def _commit_tribute_paid_months(
             referee_id=None,
             bonus_days=accumulated_bonus_days if accumulated_bonus_days > 0 else None,
             paid_months=months,
+            **({"created_at": paid_at} if paid_at is not None else {}),
         ),
     )
     await apply_referral_bonus_on_payment(
@@ -410,15 +425,24 @@ async def process_tribute_webhook_raw_body(
     )
 
 
+def _admin_manual_external_id(*, telegram_user_id: int, paid_at: datetime) -> int:
+    """Отрицательный id для admin_manual: влезает в PostgreSQL INTEGER, не как у Tribute."""
+    paid_at_utc = _ensure_utc(paid_at)
+    # Нельзя timestamp()*1000 — ~1.7e12, CAST AS INTEGER падает с NumericValueOutOfRange.
+    return -(int(paid_at_utc.timestamp()) + int(telegram_user_id) % 100_000)
+
+
 def _admin_manual_tribute_webhook(
     *,
     payment_kind: Literal["subscription", "one_time"],
     months: int,
     amount_minor: int,
     telegram_user_id: int,
+    paid_at: datetime,
 ) -> tuple[str, dict[str, Any]]:
     """Синтетический webhook для админки; уникальные id — чтобы не попасть в дедуп."""
-    unique = int(time.time() * 1000)
+    paid_at_utc = _ensure_utc(paid_at)
+    unique = _admin_manual_external_id(telegram_user_id=telegram_user_id, paid_at=paid_at_utc)
     if payment_kind == "one_time":
         return (
             "new_digital_product",
@@ -429,16 +453,18 @@ def _admin_manual_tribute_webhook(
                 "telegram_user_id": int(telegram_user_id),
                 "months": int(months),
                 "product_name": "admin_manual",
+                "purchase_created_at": _iso_utc(paid_at_utc),
             },
         )
     period = _MONTHS_TO_PERIOD.get(int(months), "monthly")
+    expires_at = paid_at_utc + timedelta(days=int(months) * _DAYS_PER_MONTH)
     return (
         "new_subscription",
         {
             "subscription_id": unique,
             "period": period,
             "price": int(amount_minor),
-            "expires_at": datetime.now(timezone.utc),
+            "expires_at": _iso_utc(expires_at),
             "telegram_user_id": int(telegram_user_id),
             "type": "regular",
         },
@@ -453,6 +479,7 @@ async def staff_apply_tribute_payment(
     months: int,
     amount_minor: int,
     payment_kind: Literal["subscription", "one_time"],
+    created_at: datetime | None = None,
 ) -> TributeWebhookAck:
     """Ручное начисление: тот же ``_commit_tribute_paid_months``, что после webhook Tribute."""
     user = await session.get(User, int(user_id))
@@ -461,11 +488,14 @@ async def staff_apply_tribute_payment(
     if user.telegram_id is None:
         raise LookupError("telegram_id_missing")
 
+    paid_at = _ensure_utc(created_at) if created_at is not None else datetime.now(timezone.utc)
+
     event_name, payload = _admin_manual_tribute_webhook(
         payment_kind=payment_kind,
         months=int(months),
         amount_minor=int(amount_minor),
         telegram_user_id=int(user.telegram_id),
+        paid_at=paid_at,
     )
     webhook = _tribute_webhook_envelope(event_name=event_name, payload=payload)
     return await _commit_tribute_paid_months(
@@ -477,6 +507,7 @@ async def staff_apply_tribute_payment(
         tribute_webhook=webhook,
         payment_kind=payment_kind,
         event_name=event_name,
+        created_at=paid_at,
     )
 
 
