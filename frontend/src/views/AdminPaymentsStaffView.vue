@@ -348,13 +348,14 @@ onMounted(() => {
             задача notify_payment и реферальные бонусы.
           </p>
           <form class="modal-form" @submit.prevent="submitCreatePayment">
-            <label class="field">
+            <label class="field field-user">
               <span>User ID</span>
               <StaffUserIdSuggestInput
                 v-model="formUserId"
                 input-id="payments-create-user-id"
                 placeholder="Поиск от 3 символов (email, @username, tg id)"
               />
+              <span class="field-hint">Нужен telegram_id у пользователя в БД.</span>
             </label>
             <label class="field">
               <span>Тип оплаты</span>
@@ -385,7 +386,6 @@ onMounted(() => {
                 autocomplete="off"
               />
             </label>
-            <p class="field-hint">Нужен telegram_id у пользователя в БД.</p>
             <p v-if="createError" class="form-err">{{ createError }}</p>
             <div class="modal-actions">
               <button
@@ -507,33 +507,35 @@ onMounted(() => {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 2000;
+  background: rgba(4, 12, 9, 0.55);
+  backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1rem;
-  background: rgba(0, 0, 0, 0.55);
+  padding: clamp(1rem, 4vh, 2.5rem) 1rem;
+  z-index: 50;
 }
 .modal {
-  width: min(100%, 28rem);
-  max-height: min(90vh, 40rem);
-  overflow: auto;
-  padding: 1.25rem 1.35rem;
-  border-radius: 12px;
-  background: var(--card);
+  width: 100%;
+  max-width: 520px;
+  max-height: min(90dvh, 720px);
+  overflow-y: auto;
+  padding: 1.35rem 1.45rem;
+  border-radius: 16px;
+  background: var(--card-bg);
   border: 1px solid var(--card-border);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-lg);
 }
 .modal-title {
   margin: 0 0 0.5rem;
-  font-size: 1.15rem;
+  font-size: 1.1rem;
   color: var(--text-h);
 }
 .modal-lead {
   margin: 0 0 1rem;
-  font-size: 0.82rem;
-  line-height: 1.45;
+  font-size: 0.8rem;
   color: var(--muted);
+  line-height: 1.45;
 }
 .modal-form .field {
   display: flex;
@@ -541,25 +543,61 @@ onMounted(() => {
   gap: 0.35rem;
   margin-bottom: 0.85rem;
 }
-.modal-form .field > span {
-  font-size: 0.8rem;
+.modal-form .field > span:first-child {
+  font-size: 0.82rem;
+  font-weight: 600;
   color: var(--muted);
+}
+.field-user {
+  margin-bottom: 1rem;
 }
 .field-hint {
-  margin: -0.35rem 0 0.75rem;
-  font-size: 0.78rem;
+  margin: 0.15rem 0 0;
+  font-size: 0.76rem;
+  font-weight: 400;
   color: var(--muted);
+  line-height: 1.35;
+}
+.input-like {
+  font: inherit;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+  color: var(--text-h);
+}
+.input-like:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--text-h) 38%, var(--card-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-h) 14%, transparent);
+}
+.modal-form :deep(.staff-user-suggest-input) {
+  min-height: auto;
+  padding: 0.5rem 0.65rem 0.5rem 2.45rem;
+  border-radius: 10px;
+  font-size: inherit;
+}
+.modal-form :deep(.suggest-input-icon) {
+  left: 0.65rem;
+}
+.modal-form :deep(.suggest-input-icon svg) {
+  width: 16px;
+  height: 16px;
+}
+.modal-form :deep(.suggest-panel) {
+  z-index: 60;
 }
 .form-err {
-  margin: 0 0 0.75rem;
+  margin: 0 0 0.65rem;
   font-size: 0.85rem;
   color: var(--danger);
 }
 .modal-actions {
   display: flex;
-  flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 0.5rem;
-  margin-top: 0.25rem;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
 }
 </style>
