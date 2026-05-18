@@ -121,6 +121,9 @@ def _happ_advanced_subscription_headers(cfg: Settings | None = None) -> dict[str
         "subscription-ping-onopen-enabled": "1",
         "subscription-pin": "1",
         "manual-block-user-agent": "1",
+        "ping-result": "time",
+        "subscriptions-collapse": "0",
+        "subscription-autoconnect": "1"
     }
 
 
