@@ -369,10 +369,6 @@ onMounted(() => {
           @click.stop
         >
           <h2 id="payments-create-modal-title" class="modal-title">Новый платёж</h2>
-          <p class="modal-lead">
-            Та же логика, что после webhook Tribute: продление подписки, запись в payments,
-            задача notify_payment и реферальные бонусы.
-          </p>
           <form class="modal-form" @submit.prevent="submitCreatePayment">
             <label class="field field-user">
               <span>User ID</span>
@@ -381,7 +377,6 @@ onMounted(() => {
                 input-id="payments-create-user-id"
                 placeholder="Поиск от 3 символов (email, @username, tg id)"
               />
-              <span class="field-hint">Нужен telegram_id у пользователя в БД.</span>
             </label>
             <label class="field">
               <span>Тип оплаты</span>
