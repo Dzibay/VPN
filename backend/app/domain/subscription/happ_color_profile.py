@@ -9,24 +9,24 @@ from __future__ import annotations
 import json
 from typing import Any
 
-# Палитра: Lime Energy
-_MINT = "#CBFF6AFF"
-_MINT_SOFT = "#CBFF6AB3"
-_TEAL = "#A3E635FF"
-_TEAL_DARK = "#2D5E1EFF"
-_FOREST = "#0A1208FF"
-_SURFACE = "#101608FF"
-_SURFACE_GLASS = "#101608CC"
-_TEXT = "#FAFFEFFF"
-_TEXT_MUTED = "#C0CCAAFF"
-_ON_ACCENT = "#111500FF"
-_VIOLET_GLOW = "#BEF26455"
-_BG_DEEP = "#060702FF"
-_BG_MID = "#121A06FF"
-_BG_TEAL = "#253E14FF"
+# Палитра: Emerald Premium
+_MINT = "#3DDC97FF"
+_MINT_SOFT = "#3DDC97B3"
+_TEAL = "#22C55EFF"
+_TEAL_DARK = "#0B2E1FFF"
+_FOREST = "#06120CFF"
+_SURFACE = "#08100BFF"
+_SURFACE_GLASS = "#08100BCC"
+_TEXT = "#E9FFF1FF"
+_TEXT_MUTED = "#92B3A0FF"
+_ON_ACCENT = "#000F08FF"
+_VIOLET_GLOW = "#22C55E66"
+_BG_DEEP = "#000000FF"
+_BG_MID = "#031009FF"
+_BG_TEAL = "#072015FF"
 
 HAPP_PODOROZNIK_COLOR_PROFILE = {
-    "backgroundGradientRotationAngle": 165.0,
+    "backgroundGradientRotationAngle": 160.0,
     "backgroundGradientColorIntensity": 1,
     "backgroundImageType": "system",
     "backgroundColors": [
@@ -38,21 +38,21 @@ HAPP_PODOROZNIK_COLOR_PROFILE = {
     ],
     "elipseColors": [
         _MINT,
-        "#84CC16FF",
+        "#16A34AFF",
         _VIOLET_GLOW,
     ],
     "buttonColor": _MINT,
     "buttonTextColor": _ON_ACCENT,
     "buttonTimerColor": _TEXT,
     "buttonImageType": "light",
-    "powerIconColor": "#4D7C0FFF",
-    "subsHeaderColor": "#4D7C0FFF",
+    "powerIconColor": _TEAL_DARK,
+    "subsHeaderColor": _TEAL_DARK,
     "subHeaderButtonColor": _TEXT,
     "subscriptionInfoBackgroundColor": _FOREST,
-    "subscriptionTrafficBackgroundColor": "#84CC16FF",
+    "subscriptionTrafficBackgroundColor": "#16A34AFF",
     "subscriptionInfoTextColor": _TEXT,
     "serverRowBackgroundColor": _SURFACE_GLASS,
-    "selectedServerRowColor": "#84CC16B5",
+    "selectedServerRowColor": "#1F9D5AB5",
     "serverRowTitleTextColor": _TEXT,
     "serverRowSubTitleTextColor": _TEXT_MUTED,
     "serverRowChevronColor": _MINT_SOFT,
