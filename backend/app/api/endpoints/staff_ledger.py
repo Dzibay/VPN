@@ -6,9 +6,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 
+from app.config import settings
 from app.core.dependencies import ReadonlySessionDep, SessionDep, require_admin, require_referrals_staff
 from app.domain.models.staff_ledger import (
     StaffCreateTaskBody,
+    StaffCreateTributePaymentBody,
+    StaffCreateTributePaymentResponse,
     StaffPatchTaskBody,
     StaffPaymentsFinanceSummaryResponse,
     StaffPaymentsListResponse,
@@ -17,6 +20,7 @@ from app.domain.models.staff_ledger import (
 )
 from app.domain.services.staff_ledger_service import (
     create_staff_task,
+    create_staff_tribute_payment,
     delete_staff_task,
     get_staff_task,
     list_staff_payments,
@@ -70,6 +74,42 @@ async def staff_list_payments(
         session, limit=limit, offset=offset, user_id=user_id
     )
     return StaffPaymentsListResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@payments_staff_router.post(
+    "",
+    response_model=StaffCreateTributePaymentResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Создать платёж (логика webhook Tribute)",
+    description="Продлевает подписку, пишет payments, создаёт notify_payment и реферальные бонусы — "
+    "как ``_commit_tribute_paid_months`` после webhook. Нужен ``users.telegram_id``.",
+)
+async def staff_create_tribute_payment(
+    session: SessionDep,
+    body: StaffCreateTributePaymentBody,
+) -> StaffCreateTributePaymentResponse:
+    try:
+        return await create_staff_tribute_payment(
+            session,
+            settings,
+            user_id=body.user_id,
+            months=body.months,
+            amount_rub=body.amount_rub,
+            payment_kind=body.payment_kind,
+        )
+    except LookupError as err:
+        code = err.args[0] if err.args else ""
+        if code == "user_not_found":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Пользователь с таким user_id не найден",
+            ) from err
+        if code == "telegram_id_missing":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="У пользователя не задан telegram_id — начисление невозможно",
+            ) from err
+        raise
 
 
 @tasks_staff_router.get(

@@ -3,11 +3,19 @@ import { computed, onMounted, ref } from 'vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
+import StaffUserIdSuggestInput from '../components/StaffUserIdSuggestInput.vue'
 import { fetchJson } from '../api/client.js'
 import { useTableSort } from '../utils/adminTableSort.js'
 
 const loading = ref(false)
 const error = ref(null)
+const modalOpen = ref(false)
+const createLoading = ref(false)
+const createError = ref(null)
+const formUserId = ref('')
+const formMonths = ref('1')
+const formAmountRub = ref('')
+const formPaymentKind = ref('one_time')
 /** @type {import('vue').Ref<Array<{ id: number, user_id: number | null, amount: string | number, months: number, provider: string, payment_kind: string, tribute_webhook: Record<string, unknown> | null, created_at: string }>>} */
 const items = ref([])
 const total = ref(0)
@@ -105,6 +113,73 @@ function nextPage() {
   void load()
 }
 
+function openCreateModal() {
+  createError.value = null
+  formUserId.value = ''
+  formMonths.value = '1'
+  formAmountRub.value = ''
+  formPaymentKind.value = 'one_time'
+  modalOpen.value = true
+}
+
+function closeCreateModal() {
+  if (createLoading.value) return
+  modalOpen.value = false
+  createError.value = null
+}
+
+function parseFormUserId() {
+  const s = String(formUserId.value ?? '').trim()
+  if (!s) return NaN
+  return Number.parseInt(s, 10)
+}
+
+async function submitCreatePayment() {
+  const uid = parseFormUserId()
+  if (!Number.isFinite(uid) || uid < 1) {
+    createError.value = 'Укажите корректный User ID (целое число ≥ 1).'
+    return
+  }
+  const months = Number.parseInt(String(formMonths.value ?? '').trim(), 10)
+  if (!Number.isFinite(months) || months < 1 || months > 120) {
+    createError.value = 'Месяцев: целое число от 1 до 120.'
+    return
+  }
+  const amountRaw = String(formAmountRub.value ?? '').trim().replace(',', '.')
+  const amountRub = Number.parseFloat(amountRaw)
+  if (!Number.isFinite(amountRub) || amountRub <= 0) {
+    createError.value = 'Сумма: положительное число (рубли).'
+    return
+  }
+
+  const body = {
+    user_id: uid,
+    months,
+    amount_rub: amountRub,
+    payment_kind: formPaymentKind.value,
+  }
+
+  createLoading.value = true
+  createError.value = null
+  try {
+    const res = await fetchJson('/api/admin/payments', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
+    if (res?.duplicate) {
+      createError.value = 'Дубликат платежа (такой webhook уже был). Запись не создана.'
+      return
+    }
+    modalOpen.value = false
+    offset.value = 0
+    await load()
+  } catch (e) {
+    createError.value = e.message || String(e)
+  } finally {
+    createLoading.value = false
+  }
+}
+
 onMounted(() => {
   void load()
 })
@@ -116,6 +191,9 @@ onMounted(() => {
       <div class="head-row">
         <h2 class="section-heading">Журнал платежей</h2>
         <div class="head-actions">
+          <button type="button" class="btn-primary" @click="openCreateModal">
+            Создать платёж
+          </button>
           <button type="button" class="btn-secondary" :disabled="loading" @click="load">
             {{ loading ? 'Обновление…' : 'Обновить' }}
           </button>
@@ -249,6 +327,83 @@ onMounted(() => {
         </table>
       </AdminTableWrap>
     </template>
+
+    <Teleport to="body">
+      <div
+        v-if="modalOpen"
+        class="modal-backdrop"
+        role="presentation"
+        @click.self="closeCreateModal"
+      >
+        <div
+          class="modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="payments-create-modal-title"
+          @click.stop
+        >
+          <h2 id="payments-create-modal-title" class="modal-title">Новый платёж</h2>
+          <p class="modal-lead">
+            Та же логика, что после webhook Tribute: продление подписки, запись в payments,
+            задача notify_payment и реферальные бонусы.
+          </p>
+          <form class="modal-form" @submit.prevent="submitCreatePayment">
+            <label class="field">
+              <span>User ID</span>
+              <StaffUserIdSuggestInput
+                v-model="formUserId"
+                input-id="payments-create-user-id"
+                placeholder="Поиск от 3 символов (email, @username, tg id)"
+              />
+            </label>
+            <label class="field">
+              <span>Тип оплаты</span>
+              <select v-model="formPaymentKind" class="input-like">
+                <option value="one_time">Разовая (one_time)</option>
+                <option value="subscription">Подписка (subscription)</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Месяцев</span>
+              <input
+                v-model="formMonths"
+                type="text"
+                inputmode="numeric"
+                class="input-like"
+                placeholder="1–120"
+                autocomplete="off"
+              />
+            </label>
+            <label class="field">
+              <span>Сумма, ₽</span>
+              <input
+                v-model="formAmountRub"
+                type="text"
+                inputmode="decimal"
+                class="input-like"
+                placeholder="Например 199"
+                autocomplete="off"
+              />
+            </label>
+            <p class="field-hint">Нужен telegram_id у пользователя в БД.</p>
+            <p v-if="createError" class="form-err">{{ createError }}</p>
+            <div class="modal-actions">
+              <button
+                type="button"
+                class="btn-secondary"
+                :disabled="createLoading"
+                @click="closeCreateModal"
+              >
+                Отмена
+              </button>
+              <button type="submit" class="btn-primary" :disabled="createLoading">
+                {{ createLoading ? 'Создание…' : 'Создать' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </Teleport>
   </AdminStaffShell>
 </template>
 
@@ -348,5 +503,63 @@ onMounted(() => {
   max-width: 12rem;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.55);
+}
+.modal {
+  width: min(100%, 28rem);
+  max-height: min(90vh, 40rem);
+  overflow: auto;
+  padding: 1.25rem 1.35rem;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+.modal-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+  color: var(--text-h);
+}
+.modal-lead {
+  margin: 0 0 1rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.modal-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.85rem;
+}
+.modal-form .field > span {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.field-hint {
+  margin: -0.35rem 0 0.75rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.form-err {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: var(--danger);
+}
+.modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
 }
 </style>

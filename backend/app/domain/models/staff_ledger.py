@@ -42,6 +42,28 @@ class StaffPaymentsListResponse(BaseModel):
     offset: int
 
 
+class StaffCreateTributePaymentBody(BaseModel):
+    """Ручное начисление оплаты — тот же commit, что после webhook Tribute."""
+
+    user_id: int = Field(ge=1, description="users.id")
+    months: int = Field(ge=1, le=120, description="Срок подписки в месяцах (× 31 день)")
+    amount_rub: Decimal = Field(gt=0, description="Сумма в рублях")
+    payment_kind: Literal["subscription", "one_time"] = Field(
+        default="one_time",
+        description="subscription — рекуррент; one_time — разовая покупка",
+    )
+
+
+class StaffCreateTributePaymentResponse(BaseModel):
+    payment: StaffPaymentItem | None = Field(
+        default=None,
+        description="Новая строка payments; null при duplicate",
+    )
+    ok: bool = True
+    event: str | None = None
+    duplicate: bool = False
+
+
 class StaffPaymentsFinanceBuckets(BaseModel):
     """Суммы по месяцам (ось ``months``) для subscription и one_time."""
 

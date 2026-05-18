@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal
+from typing import Literal
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import Settings
 from app.domain.models.staff_ledger import (
     StaffCreatableTaskType,
+    StaffCreateTributePaymentResponse,
     StaffPatchTaskBody,
     StaffPaymentItem,
     StaffPaymentsFinanceBuckets,
     StaffPaymentsFinanceSummaryResponse,
     StaffTaskItem,
 )
+from app.domain.services.tribute_service import staff_apply_tribute_payment
 from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.task import Task
 from app.infrastructure.persistence.models.user import User
@@ -38,6 +43,44 @@ async def staff_payments_finance_summary(
     if not isinstance(raw, dict):
         raw = dict(raw)
     return StaffPaymentsFinanceSummaryResponse.model_validate(raw)
+
+
+async def create_staff_tribute_payment(
+    session: AsyncSession,
+    settings: Settings,
+    *,
+    user_id: int,
+    months: int,
+    amount_rub: Decimal,
+    payment_kind: Literal["subscription", "one_time"],
+) -> StaffCreateTributePaymentResponse:
+    amount_minor = int((amount_rub * Decimal("100")).quantize(Decimal("1")))
+    ack = await staff_apply_tribute_payment(
+        session,
+        settings,
+        user_id=int(user_id),
+        months=int(months),
+        amount_minor=amount_minor,
+        payment_kind=payment_kind,
+    )
+    payment: StaffPaymentItem | None = None
+    if not ack.duplicate:
+        row = (
+            await session.scalars(
+                select(Payment)
+                .where(Payment.user_id == int(user_id))
+                .order_by(Payment.id.desc())
+                .limit(1),
+            )
+        ).first()
+        if row is not None:
+            payment = StaffPaymentItem.model_validate(row)
+    return StaffCreateTributePaymentResponse(
+        payment=payment,
+        ok=ack.ok,
+        event=ack.event,
+        duplicate=ack.duplicate,
+    )
 
 
 async def list_staff_payments(

@@ -19,6 +19,7 @@ import hashlib
 import hmac
 import json
 import logging
+import time
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -41,6 +42,7 @@ from app.domain.referrals.task_bonus_days import sum_referral_bonus_days_pending
 from app.domain.services.telegram_service import require_user_by_telegram_id
 from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.task import Task
+from app.infrastructure.persistence.models.user import User
 
 log = logging.getLogger("app.tribute_service")
 
@@ -70,6 +72,13 @@ _PERIOD_TO_MONTHS: dict[str, int] = {
     "semiannual": 6,
     "half_yearly": 6,
     "yearly": 12,
+}
+
+_MONTHS_TO_PERIOD: dict[int, str] = {
+    1: "monthly",
+    3: "quarterly",
+    6: "biannual",
+    12: "yearly",
 }
 
 
@@ -398,6 +407,76 @@ async def process_tribute_webhook_raw_body(
         settings=settings,
         name=env.name,
         payload=env.payload,
+    )
+
+
+def _admin_manual_tribute_webhook(
+    *,
+    payment_kind: Literal["subscription", "one_time"],
+    months: int,
+    amount_minor: int,
+    telegram_user_id: int,
+) -> tuple[str, dict[str, Any]]:
+    """Синтетический webhook для админки; уникальные id — чтобы не попасть в дедуп."""
+    unique = int(time.time() * 1000)
+    if payment_kind == "one_time":
+        return (
+            "new_digital_product",
+            {
+                "product_id": 0,
+                "amount": int(amount_minor),
+                "purchase_id": unique,
+                "telegram_user_id": int(telegram_user_id),
+                "months": int(months),
+                "product_name": "admin_manual",
+            },
+        )
+    period = _MONTHS_TO_PERIOD.get(int(months), "monthly")
+    return (
+        "new_subscription",
+        {
+            "subscription_id": unique,
+            "period": period,
+            "price": int(amount_minor),
+            "expires_at": datetime.now(timezone.utc),
+            "telegram_user_id": int(telegram_user_id),
+            "type": "regular",
+        },
+    )
+
+
+async def staff_apply_tribute_payment(
+    session: AsyncSession,
+    settings: Settings,
+    *,
+    user_id: int,
+    months: int,
+    amount_minor: int,
+    payment_kind: Literal["subscription", "one_time"],
+) -> TributeWebhookAck:
+    """Ручное начисление: тот же ``_commit_tribute_paid_months``, что после webhook Tribute."""
+    user = await session.get(User, int(user_id))
+    if user is None:
+        raise LookupError("user_not_found")
+    if user.telegram_id is None:
+        raise LookupError("telegram_id_missing")
+
+    event_name, payload = _admin_manual_tribute_webhook(
+        payment_kind=payment_kind,
+        months=int(months),
+        amount_minor=int(amount_minor),
+        telegram_user_id=int(user.telegram_id),
+    )
+    webhook = _tribute_webhook_envelope(event_name=event_name, payload=payload)
+    return await _commit_tribute_paid_months(
+        session,
+        settings,
+        telegram_user_id=int(user.telegram_id),
+        months=int(months),
+        amount_minor=int(amount_minor),
+        tribute_webhook=webhook,
+        payment_kind=payment_kind,
+        event_name=event_name,
     )
 
 
