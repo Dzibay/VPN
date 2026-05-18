@@ -9,6 +9,7 @@
 ``cancelled_subscription`` и ``digital_product_refunded`` — без изменений в БД (заглушки).
 
 Успешные оплаты пишутся в ``payments.tribute_webhook`` (JSONB ``{name, payload}`` — полное тело webhook).
+Без ``telegram_user_id`` — запись в ``payments`` с ``user_id = null`` (без продления подписки и задач).
 Дедупликация: ``purchase_id`` для ``new_digital_product``; ``subscription_id`` + ``expires_at`` для подписки.
 """
 
@@ -224,7 +225,7 @@ async def _commit_tribute_paid_months(
     session: AsyncSession,
     settings: Settings,
     *,
-    telegram_user_id: int,
+    telegram_user_id: int | None,
     months: int,
     amount_minor: int,
     tribute_webhook: dict[str, Any],
@@ -234,9 +235,28 @@ async def _commit_tribute_paid_months(
     if await _tribute_payment_duplicate(session, webhook=tribute_webhook):
         return TributeWebhookAck(ok=True, event=event_name, duplicate=True)
 
+    amount_decimal = _amount_from_minor_units(int(amount_minor))
+
+    if telegram_user_id is None:
+        log.warning(
+            "Tribute %s: нет telegram_user_id — платёж без пользователя (webhook сохранён)",
+            event_name,
+        )
+        session.add(
+            Payment(
+                user_id=None,
+                amount=amount_decimal,
+                months=months,
+                provider="tribute",
+                payment_kind=payment_kind,
+                tribute_webhook=tribute_webhook,
+            ),
+        )
+        await session.flush()
+        return TributeWebhookAck(ok=True, event=event_name, duplicate=False)
+
     user = await require_user_by_telegram_id(session, int(telegram_user_id))
 
-    amount_decimal = _amount_from_minor_units(int(amount_minor))
     paid_days = int(months) * _DAYS_PER_MONTH
 
     accumulated_bonus_days = await sum_referral_bonus_days_pending_activation(
@@ -297,20 +317,12 @@ async def _handle_subscription_paid(
     if (p.type or "regular") == "gift":
         return TributeWebhookAck(ok=True, event=event_name, duplicate=False)
 
-    if p.telegram_user_id is None:
-        log.warning(
-            "Tribute %s: нет telegram_user_id (subscription_id=%s) — игнор",
-            event_name,
-            p.subscription_id,
-        )
-        return TributeWebhookAck(ok=True, event=event_name, duplicate=False)
-
     webhook = _tribute_webhook_envelope(event_name=event_name, payload=payload)
 
     return await _commit_tribute_paid_months(
         session,
         settings,
-        telegram_user_id=int(p.telegram_user_id),
+        telegram_user_id=int(p.telegram_user_id) if p.telegram_user_id is not None else None,
         months=months,
         amount_minor=int(p.price),
         tribute_webhook=webhook,
@@ -338,19 +350,12 @@ async def _handle_digital_product_paid(
         )
         return TributeWebhookAck(ok=True, event=event_name, duplicate=False)
 
-    if p.telegram_user_id is None:
-        log.warning(
-            "Tribute new_digital_product: нет telegram_user_id (purchase_id=%s) — игнор",
-            p.purchase_id,
-        )
-        return TributeWebhookAck(ok=True, event=event_name, duplicate=False)
-
     webhook = _tribute_webhook_envelope(event_name=event_name, payload=payload)
 
     return await _commit_tribute_paid_months(
         session,
         settings,
-        telegram_user_id=int(p.telegram_user_id),
+        telegram_user_id=int(p.telegram_user_id) if p.telegram_user_id is not None else None,
         months=months,
         amount_minor=int(p.amount),
         tribute_webhook=webhook,

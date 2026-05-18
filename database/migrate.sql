@@ -2,6 +2,8 @@
 
 ALTER TABLE payments DROP COLUMN IF EXISTS external_id;
 
+ALTER TABLE payments ALTER COLUMN user_id DROP NOT NULL;
+
 ALTER TABLE payments ADD COLUMN IF NOT EXISTS tribute_webhook JSONB;
 
 DROP INDEX IF EXISTS uq_payments_tribute_purchase;

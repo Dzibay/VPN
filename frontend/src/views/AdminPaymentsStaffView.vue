@@ -8,7 +8,7 @@ import { useTableSort } from '../utils/adminTableSort.js'
 
 const loading = ref(false)
 const error = ref(null)
-/** @type {import('vue').Ref<Array<{ id: number, user_id: number, amount: string | number, months: number, provider: string, payment_kind: string, tribute_webhook: Record<string, unknown> | null, created_at: string }>>} */
+/** @type {import('vue').Ref<Array<{ id: number, user_id: number | null, amount: string | number, months: number, provider: string, payment_kind: string, tribute_webhook: Record<string, unknown> | null, created_at: string }>>} */
 const items = ref([])
 const total = ref(0)
 const limit = 200
@@ -225,7 +225,7 @@ onMounted(() => {
             <template v-else>
               <tr v-for="row in sortedRows" :key="row.id">
                 <td class="num">{{ row.id }}</td>
-                <td class="num">{{ row.user_id }}</td>
+                <td class="num">{{ row.user_id ?? '—' }}</td>
                 <td class="num">{{ formatAmount(row.amount) }}</td>
                 <td class="num">{{ row.months }}</td>
                 <td>

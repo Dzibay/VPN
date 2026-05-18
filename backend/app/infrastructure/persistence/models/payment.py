@@ -18,10 +18,10 @@ class Payment(Base):
     __tablename__ = "payments"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(
+    user_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     months: Mapped[int] = mapped_column(Integer, nullable=False)
