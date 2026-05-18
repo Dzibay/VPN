@@ -26,6 +26,16 @@ from app.infrastructure.persistence.models.user_http_request_trace import UserHt
 from app.infrastructure.persistence.models.user_server_traffic import UserServerTraffic
 
 
+def _merge_referral_attribution(keep: User, drop: User) -> None:
+    """Сохранить источник регистрации (``users.referral_link_id``) при слиянии.
+
+    Счётчик регистраций по ссылке уже был увеличен при создании ``drop``; поле нужно
+    перенести на ``keep``, если у основного аккаунта атрибуции ещё нет.
+    """
+    if keep.referral_link_id is None and drop.referral_link_id is not None:
+        keep.referral_link_id = drop.referral_link_id
+
+
 def _later_subscription_date(a: date | None, b: date | None) -> date | None:
     """Самая поздняя из двух дат окончания подписки.
 
@@ -202,11 +212,13 @@ async def merge_drop_user_into_keep(session: AsyncSession, keep: User, drop: Use
     """Перенести данные с ``drop`` на ``keep`` и удалить ``drop``.
 
     Переносятся: трафик по серверам (сумма по совпадающим дням и узлам), владелец личной
-    реферальной ссылки, платежи, задачи (в т.ч. ``referee_id``), устройства подписки,
-    HTTP-аудит; дата ``subscription_until`` — более поздняя из двух.
+    реферальной ссылки, атрибуция ``referral_link_id`` (если у ``keep`` пусто),
+    платежи, задачи (в т.ч. ``referee_id``), устройства подписки, HTTP-аудит;
+    дата ``subscription_until`` — более поздняя из двух.
     """
     if keep.id == drop.id:
         return
+    _merge_referral_attribution(keep, drop)
     await merge_user_server_traffic(session, keep.id, drop.id)
     await merge_owned_referral_links(session, keep.id, drop.id)
     await merge_reassign_payments(session, keep_user_id=keep.id, drop_user_id=drop.id)
