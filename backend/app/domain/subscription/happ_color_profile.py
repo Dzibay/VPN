@@ -9,24 +9,24 @@ from __future__ import annotations
 import json
 from typing import Any
 
-# Палитра: Emerald Premium
-_MINT = "#3DDC97FF"
-_MINT_SOFT = "#3DDC97B3"
-_TEAL = "#22C55EFF"
-_TEAL_DARK = "#0B2E1FFF"
-_FOREST = "#06120CFF"
-_SURFACE = "#08100BFF"
-_SURFACE_GLASS = "#08100BCC"
-_TEXT = "#E9FFF1FF"
-_TEXT_MUTED = "#92B3A0FF"
-_ON_ACCENT = "#000F08FF"
-_VIOLET_GLOW = "#22C55E66"
-_BG_DEEP = "#000000FF"
-_BG_MID = "#031009FF"
-_BG_TEAL = "#072015FF"
+# Палитра: Pine Forest
+_MINT = "#8EE09BFF"
+_MINT_SOFT = "#8EE09BB3"
+_TEAL = "#4CAF7AFF"
+_TEAL_DARK = "#1B3F31FF"
+_FOREST = "#07130EFF"
+_SURFACE = "#0B120EFF"
+_SURFACE_GLASS = "#0B120ECC"
+_TEXT = "#EDF8F0FF"
+_TEXT_MUTED = "#9AB0A4FF"
+_ON_ACCENT = "#021008FF"
+_VIOLET_GLOW = "#4CAF7A55"
+_BG_DEEP = "#07130EFF"
+_BG_MID = "#102018FF"
+_BG_TEAL = "#183F31FF"
 
 HAPP_PODOROZNIK_COLOR_PROFILE = {
-    "backgroundGradientRotationAngle": 160.0,
+    "backgroundGradientRotationAngle": 172.0,
     "backgroundGradientColorIntensity": 1,
     "backgroundImageType": "system",
     "backgroundColors": [
@@ -34,25 +34,25 @@ HAPP_PODOROZNIK_COLOR_PROFILE = {
         _BG_MID,
         _BG_TEAL,
         _TEAL_DARK,
-        _TEAL,
+        "#2E705BFF",
     ],
     "elipseColors": [
         _MINT,
-        "#16A34AFF",
+        _TEAL,
         _VIOLET_GLOW,
     ],
-    "buttonColor": _MINT,
+    "buttonColor": "#6FCF97FF",
     "buttonTextColor": _ON_ACCENT,
     "buttonTimerColor": _TEXT,
     "buttonImageType": "light",
-    "powerIconColor": _TEAL_DARK,
-    "subsHeaderColor": _TEAL_DARK,
+    "powerIconColor": "#214D3BFF",
+    "subsHeaderColor": "#214D3BFF",
     "subHeaderButtonColor": _TEXT,
     "subscriptionInfoBackgroundColor": _FOREST,
-    "subscriptionTrafficBackgroundColor": "#16A34AFF",
+    "subscriptionTrafficBackgroundColor": "#2E705BFF",
     "subscriptionInfoTextColor": _TEXT,
     "serverRowBackgroundColor": _SURFACE_GLASS,
-    "selectedServerRowColor": "#1F9D5AB5",
+    "selectedServerRowColor": "#3A6F59B5",
     "serverRowTitleTextColor": _TEXT,
     "serverRowSubTitleTextColor": _TEXT_MUTED,
     "serverRowChevronColor": _MINT_SOFT,
@@ -61,8 +61,8 @@ HAPP_PODOROZNIK_COLOR_PROFILE = {
     "supportIconColor": _TEXT,
     "topBarButtonsColor": _TEXT,
     "additionalOptionsButtonColor": _TEXT,
-    "profileWebPageIconColor": _MINT,
-    "settingsControlsTintColor": _MINT,
+    "profileWebPageIconColor": "#8EE09BFF",
+    "settingsControlsTintColor": "#8EE09BFF",
 }
 
 
