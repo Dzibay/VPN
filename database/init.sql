@@ -149,7 +149,9 @@ CREATE TABLE IF NOT EXISTS tasks (
             'notify_sub_expire_1d',
             'notify_sub_expire_0d',
             'notify_sub_expire',
-            'notify_sub_expired_7d'
+            'notify_sub_expired_7d',
+            'notify_reg_1h_has_traffic',
+            'notify_reg_1h_no_traffic'
         )
     ),
     CONSTRAINT tasks_status_check CHECK (status IN ('pending', 'completed', 'failed')),

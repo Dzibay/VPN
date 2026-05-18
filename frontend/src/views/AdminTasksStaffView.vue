@@ -30,6 +30,14 @@ const TASK_TYPE_OPTIONS = [
     value: 'notify_sub_expired_7d',
     label: 'Подписка истекла 7 дней назад (notify_sub_expired_7d)',
   },
+  {
+    value: 'notify_reg_1h_has_traffic',
+    label: 'Через ~1 ч после регистрации: есть трафик (notify_reg_1h_has_traffic)',
+  },
+  {
+    value: 'notify_reg_1h_no_traffic',
+    label: 'Через ~1 ч после регистрации: нет трафика (notify_reg_1h_no_traffic)',
+  },
 ]
 
 const TASK_STATUS_OPTIONS = [

@@ -315,7 +315,7 @@ class Settings(BaseSettings):
         description=(
             "Какие циклы поднимает ``python -m app.scheduler.run``: "
             "all — все; periodic — Xray-трафик, ежедневный sync Xray, Prometheus load, TCP-доступность; "
-            "telegram_notify — только задачи напоминания об окончании подписки (таблица tasks). "
+            "telegram_notify — задачи в таблице tasks (окончание подписки, post-reg ~1 ч). "
             "Env: SCHEDULER_ROLE."
         ),
     )
@@ -337,6 +337,48 @@ class Settings(BaseSettings):
         ge=0,
         le=59,
         description="Локальная минута проверки срока подписки.",
+    )
+    post_registration_notify_schedule_enabled: bool = Field(
+        default=True,
+        description=(
+            "Периодически создавать ``notify_reg_1h_has_traffic`` / ``notify_reg_1h_no_traffic`` "
+            "для пользователей с telegram_id примерно через час после ``registered_at``."
+        ),
+    )
+    post_registration_notify_interval_seconds: int = Field(
+        default=300,
+        ge=60,
+        le=3600,
+        description="Интервал опроса (сек) для post-reg задач в scheduler-telegram-notify.",
+    )
+    post_registration_notify_initial_delay_seconds: int = Field(
+        default=30,
+        ge=0,
+        le=3600,
+        description="Задержка перед первым тиком post-reg планировщика.",
+    )
+    post_registration_notify_delay_hours: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=168.0,
+        description="Минимум часов после ``registered_at`` перед созданием задачи.",
+    )
+    post_registration_notify_lookback_minutes: int = Field(
+        default=30,
+        ge=5,
+        le=10_080,
+        description=(
+            "Окно «свежих» регистраций: обрабатываются только пользователи с "
+            "``registered_at`` не раньше delay + lookback (защита от бэклога при деплое). "
+            "Увеличьте при длительном простое scheduler."
+        ),
+    )
+    post_registration_notify_include_backlog: bool = Field(
+        default=False,
+        description=(
+            "Если true — без ограничения lookback: все пользователи старше delay без post-reg задачи. "
+            "Осторожно при первом включении на проде."
+        ),
     )
     subscription_max_devices: int = Field(
         default=0,

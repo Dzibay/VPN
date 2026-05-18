@@ -13,8 +13,8 @@ TCP-доступность узлов в Redis, задачи Telegram ``notify_s
 
 * **periodic** — сбор трафика Xray, ежедневный sync клиентов Xray (RQ), sync нагрузки из Prometheus,
   фоновый TCP-опрос узлов.
-* **telegram_notify** — раз в сутки создание записей ``tasks`` ``notify_sub_expire_3d`` /
-  ``notify_sub_expire_1d`` / ``notify_sub_expire_0d`` для активных подписок с ``telegram_id``.
+* **telegram_notify** — раз в сутки ``notify_sub_expire_*``; периодически (~5 мин)
+  ``notify_reg_1h_has_traffic`` / ``notify_reg_1h_no_traffic`` после регистрации.
 """
 
 from __future__ import annotations
@@ -157,6 +157,18 @@ async def main() -> None:
         )
     elif include_telegram_notify:
         log.info("scheduler: напоминания об окончании подписки выключены (subscription_expiry_notify)")
+
+    if include_telegram_notify and settings.post_registration_notify_schedule_enabled:
+        from app.domain.users.post_registration_notify_scheduler import (
+            post_registration_notify_loop,
+        )
+
+        factories.append(post_registration_notify_loop)
+        log.info(
+            "scheduler: включены задачи post-reg (notify_reg_1h_has_traffic / notify_reg_1h_no_traffic)",
+        )
+    elif include_telegram_notify:
+        log.info("scheduler: post-reg уведомления выключены (post_registration_notify)")
 
     await _run_until_stopped(factories)
 

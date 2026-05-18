@@ -188,7 +188,7 @@ async def telegram_tribute_links_ep() -> TributePaymentsLinksResponse:
     "/notification-tasks",
     response_model=TelegramNotificationTasksListResponse,
     dependencies=[Depends(require_telegram_bot_api_secret)],
-    summary="Невыполненные задачи оповещения (notify_ref_*, notify_payment, notify_sub_expire_*)",
+    summary="Невыполненные задачи оповещения (notify_ref_*, notify_payment, notify_sub_expire_*, notify_reg_1h_*)",
     description="С joined telegram_id получателя и реферала (если есть в users).",
 )
 async def telegram_list_notification_tasks_ep(
