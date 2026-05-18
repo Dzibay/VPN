@@ -279,6 +279,7 @@ function formatConnectionUserAgentHead(raw) {
 }
 
 const clientSortAccessors = {
+  id: (u) => Number(u.id) || 0,
   email: (u) => String(u.email ?? '').toLowerCase(),
   telegram: (u) => u.telegram_id ?? -1,
   registered_at: (u) => Date.parse(u.registered_at) || 0,
@@ -404,6 +405,14 @@ onMounted(() => {
         <thead>
           <tr>
             <AdminSortTh
+              label="ID"
+              column-key="id"
+              align="right"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              @sort="toggleSort"
+            />
+            <AdminSortTh
               label="Email"
               column-key="email"
               :sort-key="sortKey"
@@ -459,13 +468,13 @@ onMounted(() => {
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="7" class="muted">Загрузка…</td>
+            <td colspan="8" class="muted">Загрузка…</td>
           </tr>
           <tr v-else-if="error">
-            <td colspan="7" class="error-cell">{{ error }}</td>
+            <td colspan="8" class="error-cell">{{ error }}</td>
           </tr>
           <tr v-else-if="rows.length === 0">
-            <td colspan="7" class="muted">Нет пользователей</td>
+            <td colspan="8" class="muted">Нет пользователей</td>
           </tr>
           <template v-else>
             <tr
@@ -482,6 +491,7 @@ onMounted(() => {
               title="Нажмите строку, чтобы открыть или закрыть карточку пользователя справа"
               @click="toggleUserRowSelect(u.id, $event)"
             >
+              <td class="num mono-num">{{ u.id }}</td>
               <td class="email-cell" :title="u.email || undefined">{{ u.email ?? '—' }}</td>
               <td class="tg-cell">{{ telegramUsernameCell(u) }}</td>
               <td>{{ formatDate(u.registered_at) }}</td>
