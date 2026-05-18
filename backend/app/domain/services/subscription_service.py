@@ -227,7 +227,7 @@ async def subscription_client_metadata_headers(
         "announce": subscription_announce_header_value(announce_raw),
         "announce-url": "https://t.me/Podoroznik_Support",
         "routing": routing_header,
-        "hide-settings": "true",
+        "hide-settings": "1",
     }
 
 
