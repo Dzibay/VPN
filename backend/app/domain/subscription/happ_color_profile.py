@@ -1,7 +1,9 @@
 """Тема Happ ``color-profile`` для Подорожник VPN.
 
-Цвета согласованы с ``frontend/src/style.css`` (--brand-mint, --brand-teal, тёмный mesh).
-Документация: https://www.happ.su/happ/dev-docs/app-management (Themes / color-profile).
+Палитра из ``frontend/src/style.css`` (--brand-mint, --brand-teal, тёмный mesh + фиолетовое свечение).
+Кнопка VPN: яркий ``buttonColor`` (ON), тёмный ``powerIconColor`` (OFF) — отдельных ключей в Happ нет.
+
+Документация: https://www.happ.su/main/ru/dev-docs/app-management (только iOS).
 """
 
 from __future__ import annotations
@@ -9,104 +11,72 @@ from __future__ import annotations
 import json
 from typing import Any
 
-# Emerald Premium v3
-# Сохраняет красивый emerald glow,
-# но OFF-состояние теперь визуально читается.
+# --- Бренд (site style.css) ---
+_MINT = "#58D68DFF"
+_MINT_HOVER = "#6FE9A0FF"
+_MINT_SOFT = "#58D68DB3"
+_TEAL = "#45B39DFF"
+_TEAL_DEEP = "#2D7A62FF"
+_ON_ACCENT = "#000000FF"
 
-_MINT = "#3DDC97FF"
-_MINT_SOFT = "#3DDC97B3"
+# --- Текст ---
+_TEXT = "#E8F4ECFF"
+_TEXT_MUTED = "#A8B8B0FF"
 
-_TEAL = "#22C55EFF"
+# --- Поверхности ---
+_FOREST = "#0A1410FF"
+_SURFACE_GLASS = "#0C100ECC"
+_HEADER = "#142820FF"
 
-# Чуть холоднее
-_TEAL_DARK = "#103222FF"
+# --- Фон (mesh 168deg, как на сайте) ---
+_BG_0 = "#03010AFF"
+_BG_1 = "#040806FF"
+_BG_2 = "#060A14FF"
+_BG_3 = "#0C1814FF"
+_BG_4 = "#1A3D32FF"
 
-_FOREST = "#06120CFF"
+# --- Декоративные «облака» (mint + teal + лёгкий iris/violet) ---
+_GLOW_MINT = "#58D68D66"
+_GLOW_TEAL = "#45B39D99"
+_GLOW_VIOLET = "#7C3AED4D"
 
-_SURFACE = "#08100BFF"
-_SURFACE_GLASS = "#08100BCC"
-
-_TEXT = "#E9FFF1FF"
-_TEXT_MUTED = "#92B3A0FF"
-
-_ON_ACCENT = "#000F08FF"
-
-# Мягкое свечение
-_VIOLET_GLOW = "#22C55E33"
-
-_BG_DEEP = "#000000FF"
-_BG_MID = "#031009FF"
-_BG_TEAL = "#072015FF"
-
-# Новый muted emerald
-_DIM_EMERALD = "#2A7B57FF"
-
-# Внешний круг OFF
-_RING = "#24443799"
-
-HAPP_PODOROZNIK_COLOR_PROFILE = {
-    "backgroundGradientRotationAngle": 160.0,
+HAPP_PODOROZNIK_COLOR_PROFILE: dict[str, Any] = {
+    "backgroundGradientRotationAngle": 168.0,
     "backgroundGradientColorIntensity": 1,
     "backgroundImageType": "system",
-
     "backgroundColors": [
-        _BG_DEEP,
-        _BG_MID,
-        _BG_TEAL,
-        _TEAL_DARK,
-        _TEAL,
+        _BG_0,
+        _BG_1,
+        _BG_2,
+        _BG_3,
+        _BG_4,
     ],
-
-    # Более мягкие glow-облака
     "elipseColors": [
-        "#2FBF74FF",
-        "#14532DFF",
-        _VIOLET_GLOW,
+        _GLOW_MINT,
+        _GLOW_TEAL,
+        _GLOW_VIOLET,
     ],
-
-    # ВАЖНО:
-    # Кнопка снова emerald,
-    # но менее кислотная
-    "buttonColor": _DIM_EMERALD,
-
-    "buttonTextColor": _TEXT,
+    "buttonColor": _MINT,
+    "buttonTextColor": _ON_ACCENT,
     "buttonTimerColor": _TEXT,
-
     "buttonImageType": "light",
-
-    # Главный трюк:
-    # power icon делаем тёмным,
-    # поэтому OFF выглядит выключенным
-    "powerIconColor": "#062818FF",
-
-    "subsHeaderColor": _TEAL_DARK,
+    "powerIconColor": "#0A1A12FF",
+    "subsHeaderColor": _HEADER,
     "subHeaderButtonColor": _TEXT,
-
     "subscriptionInfoBackgroundColor": _FOREST,
-
-    "subscriptionTrafficBackgroundColor": "#16A34AFF",
-
+    "subscriptionTrafficBackgroundColor": _TEAL_DEEP,
     "subscriptionInfoTextColor": _TEXT,
-
     "serverRowBackgroundColor": _SURFACE_GLASS,
-
-    # Красивый active glow
-    "selectedServerRowColor": "#1F9D5AB5",
-
+    "selectedServerRowColor": "#45B39D80",
     "serverRowTitleTextColor": _TEXT,
     "serverRowSubTitleTextColor": _TEXT_MUTED,
-
     "serverRowChevronColor": _MINT_SOFT,
-
     "disclosureHeaderTextColor": _TEXT,
     "disclosureSubHeaderTextColor": _TEXT_MUTED,
-
     "supportIconColor": _TEXT,
-
     "topBarButtonsColor": _TEXT,
     "additionalOptionsButtonColor": _TEXT,
-
-    "profileWebPageIconColor": _MINT,
+    "profileWebPageIconColor": _MINT_HOVER,
     "settingsControlsTintColor": _MINT,
 }
 
