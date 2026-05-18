@@ -1,14 +1,17 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
 import StaffUserIdSuggestInput from '../components/StaffUserIdSuggestInput.vue'
 import { fetchJson } from '../api/client.js'
+import { getSessionRole } from '../auth/session.js'
 import { useTableSort } from '../utils/adminTableSort.js'
 
 const loading = ref(false)
 const error = ref(null)
+const deleting = ref(false)
+const selectedIds = ref([])
 const modalOpen = ref(false)
 const createLoading = ref(false)
 const createError = ref(null)
@@ -35,6 +38,24 @@ const sortAccessors = {
 }
 
 const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(items, sortAccessors)
+
+const canDeletePayments = computed(() => getSessionRole() === 'admin')
+const rowIdsOnPage = computed(() => sortedRows.value.map((row) => Number(row.id)))
+const allSelectedOnPage = computed(() => {
+  if (rowIdsOnPage.value.length === 0) return false
+  return rowIdsOnPage.value.every((id) => selectedIds.value.includes(id))
+})
+
+function toggleSelectAllOnPage() {
+  if (allSelectedOnPage.value) {
+    const remove = new Set(rowIdsOnPage.value)
+    selectedIds.value = selectedIds.value.filter((id) => !remove.has(id))
+    return
+  }
+  selectedIds.value = Array.from(
+    new Set([...selectedIds.value, ...rowIdsOnPage.value]),
+  )
+}
 
 const rangeLabel = computed(() => {
   const n = items.value.length
@@ -148,6 +169,28 @@ function parseFormUserId() {
   return Number.parseInt(s, 10)
 }
 
+async function deleteSelected() {
+  if (!canDeletePayments.value || selectedIds.value.length === 0 || deleting.value) return
+  const ok = window.confirm(
+    `Удалить выбранные платежи (${selectedIds.value.length})? Действие необратимо.`,
+  )
+  if (!ok) return
+  deleting.value = true
+  error.value = null
+  try {
+    await fetchJson('/api/admin/payments', {
+      method: 'DELETE',
+      body: JSON.stringify({ ids: selectedIds.value }),
+    })
+    selectedIds.value = []
+    await load()
+  } catch (e) {
+    error.value = e.message || String(e)
+  } finally {
+    deleting.value = false
+  }
+}
+
 async function submitCreatePayment() {
   const uid = parseFormUserId()
   if (!Number.isFinite(uid) || uid < 1) {
@@ -206,6 +249,14 @@ async function submitCreatePayment() {
   }
 }
 
+watch(
+  () => rowIdsOnPage.value,
+  (ids) => {
+    const keep = new Set(ids)
+    selectedIds.value = selectedIds.value.filter((id) => keep.has(id))
+  },
+)
+
 onMounted(() => {
   void load()
 })
@@ -238,6 +289,15 @@ onMounted(() => {
       <div class="pager-top">
         <div class="pager-btns">
           <button
+            v-if="canDeletePayments"
+            type="button"
+            class="btn-danger"
+            :disabled="selectedIds.length === 0 || deleting"
+            @click="deleteSelected"
+          >
+            {{ deleting ? 'Удаление…' : `Удалить выбранные (${selectedIds.length})` }}
+          </button>
+          <button
             type="button"
             class="btn-secondary"
             :disabled="loading || !canPrev"
@@ -257,9 +317,17 @@ onMounted(() => {
       </div>
 
       <AdminTableWrap aria-label="Платежи">
-        <table class="admin-table">
+        <table class="admin-table payments-table" :class="{ 'payments-table--no-select': !canDeletePayments }">
           <thead>
             <tr>
+              <th v-if="canDeletePayments" class="th-select">
+                <input
+                  type="checkbox"
+                  :checked="allSelectedOnPage"
+                  :disabled="rowIdsOnPage.length === 0"
+                  @change="toggleSelectAllOnPage"
+                />
+              </th>
               <AdminSortTh
                 label="ID"
                 column-key="id"
@@ -324,10 +392,17 @@ onMounted(() => {
           </thead>
           <tbody>
             <tr v-if="sortedRows.length === 0">
-              <td colspan="8" class="muted">Нет записей</td>
+              <td :colspan="canDeletePayments ? 9 : 8" class="muted">Нет записей</td>
             </tr>
             <template v-else>
               <tr v-for="row in sortedRows" :key="row.id">
+                <td v-if="canDeletePayments" class="td-select">
+                  <input
+                    v-model="selectedIds"
+                    type="checkbox"
+                    :value="row.id"
+                  />
+                </td>
                 <td class="num">{{ row.id }}</td>
                 <td class="num">{{ row.user_id ?? '—' }}</td>
                 <td class="num">{{ formatAmount(row.amount) }}</td>
@@ -491,6 +566,44 @@ onMounted(() => {
   display: flex;
   gap: 0.35rem;
 }
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.55rem 1.15rem;
+  border-radius: var(--radius-lg);
+  border: none;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, #ef4444 92%, white) 0%,
+    color-mix(in srgb, #dc2626 94%, black) 100%
+  );
+  color: #fff;
+  box-shadow: var(--shadow-sm);
+  transition:
+    filter 0.2s ease,
+    transform 0.15s ease,
+    box-shadow 0.2s ease;
+}
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(1.06);
+  box-shadow: var(--shadow-md);
+}
+.btn-danger:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.btn-danger:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring), var(--shadow-sm);
+}
+.btn-danger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 .muted {
   color: var(--muted);
 }
@@ -630,5 +743,11 @@ onMounted(() => {
   justify-content: flex-end;
   gap: 0.6rem;
   margin-top: 0.5rem;
+}
+.th-select,
+.td-select {
+  width: 1%;
+  text-align: center;
+  white-space: nowrap;
 }
 </style>

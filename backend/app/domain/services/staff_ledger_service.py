@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Literal
 
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
@@ -107,6 +107,19 @@ async def list_staff_payments(
     total = int(await session.scalar(count_stmt) or 0)
     rows = list((await session.scalars(stmt)).all())
     return [StaffPaymentItem.model_validate(r) for r in rows], total
+
+
+async def staff_delete_payments_by_ids(
+    session: AsyncSession,
+    *,
+    ids: list[int],
+) -> int:
+    uniq_ids = sorted({int(v) for v in ids if int(v) > 0})
+    if not uniq_ids:
+        return 0
+    res = await session.execute(delete(Payment).where(Payment.id.in_(uniq_ids)))
+    await session.commit()
+    return int(res.rowcount or 0)
 
 
 async def list_staff_tasks(

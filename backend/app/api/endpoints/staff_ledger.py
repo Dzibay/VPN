@@ -8,11 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 
 from app.config import settings
 from app.core.dependencies import ReadonlySessionDep, SessionDep, require_admin, require_referrals_staff
+from app.core.exceptions import BadRequestError
 from app.domain.models.staff_ledger import (
     StaffCreateTaskBody,
     StaffCreateTributePaymentBody,
     StaffCreateTributePaymentResponse,
     StaffPatchTaskBody,
+    StaffPaymentsBulkDeleteBody,
+    StaffPaymentsBulkDeleteResponse,
     StaffPaymentsFinanceSummaryResponse,
     StaffPaymentsListResponse,
     StaffTaskItem,
@@ -25,6 +28,7 @@ from app.domain.services.staff_ledger_service import (
     get_staff_task,
     list_staff_payments,
     list_staff_tasks,
+    staff_delete_payments_by_ids,
     staff_payments_finance_summary,
     update_staff_task,
 )
@@ -111,6 +115,22 @@ async def staff_create_tribute_payment(
                 detail="У пользователя не задан telegram_id — начисление невозможно",
             ) from err
         raise
+
+
+@payments_staff_router.delete(
+    "",
+    response_model=StaffPaymentsBulkDeleteResponse,
+    dependencies=[Depends(require_admin)],
+    summary="Удаление выбранных платежей по списку id (только admin)",
+)
+async def staff_delete_payments(
+    session: SessionDep,
+    body: StaffPaymentsBulkDeleteBody,
+) -> StaffPaymentsBulkDeleteResponse:
+    if not body.ids:
+        raise BadRequestError("Нужно передать хотя бы один id")
+    deleted = await staff_delete_payments_by_ids(session, ids=body.ids)
+    return StaffPaymentsBulkDeleteResponse(deleted_count=deleted)
 
 
 @tasks_staff_router.get(

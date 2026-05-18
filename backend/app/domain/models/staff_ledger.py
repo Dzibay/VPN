@@ -42,6 +42,17 @@ class StaffPaymentsListResponse(BaseModel):
     offset: int
 
 
+class StaffPaymentsBulkDeleteBody(BaseModel):
+    ids: list[int] = Field(
+        min_length=1,
+        description="ID платежей для удаления",
+    )
+
+
+class StaffPaymentsBulkDeleteResponse(BaseModel):
+    deleted_count: int
+
+
 class StaffCreateTributePaymentBody(BaseModel):
     """Ручное начисление оплаты — тот же commit, что после webhook Tribute."""
 
