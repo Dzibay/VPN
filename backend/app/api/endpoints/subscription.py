@@ -16,7 +16,7 @@
 Stash / Clash Verge / v2rayNG. Подробнее: ``app.domain.subscription.userinfo``.
 
 ``GET /sub/{token}``: при ``clash`` / ``hiddify`` в User-Agent — YAML (Clash Meta);
-при ``happ`` — ``application/json`` (балансировщики); иначе — ``text/plain`` Base64 (``vless://`` …).
+при ``happ`` — ``application/json`` (балансировщики); иначе — ``text/plain`` Base64 (Auto + узлы).
 Явный YAML: ``GET /sub/{token}/clash``.
 
 ``GET /sub/{token}/no-routing`` — то же, что ``/sub/{token}``, но без заголовка ``routing`` (Happ routing profile).

@@ -2,7 +2,7 @@
 
 Happ (``happ`` в User-Agent): ``application/json`` — Auto, узлы, tiered WL.
 
-Остальные клиенты (v2rayNG и др.): ``text/plain`` Base64 со строками ``vless://`` / ``hysteria2://``.
+v2raytun / v2rayNG: ``text/plain`` Base64 — Auto (лучший по нагрузке ``vless://``), затем все узлы.
 
 Clash (``clash`` / ``hiddify`` в UA): YAML — отдельно в эндпоинте, здесь не собирается.
 
@@ -378,6 +378,33 @@ def _pool_wl_auto_vless(
     ]
 
 
+def _best_server_by_load(servers: list[Server]) -> Server | None:
+    if not servers:
+        return None
+    return min(servers, key=lambda s: (int(s.load_percent), int(s.id)))
+
+
+def _auto_best_share_uri(
+    remark: str,
+    pool: list[Server],
+    *,
+    client_uuid: str,
+    fp_by_id: dict[int, str],
+    exit_ids_referenced: set[int],
+) -> str | None:
+    """Один ``vless://`` на лучший узел пула (для Auto в Base64-подписке)."""
+    best = _best_server_by_load(pool)
+    if best is None:
+        return None
+    return _vless_reality_share_uri(
+        best,
+        client_uuid=client_uuid,
+        exit_ids_referenced=exit_ids_referenced,
+        client_fingerprint=fp_by_id[best.id],
+        fragment_override=remark,
+    )
+
+
 def _append_clash_proxy(
     proxies: list[dict[str, Any]],
     s: Server,
@@ -617,17 +644,49 @@ def _build_happ_json_subscription_payload(user: User, rows: list[Server]) -> Sub
 
 
 def _build_base64_share_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPayload:
-    """v2rayNG и др.: Base64, построчно ``vless://`` / ``hysteria2://`` (без JSON balancer)."""
+    """
+    v2raytun / v2rayNG и др.: Base64 построчно.
+
+    1. Auto (рекомендуемый) — лучший по ``load_percent`` из ``include_in_auto`` без whitelist.
+    2. Auto (белые списки) — лучший из ``include_in_auto`` с whitelist.
+    3. Все узлы выдачи — ``vless://`` / ``hysteria2://``.
+    """
     ctx = _subscription_delivery_context(rows)
     client_uuid = (user.vless_uuid or "").strip()
     uri_by_id, fp_by_id = _subscription_uri_and_fingerprint_by_server_id(
         ctx, client_uuid=client_uuid
     )
+    pool_rec = _pool_rec_auto_vless(ctx, uri_by_id)
+    pool_wl = _pool_wl_auto_vless(ctx, uri_by_id)
+
     uris: list[str] = []
+
+    auto_rec = _auto_best_share_uri(
+        SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
+        pool_rec,
+        client_uuid=client_uuid,
+        fp_by_id=fp_by_id,
+        exit_ids_referenced=ctx.exit_ids_referenced,
+    )
+    if auto_rec:
+        uris.append(auto_rec)
+
+    if pool_wl:
+        auto_wl = _auto_best_share_uri(
+            SUBSCRIPTION_AUTO_WHITELIST_LABEL,
+            pool_wl,
+            client_uuid=client_uuid,
+            fp_by_id=fp_by_id,
+            exit_ids_referenced=ctx.exit_ids_referenced,
+        )
+        if auto_wl:
+            uris.append(auto_wl)
+
     for s in ctx.delivery_rows:
         uri = uri_by_id.get(s.id)
         if uri:
             uris.append(uri)
+
     raw = "\n".join(uris) + ("\n" if uris else "")
     b64 = base64.standard_b64encode(raw.encode("utf-8")).decode("ascii") if raw else ""
     return SubscriptionPayload(
