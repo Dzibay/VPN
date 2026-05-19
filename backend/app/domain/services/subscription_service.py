@@ -40,6 +40,11 @@ from app.domain.subscription.links import (
     subscription_public_base_url,
 )
 from app.domain.subscription.open_apps import AppStoreLinks
+from app.domain.subscription.banners import (
+    build_subscription_banner_headers,
+    renew_button_link,
+    subscription_expire_banner_active,
+)
 from app.domain.subscription.userinfo import (
     build_subscription_userinfo_header_value,
     subscription_announce_header_value,
@@ -117,7 +122,12 @@ def _happ_advanced_subscription_headers(cfg: Settings | None = None) -> dict[str
     return {
         "providerid": provider_id,
         "color-profile": happ_color_profile_header_value(),
-        
+        "hide-settings": "1",
+        "subscription-ping-onopen-enabled": "1",
+        "subscription-pin": "1",
+        "manual-block-user-agent": "1",
+        "ping-result": "time",
+        "subscriptions-collapse": "0"
     }
 
 
@@ -228,9 +238,13 @@ async def subscription_client_metadata_headers(
         total=0,
     )
     active = user_has_active_subscription(user)
+    expire_banner_active = (
+        settings.subscription_sub_expire_enabled
+        and subscription_expire_banner_active(user.subscription_until)
+    )
     if device_limit_rejected and active:
         announce_raw = ANNOUNCE_RAW_DEVICE_LIMIT_REJECTED
-    elif not active:
+    elif not active and not expire_banner_active:
         announce_raw = ANNOUNCE_RAW_SUBSCRIPTION_EXPIRED
     else:
         announce_raw = ANNOUNCE_RAW
@@ -247,8 +261,14 @@ async def subscription_client_metadata_headers(
         "support-url": "https://t.me/Podoroznik_Support",
         "profile-web-page-url": "https://cool-vpn.ru",
         "announce": subscription_announce_header_value(announce_raw),
-        "announce-url": "https://t.me/Podoroznik_Support",
+        "announce-url": (
+            renew_button_link(settings) if expire_banner_active else "https://t.me/Podoroznik_Support"
+        ),
         **_happ_advanced_subscription_headers(),
+        **build_subscription_banner_headers(
+            valid_until=user.subscription_until,
+            cfg=settings,
+        ),
     }
     if routing_header:
         headers["routing"] = routing_header

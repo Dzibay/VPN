@@ -398,6 +398,39 @@ class Settings(BaseSettings):
             "Переменная окружения: HAPP_PROVIDER_ID."
         ),
     )
+    subscription_sub_expire_enabled: bool = Field(
+        default=True,
+        description=(
+            "``sub-expire: 1`` в ответах /sub/… (баннер Happ за 3 дня до окончания и после). "
+            "``false`` — ``sub-expire: 0``. Env: SUBSCRIPTION_SUB_EXPIRE_ENABLED."
+        ),
+    )
+    subscription_sub_expire_button_link: str = Field(
+        default="",
+        description=(
+            "``sub-expire-button-link``. Пусто — ``https://t.me/{TELEGRAM_BOT_USERNAME}``. "
+            "Env: SUBSCRIPTION_SUB_EXPIRE_BUTTON_LINK."
+        ),
+    )
+    subscription_sub_info_text: str = Field(
+        default="",
+        description=(
+            "Текст информационного баннера ``sub-info-text`` (до 200 символов). Пусто — не показывать. "
+            "Скрывается, если активен expire-баннер. Env: SUBSCRIPTION_SUB_INFO_TEXT."
+        ),
+    )
+    subscription_sub_info_color: str = Field(
+        default="blue",
+        description="Цвет ``sub-info-color``: red | blue | green. Env: SUBSCRIPTION_SUB_INFO_COLOR.",
+    )
+    subscription_sub_info_button_text: str = Field(
+        default="",
+        description="Текст кнопки ``sub-info-button-text`` (до 25 символов). Env: SUBSCRIPTION_SUB_INFO_BUTTON_TEXT.",
+    )
+    subscription_sub_info_button_link: str = Field(
+        default="",
+        description="Ссылка кнопки ``sub-info-button-link``. Env: SUBSCRIPTION_SUB_INFO_BUTTON_LINK.",
+    )
 
     prometheus_base_url: str = Field(
         default="",
