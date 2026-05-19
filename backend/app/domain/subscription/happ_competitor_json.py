@@ -29,47 +29,11 @@ _COMPETITOR_SNIFFING: dict[str, Any] = {
     "routeOnly": False,
     "destOverride": ["http", "tls", "quic"],
 }
-_WL_AUTO_COST = 100
 
 
 def competitor_outbound_tag(server_id: int, *, whitelist: bool) -> str:
     prefix = "wl" if whitelist else "rec"
     return f"{prefix}-{int(server_id)}"
-
-
-def _hysteria2_password_for_server(s: Server) -> str:
-    return ((s.vless_uuid or "").replace("-", "")[:32] or f"hysteria{int(s.id)}")
-
-
-def server_to_competitor_hysteria2_outbound(
-    s: Server,
-    *,
-    tag: str,
-) -> dict[str, Any] | None:
-    host = (s.host or "").strip()
-    if not host:
-        return None
-    return {
-        "tag": tag,
-        "protocol": "hysteria2",
-        "settings": {
-            "servers": [
-                {
-                    "address": host,
-                    "port": int(s.port),
-                    "password": _hysteria2_password_for_server(s),
-                }
-            ]
-        },
-        "streamSettings": {
-            "network": "udp",
-            "security": "tls",
-            "tlsSettings": {
-                "serverName": host,
-                "allowInsecure": True,
-            },
-        },
-    }
 
 
 def server_to_competitor_vless_outbound(
@@ -195,24 +159,6 @@ def _competitor_tail_outbounds() -> list[dict[str, Any]]:
     ]
 
 
-def _auto_mixed_pool_costs(pool: list[Server]) -> list[dict[str, Any]]:
-    """Auto-группа: rec — по нагрузке, WL — повышенный cost (резерв)."""
-    costs: list[dict[str, Any]] = []
-    for s in pool:
-        tag = competitor_outbound_tag(s.id, whitelist=bool(s.whitelist))
-        if s.whitelist:
-            costs.append({"match": tag, "value": _WL_AUTO_COST, "regexp": False})
-        else:
-            costs.append(
-                {
-                    "match": tag,
-                    "value": max(1, int(s.load_percent) + 1),
-                    "regexp": False,
-                }
-            )
-    return costs
-
-
 def _least_load_costs(pool: list[Server], *, whitelist: bool) -> list[dict[str, Any]]:
     """Меньше ``load_percent`` — меньше cost (предпочтительнее для leastLoad)."""
     costs: list[dict[str, Any]] = []
@@ -245,35 +191,8 @@ def _tiered_rec_wl_costs(pool_rec: list[Server], wl: Server) -> list[dict[str, A
             }
         )
     wl_tag = competitor_outbound_tag(wl.id, whitelist=True)
-    costs.append({"match": wl_tag, "value": _WL_AUTO_COST, "regexp": False})
+    costs.append({"match": wl_tag, "value": 100, "regexp": False})
     return costs
-
-
-def _first_valid_vless_in_pool(
-    pool: list[Server],
-    *,
-    client_uuid: str,
-    fp_by_id: dict[int, str],
-) -> Server | None:
-    for s in pool:
-        if server_to_competitor_vless_outbound(
-            s,
-            client_uuid=client_uuid,
-            tag=competitor_outbound_tag(s.id, whitelist=bool(s.whitelist)),
-            client_fingerprint=fp_by_id[s.id],
-        ):
-            return s
-    return None
-
-
-def _fallback_tag_prefer_rec(pool: list[Server], member_tags: list[str]) -> str:
-    for s in pool:
-        if s.whitelist:
-            continue
-        tag = competitor_outbound_tag(s.id, whitelist=False)
-        if tag in member_tags:
-            return tag
-    return member_tags[0]
 
 
 def _competitor_routing(
@@ -361,28 +280,79 @@ def _competitor_observatory(subject_tags: list[str]) -> dict[str, Any]:
     }
 
 
-def _balanced_profile_doc(
-    *,
+def build_happ_competitor_balanced_profile_json(
     remark: str,
-    member_tags: list[str],
-    proxy_outbounds: list[dict[str, Any]],
-    observatory_tags: list[str],
-    fallback_tag: str,
-    balancer_tag: str,
-    tiered_costs: list[dict[str, Any]] | None,
-    pool_for_costs: list[Server] | None,
-    costs_whitelist: bool,
-) -> dict[str, Any]:
+    pool: list[Server],
+    *,
+    client_uuid: str,
+    fp_by_id: dict[int, str],
+    pool_whitelist: bool,
+    fallback_server: Server | None = None,
+    balancer_tag: str = _COMPETITOR_BALANCER_TAG,
+) -> str | None:
+    """
+    Один JSON-профиль: ``pool`` в balancer (``leastLoad``), опциональный WL/rec fallback outbound.
+
+    - ``pool`` — узлы в ``selector`` балансировщика (обычно ``pool_rec``).
+    - ``fallback_server`` — отдельный outbound (обычно лучший WL), ``fallbackTag`` балансировщика.
+    """
+    if not pool:
+        return None
+
+    member_tags: list[str] = []
+    proxy_outbounds: list[dict[str, Any]] = []
+
+    for s in pool:
+        tag = competitor_outbound_tag(s.id, whitelist=pool_whitelist)
+        ob = server_to_competitor_vless_outbound(
+            s,
+            client_uuid=client_uuid,
+            tag=tag,
+            client_fingerprint=fp_by_id[s.id],
+        )
+        if ob is None:
+            continue
+        member_tags.append(tag)
+        proxy_outbounds.append(ob)
+
+    if not member_tags:
+        return None
+
+    fallback_tag = member_tags[0]
+    observatory_tags = list(member_tags)
+
+    if fallback_server is not None:
+        fb_whitelist = bool(fallback_server.whitelist)
+        fb_tag = competitor_outbound_tag(fallback_server.id, whitelist=fb_whitelist)
+        if fb_tag not in member_tags:
+            fb_ob = server_to_competitor_vless_outbound(
+                fallback_server,
+                client_uuid=client_uuid,
+                tag=fb_tag,
+                client_fingerprint=fp_by_id[fallback_server.id],
+            )
+            if fb_ob is not None:
+                proxy_outbounds.append(fb_ob)
+                fallback_tag = fb_tag
+                observatory_tags.append(fb_tag)
+                member_tags.append(fb_tag)
+
+    tiered_costs = (
+        _tiered_rec_wl_costs(pool, fallback_server)
+        if fallback_server is not None
+        else None
+    )
     outbounds = [*proxy_outbounds, *_competitor_tail_outbounds()]
     routing = _competitor_routing(
         member_tags=member_tags,
         fallback_tag=fallback_tag,
         balancer_tag=balancer_tag,
-        pool_for_costs=pool_for_costs,
-        costs_whitelist=costs_whitelist,
+        pool_for_costs=pool if len(pool) > 1 and tiered_costs is None else None,
+        costs_whitelist=pool_whitelist,
         tiered_costs=tiered_costs,
     )
-    return {
+
+    doc: dict[str, Any] = {
         "dns": _competitor_dns(),
         "policy": _competitor_policy(),
         "remarks": remark,
@@ -392,131 +362,25 @@ def _balanced_profile_doc(
         "outbounds": outbounds,
         "observatory": _competitor_observatory(observatory_tags),
     }
+    return json.dumps(doc, ensure_ascii=False, separators=(",", ":"))
 
 
-def build_happ_auto_group_balanced_profile(
+def build_happ_plain_vless_profile(
     remark: str,
-    pool: list[Server],
+    server: Server,
     *,
     client_uuid: str,
-    fp_by_id: dict[int, str],
-    balancer_tag: str,
+    client_fingerprint: str,
 ) -> dict[str, Any] | None:
-    """
-    Auto-группа: все ``include_in_auto`` VLESS узлы в одном профиле.
-
-    Cost: rec — по нагрузке, WL — повышенный (резерв).
-  """
-    if not pool:
-        return None
-
-    member_tags: list[str] = []
-    proxy_outbounds: list[dict[str, Any]] = []
-
-    for s in pool:
-        tag = competitor_outbound_tag(s.id, whitelist=bool(s.whitelist))
-        ob = server_to_competitor_vless_outbound(
-            s,
-            client_uuid=client_uuid,
-            tag=tag,
-            client_fingerprint=fp_by_id[s.id],
-        )
-        if ob is None:
-            continue
-        member_tags.append(tag)
-        proxy_outbounds.append(ob)
-
-    if not member_tags:
-        return None
-
-    if len(member_tags) < 2:
-        primary = _first_valid_vless_in_pool(pool, client_uuid=client_uuid, fp_by_id=fp_by_id)
-        if primary is None:
-            return None
-        return build_happ_plain_vless_profile(
-            remark,
-            primary,
-            client_uuid=client_uuid,
-            client_fingerprint=fp_by_id[primary.id],
-        )
-
-    return _balanced_profile_doc(
-        remark=remark,
-        member_tags=member_tags,
-        proxy_outbounds=proxy_outbounds,
-        observatory_tags=list(member_tags),
-        fallback_tag=_fallback_tag_prefer_rec(pool, member_tags),
-        balancer_tag=balancer_tag,
-        tiered_costs=_auto_mixed_pool_costs(pool),
-        pool_for_costs=None,
-        costs_whitelist=False,
-    )
-
-
-def build_happ_tiered_wl_balanced_profile(
-    remark: str,
-    pool_rec: list[Server],
-    wl: Server,
-    *,
-    client_uuid: str,
-    fp_by_id: dict[int, str],
-    balancer_tag: str,
-) -> dict[str, Any] | None:
-    """
-    Tiered WL профиль: rec (основной пул) + один WL outbound (резерв).
-
-    Cost: rec — по нагрузке, WL — повышенный (резерв).
-    """
-    if not pool_rec or not wl:
-        return None
-
-    member_tags: list[str] = []
-    proxy_outbounds: list[dict[str, Any]] = []
-
-    for s in pool_rec:
-        tag = competitor_outbound_tag(s.id, whitelist=False)
-        ob = server_to_competitor_vless_outbound(
-            s,
-            client_uuid=client_uuid,
-            tag=tag,
-            client_fingerprint=fp_by_id[s.id],
-        )
-        if ob is None:
-            continue
-        member_tags.append(tag)
-        proxy_outbounds.append(ob)
-
-    # WL outbound (резерв)
-    ob_wl = server_to_competitor_vless_outbound(
-        wl,
+    """Один узел: outbound ``proxy``, без balancer и observatory."""
+    proxy = server_to_competitor_vless_outbound(
+        server,
         client_uuid=client_uuid,
-        tag=competitor_outbound_tag(wl.id, whitelist=True),
-        client_fingerprint=fp_by_id[wl.id],
+        tag="proxy",
+        client_fingerprint=client_fingerprint,
     )
-    if ob_wl:
-        member_tags.append(competitor_outbound_tag(wl.id, whitelist=True))
-        proxy_outbounds.append(ob_wl)
-
-    if not member_tags:
+    if proxy is None:
         return None
-
-    if len(member_tags) < 2:
-        return None
-
-    return _balanced_profile_doc(
-        remark=remark,
-        member_tags=member_tags,
-        proxy_outbounds=proxy_outbounds,
-        observatory_tags=list(member_tags),
-        fallback_tag=_fallback_tag_prefer_rec(pool_rec, member_tags),
-        balancer_tag=balancer_tag,
-        tiered_costs=_tiered_rec_wl_costs(pool_rec, wl),
-        pool_for_costs=None,
-        costs_whitelist=False,
-    )
-
-
-def _happ_plain_profile_doc(proxy: dict[str, Any], remark: str) -> dict[str, Any]:
     return {
         "dns": _competitor_dns(),
         "policy": _competitor_policy(),
@@ -553,49 +417,26 @@ def _happ_plain_profile_doc(proxy: dict[str, Any], remark: str) -> dict[str, Any
     }
 
 
-def build_happ_plain_vless_profile(
+def build_happ_competitor_balanced_profile(
     remark: str,
-    server: Server,
+    pool: list[Server],
     *,
     client_uuid: str,
-    client_fingerprint: str,
+    fp_by_id: dict[int, str],
+    pool_whitelist: bool,
+    fallback_server: Server | None = None,
+    balancer_tag: str = _COMPETITOR_BALANCER_TAG,
 ) -> dict[str, Any] | None:
-    """Один VLESS-узел: outbound ``proxy``, без balancer и observatory."""
-    proxy = server_to_competitor_vless_outbound(
-        server,
-        client_uuid=client_uuid,
-        tag="proxy",
-        client_fingerprint=client_fingerprint,
-    )
-    if proxy is None:
-        return None
-    return _happ_plain_profile_doc(proxy, remark)
-
-
-def build_happ_plain_hysteria2_profile(remark: str, server: Server) -> dict[str, Any] | None:
-    """Один Hysteria2-узел: outbound ``proxy``, без balancer."""
-    proxy = server_to_competitor_hysteria2_outbound(server, tag="proxy")
-    if proxy is None:
-        return None
-    return _happ_plain_profile_doc(proxy, remark)
-
-
-def build_happ_plain_server_profile(
-    remark: str,
-    server: Server,
-    *,
-    client_uuid: str,
-    client_fingerprint: str,
-) -> dict[str, Any] | None:
-    """Прямой JSON-профиль узла (VLESS или Hysteria2)."""
-    kind = (server.proxy_kind or "vless").strip().lower()
-    if kind == "hysteria2":
-        return build_happ_plain_hysteria2_profile(remark, server)
-    return build_happ_plain_vless_profile(
+    """Тот же профиль, что ``build_happ_competitor_balanced_profile_json``, как dict."""
+    line = build_happ_competitor_balanced_profile_json(
         remark,
-        server,
+        pool,
         client_uuid=client_uuid,
-        client_fingerprint=client_fingerprint,
+        fp_by_id=fp_by_id,
+        pool_whitelist=pool_whitelist,
+        fallback_server=fallback_server,
+        balancer_tag=balancer_tag,
     )
-
-
+    if line is None:
+        return None
+    return json.loads(line)
