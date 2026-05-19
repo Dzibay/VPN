@@ -30,7 +30,6 @@ from app.domain.subscription.placeholders import (
     SubscriptionPlaceholderReason,
     build_subscription_placeholder_payload,
 )
-from app.domain.subscription.test_sub_build import build_test_sub_payload
 from app.domain.subscription.devices import (
     register_or_touch_subscription_device,
 )
@@ -219,7 +218,7 @@ async def _test_sub_user_and_rows(session: AsyncSession) -> tuple[User, list[Ser
 async def test_sub_payload_from_db(session: AsyncSession) -> SubscriptionPayload:
     """Тестовая подписка: узлы из БД, UUID — первый пользователь с ``vless_uuid``."""
     user, rows = await _test_sub_user_and_rows(session)
-    return build_test_sub_payload(user, rows)
+    return build_subscription_payload(user, rows)
 
 
 async def subscription_client_metadata_headers(

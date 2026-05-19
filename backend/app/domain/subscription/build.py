@@ -1,13 +1,11 @@
-"""Сборка тела подписки: список узлов, ``vless://`` URI, Base64, Clash Meta YAML.
+"""Сборка тела подписки: Happ Base64 (JSON + share-ссылки), Clash Meta YAML.
 
-Порядок записей в клиенте:
+Порядок Happ (``text/plain`` Base64, построчно):
 
-1. ``🔥 Auto (рекомендуемый)`` — при одном VLESS без ``whitelist``: ``vless://``; при
-   нескольких — JSON balancer ``leastPing`` (Happ). В Clash — ``url-test`` по пулу.
-   Узлы с ``include_in_auto=false`` в эти группы не входят (остаются отдельными строками).
-2. ``📄 Auto (Белые списки)`` — то же для VLESS с ``whitelist``, если такие узлы есть.
-3. Все узлы выдачи по одному разу с обычными именами: сначала без ``whitelist``,
-   в конце списка — только с ``whitelist`` (внутри групп — по ``load_percent``).
+1. JSON Auto (рекомендуемый), 2. JSON Auto (белые списки, дубликат),
+3. ``vless://`` / ``hysteria2://`` обычных узлов, 4. JSON tiered WL.
+
+Clash: ``url-test`` по пулу Auto, затем все узлы.
 
 Узлы с ``is_hidden=true`` в подписку не попадают (только админка / метрики / провижининг).
 
@@ -20,7 +18,7 @@
 
 from __future__ import annotations
 
-import base64
+import copy
 import json
 import logging
 import secrets
@@ -35,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants import BRAND_NAME
 from app.domain.models.subscription import SubscriptionPayload
 from app.domain.servers.reality_defaults import normalize_reality_spider_x
+from app.domain.subscription.happ_subscription_encode import encode_happ_subscription_body
 from app.infrastructure.persistence.models.server import Server
 from app.infrastructure.persistence.models.user import User
 
@@ -43,32 +42,7 @@ log = logging.getLogger("app.subscription.build")
 SUBSCRIPTION_AUTO_RECOMMENDED_LABEL = "🔥 Auto (рекомендуемый)"
 SUBSCRIPTION_AUTO_WHITELIST_LABEL = "📄 Auto (Белые списки)"
 
-_AUTO_BALANCER_TAG_PREFIX_REC = "auto-rec-"
-_AUTO_BALANCER_TAG_PREFIX_WL = "auto-wl-"
 _AUTO_BALANCER_PROBE_URL = "https://www.gstatic.com/generate_204"
-_AUTO_BALANCER_PROBE_INTERVAL = "10s"
-
-_HAPP_JSON_SNIFFING: dict[str, Any] = {
-    "enabled": True,
-    "destOverride": ["http", "tls", "quic"],
-}
-_HAPP_JSON_INBOUNDS: list[dict[str, Any]] = [
-    {
-        "tag": "socks",
-        "port": 10808,
-        "listen": "127.0.0.1",
-        "protocol": "socks",
-        "settings": {"udp": True, "auth": "noauth"},
-        "sniffing": _HAPP_JSON_SNIFFING,
-    },
-    {
-        "tag": "http",
-        "port": 10809,
-        "listen": "127.0.0.1",
-        "protocol": "http",
-        "sniffing": _HAPP_JSON_SNIFFING,
-    },
-]
 
 # uTLS fingerprint в vless:// и Clash: не из БД, а случайный на каждую выдачу подписки (DPI).
 _SUBSCRIPTION_UTLS_FP_CHOICES: tuple[str, ...] = ("chrome", "firefox", "safari", "edge")
@@ -361,245 +335,48 @@ def _is_vless_server(s: Server) -> bool:
     return (s.proxy_kind or "vless").strip().lower() == "vless"
 
 
-def _vless_pool_for_auto(
+def _pool_auto_all_vless(
     ctx: _SubscriptionDeliveryContext,
     uri_by_id: dict[int, str | None],
-    *,
-    whitelist: bool,
 ) -> list[Server]:
-    """VLESS-узлы пула Auto с валидным URI (Hysteria2 не входит)."""
+    """Все VLESS с ``include_in_auto`` и валидным share-URI (для Auto-групп)."""
     return [
         s
         for s in ctx.delivery_rows
         if _is_vless_server(s)
         and bool(s.include_in_auto)
-        and bool(s.whitelist) is whitelist
         and uri_by_id.get(s.id) is not None
     ]
 
 
-def _auto_member_outbound_tag(server_id: int, *, whitelist: bool) -> str:
-    prefix = _AUTO_BALANCER_TAG_PREFIX_WL if whitelist else _AUTO_BALANCER_TAG_PREFIX_REC
-    return f"{prefix}{int(server_id)}"
-
-
-def _auto_balancer_tag(*, whitelist: bool) -> str:
-    return f"{_AUTO_BALANCER_TAG_PREFIX_WL}balancer" if whitelist else f"{_AUTO_BALANCER_TAG_PREFIX_REC}balancer"
-
-
-def _server_to_vless_reality_outbound(
-    s: Server,
-    *,
-    client_uuid: str,
-    tag: str,
-    client_fingerprint: str,
-) -> dict[str, Any] | None:
-    pbk = (s.reality_public_key or "").strip()
-    if not pbk or "(" in pbk:
-        return None
-    sid = (s.reality_short_id or "").strip()
-    if not sid:
-        return None
-    flow = (s.vless_flow or "").strip() or "xtls-rprx-vision"
-    fp = (client_fingerprint or "").strip() or "chrome"
-    sni = _primary_sni(s.reality_server_names, s.reality_dest)
-    if not sni:
-        return None
-    host = (s.host or "").strip()
-    uid = (client_uuid or "").strip()
-    if not host or not uid:
-        return None
-    spx = normalize_reality_spider_x(s.reality_spider_x)
-    stream_settings: dict[str, Any] = {
-        "network": "tcp",
-        "security": "reality",
-        "realitySettings": {
-            "allowInsecure": False,
-            "fingerprint": fp,
-            "serverName": sni,
-            "publicKey": pbk,
-            "shortId": sid,
-            "spiderX": spx,
-            "show": False,
-        },
-        "tcpSettings": {"header": {"type": "none"}},
-    }
-    stream_settings.update(dict(_XRAY_VLESS_STREAM_SETTINGS_SOCKOPT))
-    return {
-        "tag": tag,
-        "protocol": "vless",
-        "settings": {
-            "vnext": [
-                {
-                    "address": host,
-                    "port": int(s.port),
-                    "users": [
-                        {
-                            "id": uid,
-                            "encryption": "none",
-                            "flow": flow,
-                            "level": 8,
-                            "security": "auto",
-                        }
-                    ],
-                }
-            ]
-        },
-        "streamSettings": stream_settings,
-    }
-
-
-def _happ_standard_outbound_tail() -> list[dict[str, Any]]:
+def _pool_rec_auto_vless(
+    ctx: _SubscriptionDeliveryContext,
+    uri_by_id: dict[int, str | None],
+) -> list[Server]:
+    """VLESS без ``whitelist`` с ``include_in_auto`` (основной пул для tiered WL)."""
     return [
-        {"tag": "direct", "protocol": "freedom"},
-        {"tag": "block", "protocol": "blackhole"},
+        s
+        for s in ctx.delivery_rows
+        if _is_vless_server(s)
+        and bool(s.include_in_auto)
+        and not s.whitelist
+        and uri_by_id.get(s.id) is not None
     ]
 
 
-def _build_happ_multi_balancer_json(
-    remark: str,
-    pool: list[Server],
-    *,
-    client_uuid: str,
-    fp_by_id: dict[int, str],
-    whitelist: bool,
-) -> str | None:
-    """
-    Happ: JSON с inbounds, observatory и balancer ``leastPing`` (только при 2+ узлах в пуле).
-    """
-    if len(pool) < 2:
-        return None
-    balancer_tag = _auto_balancer_tag(whitelist=whitelist)
-    member_tags: list[str] = []
-    proxy_outbounds: list[dict[str, Any]] = []
-    for s in pool:
-        member_tag = _auto_member_outbound_tag(s.id, whitelist=whitelist)
-        ob = _server_to_vless_reality_outbound(
-            s,
-            client_uuid=client_uuid,
-            tag=member_tag,
-            client_fingerprint=fp_by_id[s.id],
-        )
-        if ob is None:
-            continue
-        member_tags.append(member_tag)
-        proxy_outbounds.append(ob)
-    if len(member_tags) < 2:
-        return None
-
-    outbounds = [*proxy_outbounds, *_happ_standard_outbound_tail()]
-    doc: dict[str, Any] = {
-        "remarks": remark,
-        "inbounds": list(_HAPP_JSON_INBOUNDS),
-        "observatory": {
-            "subjectSelector": list(member_tags),
-            "probeUrl": _AUTO_BALANCER_PROBE_URL,
-            "probeInterval": _AUTO_BALANCER_PROBE_INTERVAL,
-            "enableConcurrency": True,
-        },
-        "routing": {
-            "domainStrategy": "AsIs",
-            "rules": [
-                {
-                    "type": "field",
-                    "network": "tcp,udp",
-                    "balancerTag": balancer_tag,
-                }
-            ],
-            "balancers": [
-                {
-                    "tag": balancer_tag,
-                    "selector": list(member_tags),
-                    "strategy": {"type": "leastPing"},
-                    "fallbackTag": member_tags[0],
-                }
-            ],
-        },
-        "outbounds": outbounds,
-    }
-    return json.dumps(doc, ensure_ascii=False, separators=(",", ":"))
-
-
-def _append_happ_auto_subscription_entry(
-    *,
-    uris: list[str],
-    servers_out: list[dict[str, Any]],
-    remark: str,
-    pool: list[Server],
-    client_uuid: str,
-    fp_by_id: dict[int, str],
-    exit_ids_referenced: set[int],
-    whitelist: bool,
-) -> None:
-    """
-    Auto в теле подписки.
-
-    - 1 узел: ``vless://`` (Happ стабильно импортирует share-ссылки; JSON без inbounds — нет).
-    - 2+ узла: JSON balancer + локальные inbounds.
-    """
-    if not pool:
-        return
-
-    if len(pool) == 1:
-        s = pool[0]
-        fp = fp_by_id[s.id]
-        uri = _vless_reality_share_uri(
-            s,
-            client_uuid=client_uuid,
-            exit_ids_referenced=exit_ids_referenced,
-            client_fingerprint=fp,
-            fragment_override=remark,
-        )
-        if not uri:
-            return
-        servers_out.append(
-            _server_to_subscription_dict(
-                s,
-                client_uuid=client_uuid,
-                exit_ids_referenced=exit_ids_referenced,
-                client_fingerprint=fp,
-                name_override=remark,
-            )
-        )
-        uris.append(uri)
-        return
-
-    line = _build_happ_multi_balancer_json(
-        remark,
-        pool,
-        client_uuid=client_uuid,
-        fp_by_id=fp_by_id,
-        whitelist=whitelist,
-    )
-    if not line:
-        return
-    servers_out.append(
-        _balancer_to_subscription_dict(remark, pool, whitelist=whitelist),
-    )
-    uris.append(line)
-
-
-def _balancer_to_subscription_dict(
-    remark: str,
-    pool: list[Server],
-    *,
-    whitelist: bool,
-) -> dict[str, Any]:
-    member_ids = [int(s.id) for s in pool]
-    if len(member_ids) == 1:
-        return {
-            "name": remark,
-            "protocol": "vless",
-            "whitelist": whitelist,
-            "member_server_ids": member_ids,
-        }
-    return {
-        "name": remark,
-        "protocol": "balancer",
-        "strategy": "leastPing",
-        "whitelist": whitelist,
-        "member_server_ids": member_ids,
-    }
+def _pool_wl_auto_vless(
+    ctx: _SubscriptionDeliveryContext,
+    uri_by_id: dict[int, str | None],
+) -> list[Server]:
+    """VLESS с ``whitelist`` и ``include_in_auto``."""
+    return [
+        s
+        for s in ctx.delivery_rows
+        if _is_vless_server(s)
+        and bool(s.include_in_auto)
+        and bool(s.whitelist)
+        and uri_by_id.get(s.id) is not None
+    ]
 
 
 def _append_clash_proxy(
@@ -671,8 +448,7 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
     uri_by_id, fp_by_id = _subscription_uri_and_fingerprint_by_server_id(
         ctx, client_uuid=client_uuid
     )
-    pool_rec = _vless_pool_for_auto(ctx, uri_by_id, whitelist=False)
-    pool_wl = _vless_pool_for_auto(ctx, uri_by_id, whitelist=True)
+    pool_auto = _pool_auto_all_vless(ctx, uri_by_id)
 
     proxies: list[dict[str, Any]] = []
     names_seen: dict[str, int] = {}
@@ -712,9 +488,9 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
         )
         select_proxies.append(group_name)
 
-    _append_url_test_group(SUBSCRIPTION_AUTO_RECOMMENDED_LABEL, pool_rec)
-    if any(s.whitelist for s in ctx.delivery_rows if _is_vless_server(s)):
-        _append_url_test_group(SUBSCRIPTION_AUTO_WHITELIST_LABEL, pool_wl)
+    _append_url_test_group(SUBSCRIPTION_AUTO_RECOMMENDED_LABEL, pool_auto)
+    if pool_auto:
+        _append_url_test_group(SUBSCRIPTION_AUTO_WHITELIST_LABEL, pool_auto)
 
     select_proxies.extend(p["name"] for p in proxies)
 
@@ -743,44 +519,80 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
 
 
 def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPayload:
+    """Happ: JSON Auto-группы + share-ссылки обычных узлов + tiered WL."""
+    from app.domain.subscription.happ_competitor_json import (
+        build_happ_auto_group_balanced_profile,
+        build_happ_tiered_wl_balanced_profile,
+    )
+
     ctx = _subscription_delivery_context(rows)
     client_uuid = (user.vless_uuid or "").strip()
     uri_by_id, fp_by_id = _subscription_uri_and_fingerprint_by_server_id(
         ctx, client_uuid=client_uuid
     )
-    pool_rec = _vless_pool_for_auto(ctx, uri_by_id, whitelist=False)
-    pool_wl = _vless_pool_for_auto(ctx, uri_by_id, whitelist=True)
-    any_whitelist_vless = any(
-        s.whitelist for s in ctx.delivery_rows if _is_vless_server(s)
+    pool_auto = _pool_auto_all_vless(ctx, uri_by_id)
+    pool_rec = _pool_rec_auto_vless(ctx, uri_by_id)
+    pool_wl = _pool_wl_auto_vless(ctx, uri_by_id)
+
+    share_lines: list[str] = []
+    tiered_profiles: list[dict[str, Any]] = []
+    wl_dup: dict[str, Any] | None = None
+
+    auto_doc = build_happ_auto_group_balanced_profile(
+        SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
+        pool_auto,
+        client_uuid=client_uuid,
+        fp_by_id=fp_by_id,
+        balancer_tag="auto-rec-balance",
+    )
+    if auto_doc:
+        wl_dup = copy.deepcopy(auto_doc)
+        wl_dup["remarks"] = SUBSCRIPTION_AUTO_WHITELIST_LABEL
+
+    for s in ctx.delivery_rows:
+        if s.whitelist:
+            continue
+        uri = uri_by_id.get(s.id)
+        if uri:
+            share_lines.append(uri)
+
+    for wl in pool_wl:
+        remark = _node_subscription_label(wl, exit_ids_referenced=ctx.exit_ids_referenced)
+        tiered = build_happ_tiered_wl_balanced_profile(
+            remark,
+            pool_rec,
+            wl,
+            client_uuid=client_uuid,
+            fp_by_id=fp_by_id,
+            balancer_tag=f"wl-{int(wl.id)}-balance",
+        )
+        if tiered:
+            tiered_profiles.append(tiered)
+
+    ordered_lines: list[str] = []
+    if auto_doc:
+        ordered_lines.append(
+            json.dumps(auto_doc, ensure_ascii=False, separators=(",", ":"))
+        )
+    if wl_dup:
+        ordered_lines.append(
+            json.dumps(wl_dup, ensure_ascii=False, separators=(",", ":"))
+        )
+    ordered_lines.extend(share_lines)
+    for tiered in tiered_profiles:
+        ordered_lines.append(
+            json.dumps(tiered, ensure_ascii=False, separators=(",", ":"))
+        )
+
+    body, media_type = encode_happ_subscription_body(
+        fmt="lines",
+        ordered_lines=ordered_lines,
     )
 
     servers_out: list[dict[str, Any]] = []
-    uris: list[str] = []
-
-    _append_happ_auto_subscription_entry(
-        uris=uris,
-        servers_out=servers_out,
-        remark=SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
-        pool=pool_rec,
-        client_uuid=client_uuid,
-        fp_by_id=fp_by_id,
-        exit_ids_referenced=ctx.exit_ids_referenced,
-        whitelist=False,
-    )
-
-    if any_whitelist_vless:
-        _append_happ_auto_subscription_entry(
-            uris=uris,
-            servers_out=servers_out,
-            remark=SUBSCRIPTION_AUTO_WHITELIST_LABEL,
-            pool=pool_wl,
-            client_uuid=client_uuid,
-            fp_by_id=fp_by_id,
-            exit_ids_referenced=ctx.exit_ids_referenced,
-            whitelist=True,
-        )
-
     for s in ctx.delivery_rows:
+        if s.whitelist:
+            continue
         servers_out.append(
             _server_to_subscription_dict(
                 s,
@@ -789,16 +601,21 @@ def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPa
                 client_fingerprint=fp_by_id[s.id],
             )
         )
-        u = uri_by_id.get(s.id)
-        if u:
-            uris.append(u)
 
-    raw = "\n".join(uris) + ("\n" if uris else "")
-    b64 = base64.standard_b64encode(raw.encode("utf-8")).decode("ascii") if raw else ""
     return SubscriptionPayload(
         valid_until=user.subscription_until,
         subscription_active=True,
         servers=servers_out,
-        vless_uris=uris,
-        subscription_base64=b64,
+        vless_uris=[
+            *([auto_doc["remarks"]] if auto_doc and auto_doc.get("remarks") else []),
+            *([wl_dup["remarks"]] if wl_dup and wl_dup.get("remarks") else []),
+            *share_lines,
+            *(
+                p.get("remarks", "json")
+                for p in tiered_profiles
+                if p.get("remarks")
+            ),
+        ],
+        subscription_base64=body,
+        subscription_media_type=media_type,
     )
