@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-import json
 from typing import Any, Literal
 
 import yaml
@@ -12,6 +10,7 @@ from app.config import Settings, settings
 from app.constants import BRAND_NAME
 from app.domain.models.subscription import SubscriptionPayload
 from app.domain.public_urls import _telegram_bot_username_clean
+from app.domain.subscription.happ_subscription_encode import encode_happ_subscription_body
 from app.infrastructure.persistence.models.user import User
 
 SubscriptionPlaceholderReason = Literal["expired", "device_limit"]
@@ -92,18 +91,17 @@ def build_subscription_placeholder_payload(
     cfg = cfg or settings
     remarks = subscription_placeholder_remarks(reason, cfg=cfg)
     profiles = [build_happ_info_placeholder_profile(remark) for remark in remarks]
-    lines = [
-        json.dumps(profile, ensure_ascii=False, separators=(",", ":"))
-        for profile in profiles
-    ]
-    raw = "\n".join(lines) + "\n"
-    b64 = base64.standard_b64encode(raw.encode("utf-8")).decode("ascii")
+    body, media_type = encode_happ_subscription_body(
+        fmt="json_array_raw",
+        json_profiles=profiles,
+    )
     return SubscriptionPayload(
         valid_until=user.subscription_until,
         subscription_active=reason != "expired",
         servers=_placeholder_servers_metadata(remarks, reason=reason),
-        vless_uris=lines,
-        subscription_base64=b64,
+        vless_uris=remarks,
+        subscription_base64=body,
+        subscription_media_type=media_type,
     )
 
 
