@@ -86,15 +86,19 @@ def build_subscription_placeholder_payload(
     *,
     reason: SubscriptionPlaceholderReason,
     cfg: Settings | None = None,
+    happ_json: bool = False,
 ) -> SubscriptionPayload:
-    """Тело подписки с тремя информационными JSON-профилями вместо узлов VPN."""
+    """Заглушки: JSON-профили (Happ) или пустой Base64 (остальные клиенты)."""
     cfg = cfg or settings
     remarks = subscription_placeholder_remarks(reason, cfg=cfg)
-    profiles = [build_happ_info_placeholder_profile(remark) for remark in remarks]
-    body, media_type = encode_happ_subscription_body(
-        fmt="json_array_raw",
-        json_profiles=profiles,
-    )
+    if happ_json:
+        profiles = [build_happ_info_placeholder_profile(remark) for remark in remarks]
+        body, media_type = encode_happ_subscription_body(
+            fmt="json_array_raw",
+            json_profiles=profiles,
+        )
+    else:
+        body, media_type = "", "text/plain; charset=utf-8"
     return SubscriptionPayload(
         valid_until=user.subscription_until,
         subscription_active=reason != "expired",

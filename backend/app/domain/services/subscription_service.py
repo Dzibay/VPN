@@ -135,10 +135,13 @@ async def subscription_payload_rows_for_resolved_user(
     user: User,
     *,
     device_allowed: bool = True,
+    happ_json: bool = False,
 ) -> tuple[SubscriptionPayload, User, list[Server], SubscriptionPlaceholderReason | None]:
     if not user_has_active_subscription(user):
         return (
-            build_subscription_placeholder_payload(user, reason="expired"),
+            build_subscription_placeholder_payload(
+                user, reason="expired", happ_json=happ_json
+            ),
             user,
             [],
             "expired",
@@ -146,14 +149,21 @@ async def subscription_payload_rows_for_resolved_user(
 
     if not device_allowed:
         return (
-            build_subscription_placeholder_payload(user, reason="device_limit"),
+            build_subscription_placeholder_payload(
+                user, reason="device_limit", happ_json=happ_json
+            ),
             user,
             [],
             "device_limit",
         )
 
     rows = await subscription_servers_from_db(session)
-    return build_subscription_payload(user, rows), user, rows, None
+    return (
+        build_subscription_payload(user, rows, happ_json=happ_json),
+        user,
+        rows,
+        None,
+    )
 
 
 async def subscription_maybe_register_device(
@@ -218,7 +228,7 @@ async def _test_sub_user_and_rows(session: AsyncSession) -> tuple[User, list[Ser
 async def test_sub_payload_from_db(session: AsyncSession) -> SubscriptionPayload:
     """Тестовая подписка: узлы из БД, UUID — первый пользователь с ``vless_uuid``."""
     user, rows = await _test_sub_user_and_rows(session)
-    return build_subscription_payload(user, rows)
+    return build_subscription_payload(user, rows, happ_json=True)
 
 
 async def subscription_client_metadata_headers(

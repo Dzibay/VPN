@@ -15,8 +15,9 @@
 формат ``subscription-userinfo`` (upload, download, total, expire), что используют
 Stash / Clash Verge / v2rayNG. Подробнее: ``app.domain.subscription.userinfo``.
 
-``GET /sub/{token}``: при ``User-Agent``, содержащем подстроку ``clash`` или ``hiddify`` (без учёта регистра), тело — YAML (Clash Meta);
-иначе — Happ ``application/json`` (массив JSON-профилей). Явный YAML: ``GET /sub/{token}/clash``.
+``GET /sub/{token}``: при ``clash`` / ``hiddify`` в User-Agent — YAML (Clash Meta);
+при ``happ`` — ``application/json`` (балансировщики); иначе — ``text/plain`` Base64 (``vless://`` …).
+Явный YAML: ``GET /sub/{token}/clash``.
 
 ``GET /sub/{token}/no-routing`` — то же, что ``/sub/{token}``, но без заголовка ``routing`` (Happ routing profile).
 
@@ -101,6 +102,10 @@ def _user_agent_requests_clash_yaml(request: Request) -> bool:
     ua = (request.headers.get("user-agent") or "").lower()
     # Clash-семейство шлёт «clash»; Hiddify Next часто без него — «hiddify» в UA.
     return "clash" in ua or "hiddify" in ua
+
+
+def _user_agent_is_happ(request: Request) -> bool:
+    return "happ" in (request.headers.get("user-agent") or "").lower()
 
 
 def _read_local_geo_dat_or_503(path: FilePath, name: str) -> bytes:
@@ -294,6 +299,7 @@ async def _subscription_by_token_response(
         session=session, request=request, user=user, cfg=settings,
     )
     want_yaml = _user_agent_requests_clash_yaml(request)
+    happ_json = _user_agent_is_happ(request)
     headers = await subscription_client_metadata_headers(
         session,
         user,
@@ -306,6 +312,7 @@ async def _subscription_by_token_response(
             session,
             user,
             device_allowed=device_ok,
+            happ_json=False,
         )
         if block_reason:
             yaml_body = build_clash_subscription_placeholder_yaml(block_reason)
@@ -320,6 +327,7 @@ async def _subscription_by_token_response(
         session,
         user,
         device_allowed=device_ok,
+        happ_json=happ_json,
     )
     return Response(
         content=payload.subscription_base64,
@@ -348,7 +356,7 @@ async def subscription_base64_by_token_no_routing(
 
 @router.get(
     "/sub/{subscription_token}",
-    summary="Подписка: application/json (Happ), либо text/yaml при User-Agent с подстрокой clash или hiddify",
+    summary="Подписка: JSON (Happ UA), Base64 (прочие), YAML (clash/hiddify UA)",
     response_class=Response,
 )
 async def subscription_base64_by_token(
@@ -423,6 +431,7 @@ async def subscription_json_by_token(
         session,
         user,
         device_allowed=device_ok,
+        happ_json=_user_agent_is_happ(request),
     )
     headers = await subscription_client_metadata_headers(
         session,

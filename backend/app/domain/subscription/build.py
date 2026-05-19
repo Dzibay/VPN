@@ -1,11 +1,10 @@
-"""Сборка тела подписки: Happ JSON array, Clash Meta YAML.
+"""Сборка тела подписки: Happ JSON (по UA) или Base64 share-ссылки, Clash YAML.
 
-Порядок Happ (``application/json``, массив профилей):
+Happ (``happ`` в User-Agent): ``application/json`` — Auto, узлы, tiered WL.
 
-1. Auto (рекомендуемый), 2. Auto (белые списки, дубликат),
-3. Обычные узлы (JSON, VLESS/Hysteria2), 4. Tiered WL.
+Остальные клиенты (v2rayNG и др.): ``text/plain`` Base64 со строками ``vless://`` / ``hysteria2://``.
 
-Clash: ``url-test`` по пулу Auto, затем все узлы.
+Clash (``clash`` / ``hiddify`` в UA): YAML — отдельно в эндпоинте, здесь не собирается.
 
 Узлы с ``is_hidden=true`` в подписку не попадают (только админка / метрики / провижининг).
 
@@ -18,6 +17,7 @@ Clash: ``url-test`` по пулу Auto, затем все узлы.
 
 from __future__ import annotations
 
+import base64
 import copy
 import logging
 import secrets
@@ -517,8 +517,32 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
     )
 
 
-def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPayload:
-    """Happ: все узлы — JSON-профили в ``application/json`` array."""
+def _servers_metadata_for_payload(
+    ctx: _SubscriptionDeliveryContext,
+    *,
+    client_uuid: str,
+    fp_by_id: dict[int, str],
+    whitelist_only: bool = False,
+) -> list[dict[str, Any]]:
+    servers_out: list[dict[str, Any]] = []
+    for s in ctx.delivery_rows:
+        if whitelist_only and not s.whitelist:
+            continue
+        if not whitelist_only and s.whitelist:
+            continue
+        servers_out.append(
+            _server_to_subscription_dict(
+                s,
+                client_uuid=client_uuid,
+                exit_ids_referenced=ctx.exit_ids_referenced,
+                client_fingerprint=fp_by_id[s.id],
+            )
+        )
+    return servers_out
+
+
+def _build_happ_json_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPayload:
+    """Happ: JSON array с балансировщиками и plain-профилями узлов."""
     from app.domain.subscription.happ_competitor_json import (
         build_happ_auto_group_balanced_profile,
         build_happ_plain_server_profile,
@@ -580,24 +604,50 @@ def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPa
         json_profiles=json_profiles,
     )
 
-    servers_out: list[dict[str, Any]] = []
-    for s in ctx.delivery_rows:
-        if s.whitelist:
-            continue
-        servers_out.append(
-            _server_to_subscription_dict(
-                s,
-                client_uuid=client_uuid,
-                exit_ids_referenced=ctx.exit_ids_referenced,
-                client_fingerprint=fp_by_id[s.id],
-            )
-        )
-
     return SubscriptionPayload(
         valid_until=user.subscription_until,
         subscription_active=True,
-        servers=servers_out,
+        servers=_servers_metadata_for_payload(
+            ctx, client_uuid=client_uuid, fp_by_id=fp_by_id
+        ),
         vless_uris=[p.get("remarks", "json") for p in json_profiles if p.get("remarks")],
         subscription_base64=body,
         subscription_media_type=media_type,
     )
+
+
+def _build_base64_share_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPayload:
+    """v2rayNG и др.: Base64, построчно ``vless://`` / ``hysteria2://`` (без JSON balancer)."""
+    ctx = _subscription_delivery_context(rows)
+    client_uuid = (user.vless_uuid or "").strip()
+    uri_by_id, fp_by_id = _subscription_uri_and_fingerprint_by_server_id(
+        ctx, client_uuid=client_uuid
+    )
+    uris: list[str] = []
+    for s in ctx.delivery_rows:
+        uri = uri_by_id.get(s.id)
+        if uri:
+            uris.append(uri)
+    raw = "\n".join(uris) + ("\n" if uris else "")
+    b64 = base64.standard_b64encode(raw.encode("utf-8")).decode("ascii") if raw else ""
+    return SubscriptionPayload(
+        valid_until=user.subscription_until,
+        subscription_active=True,
+        servers=_servers_metadata_for_payload(
+            ctx, client_uuid=client_uuid, fp_by_id=fp_by_id
+        ),
+        vless_uris=uris,
+        subscription_base64=b64,
+        subscription_media_type="text/plain; charset=utf-8",
+    )
+
+
+def build_subscription_payload(
+    user: User,
+    rows: list[Server],
+    *,
+    happ_json: bool = False,
+) -> SubscriptionPayload:
+    if happ_json:
+        return _build_happ_json_subscription_payload(user, rows)
+    return _build_base64_share_subscription_payload(user, rows)
