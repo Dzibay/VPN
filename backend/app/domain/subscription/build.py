@@ -17,7 +17,6 @@ Clash (``clash`` / ``hiddify`` в UA): YAML — отдельно в эндпои
 
 from __future__ import annotations
 
-import base64
 import copy
 import logging
 import secrets
@@ -32,7 +31,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants import BRAND_NAME
 from app.domain.models.subscription import SubscriptionPayload
 from app.domain.servers.reality_defaults import normalize_reality_spider_x
-from app.domain.subscription.happ_subscription_encode import encode_happ_subscription_body
+from app.domain.subscription.happ_subscription_encode import (
+    encode_subscription_base64_lines,
+    encode_subscription_json_array,
+)
 from app.infrastructure.persistence.models.server import Server
 from app.infrastructure.persistence.models.user import User
 
@@ -334,48 +336,29 @@ def _is_vless_server(s: Server) -> bool:
     return (s.proxy_kind or "vless").strip().lower() == "vless"
 
 
-def _pool_auto_all_vless(
+def _pool_auto_vless(
     ctx: _SubscriptionDeliveryContext,
     uri_by_id: dict[int, str | None],
+    *,
+    whitelist: bool | None = None,
 ) -> list[Server]:
-    """Все VLESS с ``include_in_auto`` и валидным share-URI (для Auto-групп)."""
-    return [
-        s
-        for s in ctx.delivery_rows
-        if _is_vless_server(s)
-        and bool(s.include_in_auto)
-        and uri_by_id.get(s.id) is not None
-    ]
+    """
+    VLESS с ``include_in_auto`` и валидным URI.
 
-
-def _pool_rec_auto_vless(
-    ctx: _SubscriptionDeliveryContext,
-    uri_by_id: dict[int, str | None],
-) -> list[Server]:
-    """VLESS без ``whitelist`` с ``include_in_auto`` (основной пул для tiered WL)."""
-    return [
-        s
-        for s in ctx.delivery_rows
-        if _is_vless_server(s)
-        and bool(s.include_in_auto)
-        and not s.whitelist
-        and uri_by_id.get(s.id) is not None
-    ]
-
-
-def _pool_wl_auto_vless(
-    ctx: _SubscriptionDeliveryContext,
-    uri_by_id: dict[int, str | None],
-) -> list[Server]:
-    """VLESS с ``whitelist`` и ``include_in_auto``."""
-    return [
-        s
-        for s in ctx.delivery_rows
-        if _is_vless_server(s)
-        and bool(s.include_in_auto)
-        and bool(s.whitelist)
-        and uri_by_id.get(s.id) is not None
-    ]
+    ``whitelist=None`` — все auto; ``False`` — без WL; ``True`` — только WL.
+    """
+    out: list[Server] = []
+    for s in ctx.delivery_rows:
+        if not _is_vless_server(s) or not s.include_in_auto:
+            continue
+        if uri_by_id.get(s.id) is None:
+            continue
+        if whitelist is False and s.whitelist:
+            continue
+        if whitelist is True and not s.whitelist:
+            continue
+        out.append(s)
+    return out
 
 
 def _best_server_by_load(servers: list[Server]) -> Server | None:
@@ -467,21 +450,49 @@ def _unique_clash_proxy_name(base_label: str, seen: dict[str, int]) -> str:
     return f"{b} ({seen[b]})"
 
 
-def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
-    """Clash Meta: VLESS+REALITY и/или Hysteria2; порядок как в Base64-подписке."""
-    ctx = _subscription_delivery_context(rows)
+@dataclass(frozen=True)
+class SubscriptionBuildContext:
+    """Общий контекст для Happ JSON и Base64 (после фильтра каскада)."""
+
+    delivery: _SubscriptionDeliveryContext
+    client_uuid: str
+    uri_by_id: dict[int, str | None]
+    fp_by_id: dict[int, str]
+    pool_rec: list[Server]
+    pool_wl: list[Server]
+
+    @property
+    def pool_auto(self) -> list[Server]:
+        return [*self.pool_rec, *self.pool_wl]
+
+
+def _subscription_build_context(user: User, rows: list[Server]) -> SubscriptionBuildContext:
+    delivery = _subscription_delivery_context(rows)
     client_uuid = (user.vless_uuid or "").strip()
     uri_by_id, fp_by_id = _subscription_uri_and_fingerprint_by_server_id(
-        ctx, client_uuid=client_uuid
+        delivery, client_uuid=client_uuid
     )
-    pool_auto = _pool_auto_all_vless(ctx, uri_by_id)
+    return SubscriptionBuildContext(
+        delivery=delivery,
+        client_uuid=client_uuid,
+        uri_by_id=uri_by_id,
+        fp_by_id=fp_by_id,
+        pool_rec=_pool_auto_vless(delivery, uri_by_id, whitelist=False),
+        pool_wl=_pool_auto_vless(delivery, uri_by_id, whitelist=True),
+    )
+
+
+def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
+    """Clash Meta: VLESS+REALITY и/или Hysteria2; порядок как в Base64-подписке."""
+    bctx = _subscription_build_context(user, rows)
+    ctx = bctx.delivery
 
     proxies: list[dict[str, Any]] = []
     names_seen: dict[str, int] = {}
     name_by_server_id: dict[int, str] = {}
 
     for s in ctx.delivery_rows:
-        if uri_by_id.get(s.id) is None:
+        if bctx.uri_by_id.get(s.id) is None:
             continue
         label = _node_subscription_label(s, exit_ids_referenced=ctx.exit_ids_referenced)
         name = _unique_clash_proxy_name(label, names_seen)
@@ -489,9 +500,9 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
         _append_clash_proxy(
             proxies,
             s,
-            client_uuid=client_uuid,
+            client_uuid=bctx.client_uuid,
             clash_name=name,
-            client_fingerprint=fp_by_id[s.id],
+            client_fingerprint=bctx.fp_by_id[s.id],
         )
 
     proxy_groups: list[dict[str, Any]] = []
@@ -514,9 +525,8 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
         )
         select_proxies.append(group_name)
 
-    _append_url_test_group(SUBSCRIPTION_AUTO_RECOMMENDED_LABEL, pool_auto)
-    if pool_auto:
-        _append_url_test_group(SUBSCRIPTION_AUTO_WHITELIST_LABEL, pool_auto)
+    _append_url_test_group(SUBSCRIPTION_AUTO_RECOMMENDED_LABEL, bctx.pool_rec)
+    _append_url_test_group(SUBSCRIPTION_AUTO_WHITELIST_LABEL, bctx.pool_wl)
 
     select_proxies.extend(p["name"] for p in proxies)
 
@@ -544,62 +554,42 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
     )
 
 
-def _servers_metadata_for_payload(
-    ctx: _SubscriptionDeliveryContext,
-    *,
-    client_uuid: str,
-    fp_by_id: dict[int, str],
-    whitelist_only: bool = False,
-) -> list[dict[str, Any]]:
-    servers_out: list[dict[str, Any]] = []
-    for s in ctx.delivery_rows:
-        if whitelist_only and not s.whitelist:
-            continue
-        if not whitelist_only and s.whitelist:
-            continue
-        servers_out.append(
-            _server_to_subscription_dict(
-                s,
-                client_uuid=client_uuid,
-                exit_ids_referenced=ctx.exit_ids_referenced,
-                client_fingerprint=fp_by_id[s.id],
-            )
+def _servers_metadata(bctx: SubscriptionBuildContext) -> list[dict[str, Any]]:
+    ctx = bctx.delivery
+    return [
+        _server_to_subscription_dict(
+            s,
+            client_uuid=bctx.client_uuid,
+            exit_ids_referenced=ctx.exit_ids_referenced,
+            client_fingerprint=bctx.fp_by_id[s.id],
         )
-    return servers_out
+        for s in ctx.delivery_rows
+    ]
 
 
-def _build_happ_json_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPayload:
-    """Happ: JSON array с балансировщиками и plain-профилями узлов."""
+def _happ_json_profiles(bctx: SubscriptionBuildContext) -> list[dict[str, Any]]:
     from app.domain.subscription.happ_competitor_json import (
         build_happ_auto_group_balanced_profile,
         build_happ_plain_server_profile,
         build_happ_tiered_wl_balanced_profile,
     )
 
-    ctx = _subscription_delivery_context(rows)
-    client_uuid = (user.vless_uuid or "").strip()
-    uri_by_id, fp_by_id = _subscription_uri_and_fingerprint_by_server_id(
-        ctx, client_uuid=client_uuid
-    )
-    pool_auto = _pool_auto_all_vless(ctx, uri_by_id)
-    pool_rec = _pool_rec_auto_vless(ctx, uri_by_id)
-    pool_wl = _pool_wl_auto_vless(ctx, uri_by_id)
-
-    json_profiles: list[dict[str, Any]] = []
-    wl_dup: dict[str, Any] | None = None
+    ctx = bctx.delivery
+    profiles: list[dict[str, Any]] = []
 
     auto_doc = build_happ_auto_group_balanced_profile(
         SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
-        pool_auto,
-        client_uuid=client_uuid,
-        fp_by_id=fp_by_id,
+        bctx.pool_auto,
+        client_uuid=bctx.client_uuid,
+        fp_by_id=bctx.fp_by_id,
         balancer_tag="auto-rec-balance",
     )
     if auto_doc:
-        json_profiles.append(auto_doc)
-        wl_dup = copy.deepcopy(auto_doc)
-        wl_dup["remarks"] = SUBSCRIPTION_AUTO_WHITELIST_LABEL
-        json_profiles.append(wl_dup)
+        profiles.append(auto_doc)
+        if bctx.pool_wl:
+            wl_auto = copy.deepcopy(auto_doc)
+            wl_auto["remarks"] = SUBSCRIPTION_AUTO_WHITELIST_LABEL
+            profiles.append(wl_auto)
 
     for s in ctx.delivery_rows:
         if s.whitelist:
@@ -607,97 +597,81 @@ def _build_happ_json_subscription_payload(user: User, rows: list[Server]) -> Sub
         doc = build_happ_plain_server_profile(
             _node_subscription_label(s, exit_ids_referenced=ctx.exit_ids_referenced),
             s,
-            client_uuid=client_uuid,
-            client_fingerprint=fp_by_id[s.id],
+            client_uuid=bctx.client_uuid,
+            client_fingerprint=bctx.fp_by_id[s.id],
         )
         if doc:
-            json_profiles.append(doc)
+            profiles.append(doc)
 
-    for wl in pool_wl:
-        remark = _node_subscription_label(wl, exit_ids_referenced=ctx.exit_ids_referenced)
+    for wl in bctx.pool_wl:
         tiered = build_happ_tiered_wl_balanced_profile(
-            remark,
-            pool_rec,
+            _node_subscription_label(wl, exit_ids_referenced=ctx.exit_ids_referenced),
+            bctx.pool_rec,
             wl,
-            client_uuid=client_uuid,
-            fp_by_id=fp_by_id,
+            client_uuid=bctx.client_uuid,
+            fp_by_id=bctx.fp_by_id,
             balancer_tag=f"wl-{int(wl.id)}-balance",
         )
         if tiered:
-            json_profiles.append(tiered)
+            profiles.append(tiered)
 
-    body, media_type = encode_happ_subscription_body(
-        fmt="json_array_raw",
-        json_profiles=json_profiles,
-    )
-
-    return SubscriptionPayload(
-        valid_until=user.subscription_until,
-        subscription_active=True,
-        servers=_servers_metadata_for_payload(
-            ctx, client_uuid=client_uuid, fp_by_id=fp_by_id
-        ),
-        vless_uris=[p.get("remarks", "json") for p in json_profiles if p.get("remarks")],
-        subscription_base64=body,
-        subscription_media_type=media_type,
-    )
+    return profiles
 
 
-def _build_base64_share_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPayload:
-    """
-    v2raytun / v2rayNG и др.: Base64 построчно.
-
-    1. Auto (рекомендуемый) — лучший по ``load_percent`` из ``include_in_auto`` без whitelist.
-    2. Auto (белые списки) — лучший из ``include_in_auto`` с whitelist.
-    3. Все узлы выдачи — ``vless://`` / ``hysteria2://``.
-    """
-    ctx = _subscription_delivery_context(rows)
-    client_uuid = (user.vless_uuid or "").strip()
-    uri_by_id, fp_by_id = _subscription_uri_and_fingerprint_by_server_id(
-        ctx, client_uuid=client_uuid
-    )
-    pool_rec = _pool_rec_auto_vless(ctx, uri_by_id)
-    pool_wl = _pool_wl_auto_vless(ctx, uri_by_id)
-
-    uris: list[str] = []
+def _base64_share_lines(bctx: SubscriptionBuildContext) -> list[str]:
+    ctx = bctx.delivery
+    lines: list[str] = []
 
     auto_rec = _auto_best_share_uri(
         SUBSCRIPTION_AUTO_RECOMMENDED_LABEL,
-        pool_rec,
-        client_uuid=client_uuid,
-        fp_by_id=fp_by_id,
+        bctx.pool_rec,
+        client_uuid=bctx.client_uuid,
+        fp_by_id=bctx.fp_by_id,
         exit_ids_referenced=ctx.exit_ids_referenced,
     )
     if auto_rec:
-        uris.append(auto_rec)
+        lines.append(auto_rec)
 
-    if pool_wl:
+    if bctx.pool_wl:
         auto_wl = _auto_best_share_uri(
             SUBSCRIPTION_AUTO_WHITELIST_LABEL,
-            pool_wl,
-            client_uuid=client_uuid,
-            fp_by_id=fp_by_id,
+            bctx.pool_wl,
+            client_uuid=bctx.client_uuid,
+            fp_by_id=bctx.fp_by_id,
             exit_ids_referenced=ctx.exit_ids_referenced,
         )
         if auto_wl:
-            uris.append(auto_wl)
+            lines.append(auto_wl)
 
     for s in ctx.delivery_rows:
-        uri = uri_by_id.get(s.id)
+        uri = bctx.uri_by_id.get(s.id)
         if uri:
-            uris.append(uri)
+            lines.append(uri)
 
-    raw = "\n".join(uris) + ("\n" if uris else "")
-    b64 = base64.standard_b64encode(raw.encode("utf-8")).decode("ascii") if raw else ""
+    return lines
+
+
+def _subscription_payload(
+    user: User,
+    bctx: SubscriptionBuildContext,
+    *,
+    happ_json: bool,
+) -> SubscriptionPayload:
+    if happ_json:
+        profiles = _happ_json_profiles(bctx)
+        body, media_type = encode_subscription_json_array(profiles)
+        vless_uris = [p.get("remarks", "json") for p in profiles if p.get("remarks")]
+    else:
+        vless_uris = _base64_share_lines(bctx)
+        body, media_type = encode_subscription_base64_lines(vless_uris)
+
     return SubscriptionPayload(
         valid_until=user.subscription_until,
         subscription_active=True,
-        servers=_servers_metadata_for_payload(
-            ctx, client_uuid=client_uuid, fp_by_id=fp_by_id
-        ),
-        vless_uris=uris,
-        subscription_base64=b64,
-        subscription_media_type="text/plain; charset=utf-8",
+        servers=_servers_metadata(bctx),
+        vless_uris=vless_uris,
+        subscription_base64=body,
+        subscription_media_type=media_type,
     )
 
 
@@ -707,6 +681,5 @@ def build_subscription_payload(
     *,
     happ_json: bool = False,
 ) -> SubscriptionPayload:
-    if happ_json:
-        return _build_happ_json_subscription_payload(user, rows)
-    return _build_base64_share_subscription_payload(user, rows)
+    bctx = _subscription_build_context(user, rows)
+    return _subscription_payload(user, bctx, happ_json=happ_json)

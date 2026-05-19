@@ -271,7 +271,7 @@ class UserRead(BaseModel):
     )
     subscription_until: date | None
     token: str = Field(
-        description="Токен для URL /sub/{token} (Base64) и /sub/{token}/json",
+        description="Токен для URL /sub/{token} (подписка) и /sub/{token}/clash (YAML)",
     )
     vless_uuid: str = Field(description="UUID клиента VLESS (общий для всех узлов в подписке)")
 

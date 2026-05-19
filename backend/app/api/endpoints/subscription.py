@@ -4,41 +4,23 @@
 Список узлов строится из БД: сначала узлы без ``whitelist`` (по ``servers.load_percent``),
 затем с ``whitelist`` (тоже по нагрузке; актуализация из Prometheus — фоновый планировщик
 в процессе API, по умолчанию каждые 5 минут, см. ``SERVER_LOAD_PROMETHEUS_SYNC_*``).
-В начале списка — ``🔥 Auto (рекомендуемый)``: Xray JSON balancer ``leastPing`` по VLESS
-без ``whitelist``, для которых ``include_in_auto`` (Happ), или группа ``url-test`` (Clash).
-Если есть VLESS с ``whitelist`` и ``include_in_auto`` — ``📄 Auto (Белые списки)`` с тем же механизмом.
+В начале — ``🔥 Auto (рекомендуемый)`` и при наличии WL-узлов ``📄 Auto (Белые списки)``:
+Happ — JSON-балансировщики; v2raytun/v2rayNG — лучший ``vless://`` по нагрузке; Clash — ``url-test``.
 Узлы с ``include_in_auto=false`` в группы Auto не попадают (остаются отдельными строками).
 
-Ответы ``GET /sub/{token}``, ``GET /sub/{token}/json`` отдают метаданные в HTTP-заголовках
-в форме Happ (``subscription-userinfo``, ``profile-update-interval``, ``profile-title``, …;
-см. https://www.happ.su/main/ru/dev-docs/app-management#standartnye-parametry) и тот же
-формат ``subscription-userinfo`` (upload, download, total, expire), что используют
-Stash / Clash Verge / v2rayNG. Подробнее: ``app.domain.subscription.userinfo``.
-
-``GET /sub/{token}``: при ``clash`` / ``hiddify`` в User-Agent — YAML (Clash Meta);
-при ``happ`` — ``application/json`` (балансировщики); иначе — ``text/plain`` Base64 (Auto + узлы).
+``GET /sub/{token}``: метаданные в HTTP-заголовках Happ; при ``clash`` / ``hiddify`` в User-Agent — YAML;
+при ``happ`` — ``application/json``; иначе — ``text/plain`` Base64.
 Явный YAML: ``GET /sub/{token}/clash``.
 
-``GET /sub/{token}/no-routing`` — то же, что ``/sub/{token}``, но без заголовка ``routing`` (Happ routing profile).
-
-При истечении подписки или исчерпании лимита устройств (``SUBSCRIPTION_MAX_DEVICES``) ответ остаётся 200:
-в теле — три информационные заглушки вместо узлов, в заголовке ``announce`` — пояснение, без HTTP 403.
-
-- GET /sub/{subscription_token}/open/{client} — 302 на ту же страницу на origin SPA (если API и сайт разъехались).
-- GET /sub/{subscription_token}/open/{client}/data — JSON для страницы открытия (Vue /sub/…/open/…: карточка клиента, диплинк, магазины); публичное имя и магазины также в GET /api/public/client-apps/{code}.
-- Неизвестный client → 302 в кабинет.
-
-Тестовые конфигурации (файл ``backend/configurations/test_configurations.json``):
-
-- GET ``/sub/test-configurations`` — как обычная подписка: Base64 со строками ``vless://`` или YAML при User-Agent с ``clash`` / ``hiddify``.
-- GET ``/sub/test-sub`` (и ``/test-sub`` в nginx) — тестовая подписка Happ (JSON array).
+Страница «открыть в клиенте» — Vue ``/sub/{token}/open/{client}`` (nginx отдаёт SPA);
+данные: ``GET /sub/{token}/open/{client}/data`` и ``GET /api/public/client-apps/{code}``.
 """
 
 from __future__ import annotations
 
 from pathlib import Path as FilePath
+
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
-from fastapi.responses import RedirectResponse
 from starlette.requests import Request
 
 from app.config import settings
@@ -47,31 +29,21 @@ from app.core.dependencies import (
     SessionDep,
     apply_request_subject_from_bearer_optional,
 )
-from app.domain.models.subscription import SubscriptionOpenPageData, SubscriptionPayload
+from app.domain.models.subscription import SubscriptionOpenPageData
 from app.domain.services.subscription_service import (
     subscription_build_open_page_data,
     subscription_client_metadata_headers,
     subscription_maybe_register_device,
     subscription_payload_rows_for_resolved_user,
-    test_sub_client_metadata_headers,
-    test_sub_payload_from_db,
-    test_subscription_client_metadata_headers,
-)
-from app.domain.services.test_configurations_service import (
-    default_test_configurations_json_path,
-    load_test_configurations,
 )
 from app.domain.subscription.build import build_clash_subscription_yaml
-from app.domain.subscription.placeholders import build_clash_subscription_placeholder_yaml
-from app.domain.subscription.test_config_share import (
-    build_test_configs_clash_yaml,
-    build_test_subscription_payload,
+from app.domain.subscription.client_ua import (
+    subscription_user_agent_is_clash_yaml,
+    subscription_user_agent_is_happ,
 )
+from app.domain.subscription.placeholders import build_clash_subscription_placeholder_yaml
 from app.domain.subscription.links import (
     normalize_subscription_store_platform,
-    subscription_cabinet_redirect_url,
-    subscription_open_redirect_would_loop,
-    subscription_open_spa_url,
     user_by_subscription_token,
 )
 from app.domain.subscription.open_apps import (
@@ -96,16 +68,6 @@ _APP_ROOT = FilePath(__file__).resolve().parents[2]
 _GEO_DIR = _APP_ROOT / "geo"
 _LOCAL_GEOIP_PATH = _GEO_DIR / "geoip.dat"
 _LOCAL_GEOSITE_PATH = _GEO_DIR / "geosite.dat"
-
-
-def _user_agent_requests_clash_yaml(request: Request) -> bool:
-    ua = (request.headers.get("user-agent") or "").lower()
-    # Clash-семейство шлёт «clash»; Hiddify Next часто без него — «hiddify» в UA.
-    return "clash" in ua or "hiddify" in ua
-
-
-def _user_agent_is_happ(request: Request) -> bool:
-    return "happ" in (request.headers.get("user-agent") or "").lower()
 
 
 def _read_local_geo_dat_or_503(path: FilePath, name: str) -> bytes:
@@ -154,67 +116,6 @@ async def subscription_geosite_dat() -> Response:
     return _geo_response(body, "geosite.dat")
 
 
-def _load_test_configuration_items():
-    try:
-        return load_test_configurations(default_test_configurations_json_path())
-    except ValueError as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-
-@router.get(
-    "/sub/test-configurations",
-    summary=(
-        "Тестовая подписка из configurations/test_configurations.json: "
-        "text/plain Base64 (строки vless://), либо YAML при User-Agent с подстрокой clash или hiddify"
-    ),
-    response_class=Response,
-)
-async def subscription_test_configs_get(request: Request) -> Response:
-    items = _load_test_configuration_items()
-    want_yaml = _user_agent_requests_clash_yaml(request)
-    headers = test_subscription_client_metadata_headers(request=request)
-    if want_yaml:
-        yaml_body = build_test_configs_clash_yaml(items)
-        return Response(
-            content=yaml_body,
-            media_type="text/yaml; charset=utf-8",
-            headers=headers,
-        )
-    payload = build_test_subscription_payload(items)
-    return Response(
-        content=payload.subscription_base64,
-        media_type="text/plain; charset=utf-8",
-        headers=headers,
-    )
-
-
-@router.get(
-    "/sub/test-sub",
-    summary="Тестовая подписка Happ: pool_rec+best_wl Auto, обычные узлы, per-WL",
-    response_class=Response,
-)
-@router.get(
-    "/test-sub",
-    summary="Алиас /sub/test-sub",
-    response_class=Response,
-    include_in_schema=False,
-)
-async def test_sub_get(
-    request: Request,
-    session: ReadonlySessionDep,
-) -> Response:
-    try:
-        payload = await test_sub_payload_from_db(session)
-    except ValueError as e:
-        raise HTTPException(status_code=503, detail=str(e)) from e
-    headers = test_sub_client_metadata_headers(request=request)
-    return Response(
-        content=payload.subscription_base64,
-        media_type=payload.subscription_media_type,
-        headers=headers,
-    )
-
-
 @router.get(
     "/sub/{subscription_token}/open/{client}/data",
     response_model=SubscriptionOpenPageData,
@@ -244,53 +145,10 @@ async def subscription_open_page_data(
     )
 
 
-@router.get(
-    "/sub/{subscription_token}/open/{client}",
-    summary=f"Перенаправление HTTP 302 на SPA-маршрут открытия клиента (допустимые client: {_OPEN_APPS_DOC})",
-    response_class=RedirectResponse,
-)
-async def subscription_open_in_app(
-    request: Request,
-    subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
-    client: str = Path(
-        ...,
-        description=f"Идентификатор клиента. Допустимые значения: {_OPEN_APPS_DOC}",
-    ),
-    platform: str | None = Query(
-        None,
-        description="Платформа для ссылок на магазины приложений",
-    ),
-) -> RedirectResponse:
-    app = get_subscription_open_app(client)
-    if app is None:
-        return RedirectResponse(
-            url=subscription_cabinet_redirect_url(settings, extra_query={"unknown_client": "1"}),
-            status_code=302,
-        )
-
-    url = subscription_open_spa_url(
-        subscription_token,
-        client,
-        platform=platform,
-        cfg=settings,
-    )
-    if subscription_open_redirect_would_loop(request, url):
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "Откройте эту ссылку через сайт (Vite в dev или nginx в проде), а не напрямую на порт API — "
-                "нужен тот же путь /sub/…/open/… на хосте с Vue. Укажите SITE_ADDRESS на URL этого сайта."
-            ),
-        )
-    return RedirectResponse(url=url, status_code=302)
-
-
 async def _subscription_by_token_response(
     request: Request,
     session: SessionDep,
     subscription_token: str,
-    *,
-    include_happ_routing: bool,
 ) -> Response:
     user = await user_by_subscription_token(session, subscription_token)
     if user is None:
@@ -298,14 +156,13 @@ async def _subscription_by_token_response(
     device_ok = await subscription_maybe_register_device(
         session=session, request=request, user=user, cfg=settings,
     )
-    want_yaml = _user_agent_requests_clash_yaml(request)
-    happ_json = _user_agent_is_happ(request)
+    want_yaml = subscription_user_agent_is_clash_yaml(request)
+    happ_json = subscription_user_agent_is_happ(request)
     headers = await subscription_client_metadata_headers(
         session,
         user,
         request=request,
         device_limit_rejected=not device_ok,
-        include_happ_routing=include_happ_routing,
     )
     if want_yaml:
         _payload, user, rows, block_reason = await subscription_payload_rows_for_resolved_user(
@@ -337,24 +194,6 @@ async def _subscription_by_token_response(
 
 
 @router.get(
-    "/sub/{subscription_token}/no-routing",
-    summary="Подписка как /sub/{token}, без заголовка routing (Happ)",
-    response_class=Response,
-)
-async def subscription_base64_by_token_no_routing(
-    request: Request,
-    session: SessionDep,
-    subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
-) -> Response:
-    return await _subscription_by_token_response(
-        request,
-        session,
-        subscription_token,
-        include_happ_routing=False,
-    )
-
-
-@router.get(
     "/sub/{subscription_token}",
     summary="Подписка: JSON (Happ UA), Base64 (прочие), YAML (clash/hiddify UA)",
     response_class=Response,
@@ -364,12 +203,7 @@ async def subscription_base64_by_token(
     session: SessionDep,
     subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
 ) -> Response:
-    return await _subscription_by_token_response(
-        request,
-        session,
-        subscription_token,
-        include_happ_routing=True,
-    )
+    return await _subscription_by_token_response(request, session, subscription_token)
 
 
 @router.get(
@@ -408,37 +242,3 @@ async def subscription_clash_by_token(
         media_type="text/yaml; charset=utf-8",
         headers=headers,
     )
-
-
-@router.get(
-    "/sub/{subscription_token}/json",
-    response_model=SubscriptionPayload,
-    summary="Подписка в формате JSON; метаданные дублируются в заголовках ответа",
-)
-async def subscription_json_by_token(
-    request: Request,
-    response: Response,
-    session: SessionDep,
-    subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
-) -> SubscriptionPayload:
-    user = await user_by_subscription_token(session, subscription_token)
-    if user is None:
-        raise HTTPException(status_code=404, detail="Неизвестный токен")
-    device_ok = await subscription_maybe_register_device(
-        session=session, request=request, user=user, cfg=settings,
-    )
-    payload, user, _rows, _block_reason = await subscription_payload_rows_for_resolved_user(
-        session,
-        user,
-        device_allowed=device_ok,
-        happ_json=_user_agent_is_happ(request),
-    )
-    headers = await subscription_client_metadata_headers(
-        session,
-        user,
-        request=request,
-        device_limit_rejected=not device_ok,
-    )
-    for key, val in headers.items():
-        response.headers[key] = val
-    return payload

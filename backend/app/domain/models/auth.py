@@ -53,7 +53,7 @@ class TelegramSubscriptionOpenClientsResponse(BaseModel):
         default=None,
         description=(
             "Origin сайта из SITE_ADDRESS на бэкенде (HTTPS или http для локальной разработки, без «/» в конце). "
-            "Полная ссылка (302 на SPA): {public_base_url}/sub/{subscription_token}/open/{client_code} — "
+            "Ссылка на страницу открытия клиента (SPA): {public_base_url}/sub/{subscription_token}/open/{client_code} — "
             "если null, задайте SITE_ADDRESS в .env API."
         ),
     )
@@ -383,7 +383,7 @@ class AccountMeResponse(BaseModel):
     subscription_token: str = Field(
         default="",
         description=(
-            "Токен для публичных URL `/sub/{token}` и `/sub/{token}/json` "
+            "Токен для публичных URL `/sub/{token}` и `/sub/{token}/clash` "
             "(не JWT); у admin пустая строка."
         ),
     )

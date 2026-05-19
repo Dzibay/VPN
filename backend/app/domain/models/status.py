@@ -9,12 +9,3 @@ class HealthResponse(BaseModel):
             "(тот же признак, что jwt_gate_active() в зависимостях API)."
         ),
     )
-
-
-class StatusResponse(BaseModel):
-    service: str
-    status: str = Field(description="Режим работы API", examples=["running"])
-    debug: bool
-    db_connected: bool = Field(
-        description="Успешный запрос к PostgreSQL (таблица users)",
-    )

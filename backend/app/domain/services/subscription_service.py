@@ -15,17 +15,16 @@ import base64
 import json
 import logging
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from app.config import Settings, settings
-from app.constants import BRAND_NAME
 from app.domain.models.subscription import SubscriptionOpenPageData, SubscriptionPayload
 from app.domain.subscription.build import (
     build_subscription_payload,
     subscription_servers_from_db,
 )
+from app.domain.subscription.client_ua import subscription_user_agent_is_happ
 from app.domain.subscription.placeholders import (
     SubscriptionPlaceholderReason,
     build_subscription_placeholder_payload,
@@ -184,53 +183,6 @@ async def subscription_maybe_register_device(
     )
 
 
-def test_subscription_client_metadata_headers(*, request: Request | None = None) -> dict[str, str]:
-    """Заголовки как у обычной подписки /sub, для статической выдачи тестовых узлов."""
-    ua = ((request.headers.get("user-agent") or "") if request is not None else "").lower()
-    routing_header = _happ_routing_header_value() if "happ" in ua else ""
-    announce_raw = "Тестовые конфигурации"
-    return {
-        "subscription-userinfo": "",
-        "profile-update-interval": "",
-        "profile-title": subscription_profile_title_header_value(f"{BRAND_NAME} test"),
-        "support-url": "",
-        "profile-web-page-url": "",
-        "announce": subscription_announce_header_value(announce_raw),
-        "announce-url": "",
-        "routing": routing_header,
-    }
-
-
-def test_sub_client_metadata_headers(*, request: Request | None = None) -> dict[str, str]:
-    """Заголовки для GET /test-sub (подписка из БД с tiered fallback)."""
-    headers = test_subscription_client_metadata_headers(request=request)
-    headers["profile-title"] = subscription_profile_title_header_value(
-        f"{BRAND_NAME} test-sub"
-    )
-    headers["announce"] = subscription_announce_header_value("Тестовая подписка /sub/test-sub")
-    return headers
-
-
-async def _test_sub_user_and_rows(session: AsyncSession) -> tuple[User, list[Server]]:
-    uuid_val = await session.scalar(
-        select(User.vless_uuid)
-        .where(User.vless_uuid.isnot(None), User.vless_uuid != "")
-        .order_by(User.id)
-        .limit(1)
-    )
-    if not uuid_val or not str(uuid_val).strip():
-        raise ValueError("Нет пользователя с vless_uuid для тестовой подписки")
-    user = User(vless_uuid=str(uuid_val).strip(), subscription_until=None)
-    rows = await subscription_servers_from_db(session)
-    return user, rows
-
-
-async def test_sub_payload_from_db(session: AsyncSession) -> SubscriptionPayload:
-    """Тестовая подписка: узлы из БД, UUID — первый пользователь с ``vless_uuid``."""
-    user, rows = await _test_sub_user_and_rows(session)
-    return build_subscription_payload(user, rows, happ_json=True)
-
-
 async def subscription_client_metadata_headers(
     session: AsyncSession,
     user: User,
@@ -257,10 +209,9 @@ async def subscription_client_metadata_headers(
         announce_raw = ANNOUNCE_RAW_SUBSCRIPTION_EXPIRED
     else:
         announce_raw = ANNOUNCE_RAW
-    ua = ((request.headers.get("user-agent") or "") if request is not None else "").lower()
     routing_header = (
         _happ_routing_header_value()
-        if include_happ_routing and "happ" in ua
+        if include_happ_routing and subscription_user_agent_is_happ(request)
         else ""
     )
     headers: dict[str, str] = {

@@ -103,7 +103,6 @@ export async function fetchJson(path, options = {}) {
  * URL подписки для VPN-клиента: GET возвращает text/plain Base64 или text/yaml,
  * если User-Agent содержит «clash» или «hiddify» (без учёта регистра).
  * Для клиентов без такого UA: …/sub/{token}/clash — всегда Clash YAML.
- * JSON с узлами и vless://: …/sub/{token}/json
  * В проде задайте VITE_SUBSCRIPTION_BASE_URL=https://api.yourvpn.com
  */
 export function subscriptionPublicUrl(token) {

@@ -1,3 +1,3 @@
-from app.domain.models.status import HealthResponse, StatusResponse
+from app.domain.models.status import HealthResponse
 
-__all__ = ["HealthResponse", "StatusResponse"]
+__all__ = ["HealthResponse"]

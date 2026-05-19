@@ -10,7 +10,7 @@ from app.config import Settings, settings
 from app.constants import BRAND_NAME
 from app.domain.models.subscription import SubscriptionPayload
 from app.domain.public_urls import _telegram_bot_username_clean
-from app.domain.subscription.happ_subscription_encode import encode_happ_subscription_body
+from app.domain.subscription.happ_subscription_encode import encode_subscription_json_array
 from app.infrastructure.persistence.models.user import User
 
 SubscriptionPlaceholderReason = Literal["expired", "device_limit"]
@@ -93,10 +93,7 @@ def build_subscription_placeholder_payload(
     remarks = subscription_placeholder_remarks(reason, cfg=cfg)
     if happ_json:
         profiles = [build_happ_info_placeholder_profile(remark) for remark in remarks]
-        body, media_type = encode_happ_subscription_body(
-            fmt="json_array_raw",
-            json_profiles=profiles,
-        )
+        body, media_type = encode_subscription_json_array(profiles)
     else:
         body, media_type = "", "text/plain; charset=utf-8"
     return SubscriptionPayload(
