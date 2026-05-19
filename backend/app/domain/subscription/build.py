@@ -1,9 +1,9 @@
-"""Сборка тела подписки: Happ Base64 (JSON + share-ссылки), Clash Meta YAML.
+"""Сборка тела подписки: Happ JSON array, Clash Meta YAML.
 
-Порядок Happ (``text/plain`` Base64, построчно):
+Порядок Happ (``application/json``, массив профилей):
 
-1. JSON Auto (рекомендуемый), 2. JSON Auto (белые списки, дубликат),
-3. ``vless://`` / ``hysteria2://`` обычных узлов, 4. JSON tiered WL.
+1. Auto (рекомендуемый), 2. Auto (белые списки, дубликат),
+3. Обычные узлы (JSON, VLESS/Hysteria2), 4. Tiered WL.
 
 Clash: ``url-test`` по пулу Auto, затем все узлы.
 
@@ -19,7 +19,6 @@ Clash: ``url-test`` по пулу Auto, затем все узлы.
 from __future__ import annotations
 
 import copy
-import json
 import logging
 import secrets
 from dataclasses import dataclass
@@ -519,9 +518,10 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
 
 
 def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPayload:
-    """Happ: JSON Auto-группы + share-ссылки обычных узлов + tiered WL."""
+    """Happ: все узлы — JSON-профили в ``application/json`` array."""
     from app.domain.subscription.happ_competitor_json import (
         build_happ_auto_group_balanced_profile,
+        build_happ_plain_server_profile,
         build_happ_tiered_wl_balanced_profile,
     )
 
@@ -534,8 +534,7 @@ def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPa
     pool_rec = _pool_rec_auto_vless(ctx, uri_by_id)
     pool_wl = _pool_wl_auto_vless(ctx, uri_by_id)
 
-    share_lines: list[str] = []
-    tiered_profiles: list[dict[str, Any]] = []
+    json_profiles: list[dict[str, Any]] = []
     wl_dup: dict[str, Any] | None = None
 
     auto_doc = build_happ_auto_group_balanced_profile(
@@ -546,15 +545,22 @@ def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPa
         balancer_tag="auto-rec-balance",
     )
     if auto_doc:
+        json_profiles.append(auto_doc)
         wl_dup = copy.deepcopy(auto_doc)
         wl_dup["remarks"] = SUBSCRIPTION_AUTO_WHITELIST_LABEL
+        json_profiles.append(wl_dup)
 
     for s in ctx.delivery_rows:
         if s.whitelist:
             continue
-        uri = uri_by_id.get(s.id)
-        if uri:
-            share_lines.append(uri)
+        doc = build_happ_plain_server_profile(
+            _node_subscription_label(s, exit_ids_referenced=ctx.exit_ids_referenced),
+            s,
+            client_uuid=client_uuid,
+            client_fingerprint=fp_by_id[s.id],
+        )
+        if doc:
+            json_profiles.append(doc)
 
     for wl in pool_wl:
         remark = _node_subscription_label(wl, exit_ids_referenced=ctx.exit_ids_referenced)
@@ -567,26 +573,11 @@ def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPa
             balancer_tag=f"wl-{int(wl.id)}-balance",
         )
         if tiered:
-            tiered_profiles.append(tiered)
-
-    ordered_lines: list[str] = []
-    if auto_doc:
-        ordered_lines.append(
-            json.dumps(auto_doc, ensure_ascii=False, separators=(",", ":"))
-        )
-    if wl_dup:
-        ordered_lines.append(
-            json.dumps(wl_dup, ensure_ascii=False, separators=(",", ":"))
-        )
-    ordered_lines.extend(share_lines)
-    for tiered in tiered_profiles:
-        ordered_lines.append(
-            json.dumps(tiered, ensure_ascii=False, separators=(",", ":"))
-        )
+            json_profiles.append(tiered)
 
     body, media_type = encode_happ_subscription_body(
-        fmt="lines",
-        ordered_lines=ordered_lines,
+        fmt="json_array_raw",
+        json_profiles=json_profiles,
     )
 
     servers_out: list[dict[str, Any]] = []
@@ -606,16 +597,7 @@ def build_subscription_payload(user: User, rows: list[Server]) -> SubscriptionPa
         valid_until=user.subscription_until,
         subscription_active=True,
         servers=servers_out,
-        vless_uris=[
-            *([auto_doc["remarks"]] if auto_doc and auto_doc.get("remarks") else []),
-            *([wl_dup["remarks"]] if wl_dup and wl_dup.get("remarks") else []),
-            *share_lines,
-            *(
-                p.get("remarks", "json")
-                for p in tiered_profiles
-                if p.get("remarks")
-            ),
-        ],
+        vless_uris=[p.get("remarks", "json") for p in json_profiles if p.get("remarks")],
         subscription_base64=body,
         subscription_media_type=media_type,
     )
