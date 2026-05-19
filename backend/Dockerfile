@@ -22,7 +22,6 @@ COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/app ./app
-COPY backend/configurations ./configurations
 COPY backend/worker ./worker
 COPY database/init.sql ./database/init.sql
 COPY database/migrate.sql ./database/migrate.sql
