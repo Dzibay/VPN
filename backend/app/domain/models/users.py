@@ -381,6 +381,11 @@ class UserUpdate(BaseModel):
         default=None,
         description="Момент регистрации (UTC); null — сбросить дату",
     )
+    traffic_limit_bytes: int | None = Field(
+        default=None,
+        ge=0,
+        description="Персональный потолок трафика (байты); null — без лимита",
+    )
 
     @field_validator("registered_at", mode="before")
     @classmethod

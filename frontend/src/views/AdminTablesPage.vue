@@ -148,6 +148,8 @@ const formAccountRole = ref('client')
 const formRegisteredAt = ref('')
 /** @username при редактировании (только отображение) */
 const editingUserTgUsername = ref('')
+/** Лимит трафика в ГиБ (1024³); пусто — без лимита */
+const formTrafficLimitGib = ref('')
 
 const usersSyncLoading = ref(false)
 const usersSyncError = ref(null)
@@ -433,6 +435,7 @@ function openModal() {
     formSubUntil.value = ''
     formAccountRole.value = 'client'
     formRegisteredAt.value = ''
+    formTrafficLimitGib.value = ''
     editingUserTgUsername.value = ''
   } else {
     formName.value = ''
@@ -534,6 +537,7 @@ function openEditUser(u) {
       ? u.account_role
       : 'client'
   formRegisteredAt.value = utcIsoToRuDmy(u.registered_at)
+  formTrafficLimitGib.value = trafficLimitBytesToFormGib(u.traffic_limit_bytes)
   modalOpen.value = true
 }
 
@@ -617,6 +621,28 @@ function normalizePort(raw) {
   return Math.min(65535, Math.max(1, n))
 }
 
+const TRAFFIC_GIB_BYTES = 1024 ** 3
+
+/** Байты лимита → целые ГиБ для формы; null/0 — пустая строка */
+function trafficLimitBytesToFormGib(bytes) {
+  if (bytes == null || bytes === '') return ''
+  const n = Number(bytes)
+  if (!Number.isFinite(n) || n <= 0) return ''
+  return String(Math.round(n / TRAFFIC_GIB_BYTES))
+}
+
+/**
+ * ГиБ из формы → байты для API; пусто → null (без лимита);
+ * неверное значение → undefined.
+ */
+function trafficLimitFormGibToBytes(raw) {
+  const s = String(raw ?? '').trim().replace(',', '.')
+  if (!s) return null
+  const gib = Number.parseFloat(s)
+  if (!Number.isFinite(gib) || gib < 0 || gib > 10_000) return undefined
+  return Math.round(gib * TRAFFIC_GIB_BYTES)
+}
+
 /** Тариф Мбит/с: пусто → null; иначе 1…1e6 */
 function normalizeNetworkCapMbps(raw) {
   const s = String(raw ?? '').trim()
@@ -644,6 +670,15 @@ async function submitSaveUser() {
         'Дата регистрации: укажите дату как ДД.ММ.ГГГГ или очистите поле'
       return
     }
+    const trafficLimitBytes =
+      editingUserId.value != null
+        ? trafficLimitFormGibToBytes(formTrafficLimitGib.value)
+        : null
+    if (editingUserId.value != null && trafficLimitBytes === undefined) {
+      createError.value =
+        'Лимит трафика: укажите неотрицательное число гигабайт (до 10000) или очистите поле'
+      return
+    }
 
     if (editingUserId.value != null) {
       await fetchJson(`/api/users/${editingUserId.value}`, {
@@ -652,6 +687,7 @@ async function submitSaveUser() {
           subscription_until: subIso,
           account_role: formAccountRole.value,
           registered_at: registrationDateTimeUtcOrNull(formRegisteredAt.value),
+          traffic_limit_bytes: trafficLimitBytes,
         }),
       })
     } else {
@@ -1433,7 +1469,7 @@ watch(formIsCascadeRuEntry, (v) => {
           <tbody>
             <tr v-for="u in sortedUsers" :key="u.id">
               <td class="num">{{ u.id }}</td>
-              <td>{{ u.email ?? '—' }}</td>
+              <td class="email-cell" :title="u.email || undefined">{{ u.email ?? '—' }}</td>
               <td class="tg-display-cell" :title="userTelegramDisplay(u)">
                 <span class="tg-display-cell__text">{{ userTelegramDisplay(u) }}</span>
               </td>
@@ -2072,8 +2108,6 @@ watch(formIsCascadeRuEntry, (v) => {
                 <option value="manager">Менеджер (реферальные токены)</option>
                 <option value="admin">Администратор</option>
               </select>
-              <span class="field-hint"
-                >Администратору нужен пароль (вход по email). Менеджер — только раздел рефералов.</span>
             </label>
             <label v-if="editingUserId != null" class="field">
               <span>Дата регистрации (UTC)</span>
@@ -2089,8 +2123,7 @@ watch(formIsCascadeRuEntry, (v) => {
                 spellcheck="false"
               />
               <span class="field-hint"
-                >Календарный день в UTC, формат день.месяц.год. Пустое поле —
-                сбросить дату (как у старых импортов).</span>
+                >Календарный день в UTC, формат день.месяц.год</span>
             </label>
             <label class="field">
               <span>Подписка до (необязательно)</span>
@@ -2106,6 +2139,30 @@ watch(formIsCascadeRuEntry, (v) => {
                 spellcheck="false"
               />
               <span class="field-hint">Формат: день.месяц.год</span>
+            </label>
+            <label v-if="editingUserId != null" class="field">
+              <span>Лимит трафика (ГиБ)</span>
+              <input
+                v-model="formTrafficLimitGib"
+                type="number"
+                min="0"
+                max="10000"
+                step="1"
+                inputmode="decimal"
+                placeholder="без лимита"
+                autocomplete="off"
+              />
+              <span class="field-hint">
+                <template v-if="editingUserRow">
+                  Сейчас использовано:
+                  {{
+                    formatTrafficWithLimit(
+                      editingUserRow.total_traffic_bytes,
+                      editingUserRow.traffic_limit_bytes,
+                    )
+                  }}.
+                </template>
+              </span>
             </label>
             <p v-if="createError" class="form-err">{{ createError }}</p>
             <div
@@ -2850,6 +2907,15 @@ watch(formIsCascadeRuEntry, (v) => {
 }
 .link-cell .btn-secondary {
   margin-right: 0.35rem;
+}
+
+.email-cell {
+  max-width: 14rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .tg-display-cell {
