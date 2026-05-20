@@ -1,0 +1,35 @@
+"""Типы и константы задач оповещения (таблица ``tasks``)."""
+
+from app.domain.tasks.notification_task_types import (
+    NOTIFICATION_TASK_TYPES,
+    NotificationTaskType,
+    NOTIFY_PAYMENT,
+    NOTIFY_REF_PAY,
+    NOTIFY_REF_REG,
+    NOTIFY_REG_1H_HAS_TRAFFIC,
+    NOTIFY_REG_1H_NO_TRAFFIC,
+    NOTIFY_SUB_EXPIRE,
+    NOTIFY_SUB_EXPIRE_0D,
+    NOTIFY_SUB_EXPIRE_1D,
+    NOTIFY_SUB_EXPIRE_3D,
+    NOTIFY_SUB_EXPIRED_7D,
+    NOTIFY_TRAFFIC_LOW,
+    NOTIFY_TRAFFIC_OVER,
+)
+
+__all__ = [
+    "NOTIFICATION_TASK_TYPES",
+    "NotificationTaskType",
+    "NOTIFY_PAYMENT",
+    "NOTIFY_REF_PAY",
+    "NOTIFY_REF_REG",
+    "NOTIFY_REG_1H_HAS_TRAFFIC",
+    "NOTIFY_REG_1H_NO_TRAFFIC",
+    "NOTIFY_SUB_EXPIRE",
+    "NOTIFY_SUB_EXPIRE_0D",
+    "NOTIFY_SUB_EXPIRE_1D",
+    "NOTIFY_SUB_EXPIRE_3D",
+    "NOTIFY_SUB_EXPIRED_7D",
+    "NOTIFY_TRAFFIC_LOW",
+    "NOTIFY_TRAFFIC_OVER",
+]

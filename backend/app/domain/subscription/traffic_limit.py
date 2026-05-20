@@ -6,7 +6,8 @@
 
 Поток:
 1. ``collect_xray_user_traffic_all_servers`` обновляет ``user_server_traffic``.
-2. ``enforce_traffic_limits_after_collect`` находит превысивших и ставит ``sync_xray_clients_all_servers``.
+2. ``enforce_traffic_limits_after_collect`` находит превысивших, ставит ``sync_xray_clients_all_servers``,
+   создаёт ``notify_traffic_low`` / ``notify_traffic_over`` (см. ``traffic_notify_jobs``).
 3. Список клиентов Xray — ``subscription_active_sql()`` (календарь + трафик < лимита или лимит NULL).
 """
 
@@ -36,6 +37,8 @@ class TrafficLimitEnforceResult:
     over_limit_count: int = 0
     over_limit_user_ids: tuple[int, ...] = ()
     sync_enqueued: bool = False
+    notify_low_created: int = 0
+    notify_over_created: int = 0
 
 
 def default_traffic_limit_bytes(cfg: Settings | None = None) -> int:
@@ -106,10 +109,28 @@ def enforce_traffic_limits_after_collect(
         )
         sync_enqueued = enqueue_xray_clients_sync_for_access_change()
 
+    notify_low = 0
+    notify_over = 0
+    if cfg.trial_traffic_limit_enabled:
+        from app.domain.subscription.traffic_notify_jobs import (
+            enqueue_traffic_notification_tasks_after_collect,
+        )
+
+        notify_result = enqueue_traffic_notification_tasks_after_collect(
+            session,
+            over_limit_user_ids=over_ids,
+        )
+        notify_low = notify_result.low_created
+        notify_over = notify_result.over_created
+        if notify_low or notify_over:
+            session.commit()
+
     return TrafficLimitEnforceResult(
         over_limit_count=len(over_ids),
         over_limit_user_ids=tuple(over_ids),
         sync_enqueued=sync_enqueued,
+        notify_low_created=notify_low,
+        notify_over_created=notify_over,
     )
 
 

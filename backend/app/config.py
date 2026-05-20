@@ -293,8 +293,9 @@ class Settings(BaseSettings):
     trial_traffic_limit_enabled: bool = Field(
         default=True,
         description=(
-            "После батч-сбора трафика Xray: сравнивать накопленный трафик с users.traffic_limit_bytes "
-            "и при превышении ставить sync клиентов на узлах (снятие UUID с конфигов)."
+            "После батч-сбора трафика Xray: сравнивать накопленный трафик с users.traffic_limit_bytes, "
+            "при превышении ставить sync клиентов на узлах (снятие UUID с конфигов), "
+            "создавать задачи notify_traffic_low (<1 GiB остатка) и notify_traffic_over."
         ),
     )
     trial_traffic_limit_gib: int = Field(

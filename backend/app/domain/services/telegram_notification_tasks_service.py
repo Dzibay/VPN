@@ -12,21 +12,9 @@ from app.domain.models.telegram_notification_tasks import (
     TelegramNotificationTaskItem,
     TelegramNotificationTasksListResponse,
 )
+from app.domain.tasks.notification_task_types import NOTIFICATION_TASK_TYPES
 from app.infrastructure.persistence.models.task import Task
 from app.infrastructure.persistence.models.user import User
-
-_NOTIFICATION_TYPES: tuple[str, ...] = (
-    "notify_ref_reg",
-    "notify_ref_pay",
-    "notify_payment",
-    "notify_sub_expire_3d",
-    "notify_sub_expire_1d",
-    "notify_sub_expire_0d",
-    "notify_sub_expire",
-    "notify_sub_expired_7d",
-    "notify_reg_1h_has_traffic",
-    "notify_reg_1h_no_traffic",
-)
 
 
 async def list_pending_notification_tasks(
@@ -41,7 +29,7 @@ async def list_pending_notification_tasks(
         .outerjoin(rr, rr.id == Task.referee_id)
         .where(
             Task.status == "pending",
-            Task.task_type.in_(_NOTIFICATION_TYPES),
+            Task.task_type.in_(NOTIFICATION_TASK_TYPES),
         )
         .order_by(Task.created_at.asc())
     )
@@ -49,7 +37,7 @@ async def list_pending_notification_tasks(
     items: list[TelegramNotificationTaskItem] = []
     for task, rec_tid, ref_tid in rows:
         ttype = task.task_type
-        if ttype not in _NOTIFICATION_TYPES:
+        if ttype not in NOTIFICATION_TASK_TYPES:
             continue
         items.append(
             TelegramNotificationTaskItem(
@@ -106,7 +94,7 @@ async def acknowledge_notification_tasks_with_statuses(
             .where(
                 Task.id.in_(ids),
                 Task.status == "pending",
-                Task.task_type.in_(_NOTIFICATION_TYPES),
+                Task.task_type.in_(NOTIFICATION_TASK_TYPES),
             )
             .values(status=status, done_at=now)
             .returning(Task.id)

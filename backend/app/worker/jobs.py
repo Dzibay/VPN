@@ -530,12 +530,21 @@ def collect_xray_user_traffic_all_servers() -> dict[str, Any]:
             trial_result = {
                 "traffic_limit_over": enforced.over_limit_count,
                 "traffic_limit_sync_enqueued": enforced.sync_enqueued,
+                "traffic_notify_low": enforced.notify_low_created,
+                "traffic_notify_over": enforced.notify_over_created,
             }
-            if enforced.over_limit_count:
+            if (
+                enforced.over_limit_count
+                or enforced.notify_low_created
+                or enforced.notify_over_created
+            ):
                 log.info(
-                    "collect_xray_user_traffic_all_servers: over traffic limit=%s sync=%s",
+                    "collect_xray_user_traffic_all_servers: over limit=%s sync=%s "
+                    "notify_low=%s notify_over=%s",
                     enforced.over_limit_count,
                     enforced.sync_enqueued,
+                    enforced.notify_low_created,
+                    enforced.notify_over_created,
                 )
         except Exception:
             log.exception(

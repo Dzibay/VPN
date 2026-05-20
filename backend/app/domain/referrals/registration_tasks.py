@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.tasks.notification_task_types import NOTIFY_REF_REG
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.task import Task
 
@@ -28,7 +29,7 @@ async def create_notify_ref_reg_task_if_applicable(
         return
     session.add(
         Task(
-            task_type="notify_ref_reg",
+            task_type=NOTIFY_REF_REG,
             user_id=owner_id,
             referee_id=ref_id,
             bonus_days=None,

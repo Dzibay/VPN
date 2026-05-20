@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.domain.referrals.repository import increment_referral_counter
+from app.domain.tasks.notification_task_types import NOTIFY_REF_PAY
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.task import Task
 from app.infrastructure.persistence.models.user import User
@@ -64,7 +65,7 @@ async def apply_referral_bonus_on_payment(
 
     session.add(
         Task(
-            task_type="notify_ref_pay",
+            task_type=NOTIFY_REF_PAY,
             user_id=owner_id,
             referee_id=int(referee_user_id),
             bonus_days=bonus_days,

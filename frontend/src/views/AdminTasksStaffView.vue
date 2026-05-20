@@ -38,6 +38,14 @@ const TASK_TYPE_OPTIONS = [
     value: 'notify_reg_1h_no_traffic',
     label: 'Через ~1 ч после регистрации: нет трафика (notify_reg_1h_no_traffic)',
   },
+  {
+    value: 'notify_traffic_low',
+    label: 'Трафик: осталось меньше 1 ГБ (notify_traffic_low)',
+  },
+  {
+    value: 'notify_traffic_over',
+    label: 'Трафик: лимит исчерпан (notify_traffic_over)',
+  },
 ]
 
 const TASK_STATUS_OPTIONS = [

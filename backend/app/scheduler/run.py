@@ -11,8 +11,8 @@ TCP-доступность узлов в Redis, задачи Telegram ``notify_s
 
 Что куда отнесено:
 
-* **periodic** — сбор трафика Xray, ежедневный sync клиентов Xray (RQ), sync нагрузки из Prometheus,
-  фоновый TCP-опрос узлов.
+* **periodic** — сбор трафика Xray (после батча: лимит, sync, ``notify_traffic_*``), ежедневный sync
+  клиентов Xray (RQ), sync нагрузки из Prometheus, фоновый TCP-опрос узлов.
 * **telegram_notify** — раз в сутки ``notify_sub_expire_*``; периодически (~5 мин)
   ``notify_reg_1h_has_traffic`` / ``notify_reg_1h_no_traffic`` после регистрации.
 """

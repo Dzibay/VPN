@@ -15,17 +15,19 @@ from sqlalchemy import Date, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.time import utc_today
+from app.domain.tasks.notification_task_types import (
+    NOTIFY_SUB_EXPIRE,
+    NOTIFY_SUB_EXPIRE_0D,
+    NOTIFY_SUB_EXPIRE_1D,
+    NOTIFY_SUB_EXPIRE_3D,
+    NOTIFY_SUB_EXPIRED_7D,
+    SUBSCRIPTION_EXPIRY_NOTIFY_TYPES,
+)
 from app.infrastructure.database.session import SessionLocal
 from app.infrastructure.persistence.models.task import Task
 from app.infrastructure.persistence.models.user import User
 
 log = logging.getLogger("app.subscription.expiry_notify")
-
-_EXPIRE_NOTIFY_TYPES: tuple[str, ...] = (
-    "notify_sub_expire_3d",
-    "notify_sub_expire_1d",
-    "notify_sub_expire_0d",
-)
 
 
 def _pending_expire_keys_for_users(session: Session, user_ids: list[int]) -> set[tuple[int, str]]:
@@ -36,7 +38,7 @@ def _pending_expire_keys_for_users(session: Session, user_ids: list[int]) -> set
         select(Task.user_id, Task.task_type).where(
             Task.user_id.in_(user_ids),
             Task.status == "pending",
-            Task.task_type.in_(_EXPIRE_NOTIFY_TYPES),
+            Task.task_type.in_(SUBSCRIPTION_EXPIRY_NOTIFY_TYPES),
         ),
     ).all()
     return {(int(uid), str(tt)) for uid, tt in rows}
@@ -44,11 +46,11 @@ def _pending_expire_keys_for_users(session: Session, user_ids: list[int]) -> set
 
 def _task_types_for_delta(days_until_end: int) -> Iterable[str]:
     if days_until_end == 3:
-        yield "notify_sub_expire_3d"
+        yield NOTIFY_SUB_EXPIRE_3D
     if days_until_end == 1:
-        yield "notify_sub_expire_1d"
+        yield NOTIFY_SUB_EXPIRE_1D
     if days_until_end == 0:
-        yield "notify_sub_expire_0d"
+        yield NOTIFY_SUB_EXPIRE_0D
 
 
 def enqueue_subscription_expiry_notification_tasks() -> int:
@@ -104,10 +106,6 @@ def enqueue_subscription_expiry_notification_tasks() -> int:
             len(rows),
         )
     return created
-
-
-_SUB_EXPIRED_TASK_TYPE = "notify_sub_expire"
-_SUB_EXPIRED_7D_TASK_TYPE = "notify_sub_expired_7d"
 
 
 def _user_not_registered_on_utc_day(today: date):
@@ -199,7 +197,7 @@ def enqueue_subscription_expired_notification_tasks() -> int:
 
     return _enqueue_sub_expired_notification_tasks(
         days_after_last_paid=1,
-        task_type=_SUB_EXPIRED_TASK_TYPE,
+        task_type=NOTIFY_SUB_EXPIRE,
         skip_registered_today=True,
     )
 
@@ -209,6 +207,6 @@ def enqueue_subscription_expired_7d_notification_tasks() -> int:
 
     return _enqueue_sub_expired_notification_tasks(
         days_after_last_paid=7,
-        task_type=_SUB_EXPIRED_7D_TASK_TYPE,
+        task_type=NOTIFY_SUB_EXPIRED_7D,
         skip_registered_today=False,
     )

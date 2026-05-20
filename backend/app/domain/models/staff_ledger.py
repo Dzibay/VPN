@@ -4,23 +4,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
-
-StaffCreatableTaskType = Literal[
-    "notify_ref_reg",
-    "notify_ref_pay",
-    "notify_payment",
-    "notify_sub_expire_3d",
-    "notify_sub_expire_1d",
-    "notify_sub_expire_0d",
-    "notify_sub_expire",
-    "notify_sub_expired_7d",
-    "notify_reg_1h_has_traffic",
-    "notify_reg_1h_no_traffic",
-]
+from app.domain.tasks.notification_task_types import StaffCreatableTaskType
 
 
 class StaffPaymentItem(BaseModel):

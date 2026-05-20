@@ -9,20 +9,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.domain.tasks.notification_task_types import (
+    NOTIFY_REG_1H_HAS_TRAFFIC,
+    NOTIFY_REG_1H_NO_TRAFFIC,
+    POST_REGISTRATION_NOTIFY_TYPES,
+)
 from app.infrastructure.database.session import SessionLocal
 from app.infrastructure.persistence.models.task import Task
 from app.infrastructure.persistence.models.user import User
 from app.infrastructure.persistence.models.user_server_traffic import UserServerTraffic
 
 log = logging.getLogger("app.users.post_registration_notify")
-
-POST_REG_NOTIFY_TYPES: tuple[str, ...] = (
-    "notify_reg_1h_has_traffic",
-    "notify_reg_1h_no_traffic",
-)
-
-_TASK_TYPE_HAS_TRAFFIC = "notify_reg_1h_has_traffic"
-_TASK_TYPE_NO_TRAFFIC = "notify_reg_1h_no_traffic"
 
 
 def _utc_now() -> datetime:
@@ -36,7 +33,7 @@ def _users_with_post_reg_task(session: Session, user_ids: list[int]) -> set[int]
     rows = session.execute(
         select(Task.user_id).where(
             Task.user_id.in_(user_ids),
-            Task.task_type.in_(POST_REG_NOTIFY_TYPES),
+            Task.task_type.in_(POST_REGISTRATION_NOTIFY_TYPES),
         ),
     ).all()
     return {int(uid) for uid, in rows}
@@ -89,7 +86,7 @@ def enqueue_post_registration_notification_tasks() -> int:
         for uid in candidates:
             if uid in staged:
                 continue
-            task_type = _TASK_TYPE_HAS_TRAFFIC if uid in with_traffic else _TASK_TYPE_NO_TRAFFIC
+            task_type = NOTIFY_REG_1H_HAS_TRAFFIC if uid in with_traffic else NOTIFY_REG_1H_NO_TRAFFIC
             db.add(
                 Task(
                     task_type=task_type,

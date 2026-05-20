@@ -1,19 +1,15 @@
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-NotificationTaskType = Literal[
-    "notify_ref_reg",
-    "notify_ref_pay",
-    "notify_payment",
-    "notify_sub_expire_3d",
-    "notify_sub_expire_1d",
-    "notify_sub_expire_0d",
-    "notify_sub_expire",
-    "notify_sub_expired_7d",
-    "notify_reg_1h_has_traffic",
-    "notify_reg_1h_no_traffic",
+from app.domain.tasks.notification_task_types import NotificationTaskType
+
+__all__ = [
+    "NotificationTaskType",
+    "TelegramNotificationTaskItem",
+    "TelegramNotificationTasksListResponse",
+    "TelegramTasksAckBody",
+    "TelegramTasksAckResponse",
 ]
 
 
