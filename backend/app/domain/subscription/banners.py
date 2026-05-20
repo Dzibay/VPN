@@ -10,6 +10,7 @@ from datetime import date
 from app.config import Settings, settings
 from app.core.time import utc_today
 from app.domain.public_urls import telegram_bot_public_page_url
+from app.domain.subscription.placeholders import SubscriptionPlaceholderReason
 from app.domain.subscription.userinfo import happ_utf8_header_value
 
 _EXPIRE_WARNING_DAYS = 3
@@ -59,12 +60,40 @@ def _sub_info_headers(cfg: Settings) -> dict[str, str]:
     return headers
 
 
+_BLOCK_SUB_INFO: dict[SubscriptionPlaceholderReason, tuple[str, str]] = {
+    "traffic_limit": (
+        "Исчерпан лимит трафика. Продлите подписку в боте.",
+        "red",
+    ),
+    "expired": (
+        "Подписка истекла. Продлите её в боте.",
+        "red",
+    ),
+    "device_limit": (
+        "Достигнут лимит устройств. Освободите слот в боте.",
+        "red",
+    ),
+}
+
+
+def _block_sub_info_headers(reason: SubscriptionPlaceholderReason) -> dict[str, str]:
+    text, color = _BLOCK_SUB_INFO[reason]
+    headers: dict[str, str] = {
+        "sub-info-text": happ_utf8_header_value(text, max_chars=_MAX_INFO_TEXT),
+        "sub-info-color": color,
+        "sub-info-button-text": happ_utf8_header_value("Продлить", max_chars=_MAX_INFO_BTN),
+        "sub-info-button-link": renew_button_link(),
+    }
+    return headers
+
+
 def build_subscription_banner_headers(
     *,
     valid_until: date | None,
     cfg: Settings | None = None,
+    block_reason: SubscriptionPlaceholderReason | None = None,
 ) -> dict[str, str]:
-    """``sub-expire`` (+ кнопка в бота); ``sub-info`` только если expire-баннер не активен."""
+    """``sub-expire`` (+ кнопка в бота); ``sub-info`` — предупреждение или текст из env."""
     cfg = cfg or settings
     if not cfg.subscription_sub_expire_enabled:
         return {"sub-expire": "0"}
@@ -73,6 +102,10 @@ def build_subscription_banner_headers(
     link = renew_button_link(cfg)
     if link:
         headers["sub-expire-button-link"] = link
+
+    if block_reason is not None:
+        headers.update(_block_sub_info_headers(block_reason))
+        return headers
 
     if subscription_expire_banner_active(valid_until):
         return headers

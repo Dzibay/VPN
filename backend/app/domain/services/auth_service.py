@@ -39,6 +39,7 @@ from app.domain.subscription.devices import (
     effective_subscription_device_limit,
     list_subscription_connection_records,
 )
+from app.domain.subscription.traffic_limit import apply_default_traffic_limit_for_new_client
 from app.domain.subscription.validity import (
     subscription_until_after_registration,
     trial_extra_days_for_referral_link,
@@ -100,6 +101,7 @@ async def register_with_email(
         token=new_subscription_token(),
         vless_uuid=new_vless_uuid(),
     )
+    apply_default_traffic_limit_for_new_client(user, cfg=cfg)
     try:
         await table_insert(session, user)
     except IntegrityError as e:
@@ -144,7 +146,7 @@ async def account_me_from_user(
         telegram_bot_page_url=telegram_bot_public_page_url(cfg),
         registered_at=user.registered_at,
         subscription_until=user.subscription_until,
-        subscription_active=user_has_active_subscription(user),
+        subscription_active=user_has_active_subscription(user, used_bytes=total_b),
         subscription_token=user.token,
         subscription_open_clients=build_subscription_open_client_items(),
         subscription_connections_count=len(subs_conns),
@@ -153,6 +155,9 @@ async def account_me_from_user(
         traffic_up_bytes=up_b,
         traffic_down_bytes=down_b,
         traffic_total_bytes=total_b,
+        traffic_limit_bytes=(
+            int(user.traffic_limit_bytes) if user.traffic_limit_bytes is not None else None
+        ),
         has_site_password=bool(user.password_hash),
     )
 

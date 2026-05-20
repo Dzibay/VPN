@@ -289,7 +289,17 @@ class TelegramSiteLinkPreviewResponse(BaseModel):
     subscription_until: date | None = None
     subscription_active: bool = Field(
         default=False,
-        description="True, если срок подписки ещё действует.",
+        description="True, если срок подписки ещё действует (дата и лимит трафика).",
+    )
+    traffic_total_bytes: int = Field(
+        default=0,
+        ge=0,
+        description="Накопленный трафик up+down по всем узлам, байты.",
+    )
+    traffic_limit_bytes: int | None = Field(
+        default=None,
+        ge=0,
+        description="Потолок трафика в байтах; null — без лимита.",
     )
     can_add_credentials: bool = Field(
         default=True,
@@ -424,6 +434,13 @@ class AccountMeResponse(BaseModel):
         default=0,
         ge=0,
         description="Итого в байтах: traffic_up_bytes + traffic_down_bytes.",
+    )
+    traffic_limit_bytes: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Персональный потолок трафика (байты, up+down); null — без лимита (обычно после оплаты)."
+        ),
     )
     has_site_password: bool = Field(
         default=False,

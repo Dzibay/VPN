@@ -59,11 +59,13 @@ from app.domain.public_urls import public_spa_base_url, telegram_bot_public_page
 from app.domain.referrals.registration_tasks import create_notify_ref_reg_task_if_applicable
 from app.domain.referrals.repository import increment_referral_counter
 from app.domain.users.identifiers import new_subscription_token, new_vless_uuid
+from app.domain.subscription.traffic_limit import apply_default_traffic_limit_for_new_client
 from app.domain.subscription.validity import (
     subscription_until_after_registration,
     trial_extra_days_for_referral_link,
     user_has_active_subscription,
 )
+from app.domain.user_traffic import user_traffic_totals
 from app.infrastructure.database.operations import table_insert
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.user import User
@@ -106,6 +108,7 @@ async def telegram_authenticate(
             token=new_subscription_token(),
             vless_uuid=new_vless_uuid(),
         )
+        apply_default_traffic_limit_for_new_client(user, cfg=cfg)
         try:
             await table_insert(session, user)
         except IntegrityError as e:
@@ -278,11 +281,16 @@ async def telegram_site_link_preview_response(
 
     ok, _ = user_can_add_credentials_from_site(user)
     bind_request_subject_user(int(user.id), source="telegram_site_link_preview")
+    _, _, total_b = await user_traffic_totals(session, int(user.id))
     return TelegramSiteLinkPreviewResponse(
         telegram_id=int(user.telegram_id),
         telegram_properties=user.telegram_properties,
         subscription_until=user.subscription_until,
-        subscription_active=user_has_active_subscription(user),
+        subscription_active=user_has_active_subscription(user, used_bytes=total_b),
+        traffic_total_bytes=int(total_b),
+        traffic_limit_bytes=(
+            int(user.traffic_limit_bytes) if user.traffic_limit_bytes is not None else None
+        ),
         can_add_credentials=ok,
     )
 

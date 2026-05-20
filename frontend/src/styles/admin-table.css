@@ -132,3 +132,17 @@
     box-shadow: none;
   }
 }
+
+.admin-table td.traffic-over-limit,
+.kv-grid dd.traffic-over-limit,
+.tg-props-value.traffic-over-limit {
+  color: var(--danger);
+}
+
+.traffic-limit-hint {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--muted);
+}

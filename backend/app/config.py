@@ -290,6 +290,19 @@ class Settings(BaseSettings):
         le=86400,
         description="Таймаут RQ для батч-задачи сбора трафика по всем серверам.",
     )
+    trial_traffic_limit_enabled: bool = Field(
+        default=True,
+        description=(
+            "После батч-сбора трафика Xray: сравнивать накопленный трафик с users.traffic_limit_bytes "
+            "и при превышении ставить sync клиентов на узлах (снятие UUID с конфигов)."
+        ),
+    )
+    trial_traffic_limit_gib: int = Field(
+        default=constants.TRIAL_TRAFFIC_LIMIT_GIB,
+        ge=1,
+        le=10_000,
+        description="Лимит накопленного трафика (GiB, up+down) для пользователей без оплат.",
+    )
     subscription_daily_xray_clients_sync_enabled: bool = Field(
         default=True,
         description=(

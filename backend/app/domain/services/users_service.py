@@ -31,6 +31,7 @@ from app.domain.models.users import (
 )
 from app.domain.referrals.repository import get_user_owned_referral_link
 from app.domain.subscription.devices import list_subscription_connection_records_for_users
+from app.domain.subscription.traffic_limit import apply_default_traffic_limit_for_new_client
 from app.domain.user_traffic import (
     user_server_traffic_latest_subquery,
     user_traffic_cumulative_for_user_at_calendar_boundary,
@@ -173,6 +174,9 @@ async def staff_get_user_list_item(
         total_traffic_bytes=total,
         active_today=active_today,
         has_payments=has_payments,
+        traffic_limit_bytes=(
+            int(user.traffic_limit_bytes) if user.traffic_limit_bytes is not None else None
+        ),
         subscription_devices_count=dev_n,
         subscription_devices=subs_devices,
         referral_link_id=user.referral_link_id,
@@ -241,6 +245,11 @@ async def staff_list_users(
                 total_traffic_bytes=total,
                 active_today=active_today,
                 has_payments=has_payments,
+                traffic_limit_bytes=(
+                    int(user.traffic_limit_bytes)
+                    if user.traffic_limit_bytes is not None
+                    else None
+                ),
                 subscription_devices_count=dev_n,
                 subscription_devices=subs_devices,
                 referral_link_id=user.referral_link_id,
@@ -261,6 +270,7 @@ async def create_staff_user(session: AsyncSession, body: UserCreate) -> User:
         token=new_subscription_token(),
         vless_uuid=new_vless_uuid(),
     )
+    apply_default_traffic_limit_for_new_client(user)
     try:
         await table_insert(session, user)
     except IntegrityError as e:

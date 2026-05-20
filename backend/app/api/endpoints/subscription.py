@@ -31,6 +31,7 @@ from app.core.dependencies import (
 )
 from app.domain.models.subscription import SubscriptionOpenPageData
 from app.domain.services.subscription_service import (
+    resolve_subscription_delivery_block,
     subscription_build_open_page_data,
     subscription_client_metadata_headers,
     subscription_maybe_register_device,
@@ -42,6 +43,7 @@ from app.domain.subscription.client_ua import (
     subscription_user_agent_is_happ,
 )
 from app.domain.subscription.placeholders import build_clash_subscription_placeholder_yaml
+from app.domain.user_traffic import user_traffic_totals
 from app.domain.subscription.links import (
     normalize_subscription_store_platform,
     user_by_subscription_token,
@@ -138,10 +140,14 @@ async def subscription_open_page_data(
         raise HTTPException(status_code=404, detail="unknown_client")
 
     user = await user_by_subscription_token(session, subscription_token)
+    traffic_total = 0
+    if user is not None:
+        _, _, traffic_total = await user_traffic_totals(session, int(user.id))
     return subscription_build_open_page_data(
         user,
         app,
         store_platform=normalize_subscription_store_platform(platform),
+        traffic_total_bytes=traffic_total,
     )
 
 
@@ -158,11 +164,22 @@ async def _subscription_by_token_response(
     )
     want_yaml = subscription_user_agent_is_clash_yaml(request)
     happ_json = subscription_user_agent_is_happ(request)
+    up_b, down_b, total_b = await user_traffic_totals(session, int(user.id))
+    _, block_reason = await resolve_subscription_delivery_block(
+        session,
+        user,
+        device_allowed=device_ok,
+        traffic_total_bytes=total_b,
+    )
     headers = await subscription_client_metadata_headers(
         session,
         user,
         request=request,
         device_limit_rejected=not device_ok,
+        traffic_up_bytes=up_b,
+        traffic_down_bytes=down_b,
+        traffic_total_bytes=total_b,
+        block_reason=block_reason,
     )
     if want_yaml:
         _payload, user, rows, block_reason = await subscription_payload_rows_for_resolved_user(
@@ -170,6 +187,8 @@ async def _subscription_by_token_response(
             user,
             device_allowed=device_ok,
             happ_json=False,
+            traffic_total_bytes=total_b,
+            block_reason=block_reason,
         )
         if block_reason:
             yaml_body = build_clash_subscription_placeholder_yaml(block_reason)
@@ -185,6 +204,8 @@ async def _subscription_by_token_response(
         user,
         device_allowed=device_ok,
         happ_json=happ_json,
+        traffic_total_bytes=total_b,
+        block_reason=block_reason,
     )
     return Response(
         content=payload.subscription_base64,
@@ -222,16 +243,29 @@ async def subscription_clash_by_token(
     device_ok = await subscription_maybe_register_device(
         session=session, request=request, user=user, cfg=settings,
     )
+    up_b, down_b, total_b = await user_traffic_totals(session, int(user.id))
+    _, block_reason = await resolve_subscription_delivery_block(
+        session,
+        user,
+        device_allowed=device_ok,
+        traffic_total_bytes=total_b,
+    )
     _payload, user, rows, block_reason = await subscription_payload_rows_for_resolved_user(
         session,
         user,
         device_allowed=device_ok,
+        traffic_total_bytes=total_b,
+        block_reason=block_reason,
     )
     headers = await subscription_client_metadata_headers(
         session,
         user,
         request=request,
         device_limit_rejected=not device_ok,
+        traffic_up_bytes=up_b,
+        traffic_down_bytes=down_b,
+        traffic_total_bytes=total_b,
+        block_reason=block_reason,
     )
     if block_reason:
         yaml_body = build_clash_subscription_placeholder_yaml(block_reason)

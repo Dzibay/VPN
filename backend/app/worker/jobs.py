@@ -519,11 +519,41 @@ def collect_xray_user_traffic_all_servers() -> dict[str, Any]:
         ok_n,
         failed_n,
     )
+
+    trial_result: dict[str, object] = {}
+    if ok_n > 0:
+        from app.domain.subscription.traffic_limit import enforce_traffic_limits_after_collect
+
+        enforce_db: Session = SessionLocal()
+        try:
+            enforced = enforce_traffic_limits_after_collect(enforce_db)
+            trial_result = {
+                "traffic_limit_over": enforced.over_limit_count,
+                "traffic_limit_sync_enqueued": enforced.sync_enqueued,
+            }
+            if enforced.over_limit_count:
+                log.info(
+                    "collect_xray_user_traffic_all_servers: over traffic limit=%s sync=%s",
+                    enforced.over_limit_count,
+                    enforced.sync_enqueued,
+                )
+        except Exception:
+            log.exception(
+                "collect_xray_user_traffic_all_servers: ошибка проверки лимита трафика триала",
+            )
+            try:
+                enforce_db.rollback()
+            except Exception:
+                pass
+        finally:
+            enforce_db.close()
+
     return {
         "servers_total": len(ids),
         "ok": ok_n,
         "failed": failed_n,
         "errors_sample": errors[:40],
+        **trial_result,
     }
 
 

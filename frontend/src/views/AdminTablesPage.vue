@@ -13,7 +13,10 @@ import AdminTableWrap from '../components/AdminTableWrap.vue'
 import UserRolePill from '../components/UserRolePill.vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { fetchJson, subscriptionPublicUrl } from '../api/client.js'
-import { formatTrafficBytes } from '../utils/formatTraffic.js'
+import {
+  formatTrafficWithLimit,
+  isTrafficOverLimit,
+} from '../utils/formatTraffic.js'
 import { useTableSort } from '../utils/adminTableSort.js'
 
 const route = useRoute()
@@ -1450,13 +1453,25 @@ watch(formIsCascadeRuEntry, (v) => {
                   Копировать
                 </button>
               </td>
-              <td class="num traffic-link-cell">
+              <td
+                class="num traffic-link-cell"
+                :class="{ 'traffic-over-limit': isTrafficOverLimit(u) }"
+              >
                 <RouterLink
                   class="user-analytics-link"
                   :to="`/admin/users/${u.id}/analytics`"
-                  title="Подробная аналитика по серверам"
+                  :title="
+                    isTrafficOverLimit(u)
+                      ? 'Лимит трафика исчерпан — подробная аналитика'
+                      : 'Подробная аналитика по серверам'
+                  "
                 >
-                  {{ formatTrafficBytes(u.total_traffic_bytes ?? 0) }}
+                  {{
+                    formatTrafficWithLimit(
+                      u.total_traffic_bytes ?? 0,
+                      u.traffic_limit_bytes,
+                    )
+                  }}
                 </RouterLink>
               </td>
               <td class="row-actions">
@@ -2853,6 +2868,13 @@ watch(formIsCascadeRuEntry, (v) => {
 }
 .traffic-link-cell .user-analytics-link {
   font-variant-numeric: tabular-nums;
+}
+.traffic-link-cell.traffic-over-limit .user-analytics-link {
+  color: var(--danger);
+}
+.traffic-link-cell.traffic-over-limit .user-analytics-link:hover {
+  color: var(--danger);
+  opacity: 0.9;
 }
 
 .user-analytics-link {

@@ -7,6 +7,7 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.infrastructure.persistence.models.user import User
 from app.infrastructure.persistence.models.user_server_traffic import UserServerTraffic
 
 
@@ -233,3 +234,29 @@ async def user_traffic_cumulative_for_user_at_calendar_boundary(
     tot_raw = await session.scalar(stmt)
     tot = int(tot_raw or 0)
     return tot if tot >= 0 else 0
+
+
+def user_traffic_totals_by_user_subquery():
+    """Сумма up+down по последнему снимку на каждый (user_id, server_id), одна строка на user_id."""
+    latest = user_server_traffic_latest_subquery()
+    return (
+        select(
+            latest.c.user_id.label("user_id"),
+            func.coalesce(func.sum(latest.c.up_bytes + latest.c.down_bytes), 0).label("total_bytes"),
+        )
+        .group_by(latest.c.user_id)
+        .subquery("user_traffic_totals")
+    )
+
+
+def user_traffic_over_limit_sql():
+    """Подзапрос user_id, у которых накопленный трафик ≥ ``users.traffic_limit_bytes``."""
+    totals = user_traffic_totals_by_user_subquery()
+    return (
+        select(totals.c.user_id)
+        .select_from(totals.join(User, User.id == totals.c.user_id))
+        .where(
+            User.traffic_limit_bytes.isnot(None),
+            totals.c.total_bytes >= User.traffic_limit_bytes,
+        )
+    )

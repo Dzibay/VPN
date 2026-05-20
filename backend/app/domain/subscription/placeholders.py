@@ -10,10 +10,13 @@ from app.config import Settings, settings
 from app.constants import BRAND_NAME
 from app.domain.models.subscription import SubscriptionPayload
 from app.domain.public_urls import _telegram_bot_username_clean
-from app.domain.subscription.happ_subscription_encode import encode_subscription_json_array
+from app.domain.subscription.happ_subscription_encode import (
+    encode_subscription_base64_lines,
+    encode_subscription_json_array,
+)
 from app.infrastructure.persistence.models.user import User
 
-SubscriptionPlaceholderReason = Literal["expired", "device_limit"]
+SubscriptionPlaceholderReason = Literal["expired", "device_limit", "traffic_limit"]
 
 
 def subscription_placeholder_remarks(
@@ -28,6 +31,12 @@ def subscription_placeholder_remarks(
         return [
             "🚨 Подписка истекла",
             "Продлите ее в боте",
+            bot_line,
+        ]
+    if reason == "traffic_limit":
+        return [
+            "🚨 Исчерпан лимит трафика",
+            "Продлите подписку в боте",
             bot_line,
         ]
     return [
@@ -95,10 +104,10 @@ def build_subscription_placeholder_payload(
         profiles = [build_happ_info_placeholder_profile(remark) for remark in remarks]
         body, media_type = encode_subscription_json_array(profiles)
     else:
-        body, media_type = "", "text/plain; charset=utf-8"
+        body, media_type = encode_subscription_base64_lines(remarks)
     return SubscriptionPayload(
         valid_until=user.subscription_until,
-        subscription_active=reason != "expired",
+        subscription_active=reason not in ("expired", "traffic_limit", "device_limit"),
         servers=_placeholder_servers_metadata(remarks, reason=reason),
         vless_uris=remarks,
         subscription_base64=body,

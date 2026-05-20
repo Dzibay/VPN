@@ -359,6 +359,11 @@ async def _fulfill_tribute_payment(
     months: int,
     paid_at: datetime | None,
 ) -> None:
+    from app.domain.subscription.traffic_limit import (
+        clear_traffic_limit_after_payment,
+        enqueue_xray_clients_sync_for_access_change,
+    )
+
     paid_days = int(months) * _DAYS_PER_MONTH
     accumulated_bonus_days = await sum_referral_bonus_days_pending_activation(
         session,
@@ -383,6 +388,8 @@ async def _fulfill_tribute_payment(
         referee_user_id=int(user.id),
         paid_months=months,
     )
+    if await clear_traffic_limit_after_payment(session, user):
+        enqueue_xray_clients_sync_for_access_change()
 
 
 async def _ingest_tribute_webhook(

@@ -12,6 +12,9 @@ BRAND_NAME = "🍃 Подорожник VPN"
 TRIAL_DAYS_AFTER_REGISTRATION = 3
 TRIAL_EXTRA_DAYS_USER_REFERRAL_REGISTRATION = 2
 
+# Лимит накопленного трафика (up+down по всем узлам) для клиентов без записей в payments.
+TRIAL_TRAFFIC_LIMIT_GIB = 20
+
 # Срок жизни access-JWT (дни) — единый для портала и админ-API.
 JWT_TOKEN_TTL_DAYS = 14
 

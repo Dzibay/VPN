@@ -270,6 +270,11 @@ class UserRead(BaseModel):
         description="client — клиент; manager — рефералы; admin — полный администратор",
     )
     subscription_until: date | None
+    traffic_limit_bytes: int | None = Field(
+        default=None,
+        ge=0,
+        description="Персональный потолок трафика (байты); null — без лимита.",
+    )
     token: str = Field(
         description="Токен для URL /sub/{token} (подписка) и /sub/{token}/clash (YAML)",
     )
@@ -310,6 +315,11 @@ class UserListItem(BaseModel):
     has_payments: bool = Field(
         default=False,
         description="Есть хотя бы одна запись в таблице payments",
+    )
+    traffic_limit_bytes: int | None = Field(
+        default=None,
+        ge=0,
+        description="Персональный потолок трафика (байты); NULL — без лимита (обычно после оплаты)",
     )
     subscription_devices_count: int = Field(
         ge=0,

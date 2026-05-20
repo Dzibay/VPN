@@ -12,7 +12,11 @@ import { fetchJson, sitePublicUrl } from '../api/client.js'
 import { isAdminRole } from '../auth/permissions.js'
 import { getSessionRole } from '../auth/session.js'
 import { rgbTupleFromVar } from '../utils/adminChartTheme.js'
-import { formatTrafficBytes as formatBytes } from '../utils/formatTraffic.js'
+import {
+  formatTrafficBytes as formatBytes,
+  formatTrafficWithLimit,
+  isTrafficOverLimit,
+} from '../utils/formatTraffic.js'
 import { useTableSort } from '../utils/adminTableSort.js'
 
 const MIB = 1024 * 1024
@@ -591,7 +595,21 @@ onMounted(() => {
         <dt>Подписка до</dt>
         <dd>{{ formatDate(profile.subscription_until) }}</dd>
         <dt>Трафик</dt>
-        <dd class="mono">{{ formatBytes(profile.total_traffic_bytes ?? 0) }}</dd>
+        <dd
+          class="mono"
+          :class="{ 'traffic-over-limit': profile && isTrafficOverLimit(profile) }"
+        >
+          {{
+            formatTrafficWithLimit(
+              profile.total_traffic_bytes ?? 0,
+              profile.traffic_limit_bytes,
+            )
+          }}
+          <span
+            v-if="profile.traffic_limit_bytes == null"
+            class="traffic-limit-hint"
+          >без лимита</span>
+        </dd>
         <dt>Устройств по подписке</dt>
         <dd class="kv-dd-devices">
           <span class="mono kv-dd-devices__count">{{
@@ -933,7 +951,7 @@ onMounted(() => {
                     @sort="toggleRefereeSort"
                   />
                   <AdminSortTh
-                    label="Трафик (всего)"
+                    label="Трафик"
                     column-key="traffic"
                     align="right"
                     :sort-key="refereeSortKey"
@@ -981,7 +999,20 @@ onMounted(() => {
                   <td class="tg-cell">{{ refereeTelegramCell(u) }}</td>
                   <td>{{ formatDate(u.registered_at) }}</td>
                   <td>{{ formatDate(u.subscription_until) }}</td>
-                  <td class="num mono-num">{{ formatBytes(u.total_traffic_bytes) }}</td>
+                  <td
+                    class="num mono-num"
+                    :class="{ 'traffic-over-limit': isTrafficOverLimit(u) }"
+                    :title="
+                      isTrafficOverLimit(u) ? 'Лимит трафика исчерпан' : undefined
+                    "
+                  >
+                    {{
+                      formatTrafficWithLimit(
+                        u.total_traffic_bytes,
+                        u.traffic_limit_bytes,
+                      )
+                    }}
+                  </td>
                   <td class="num mono-num">{{ u.subscription_devices_count ?? 0 }}</td>
                 </tr>
                 </template>

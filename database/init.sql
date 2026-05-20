@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
     token TEXT NOT NULL,
     vless_uuid TEXT NOT NULL,
     registered_at TIMESTAMPTZ,
+    traffic_limit_bytes BIGINT CHECK (traffic_limit_bytes IS NULL OR traffic_limit_bytes >= 0),
     -- Цикл с referral_links.owner_user_id: без REFERENCES, целостность на уровне приложения
     referral_link_id BIGINT,
     CONSTRAINT users_token_key UNIQUE (token),

@@ -39,6 +39,8 @@ class User(Base):
         server_default=text("'client'"),
     )
     subscription_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    #: Персональный потолок трафика (up+down, байты). NULL — без лимита (обычно после оплаты).
+    traffic_limit_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     referral_link_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey("referral_links.id", ondelete="SET NULL"),

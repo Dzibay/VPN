@@ -6,7 +6,7 @@ import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
 import { fetchJson } from '../api/client.js'
-import { formatTrafficBytes } from '../utils/formatTraffic.js'
+import { formatTrafficWithLimit, isTrafficOverLimit } from '../utils/formatTraffic.js'
 import { useTableSort } from '../utils/adminTableSort.js'
 
 const route = useRoute()
@@ -447,7 +447,7 @@ onMounted(() => {
               @sort="toggleSort"
             />
             <AdminSortTh
-              label="Трафик (всего)"
+              label="Трафик"
               column-key="traffic"
               align="right"
               :sort-key="sortKey"
@@ -502,7 +502,20 @@ onMounted(() => {
               <td class="tg-cell" :title="telegramCellTitle(u)">{{ telegramUsernameCell(u) }}</td>
               <td>{{ formatDate(u.registered_at) }}</td>
               <td>{{ formatDate(u.subscription_until) }}</td>
-              <td class="num mono-num">{{ formatTrafficBytes(u.total_traffic_bytes) }}</td>
+              <td
+                class="num mono-num"
+                :class="{ 'traffic-over-limit': isTrafficOverLimit(u) }"
+                :title="
+                  isTrafficOverLimit(u) ? 'Лимит трафика исчерпан' : undefined
+                "
+              >
+                {{
+                  formatTrafficWithLimit(
+                    u.total_traffic_bytes,
+                    u.traffic_limit_bytes,
+                  )
+                }}
+              </td>
               <td class="num mono-num">{{ u.subscription_devices_count ?? 0 }}</td>
               <td class="num ref-id-cell">
                 <template v-if="u.referral_link_id != null">
@@ -606,11 +619,24 @@ onMounted(() => {
               </li>
               <li class="tg-props-item">
                 <div class="tg-props-item__grid">
-                  <span class="tg-props-label">Трафик (всего)</span>
+                  <span class="tg-props-label">Трафик / лимит</span>
                   <div class="tg-props-value-wrap">
-                    <span class="tg-props-value mono-num">{{
-                      formatTrafficBytes(selectedUser.total_traffic_bytes)
+                    <span
+                      class="tg-props-value mono-num"
+                      :class="{
+                        'traffic-over-limit':
+                          selectedUser && isTrafficOverLimit(selectedUser),
+                      }"
+                    >{{
+                      formatTrafficWithLimit(
+                        selectedUser.total_traffic_bytes,
+                        selectedUser.traffic_limit_bytes,
+                      )
                     }}</span>
+                    <span
+                      v-if="selectedUser.traffic_limit_bytes == null"
+                      class="traffic-limit-hint"
+                    >без лимита</span>
                   </div>
                 </div>
               </li>

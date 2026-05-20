@@ -48,7 +48,11 @@ from app.domain.subscription.userinfo import (
     subscription_announce_header_value,
     subscription_profile_title_header_value,
 )
-from app.domain.subscription.validity import user_has_active_subscription
+from app.domain.subscription.traffic_limit import user_traffic_quota_exceeded
+from app.domain.subscription.validity import (
+    subscription_calendar_active,
+    user_has_active_subscription,
+)
 from app.domain.user_traffic import user_traffic_totals
 from app.infrastructure.persistence.models.server import Server
 from app.infrastructure.persistence.models.user import User
@@ -59,6 +63,9 @@ log = logging.getLogger("app.subscription_service")
 ANNOUNCE_RAW = "⚠️ При возникновении проблем попробуйте 🔁 обновить конфигурацию. Если проблема сохраняется — обратитесь в поддержку"
 ANNOUNCE_RAW_DEVICE_LIMIT_REJECTED = "Достигнуто максимальное количество подключений (устройств). Освободите слот в личном кабинете или обратитесь в поддержку."
 ANNOUNCE_RAW_SUBSCRIPTION_EXPIRED = "Подписка истекла — продлите подписку в личном кабинете или боте"
+ANNOUNCE_RAW_TRAFFIC_LIMIT = (
+    "Исчерпан лимит трафика — продлите подписку в личном кабинете или боте"
+)
 _DIRECT_SERVICE_PORTS = "22,25,135-139,465,587,593,2525,3306,3389,5432,6379,11211,1900"
 
 
@@ -111,6 +118,69 @@ def _happ_routing_header_value(cfg: Settings | None = None) -> str:
     return f"happ://routing/onadd/{payload}"
 
 
+async def resolve_subscription_delivery_block(
+    session: AsyncSession,
+    user: User,
+    *,
+    device_allowed: bool,
+    traffic_total_bytes: int | None = None,
+) -> tuple[int, SubscriptionPlaceholderReason | None]:
+    """
+    Единая проверка блокировки выдачи подписки (порядок как в ``subscription_payload_rows``).
+
+    Возвращает ``(суммарный трафик, причина заглушки или None)``.
+    """
+    total = traffic_total_bytes
+    if user.traffic_limit_bytes is not None:
+        if total is None:
+            _, _, total = await user_traffic_totals(session, int(user.id))
+        if user_traffic_quota_exceeded(user, used_bytes=int(total or 0)):
+            return int(total or 0), "traffic_limit"
+    if not subscription_calendar_active(user):
+        if total is None:
+            _, _, total = await user_traffic_totals(session, int(user.id))
+        return int(total or 0), "expired"
+    if not device_allowed:
+        if total is None:
+            _, _, total = await user_traffic_totals(session, int(user.id))
+        return int(total or 0), "device_limit"
+    if total is None:
+        _, _, total = await user_traffic_totals(session, int(user.id))
+    return int(total or 0), None
+
+
+def _subscription_announce_raw(
+    *,
+    block_reason: SubscriptionPlaceholderReason | None,
+    device_limit_rejected: bool,
+    calendar_active: bool,
+    expire_banner_active: bool,
+) -> str:
+    if block_reason == "traffic_limit":
+        return ANNOUNCE_RAW_TRAFFIC_LIMIT
+    if block_reason == "expired":
+        return ANNOUNCE_RAW_SUBSCRIPTION_EXPIRED
+    if block_reason == "device_limit":
+        return ANNOUNCE_RAW_DEVICE_LIMIT_REJECTED
+    if device_limit_rejected and calendar_active:
+        return ANNOUNCE_RAW_DEVICE_LIMIT_REJECTED
+    if not calendar_active and not expire_banner_active:
+        return ANNOUNCE_RAW_SUBSCRIPTION_EXPIRED
+    return ANNOUNCE_RAW
+
+
+def _subscription_announce_url(
+    *,
+    block_reason: SubscriptionPlaceholderReason | None,
+    expire_banner_active: bool,
+    calendar_active: bool,
+    cfg: Settings,
+) -> str:
+    if block_reason is not None or expire_banner_active or not calendar_active:
+        return renew_button_link(cfg)
+    return "https://t.me/Podoroznik_Support"
+
+
 def _happ_advanced_subscription_headers(cfg: Settings | None = None) -> dict[str, str]:
     """Расширенные параметры Happ; требуют ``providerid`` (``HAPP_PROVIDER_ID``)."""
     cfg = cfg or settings
@@ -135,25 +205,24 @@ async def subscription_payload_rows_for_resolved_user(
     *,
     device_allowed: bool = True,
     happ_json: bool = False,
+    traffic_total_bytes: int | None = None,
+    block_reason: SubscriptionPlaceholderReason | None = None,
 ) -> tuple[SubscriptionPayload, User, list[Server], SubscriptionPlaceholderReason | None]:
-    if not user_has_active_subscription(user):
-        return (
-            build_subscription_placeholder_payload(
-                user, reason="expired", happ_json=happ_json
-            ),
+    if block_reason is not None:
+        reason = block_reason
+    else:
+        _, reason = await resolve_subscription_delivery_block(
+            session,
             user,
-            [],
-            "expired",
+            device_allowed=device_allowed,
+            traffic_total_bytes=traffic_total_bytes,
         )
-
-    if not device_allowed:
+    if reason is not None:
         return (
-            build_subscription_placeholder_payload(
-                user, reason="device_limit", happ_json=happ_json
-            ),
+            build_subscription_placeholder_payload(user, reason=reason, happ_json=happ_json),
             user,
             [],
-            "device_limit",
+            reason,
         )
 
     rows = await subscription_servers_from_db(session)
@@ -190,25 +259,44 @@ async def subscription_client_metadata_headers(
     request: Request | None = None,
     device_limit_rejected: bool = False,
     include_happ_routing: bool = True,
+    traffic_up_bytes: int | None = None,
+    traffic_down_bytes: int | None = None,
+    traffic_total_bytes: int | None = None,
+    block_reason: SubscriptionPlaceholderReason | None = None,
 ) -> dict[str, str]:
-    up_b, down_b, _ = await user_traffic_totals(session, int(user.id))
+    if block_reason is not None:
+        reason = block_reason
+    else:
+        _, reason = await resolve_subscription_delivery_block(
+            session,
+            user,
+            device_allowed=not device_limit_rejected,
+            traffic_total_bytes=traffic_total_bytes,
+        )
+    if traffic_total_bytes is not None:
+        up_b = int(traffic_up_bytes or 0)
+        down_b = int(traffic_down_bytes or 0)
+        total_b = int(traffic_total_bytes)
+    else:
+        up_b, down_b, total_b = await user_traffic_totals(session, int(user.id))
+    quota_total = int(user.traffic_limit_bytes) if user.traffic_limit_bytes is not None else 0
     userinfo = build_subscription_userinfo_header_value(
         valid_until=user.subscription_until,
         upload=up_b,
         download=down_b,
-        total=0,
+        total=quota_total,
     )
-    active = user_has_active_subscription(user)
+    calendar_active = subscription_calendar_active(user)
     expire_banner_active = (
         settings.subscription_sub_expire_enabled
         and subscription_expire_banner_active(user.subscription_until)
     )
-    if device_limit_rejected and active:
-        announce_raw = ANNOUNCE_RAW_DEVICE_LIMIT_REJECTED
-    elif not active and not expire_banner_active:
-        announce_raw = ANNOUNCE_RAW_SUBSCRIPTION_EXPIRED
-    else:
-        announce_raw = ANNOUNCE_RAW
+    announce_raw = _subscription_announce_raw(
+        block_reason=reason,
+        device_limit_rejected=device_limit_rejected,
+        calendar_active=calendar_active,
+        expire_banner_active=expire_banner_active,
+    )
     routing_header = (
         _happ_routing_header_value()
         if include_happ_routing and subscription_user_agent_is_happ(request)
@@ -221,13 +309,17 @@ async def subscription_client_metadata_headers(
         "support-url": "https://t.me/Podoroznik_Support",
         "profile-web-page-url": "https://cool-vpn.ru",
         "announce": subscription_announce_header_value(announce_raw),
-        "announce-url": (
-            renew_button_link(settings) if expire_banner_active else "https://t.me/Podoroznik_Support"
+        "announce-url": _subscription_announce_url(
+            block_reason=reason,
+            expire_banner_active=expire_banner_active,
+            calendar_active=calendar_active,
+            cfg=settings,
         ),
         **_happ_advanced_subscription_headers(),
         **build_subscription_banner_headers(
             valid_until=user.subscription_until,
             cfg=settings,
+            block_reason=reason,
         ),
     }
     if routing_header:
@@ -240,6 +332,7 @@ def subscription_build_open_page_data(
     app,
     *,
     store_platform: str | None,
+    traffic_total_bytes: int = 0,
 ) -> SubscriptionOpenPageData:
     forced = normalize_subscription_store_platform(store_platform)
     title = f"Подключение — {app.display_name}"
@@ -276,7 +369,11 @@ def subscription_build_open_page_data(
     sl: AppStoreLinks = app.store_links
     store_json = sl.to_public_json_dict() if sl.any() else None
 
-    active = user_has_active_subscription(user)
+    active = (
+        user_has_active_subscription(user, used_bytes=traffic_total_bytes)
+        if user is not None
+        else False
+    )
     lead_active = lead
     lead_inactive = (
         "Подписка сейчас не активна — узлы VPN в клиенте появятся после продления. "
