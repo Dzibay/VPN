@@ -14,8 +14,9 @@
   читаются только query url и fragment (имя), не name=.
 - Shadowrocket: shadowrocket://add/sub://<base64(UTF-8 ссылки)>?remark=…
   (3x-ui / community, иначе импорт не срабатывает; не путать с urlencoding в path)
-- Streisand: панели (напр. 3x-ui) — streisand://install-subscription?url=…
+- Streisand: streisand://import/{subscription}#{profile_title} (Marzban / iOS; не ?url= — ломает https://)
 - v2raytun: v2raytun://import/{subscription} (сырая ссылка в path)
+- incy: incy://import/{subscription} (автоопределение типа данных; см. INCY deep-links)
 
 Имя профиля — ``app.constants.BRAND_NAME``.
 
@@ -180,7 +181,9 @@ def _shadowrocket_deeplink(subscription_https_url: str) -> str:
     return f"shadowrocket://add/sub://{b64}?remark={_q(BRAND_NAME)}"
 
 
-_streisand_deeplink = _deeplink_query_url("streisand://install-subscription?url=")
+def _streisand_deeplink(subscription_https_url: str) -> str:
+    u = _sub_url_trim(subscription_https_url)
+    return f"streisand://import/{u}#{_q(BRAND_NAME)}"
 
 _flclashx_deeplink = _deeplink_query_url("flclashx://install-config?url=")
 
@@ -193,6 +196,11 @@ def _v2rayng_deeplink(subscription_https_url: str) -> str:
 def _v2raytun_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
     return f"v2raytun://import/{u}"
+
+
+def _incy_deeplink(subscription_https_url: str) -> str:
+    u = _sub_url_trim(subscription_https_url)
+    return "incy://import/" + u.lstrip("/")
 
 
 _koala_clash_deeplink = _deeplink_query_url("koala-clash://install-config?url=")
@@ -246,6 +254,14 @@ _STORE: dict[str, AppStoreLinks] = {
         ios="https://apps.apple.com/app/v2raytun/id6476628951",
         windows="https://v2raytun.com",
         macos="https://v2raytun.com",
+    ),
+    "incy": _stores(
+        android=(
+            "https://play.google.com/store/apps/details?id=llc.itdev.incy",
+            "https://github.com/INCY-DEV/incy-platforms/releases/latest/download/Incy.apk",
+        ),
+        ios="https://apps.apple.com/ru/app/incy/id6756943388",
+        macos="https://apps.apple.com/ru/app/incy/id6756943388",
     ),
     "koala-clash": _stores(
         windows=(
@@ -304,6 +320,7 @@ SUBSCRIPTION_OPEN_APPS: dict[str, SubscriptionOpenApp] = {
     ),
     "v2rayng": _app("v2rayng", "v2rayNG", _v2rayng_deeplink),
     "v2raytun": _app("v2raytun", "v2RayTun", _v2raytun_deeplink),
+    "incy": _app("incy", "INCY", _incy_deeplink),
     "koala-clash": _app(
         "koala-clash", "Koala Clash", _koala_clash_deeplink,
     ),
