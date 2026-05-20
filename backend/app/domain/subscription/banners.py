@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import date
 
 from app.config import Settings, settings
-from app.core.time import utc_today
+from app.core.time import moscow_today
 from app.domain.public_urls import telegram_bot_public_page_url
 from app.domain.subscription.placeholders import SubscriptionPlaceholderReason
 from app.domain.subscription.userinfo import happ_utf8_header_value
@@ -24,7 +24,7 @@ def subscription_expire_banner_active(valid_until: date | None) -> bool:
     """Баннер expire: ≤3 полных дней до ``valid_until`` или подписка уже истекла."""
     if valid_until is None:
         return False
-    return (valid_until - utc_today()).days <= _EXPIRE_WARNING_DAYS
+    return (valid_until - moscow_today()).days <= _EXPIRE_WARNING_DAYS
 
 
 def renew_button_link(cfg: Settings | None = None) -> str:

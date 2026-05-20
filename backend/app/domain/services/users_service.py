@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, time, timedelta, timezone
 from typing import Literal, cast as type_cast
 
 from sqlalchemy import String, cast, func, or_, select, update
@@ -18,12 +19,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
-from app.core.time import utc_today
+from app.core.time import moscow_day_bounds_utc, moscow_today, utc_today
 from app.domain.models.auth import SubscriptionConnectionItem
 from app.domain.models.users import (
     ExtendActiveSubscriptionsBody,
     ExtendActiveSubscriptionsResponse,
     StaffUserSearchItem,
+    StaffUsersListResponse,
     UserCreate,
     UserListItem,
     UsersCountResponse,
@@ -55,10 +57,23 @@ def _normalize_account_role(raw: str | None) -> str:
     return "client"
 
 
+async def _user_rows_count(
+    session: AsyncSession,
+    *,
+    referral_link_id: int | None = None,
+) -> int:
+    stmt = select(func.count()).select_from(User)
+    if referral_link_id is not None:
+        stmt = stmt.where(User.referral_link_id == referral_link_id)
+    return int((await session.scalar(stmt)) or 0)
+
+
 async def _user_rows_with_traffic(
     session: AsyncSession,
     *,
     referral_link_id: int | None = None,
+    limit: int | None = None,
+    offset: int | None = None,
 ) -> list[tuple[User, int, int]]:
     """Список ``(user, total_bytes, devices_count)`` для админского экрана пользователей.
 
@@ -100,6 +115,10 @@ async def _user_rows_with_traffic(
     )
     if referral_link_id is not None:
         stmt = stmt.where(User.referral_link_id == referral_link_id)
+    if offset is not None:
+        stmt = stmt.offset(offset)
+    if limit is not None:
+        stmt = stmt.limit(limit)
     return list((await session.execute(stmt)).all())
 
 
@@ -114,10 +133,78 @@ async def _user_ids_with_any_payment(
     return {int(uid) for uid in (await session.scalars(stmt)).all()}
 
 
+def _mean_registration_gap_ms(times: list[datetime]) -> float | None:
+    if len(times) < 2:
+        return None
+    sum_ms = 0.0
+    n = 0
+    for i in range(1, len(times)):
+        gap = (times[i] - times[i - 1]).total_seconds() * 1000.0
+        if gap >= 0:
+            sum_ms += gap
+            n += 1
+    return (sum_ms / n) if n > 0 else None
+
+
 async def users_count(session: AsyncSession) -> UsersCountResponse:
-    """Общее число записей в ``users``."""
-    total = await session.scalar(select(func.count()).select_from(User))
-    return UsersCountResponse(users_count=int(total or 0))
+    """Общее число записей в ``users`` и сводка по регистрациям для виджетов админки."""
+    total = int((await session.scalar(select(func.count()).select_from(User))) or 0)
+    today = moscow_today()
+    yesterday = today - timedelta(days=1)
+    start_today, end_today = moscow_day_bounds_utc(today)
+    start_yesterday, _ = moscow_day_bounds_utc(yesterday)
+
+    regs_today = int(
+        (
+            await session.scalar(
+                select(func.count())
+                .select_from(User)
+                .where(
+                    User.registered_at.is_not(None),
+                    User.registered_at >= start_today,
+                    User.registered_at < end_today,
+                ),
+            )
+        )
+        or 0,
+    )
+    regs_yesterday = int(
+        (
+            await session.scalar(
+                select(func.count())
+                .select_from(User)
+                .where(
+                    User.registered_at.is_not(None),
+                    User.registered_at >= start_yesterday,
+                    User.registered_at < start_today,
+                ),
+            )
+        )
+        or 0,
+    )
+
+    all_times = [
+        t
+        for t in (await session.scalars(select(User.registered_at).where(User.registered_at.is_not(None)))).all()
+        if t is not None
+    ]
+    all_times.sort()
+    def _as_utc(dt: datetime) -> datetime:
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+
+    today_times = sorted(
+        _as_utc(t) for t in all_times if start_today <= _as_utc(t) < end_today
+    )
+
+    return UsersCountResponse(
+        users_count=total,
+        registrations_today_count=regs_today,
+        registrations_yesterday_count=regs_yesterday,
+        registration_gap_overall_ms=_mean_registration_gap_ms(all_times),
+        registration_gap_today_ms=_mean_registration_gap_ms(today_times),
+    )
 
 
 async def staff_get_user_list_item(
@@ -186,21 +273,12 @@ async def staff_get_user_list_item(
     )
 
 
-async def staff_list_users(
+async def _staff_user_list_items(
     session: AsyncSession,
+    rows: list[tuple[User, int, int]],
     *,
     show_secrets: bool,
-    referral_link_id: int | None = None,
 ) -> list[UserListItem]:
-    """Список пользователей для админ/менеджер интерфейса.
-
-    ``show_secrets`` — раскрывать ли токен подписки и UUID VLESS (только для админа: для менеджера
-    эти поля приходят как ``None``).
-
-    ``referral_link_id`` — если задан, только пользователи, у которых при регистрации
-    зафиксирована эта реферальная ссылка.
-    """
-    rows = await _user_rows_with_traffic(session, referral_link_id=referral_link_id)
     user_ids = [int(user.id) for user, _, _ in rows]
     devices_map = await list_subscription_connection_records_for_users(session, user_ids)
     today_utc = utc_today()
@@ -261,6 +339,31 @@ async def staff_list_users(
     return out
 
 
+async def staff_list_users(
+    session: AsyncSession,
+    *,
+    show_secrets: bool,
+    referral_link_id: int | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> StaffUsersListResponse:
+    """Пагинированный список пользователей для админ/менеджер интерфейса."""
+    total = await _user_rows_count(session, referral_link_id=referral_link_id)
+    rows = await _user_rows_with_traffic(
+        session,
+        referral_link_id=referral_link_id,
+        limit=limit,
+        offset=offset,
+    )
+    items = await _staff_user_list_items(session, rows, show_secrets=show_secrets)
+    return StaffUsersListResponse(
+        items=items,
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
 async def create_staff_user(session: AsyncSession, body: UserCreate) -> User:
     """Создать пользователя из админки; токен подписки и VLESS UUID генерируются здесь."""
     user = User(
@@ -295,7 +398,7 @@ async def extend_active_subscriptions(
         update(User)
         .where(
             User.subscription_until.isnot(None),
-            User.subscription_until >= utc_today(),
+            User.subscription_until >= moscow_today(),
         )
         .values(subscription_until=User.subscription_until + days)
     )

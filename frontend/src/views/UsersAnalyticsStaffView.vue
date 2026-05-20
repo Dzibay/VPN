@@ -12,6 +12,10 @@ import { useTableSort } from '../utils/adminTableSort.js'
 const route = useRoute()
 
 const rows = ref([])
+const rowsTotal = ref(0)
+const pageLimit = 50
+const offset = ref(0)
+const usersCountSummary = ref(null)
 const loading = ref(false)
 const error = ref(null)
 
@@ -42,26 +46,8 @@ function clientHighlightFromRoute() {
   return Number.isFinite(n) && n >= 1 ? Math.floor(n) : null
 }
 
-/** Календарный день UTC как одно число для сравнения. */
-function utcCalendarDayKey(d) {
-  return (
-    d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate()
-  )
-}
-
-function countRegistrationsOnUtcDay(userRows, dayKey) {
-  let n = 0
-  for (const u of userRows) {
-    if (u.registered_at == null || u.registered_at === '') continue
-    const t = new Date(u.registered_at)
-    if (!Number.isFinite(t.getTime())) continue
-    if (utcCalendarDayKey(t) === dayKey) n += 1
-  }
-  return n
-}
-
 const userCountWidget = computed(() => {
-  if (loading.value || error.value) {
+  if (loading.value || error.value || usersCountSummary.value == null) {
     return {
       totalDisplay: '—',
       todayRegsDisplay: '—',
@@ -69,17 +55,10 @@ const userCountWidget = computed(() => {
       vsClass: '',
     }
   }
-  const total = rows.value.length
-  const now = new Date()
-  const todayKey = utcCalendarDayKey(now)
-  const prevUtc = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-  )
-  prevUtc.setUTCDate(prevUtc.getUTCDate() - 1)
-  const yesterdayKey = utcCalendarDayKey(prevUtc)
-
-  const todayRegs = countRegistrationsOnUtcDay(rows.value, todayKey)
-  const yesterdayRegs = countRegistrationsOnUtcDay(rows.value, yesterdayKey)
+  const s = usersCountSummary.value
+  const total = Number(s.users_count) || 0
+  const todayRegs = Number(s.registrations_today_count) || 0
+  const yesterdayRegs = Number(s.registrations_yesterday_count) || 0
 
   let vsLabel = ''
   let vsClass = 'stat-delta--muted'
@@ -109,20 +88,6 @@ const userCountWidget = computed(() => {
   }
 })
 
-function meanRegistrationGapMs(sortedAsc) {
-  if (sortedAsc.length < 2) return null
-  let sum = 0
-  let n = 0
-  for (let i = 1; i < sortedAsc.length; i++) {
-    const g = sortedAsc[i].getTime() - sortedAsc[i - 1].getTime()
-    if (g >= 0) {
-      sum += g
-      n += 1
-    }
-  }
-  return n > 0 ? sum / n : null
-}
-
 /** Человекочитаемый интервал; ru — запятая в десятичных. */
 function formatIntervalRu(ms) {
   if (ms == null || !Number.isFinite(ms) || ms < 0) return '—'
@@ -142,26 +107,42 @@ function formatPercentRu(x) {
 }
 
 const registrationGapStats = computed(() => {
-  if (loading.value || error.value) {
+  if (loading.value || error.value || usersCountSummary.value == null) {
     return { overallMs: null, todayMs: null }
   }
-
-  const times = rows.value
-    .map((u) => {
-      if (u.registered_at == null || u.registered_at === '') return null
-      const t = new Date(u.registered_at)
-      return Number.isFinite(t.getTime()) ? t : null
-    })
-    .filter(Boolean)
-    .sort((a, b) => a.getTime() - b.getTime())
-
-  const overallMs = meanRegistrationGapMs(times)
-  const todayKey = utcCalendarDayKey(new Date())
-  const todayTimes = times.filter((t) => utcCalendarDayKey(t) === todayKey)
-  const todayMs = meanRegistrationGapMs(todayTimes)
-
-  return { overallMs, todayMs }
+  const s = usersCountSummary.value
+  const overallMs = s.registration_gap_overall_ms
+  const todayMs = s.registration_gap_today_ms
+  return {
+    overallMs:
+      overallMs != null && Number.isFinite(Number(overallMs))
+        ? Number(overallMs)
+        : null,
+    todayMs:
+      todayMs != null && Number.isFinite(Number(todayMs)) ? Number(todayMs) : null,
+  }
 })
+
+const rangeLabel = computed(() => {
+  const n = rows.value.length
+  if (rowsTotal.value === 0) return '0 пользователей'
+  const from = offset.value + 1
+  const to = offset.value + n
+  return `${from}–${to} из ${rowsTotal.value}`
+})
+
+const canPrev = computed(() => offset.value > 0)
+const canNext = computed(() => offset.value + rows.value.length < rowsTotal.value)
+
+function prevPage() {
+  offset.value = Math.max(0, offset.value - pageLimit)
+  void load()
+}
+
+function nextPage() {
+  offset.value = offset.value + pageLimit
+  void load()
+}
 
 function formatDate(d) {
   if (d == null || d === '') return '—'
@@ -305,14 +286,32 @@ watch(rows, (list) => {
   if (id != null && !list.some((u) => u.id === id)) selectedUserId.value = null
 })
 
+async function loadCountSummary() {
+  try {
+    usersCountSummary.value = await fetchJson('/api/users/count')
+  } catch {
+    usersCountSummary.value = null
+  }
+}
+
 async function load() {
   loading.value = true
   error.value = null
   try {
-    rows.value = await fetchJson('/api/users')
+    const params = new URLSearchParams({
+      limit: String(pageLimit),
+      offset: String(offset.value),
+    })
+    const [data] = await Promise.all([
+      fetchJson(`/api/users?${params.toString()}`),
+      loadCountSummary(),
+    ])
+    rows.value = Array.isArray(data?.items) ? data.items : []
+    rowsTotal.value = Number(data?.total) || 0
   } catch (e) {
     error.value = e.message || String(e)
     rows.value = []
+    rowsTotal.value = 0
   } finally {
     loading.value = false
   }
@@ -348,22 +347,6 @@ onMounted(() => {
 
 <template>
   <AdminStaffShell title="Аналитика пользователей">
-    <template #headerExtras>
-      <div class="head-row">
-        <h2 class="section-heading">Сводка по учётным записям и трафику</h2>
-        <div class="head-actions">
-          <button
-            type="button"
-            class="btn-secondary"
-            :disabled="loading"
-            @click="load"
-          >
-            {{ loading ? 'Обновление…' : 'Обновить' }}
-          </button>
-        </div>
-      </div>
-    </template>
-
     <section class="stats widgets-row" aria-live="polite">
       <div class="widgets-grid">
         <div class="stat-widget" aria-label="Число пользователей">
@@ -390,13 +373,37 @@ onMounted(() => {
               <dd>{{ formatIntervalRu(registrationGapStats.overallMs) }}</dd>
             </div>
             <div>
-              <dt>Сегодня (UTC)</dt>
+              <dt>Сегодня (МСК)</dt>
               <dd>{{ formatIntervalRu(registrationGapStats.todayMs) }}</dd>
             </div>
           </dl>
           <p v-else class="stat-widget-value stat-widget-value--muted">
             {{ loading ? '…' : '—' }}
           </p>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="!loading && !error" class="stats stats--pager" aria-live="polite">
+      <p class="stats-value">{{ rangeLabel }}</p>
+      <div class="pager-top">
+        <div class="pager-btns">
+          <button
+            type="button"
+            class="btn-secondary"
+            :disabled="loading || !canPrev"
+            @click="prevPage"
+          >
+            Назад
+          </button>
+          <button
+            type="button"
+            class="btn-secondary"
+            :disabled="loading || !canNext"
+            @click="nextPage"
+          >
+            Вперёд
+          </button>
         </div>
       </div>
     </section>
@@ -479,7 +486,7 @@ onMounted(() => {
           <tr v-else-if="error">
             <td colspan="8" class="error-cell">{{ error }}</td>
           </tr>
-          <tr v-else-if="rows.length === 0">
+          <tr v-else-if="rowsTotal === 0">
             <td colspan="8" class="muted">Нет пользователей</td>
           </tr>
           <template v-else>
@@ -730,29 +737,37 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.head-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 0.75rem 1rem;
-}
-
-.section-heading {
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 600;
-}
-
-.head-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
 .stats {
   margin-bottom: 1rem;
 }
+
+.stats--pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.stats-value {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-h);
+}
+
+.pager-top {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pager-btns {
+  display: flex;
+  gap: 0.35rem;
+}
+
 .widgets-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

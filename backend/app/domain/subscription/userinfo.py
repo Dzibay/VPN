@@ -9,8 +9,8 @@
 
 - ``upload`` / ``download`` — использованный трафик по направлениям (байты).
 - ``total`` — квота в байтах; ``0`` означает без лимита (см. примеры Happ).
-- ``expire`` — Unix **секунды** (UTC): полночь календарного дня ``valid_until`` минус **3 часа**
-  (сдвиг для отображения в MSK и др.).
+- ``expire`` — Unix-секунды: **00:00 Europe/Moscow** на календарный день после ``valid_until``
+  (конец последнего оплаченного дня по Москве).
 
 Ссылки на документацию клиентов из ``subscription.open_apps``:
 
@@ -26,14 +26,16 @@
 - **Streisand**, **v2RayTun**: совместимы с распространёнными полями подписок Xray/Clash
   при запросе того же URL.
 
-Дата ``valid_until`` в БД — календарный день; в ``expire`` — момент ``00:00 UTC`` этого дня,
-с минус 3 ч (секунды Unix).
+Дата ``valid_until`` в БД — последний день доступа по календарю Москвы; в ``expire`` — полночь
+следующего дня по Москве (секунды Unix).
 """
 
 from __future__ import annotations
 
 import base64
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta
+
+from app.core.time import MOSCOW_TZ
 
 _HAPP_ANNOUNCE_MAX_CHARS = 200
 
@@ -77,8 +79,11 @@ def subscription_announce_header_value(text: str) -> str:
 def subscription_valid_until_to_expire_unix(valid_until: date | None) -> int | None:
     if valid_until is None:
         return None
-    day_start_utc = datetime.combine(valid_until, time.min, tzinfo=timezone.utc)
-    expire_moment = day_start_utc - timedelta(hours=3)
+    expire_moment = datetime.combine(
+        valid_until + timedelta(days=1),
+        time.min,
+        tzinfo=MOSCOW_TZ,
+    )
     return int(expire_moment.timestamp())
 
 

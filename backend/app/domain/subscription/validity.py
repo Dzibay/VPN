@@ -1,4 +1,4 @@
-"""Правила действия подписки (календарная дата UTC и персональный лимит трафика)."""
+"""Правила действия подписки (календарная дата по Москве и персональный лимит трафика)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from app.constants import (
     TRIAL_DAYS_AFTER_REGISTRATION,
     TRIAL_EXTRA_DAYS_USER_REFERRAL_REGISTRATION,
 )
-from app.core.time import utc_today
+from app.core.time import moscow_today
 from app.domain.user_traffic import user_traffic_over_limit_sql
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.user import User
@@ -25,24 +25,24 @@ def trial_extra_days_for_referral_link(link: ReferralLink | None) -> int:
 
 
 def subscription_until_after_registration(*, extra_trial_days: int = 0) -> date:
-    """Дата окончания подписки для нового пользователя (сегодня UTC + пробный период + опциональный бонус)."""
+    """Дата окончания подписки для нового пользователя (сегодня по Москве + пробный период + бонус)."""
 
     days = int(TRIAL_DAYS_AFTER_REGISTRATION) + max(0, int(extra_trial_days))
-    return utc_today() + timedelta(days=days)
+    return moscow_today() + timedelta(days=days)
 
 
 def subscription_calendar_active(user: User) -> bool:
     """Подписка по дате ``subscription_until`` (без учёта лимита трафика)."""
     if user.subscription_until is None:
         return True
-    return user.subscription_until >= utc_today()
+    return user.subscription_until >= moscow_today()
 
 
 def subscription_calendar_active_sql():
-    """SQL: календарная подписка активна (дата ≥ сегодня UTC или без срока)."""
+    """SQL: календарная подписка активна (дата ≥ сегодня по Москве или без срока)."""
     return or_(
         User.subscription_until.is_(None),
-        User.subscription_until >= utc_today(),
+        User.subscription_until >= moscow_today(),
     )
 
 

@@ -1,31 +1,69 @@
 """Утилиты для дат и времени.
 
-Все календарные операции в бэкенде должны использовать UTC: процесс может работать в любой
-зоне (контейнер vs хост-машина), и без явной фиксации UTC граница «сегодня» сдвигалась бы
-относительно записей в БД (registered_at, traffic_date — TIMESTAMP/DATE в UTC).
+Хранение в БД: ``timestamptz`` / моменты — UTC. Календарное поле ``subscription_until``
+(date) — **последний день доступа по календарю Москвы** (Europe/Moscow).
+
+* Подписка, продление, Xray-клиенты, ``notify_sub_expire_*`` — ``moscow_today()`` и
+  ``seconds_until_next_moscow_time``.
+* Снимки трафика ``traffic_date``, daily_stats по UTC-дням — ``utc_today()`` (не менять без
+  миграции смысла метрик).
+* Поля ``datetime`` в JSON API — Москва (``app.core.moscow_api_time``).
 """
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 
 def utc_today() -> date:
-    """Календарный день UTC (источник истины для подписки и аналитики)."""
+    """Календарный день UTC (трафик, аналитика по UTC-дням)."""
 
     return datetime.now(timezone.utc).date()
 
 
 def utc_now() -> datetime:
-    """Timezone-aware UTC-now (на случай когда нужен ``datetime``, а не ``date``)."""
+    """Timezone-aware UTC-now."""
 
     return datetime.now(timezone.utc)
 
 
-def seconds_until_next_local_time(hour: int, minute: int) -> float:
-    """Секунды сна до следующего локального ``hour:minute`` (как ``datetime.now()`` без tz).
+def moscow_now() -> datetime:
+    """Текущий момент в Europe/Moscow (aware)."""
 
-    Совпадает с планировщиком ежедневного sync Xray: граница «суток» — локальные часы процесса.
+    return datetime.now(MOSCOW_TZ)
+
+
+def moscow_today() -> date:
+    """Календарный день Europe/Moscow — граница подписки и напоминаний ``notify_sub_expire_*``."""
+
+    return moscow_now().date()
+
+
+def moscow_day_bounds_utc(d: date) -> tuple[datetime, datetime]:
+    """UTC-инстанты полуинтервала [start, end) для календарного дня ``d`` по Москве."""
+
+    start_msk = datetime.combine(d, time.min, tzinfo=MOSCOW_TZ)
+    end_msk = start_msk + timedelta(days=1)
+    return start_msk.astimezone(timezone.utc), end_msk.astimezone(timezone.utc)
+
+
+def seconds_until_next_moscow_time(hour: int, minute: int) -> float:
+    """Секунды сна до следующего ``hour:minute`` по Europe/Moscow."""
+
+    now = moscow_now()
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return (target - now).total_seconds()
+
+
+def seconds_until_next_local_time(hour: int, minute: int) -> float:
+    """Секунды до следующего ``hour:minute`` в **локальном** TZ процесса (legacy).
+
+    Предпочтительно ``seconds_until_next_moscow_time`` для бизнес-планировщиков.
     """
 
     now = datetime.now()
@@ -36,11 +74,8 @@ def seconds_until_next_local_time(hour: int, minute: int) -> float:
 
 
 def as_calendar_date(d_raw: object) -> date | None:
-    """Привести значение из БД к ``date``: ``datetime`` → ``.date()``, ``date`` → как есть, иначе ``None``.
+    """Привести значение из БД к ``date``: ``datetime`` → ``.date()``, ``date`` → как есть, иначе ``None``."""
 
-    Используется при разборе строк ``user_server_traffic.traffic_date`` и ``users.registered_at``,
-    где SQLAlchemy в зависимости от типа колонки может вернуть ``datetime`` или ``date``.
-    """
     if isinstance(d_raw, datetime):
         return d_raw.date()
     if isinstance(d_raw, date):

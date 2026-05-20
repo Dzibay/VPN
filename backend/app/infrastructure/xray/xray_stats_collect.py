@@ -18,7 +18,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.core.time import as_calendar_date, utc_today
+from app.core.time import as_calendar_date, moscow_today, utc_today
 from app.infrastructure.persistence.models.server import Server
 from app.infrastructure.persistence.models.user import User
 from app.infrastructure.persistence.models.user_server_traffic import UserServerTraffic
@@ -485,7 +485,7 @@ def load_user_traffic_bundle_rows(
         .where(
             or_(
                 User.subscription_until.is_(None),
-                User.subscription_until >= utc_today(),
+                User.subscription_until >= moscow_today(),
                 has_traffic_here,
             ),
         )

@@ -394,10 +394,10 @@ async function loadRefereesByOwnedLink() {
   }
   refereeUsersLoading.value = true
   try {
-    const list = await fetchJson(
-      `/api/users?referral_link_id=${encodeURIComponent(String(oid))}`,
+    const data = await fetchJson(
+      `/api/users?referral_link_id=${encodeURIComponent(String(oid))}&limit=500&offset=0`,
     )
-    refereeUsers.value = Array.isArray(list) ? list : []
+    refereeUsers.value = Array.isArray(data?.items) ? data.items : []
   } catch (e) {
     refereeUsersError.value = e.message || String(e)
   } finally {

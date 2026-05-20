@@ -307,7 +307,7 @@ class Settings(BaseSettings):
     subscription_daily_xray_clients_sync_enabled: bool = Field(
         default=True,
         description=(
-            "Планировщик API: раз в сутки (локальное время процесса) ставить в очередь RQ "
+            "Планировщик API: раз в сутки (Europe/Moscow) ставить в очередь RQ "
             "синхронизацию клиентов Xray на всех узлах: перебор узлов через тот же путь, что и при регистрации "
             "(динамический diff без рестарта при возможности и полная перезапись config для согласованности)."
         ),
@@ -316,13 +316,13 @@ class Settings(BaseSettings):
         default=0,
         ge=0,
         le=23,
-        description="Час локального времени процесса API для ежедневного sync Xray.",
+        description="Час Europe/Moscow для ежедневного sync Xray (после полуночи МСК — снятие истёкших клиентов).",
     )
     subscription_daily_xray_clients_sync_minute_local: int = Field(
         default=5,
         ge=0,
         le=59,
-        description="Минута локального времени процесса API.",
+        description="Минута Europe/Moscow для ежедневного sync Xray.",
     )
     scheduler_role: Literal["all", "periodic", "telegram_notify"] = Field(
         default="all",
@@ -336,7 +336,7 @@ class Settings(BaseSettings):
     subscription_expiry_notify_schedule_enabled: bool = Field(
         default=True,
         description=(
-            "Раз в сутки (локальное время процесса) создавать задачи ``notify_sub_expire_3d`` / "
+            "Раз в сутки (Europe/Moscow) создавать задачи ``notify_sub_expire_3d`` / "
             "``notify_sub_expire_1d`` / ``notify_sub_expire_0d`` для пользователей с активной конечной подпиской и telegram_id."
         ),
     )
@@ -344,13 +344,13 @@ class Settings(BaseSettings):
         default=12,
         ge=0,
         le=23,
-        description="Локальный час ежедневной проверки срока подписки (например 12 — полдень).",
+        description="Час Europe/Moscow ежедневной проверки срока подписки (по умолчанию 12:00 МСК).",
     )
     subscription_expiry_notify_minute_local: int = Field(
         default=0,
         ge=0,
         le=59,
-        description="Локальная минута проверки срока подписки.",
+        description="Минута Europe/Moscow проверки срока подписки.",
     )
     post_registration_notify_schedule_enabled: bool = Field(
         default=True,

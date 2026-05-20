@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import constants
 from app.config import Settings
 from app.core.exceptions import BadRequestError, ServiceUnavailableError, UnauthorizedError
-from app.core.time import utc_today
+from app.core.time import moscow_today
 from app.domain.models.payments import (
     TributePaymentsLinksResponse,
     TributeWebhookAck,
@@ -131,7 +131,7 @@ def _period_to_months(period: str) -> int | None:
 def _extend_subscription_until(base: date | None, *, days: int) -> date:
     if days < 1:
         raise ValueError("days must be >= 1")
-    today = utc_today()
+    today = moscow_today()
     start = base if base is not None and base >= today else today
     return start + timedelta(days=days)
 

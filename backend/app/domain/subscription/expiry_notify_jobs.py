@@ -1,20 +1,20 @@
 """Создание задач ``notify_sub_expire_*`` в таблице ``tasks`` (обрабатывает Telegram-бот).
 
-``users.subscription_until`` — календарная дата (UTC-день, см. ``app.core.time.utc_today`` и
-``user_has_active_subscription``): последний день включительно; на следующий UTC-день доступа нет.
-Отдельно выравнивать время «до полуночи» не требуется — у типа DATE в БД нет компонента времени.
+``users.subscription_until`` — последний календарный день доступа по Москве (см.
+``moscow_today`` и ``subscription_calendar_active``). Планировщик ставит задачи в
+``subscription_expiry_notify_hour_local`` / ``_minute_local`` — по Europe/Moscow.
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
-from datetime import timedelta
+from datetime import date, timedelta
 
 from sqlalchemy import Date, cast, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.core.time import utc_today
+from app.core.time import moscow_today
 from app.domain.tasks.notification_task_types import (
     NOTIFY_SUB_EXPIRE,
     NOTIFY_SUB_EXPIRE_0D,
@@ -59,7 +59,7 @@ def enqueue_subscription_expiry_notification_tasks() -> int:
     Идемпотентно на уровне дня: повторный запуск не добавляет вторую pending-задачу того же типа.
     """
 
-    today = utc_today()
+    today = moscow_today()
     created = 0
     rows: list[tuple[object, object]] = []
     with SessionLocal() as db:
@@ -94,24 +94,24 @@ def enqueue_subscription_expiry_notification_tasks() -> int:
         db.commit()
     if created:
         log.info(
-            "Напоминания об окончании подписки: создано задач=%s (UTC-сегодня=%s, пользователей=%s)",
+            "Напоминания об окончании подписки: создано задач=%s (МСК-сегодня=%s, пользователей=%s)",
             created,
             today.isoformat(),
             len(rows),
         )
     else:
         log.debug(
-            "Напоминания об окончании подписки: новых задач нет (UTC-сегодня=%s, строк=%s)",
+            "Напоминания об окончании подписки: новых задач нет (МСК-сегодня=%s, строк=%s)",
             today.isoformat(),
             len(rows),
         )
     return created
 
 
-def _user_not_registered_on_utc_day(today: date):
-    """Пользователи, у которых UTC-день ``registered_at`` не совпадает с ``today`` (null — ок)."""
-    reg_utc_day = cast(func.timezone("UTC", User.registered_at), Date)
-    return or_(User.registered_at.is_(None), reg_utc_day != today)
+def _user_not_registered_on_moscow_day(today: date):
+    """Пользователи, у которых календарный день ``registered_at`` по Москве ≠ ``today`` (null — ок)."""
+    reg_moscow_day = cast(func.timezone("Europe/Moscow", User.registered_at), Date)
+    return or_(User.registered_at.is_(None), reg_moscow_day != today)
 
 
 def _pending_sub_expired_keys(
@@ -137,9 +137,9 @@ def _enqueue_sub_expired_notification_tasks(
     task_type: str,
     skip_registered_today: bool,
 ) -> int:
-    """Задача оповещения после окончания подписки (``subscription_until`` = today − N UTC-дней)."""
+    """Задача оповещения после окончания подписки (``subscription_until`` = today − N дней по Москве)."""
 
-    today = utc_today()
+    today = moscow_today()
     last_paid_day = today - timedelta(days=days_after_last_paid)
     created = 0
     with SessionLocal() as db:
@@ -148,7 +148,7 @@ def _enqueue_sub_expired_notification_tasks(
             User.telegram_id.isnot(None),
         ]
         if skip_registered_today:
-            filters.append(_user_not_registered_on_utc_day(today))
+            filters.append(_user_not_registered_on_moscow_day(today))
         rows = list(db.execute(select(User.id).where(*filters)).all())
         user_ids = [int(uid) for uid, in rows]
         pending_uids = _pending_sub_expired_keys(db, user_ids, task_type)
@@ -170,7 +170,7 @@ def _enqueue_sub_expired_notification_tasks(
         db.commit()
     if created:
         log.info(
-            "%s: создано задач=%s (UTC-сегодня=%s, последний оплаченный день=%s, кандидатов=%s)",
+            "%s: создано задач=%s (МСК-сегодня=%s, последний оплаченный день=%s, кандидатов=%s)",
             task_type,
             created,
             today.isoformat(),
@@ -179,7 +179,7 @@ def _enqueue_sub_expired_notification_tasks(
         )
     else:
         log.debug(
-            "%s: новых задач нет (UTC-сегодня=%s, last_paid_day=%s, кандидатов=%s)",
+            "%s: новых задач нет (МСК-сегодня=%s, last_paid_day=%s, кандидатов=%s)",
             task_type,
             today.isoformat(),
             last_paid_day.isoformat(),
@@ -189,10 +189,10 @@ def _enqueue_sub_expired_notification_tasks(
 
 
 def enqueue_subscription_expired_notification_tasks() -> int:
-    """Создать ``notify_sub_expire`` в первый UTC-день после окончания подписки.
+    """Создать ``notify_sub_expire`` в первый день по Москве после окончания подписки.
 
-    Условие: ``subscription_until`` = вчера по UTC, есть ``telegram_id``, UTC-день
-    ``registered_at`` не совпадает с днём проверки (чтобы не слать в день регистрации).
+    Условие: ``subscription_until`` = вчера по Москве, есть ``telegram_id``, день
+    ``registered_at`` (МСК) не совпадает с днём проверки.
     """
 
     return _enqueue_sub_expired_notification_tasks(
@@ -203,7 +203,7 @@ def enqueue_subscription_expired_notification_tasks() -> int:
 
 
 def enqueue_subscription_expired_7d_notification_tasks() -> int:
-    """Создать ``notify_sub_expired_7d``, если подписка закончилась 7 UTC-дней назад."""
+    """Создать ``notify_sub_expired_7d``, если подписка закончилась 7 календарных дней назад (МСК)."""
 
     return _enqueue_sub_expired_notification_tasks(
         days_after_last_paid=7,

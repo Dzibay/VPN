@@ -17,6 +17,7 @@ from app.domain.models.users import (
     ExtendActiveSubscriptionsBody,
     ExtendActiveSubscriptionsResponse,
     StaffUserSearchItem,
+    StaffUsersListResponse,
     UserCreate,
     UserListItem,
     UserRead,
@@ -52,18 +53,20 @@ router = APIRouter(
 @router.get(
     "/count",
     response_model=UsersCountResponse,
-    dependencies=[Depends(require_admin)],
-    summary="Число записей пользователей в базе данных",
+    summary="Число записей пользователей в базе и сводка по регистрациям (виджеты админки)",
 )
-async def users_count_ep(session: ReadonlySessionDep) -> UsersCountResponse:
+async def users_count_ep(
+    session: ReadonlySessionDep,
+    _: Annotated[StaffUserListMode, Depends(require_staff_user_list_access)],
+) -> UsersCountResponse:
     return await users_count(session)
 
 
 @router.get(
     "",
-    response_model=list[UserListItem],
+    response_model=StaffUsersListResponse,
     summary=(
-        "Список пользователей для административного и менеджерского интерфейса; "
+        "Пагинированный список пользователей для административного и менеджерского интерфейса; "
         "токен подписки и UUID VLESS возвращаются только при доступе администратора. "
         "Параметр referral_link_id — только пользователи, у которых при регистрации "
         "зафиксирована указанная реферальная ссылка."
@@ -82,12 +85,22 @@ async def list_users(
             ),
         ),
     ] = None,
-) -> list[UserListItem]:
+    limit: Annotated[
+        int,
+        Query(ge=1, le=500, description="Размер страницы (по умолчанию 50)"),
+    ] = 50,
+    offset: Annotated[
+        int,
+        Query(ge=0, description="Смещение от начала списка (сортировка id по убыванию)"),
+    ] = 0,
+) -> StaffUsersListResponse:
     show_secrets = list_mode in ("open", "admin")
     return await staff_list_users(
         session,
         show_secrets=show_secrets,
         referral_link_id=referral_link_id,
+        limit=limit,
+        offset=offset,
     )
 
 

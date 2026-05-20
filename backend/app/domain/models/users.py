@@ -11,6 +11,22 @@ from app.domain.models.auth import SubscriptionConnectionItem
 
 class UsersCountResponse(BaseModel):
     users_count: int = Field(ge=0, description="Число записей в таблице users")
+    registrations_today_count: int = Field(
+        ge=0,
+        description="Регистрации за текущий календарный день Europe/Moscow",
+    )
+    registrations_yesterday_count: int = Field(
+        ge=0,
+        description="Регистрации за предыдущий календарный день Europe/Moscow",
+    )
+    registration_gap_overall_ms: float | None = Field(
+        default=None,
+        description="Средний интервал между соседними registered_at (UTC), мс; null если < 2 дат",
+    )
+    registration_gap_today_ms: float | None = Field(
+        default=None,
+        description="То же только для регистраций за сегодня UTC; null если < 2 дат",
+    )
 
 
 class StaffUserSearchItem(BaseModel):
@@ -234,7 +250,7 @@ class UserCreate(BaseModel):
     )
     subscription_until: date | None = Field(
         default=None,
-        description="Дата окончания подписки (календарный день). Пусто — без срока",
+        description="Последний день подписки по календарю Europe/Moscow. Пусто — без срока",
     )
 
     @field_validator("subscription_until", mode="before")
@@ -356,12 +372,21 @@ class UserListItem(BaseModel):
     )
 
 
+class StaffUsersListResponse(BaseModel):
+    """Пагинированный список пользователей для админки (GET /users)."""
+
+    items: list[UserListItem] = Field(description="Строки users, новые id первыми")
+    total: int = Field(ge=0, description="Число записей с учётом фильтра referral_link_id")
+    limit: int = Field(ge=1, description="Размер страницы")
+    offset: int = Field(ge=0, description="Смещение от начала отсортированного списка")
+
+
 class UserUpdate(BaseModel):
     """Частичное обновление пользователя (админка)."""
 
     subscription_until: date | None = Field(
         default=None,
-        description="Дата окончания подписки; null — без срока",
+        description="Последний день подписки по календарю Europe/Moscow; null — без срока",
     )
     telegram_id: int | None = Field(
         default=None,

@@ -26,7 +26,9 @@ const section = computed(() =>
 )
 
 const users = ref([])
-const usersCount = ref(null)
+const usersTotal = ref(0)
+const usersPageLimit = 50
+const usersOffset = ref(0)
 const usersLoading = ref(false)
 const usersError = ref(null)
 
@@ -349,20 +351,44 @@ const error = computed(() =>
   section.value === 'users' ? usersError.value : serversError.value,
 )
 
+const usersRangeLabel = computed(() => {
+  const n = users.value.length
+  if (usersTotal.value === 0) return '0 пользователей'
+  const from = usersOffset.value + 1
+  const to = usersOffset.value + n
+  return `${from}–${to} из ${usersTotal.value}`
+})
+
+const usersCanPrev = computed(() => usersOffset.value > 0)
+const usersCanNext = computed(
+  () => usersOffset.value + users.value.length < usersTotal.value,
+)
+
+function usersPrevPage() {
+  usersOffset.value = Math.max(0, usersOffset.value - usersPageLimit)
+  void loadUsers()
+}
+
+function usersNextPage() {
+  usersOffset.value = usersOffset.value + usersPageLimit
+  void loadUsers()
+}
+
 async function loadUsers() {
   usersLoading.value = true
   usersError.value = null
   try {
-    const [list, countRes] = await Promise.all([
-      fetchJson('/api/users'),
-      fetchJson('/api/users/count'),
-    ])
-    users.value = list
-    usersCount.value = countRes.users_count
+    const params = new URLSearchParams({
+      limit: String(usersPageLimit),
+      offset: String(usersOffset.value),
+    })
+    const data = await fetchJson(`/api/users?${params.toString()}`)
+    users.value = Array.isArray(data?.items) ? data.items : []
+    usersTotal.value = Number(data?.total) || 0
   } catch (e) {
     usersError.value = e.message || String(e)
     users.value = []
-    usersCount.value = null
+    usersTotal.value = 0
   } finally {
     usersLoading.value = false
   }
@@ -419,8 +445,10 @@ watch(
     serverHealthChecks.value = []
     usersSyncOk.value = null
     usersSyncError.value = null
-    if (s === 'users') loadUsers()
-    else loadServers()
+    if (s === 'users') {
+      usersOffset.value = 0
+      loadUsers()
+    } else loadServers()
   },
   { immediate: true },
 )
@@ -1229,8 +1257,7 @@ const statsLine = computed(() => {
   if (loading.value) return 'Загрузка…'
   if (error.value) return 'Ошибка загрузки'
   if (section.value === 'users') {
-    const n = usersCount.value
-    return n != null ? `${n} пользователей` : '— пользователей'
+    return usersRangeLabel.value
   }
   const n = serversCount.value
   return n != null ? `${n} серверов` : '— серверов'
@@ -1396,12 +1423,33 @@ watch(formIsCascadeRuEntry, (v) => {
         </button>
       </div>
       <div
-        v-else-if="!usersLoading && users.length === 0"
+        v-else-if="!usersLoading && usersTotal === 0"
         class="card muted"
       >
         Пока нет пользователей. Создайте первого.
       </div>
-      <AdminTableWrap v-else-if="!usersLoading" aria-label="Таблица пользователей">
+      <template v-else-if="!usersLoading">
+        <div class="pager-top">
+          <div class="pager-btns">
+            <button
+              type="button"
+              class="btn-secondary"
+              :disabled="usersLoading || !usersCanPrev"
+              @click="usersPrevPage"
+            >
+              Назад
+            </button>
+            <button
+              type="button"
+              class="btn-secondary"
+              :disabled="usersLoading || !usersCanNext"
+              @click="usersNextPage"
+            >
+              Вперёд
+            </button>
+          </div>
+        </div>
+        <AdminTableWrap aria-label="Таблица пользователей">
         <table class="admin-table">
           <thead>
             <tr>
@@ -1523,6 +1571,7 @@ watch(formIsCascadeRuEntry, (v) => {
           </tbody>
         </table>
       </AdminTableWrap>
+      </template>
     </template>
 
     <!-- Серверы -->
@@ -3347,5 +3396,19 @@ watch(formIsCascadeRuEntry, (v) => {
   color: #b86a1a;
   border-color: rgba(184, 106, 26, 0.35);
   background: rgba(184, 106, 26, 0.08);
+}
+
+.pager-top {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.pager-btns {
+  display: flex;
+  gap: 0.35rem;
 }
 </style>

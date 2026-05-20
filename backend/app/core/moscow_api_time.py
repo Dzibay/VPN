@@ -1,4 +1,9 @@
-"""Представление полей ``datetime`` в JSON ответов API в часовом поясе Москвы (Europe/Moscow, UTC+3)."""
+"""Представление полей ``datetime`` в JSON ответов API в часовом поясе Москвы (Europe/Moscow).
+
+Календарные поля ``date`` (например ``subscription_until``) в JSON — как в БД (YYYY-MM-DD);
+смысл дня — Europe/Moscow (см. ``app.core.time.moscow_today``). Моменты ``registered_at``,
+``created_at`` — UTC в БД, в ответе — ISO с offset Москвы.
+"""
 
 from __future__ import annotations
 
