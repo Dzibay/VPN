@@ -222,9 +222,14 @@ _STORE: dict[str, AppStoreLinks] = {
         macos="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215",
         linux="https://www.happ.su/main/ru",
     ),
-    "stash": _stores(ios="https://apps.apple.com/us/app/stash-rule-based-proxy/id1596063349"),
-    "shadowrocket": _stores(ios="https://apps.apple.com/ru/app/shadowrocket/id932747118"),
-    "streisand": _stores(ios="https://apps.apple.com/ru/app/streisand/id6450534064"),
+    "incy": _stores(
+        android=(
+            "https://play.google.com/store/apps/details?id=llc.itdev.incy",
+            "https://github.com/INCY-DEV/incy-platforms/releases/latest/download/Incy.apk",
+        ),
+        ios="https://apps.apple.com/ru/app/incy/id6756943388",
+        macos="https://apps.apple.com/ru/app/incy/id6756943388",
+    ),
     "flclashx": _stores(
         android=(
             "https://github.com/pluralplay/FlClashX/releases",
@@ -242,26 +247,6 @@ _STORE: dict[str, AppStoreLinks] = {
             "https://github.com/pluralplay/FlClashX/releases",
             "https://github.com/pluralplay/FlClashX/releases/latest/download/FlClashX-linux-amd64.deb",
         ),
-    ),
-    "v2rayng": _stores(
-        android=(
-            "https://github.com/2dust/v2rayNG/releases",
-            "https://github.com/2dust/v2rayNG/releases/download/1.10.31/v2rayNG_1.10.31_universal.apk",
-        ),
-    ),
-    "v2raytun": _stores(
-        android="https://play.google.com/store/apps/details?id=com.v2raytun.android",
-        ios="https://apps.apple.com/app/v2raytun/id6476628951",
-        windows="https://v2raytun.com",
-        macos="https://v2raytun.com",
-    ),
-    "incy": _stores(
-        android=(
-            "https://play.google.com/store/apps/details?id=llc.itdev.incy",
-            "https://github.com/INCY-DEV/incy-platforms/releases/latest/download/Incy.apk",
-        ),
-        ios="https://apps.apple.com/ru/app/incy/id6756943388",
-        macos="https://apps.apple.com/ru/app/incy/id6756943388",
     ),
     "koala-clash": _stores(
         windows=(
@@ -290,6 +275,21 @@ _STORE: dict[str, AppStoreLinks] = {
             "https://github.com/legiz-ru/Prizrak-Box/releases",
             "https://github.com/legiz-ru/Prizrak-Box/releases/latest/download/linux-amd64.deb",
         ),
+    ),
+    "stash": _stores(ios="https://apps.apple.com/us/app/stash-rule-based-proxy/id1596063349"),
+    "shadowrocket": _stores(ios="https://apps.apple.com/ru/app/shadowrocket/id932747118"),
+    "streisand": _stores(ios="https://apps.apple.com/ru/app/streisand/id6450534064"),
+    "v2rayng": _stores(
+        android=(
+            "https://github.com/2dust/v2rayNG/releases",
+            "https://github.com/2dust/v2rayNG/releases/download/1.10.31/v2rayNG_1.10.31_universal.apk",
+        ),
+    ),
+    "v2raytun": _stores(
+        android="https://play.google.com/store/apps/details?id=com.v2raytun.android",
+        ios="https://apps.apple.com/app/v2raytun/id6476628951",
+        windows="https://v2raytun.com",
+        macos="https://v2raytun.com",
     ),
 }
 
