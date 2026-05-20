@@ -40,6 +40,14 @@ def _merge_referral_attribution(keep: User, drop: User) -> None:
         keep.referral_link_id = drop.referral_link_id
 
 
+def _merge_traffic_limit(keep: User, drop: User) -> None:
+    """Персональный лимит: безлимит (NULL) у любого аккаунта сохраняется у итогового."""
+    if keep.traffic_limit_bytes is None or drop.traffic_limit_bytes is None:
+        keep.traffic_limit_bytes = None
+        return
+    keep.traffic_limit_bytes = max(int(keep.traffic_limit_bytes), int(drop.traffic_limit_bytes))
+
+
 def _later_subscription_date(a: date | None, b: date | None) -> date | None:
     """Самая поздняя из двух дат окончания подписки.
 
@@ -219,7 +227,8 @@ async def merge_drop_user_into_keep(session: AsyncSession, keep: User, drop: Use
     реферальной ссылки, атрибуция ``referral_link_id`` (если у ``keep`` пусто),
     платежи, задачи (в т.ч. ``referee_id``), устройства подписки, HTTP-аудит;
     дата ``subscription_until`` — более поздняя из двух;
-    при наличии оплат у итогового аккаунта — ``traffic_limit_bytes`` сбрасывается в NULL.
+    ``traffic_limit_bytes`` — безлимит, если он был у любого из двух; иначе больший из лимитов;
+    при наличии оплат у итогового аккаунта — лимит снимается (NULL).
     """
     if keep.id == drop.id:
         return
@@ -227,6 +236,7 @@ async def merge_drop_user_into_keep(session: AsyncSession, keep: User, drop: Use
     await merge_user_server_traffic(session, keep.id, drop.id)
     await merge_owned_referral_links(session, keep.id, drop.id)
     await merge_reassign_payments(session, keep_user_id=keep.id, drop_user_id=drop.id)
+    _merge_traffic_limit(keep, drop)
     if await clear_traffic_limit_if_user_has_payments(session, keep):
         enqueue_xray_clients_sync_for_access_change()
     await merge_reassign_tasks(session, keep_user_id=keep.id, drop_user_id=drop.id)
