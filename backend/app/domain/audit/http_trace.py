@@ -22,6 +22,19 @@ def _normalized_route_path(path_with_query: str) -> str:
     return p.rstrip("/") or "/"
 
 
+def http_audit_always_persist_for_path(path_with_query: str, *, api_prefix: str) -> bool:
+    """Tribute webhook — всегда в ``user_http_request_traces`` (тело webhook — в ``payments.tribute_webhook``)."""
+    normalized = _normalized_route_path(path_with_query)
+    pfx = (api_prefix or "/api").strip()
+    if not pfx.startswith("/"):
+        pfx = "/" + pfx.lstrip("/")
+    pfx = pfx.rstrip("/")
+    for suffix in ("/payments/tribute/webhook", "/payments/tribute/webhook-test"):
+        if normalized == f"{pfx}{suffix}":
+            return True
+    return False
+
+
 def http_audit_skip_persist_for_path(path_with_query: str, *, api_prefix: str) -> bool:
     """Не писать в БД высокочастотные служебные эндпоинты (пробы, SD Prometheus)."""
     normalized = _normalized_route_path(path_with_query)
@@ -73,8 +86,12 @@ async def persist_http_request_trace_if_configured(
     duration_ms: float,
 ) -> None:
     cfg = get_settings()
+    always_persist = http_audit_always_persist_for_path(
+        scope_path_with_query,
+        api_prefix=cfg.api_prefix,
+    )
 
-    if http_audit_skip_persist_for_path(
+    if not always_persist and http_audit_skip_persist_for_path(
         scope_path_with_query,
         api_prefix=cfg.api_prefix,
     ):
@@ -82,7 +99,7 @@ async def persist_http_request_trace_if_configured(
 
     user_id, subject_source = get_request_subject()
 
-    if not http_audit_should_persist_row(
+    if not always_persist and not http_audit_should_persist_row(
         resolved_user_id=user_id,
         level_raw=cfg.http_audit_db_log_level,
     ):

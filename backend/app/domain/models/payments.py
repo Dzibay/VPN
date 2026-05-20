@@ -46,6 +46,9 @@ class TributeWebhookAck(BaseModel):
     ok: bool = True
     event: str | None = None
     duplicate: bool = False
+    payment_id: int | None = None
+    fulfilled: bool = False
+    skip_reason: str | None = None
 
 
 class TributeWebhookSubscriptionTestPayload(BaseModel):

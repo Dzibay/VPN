@@ -1,5 +1,11 @@
 -- Догонка существующих БД: external_id → tribute_webhook (полное тело webhook Tribute).
 
+ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_months_check;
+
+ALTER TABLE payments ADD CONSTRAINT payments_months_check CHECK (months >= 0);
+
+DROP TABLE IF EXISTS tribute_webhook_logs;
+
 ALTER TABLE payments DROP COLUMN IF EXISTS external_id;
 
 ALTER TABLE payments ALTER COLUMN user_id DROP NOT NULL;
