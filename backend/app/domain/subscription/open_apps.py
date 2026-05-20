@@ -312,21 +312,15 @@ def _app(
 
 SUBSCRIPTION_OPEN_APPS: dict[str, SubscriptionOpenApp] = {
     "happ": _app("happ", "Happ", _happ_deeplink),
+    "incy": _app("incy", "INCY", _incy_deeplink),
+    "flclashx": _app("flclashx", "FLClashX", _flclashx_deeplink),
+    "v2raytun": _app("v2raytun", "v2RayTun", _v2raytun_deeplink),
+    "koala-clash": _app("koala-clash", "Koala Clash", _koala_clash_deeplink),
+    "prizrak-box": _app("prizrak-box", "Prizrak Box", _prizrak_box_deeplink),
     "stash": _app("stash", "Stash", _stash_deeplink),
     "shadowrocket": _app("shadowrocket", "Shadowrocket", _shadowrocket_deeplink),
     "streisand": _app("streisand", "Streisand", _streisand_deeplink),
-    "flclashx": _app(
-        "flclashx", "FLClashX", _flclashx_deeplink,
-    ),
     "v2rayng": _app("v2rayng", "v2rayNG", _v2rayng_deeplink),
-    "v2raytun": _app("v2raytun", "v2RayTun", _v2raytun_deeplink),
-    "incy": _app("incy", "INCY", _incy_deeplink),
-    "koala-clash": _app(
-        "koala-clash", "Koala Clash", _koala_clash_deeplink,
-    ),
-    "prizrak-box": _app(
-        "prizrak-box", "Prizrak Box", _prizrak_box_deeplink,
-    ),
 }
 
 
