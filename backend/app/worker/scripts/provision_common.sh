@@ -11,6 +11,49 @@ INSTALLER_URL="${VPN_XRAY_INSTALLER_URL:-https://github.com/XTLS/Xray-install/ra
 _self="${BASH_SOURCE[0]:-$0}"
 SCRIPT_DIR="$(cd "$(dirname "$_self")" && pwd)"
 
+# unzip/curl до install-release.sh: скрипт XTLS ставит пакеты через apt без update и с выводом в /dev/null.
+_provision_preflight_packages() {
+  echo "[preflight] зависимости для xray (unzip, curl, ca-certificates)…"
+  if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    set +e
+    apt-get update -y 2>&1 | tail -30
+    local upd_rc=$?
+    apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
+      --no-install-recommends unzip curl ca-certificates ncurses-bin 2>&1 | tail -40
+    local inst_rc=$?
+    set -e
+    if [[ "$upd_rc" -ne 0 ]]; then
+      echo "[preflight] предупреждение: apt-get update код $upd_rc (зеркала/DNS?)" >&2
+    fi
+    if [[ "$inst_rc" -ne 0 ]]; then
+      echo "[preflight] предупреждение: apt-get install код $inst_rc — при сбое xray попробуем прямую загрузку с GitHub" >&2
+    fi
+  elif command -v dnf >/dev/null 2>&1; then
+    set +e
+    dnf -y install unzip curl ca-certificates ncurses 2>&1 | tail -40
+    set -e
+  elif command -v yum >/dev/null 2>&1; then
+    set +e
+    yum -y install unzip curl ca-certificates ncurses 2>&1 | tail -40
+    set -e
+  elif command -v zypper >/dev/null 2>&1; then
+    set +e
+    zypper install -y --no-recommends unzip curl ca-certificates ncurses-utils 2>&1 | tail -40
+    set -e
+  else
+    echo "[preflight] неизвестный менеджер пакетов — только проверка unzip/curl" >&2
+  fi
+  if command -v unzip >/dev/null 2>&1; then
+    echo "[preflight] unzip: $(command -v unzip)"
+  else
+    echo "[preflight] unzip не установлен — распаковка релиза через python3 (если понадобится fallback)" >&2
+  fi
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "[preflight] curl не найден — нужен для install-release и fallback" >&2
+  fi
+}
+
 fetch_installer() {
   if command -v curl >/dev/null 2>&1; then
     # install-release.sh внутри снова тянет релизы с GitHub — при блокировке см. сообщение в _xray_install.

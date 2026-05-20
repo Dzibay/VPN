@@ -422,6 +422,122 @@ _xray_ensure_geo_dats() {
   return 0
 }
 
+_xray_linux_machine_suffix() {
+  case "$(uname -m)" in
+    x86_64|amd64) echo "64" ;;
+    aarch64|arm64) echo "arm64-v8a" ;;
+    *)
+      echo "[xray] fallback: архитектура $(uname -m) не поддерживается" >&2
+      return 1
+      ;;
+  esac
+}
+
+_xray_fetch_latest_version() {
+  local tmp v
+  tmp=$(mktemp)
+  if ! curl -fsSL --connect-timeout 30 --max-time 120 \
+    -H "Accept: application/vnd.github.v3+json" \
+    "https://api.github.com/repos/XTLS/Xray-core/releases/latest" -o "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  v=$(grep -m1 '"tag_name"' "$tmp" | sed -E 's/.*"([^"]+)".*/\1/' || true)
+  rm -f "$tmp"
+  [[ -n "$v" ]] || return 1
+  echo "${v#v}"
+}
+
+_xray_unzip_to_dir() {
+  local zip="$1" dest="$2"
+  if command -v unzip >/dev/null 2>&1; then
+    unzip -q -o "$zip" -d "$dest"
+    return $?
+  fi
+  python3 - "$zip" "$dest" <<'PY'
+import sys, zipfile
+zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])
+PY
+}
+
+_xray_ensure_systemd_unit() {
+  if [[ -f /etc/systemd/system/xray.service ]]; then
+    return 0
+  fi
+  if ! command -v systemctl >/dev/null 2>&1; then
+    return 0
+  fi
+  mkdir -p /usr/local/etc/xray /usr/local/share/xray
+  if [[ ! -f /usr/local/etc/xray/config.json ]]; then
+    echo '{}' > /usr/local/etc/xray/config.json
+  fi
+  cat > /etc/systemd/system/xray.service <<'UNIT'
+[Unit]
+Description=Xray Service
+Documentation=https://github.com/xtls
+After=network-online.target nss-lookup.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/xray run -config /usr/local/etc/xray/config.json
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=1000000
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload 2>/dev/null || true
+}
+
+_xray_install_direct_fallback() {
+  echo "[xray] fallback: прямая установка бинарника с GitHub…"
+  local machine ver tmp zip url
+  machine=$(_xray_linux_machine_suffix) || return 1
+  ver="${VPN_XRAY_INSTALL_VERSION:-}"
+  if [[ -z "$ver" ]]; then
+    ver=$(_xray_fetch_latest_version) || {
+      echo "[xray] fallback: не удалось получить версию (GitHub API)" >&2
+      return 1
+    }
+  fi
+  ver="${ver#v}"
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "[xray] fallback: нужен curl" >&2
+    return 1
+  fi
+  tmp=$(mktemp -d)
+  zip="$tmp/Xray-linux-${machine}.zip"
+  url="https://github.com/XTLS/Xray-core/releases/download/v${ver}/Xray-linux-${machine}.zip"
+  echo "[xray] fallback: $url"
+  if ! curl -fSL --connect-timeout 30 --max-time 300 --retry 3 --retry-delay 8 \
+    -o "$zip" "$url"; then
+    echo "[xray] fallback: загрузка не удалась" >&2
+    rm -rf "$tmp"
+    return 1
+  fi
+  if ! _xray_unzip_to_dir "$zip" "$tmp"; then
+    echo "[xray] fallback: распаковка zip не удалась" >&2
+    rm -rf "$tmp"
+    return 1
+  fi
+  if [[ ! -f "$tmp/xray" ]]; then
+    echo "[xray] fallback: в архиве нет xray" >&2
+    rm -rf "$tmp"
+    return 1
+  fi
+  install -m 755 "$tmp/xray" /usr/local/bin/xray
+  mkdir -p /usr/local/share/xray
+  [[ -f "$tmp/geoip.dat" ]] && install -m 644 "$tmp/geoip.dat" /usr/local/share/xray/geoip.dat
+  [[ -f "$tmp/geosite.dat" ]] && install -m 644 "$tmp/geosite.dat" /usr/local/share/xray/geosite.dat
+  rm -rf "$tmp"
+  _xray_ensure_systemd_unit || true
+  echo "[xray] fallback: $(/usr/local/bin/xray -version 2>/dev/null | head -1 || echo ok)"
+  return 0
+}
+
 # Проверка JSON и маршрутов; иначе systemctl даст мёртвый сокет (TCP connection refused)
 _xray_test_config_and_restart() {
   local cfg="$1"
@@ -460,6 +576,8 @@ _xray_install() {
     exit 1
   fi
 
+  _provision_preflight_packages || true
+
   echo "[xray] установка (XTLS install-release.sh)…"
   # Скрипт XTLS в конце включает/запускает xray со своим дефолтным config.json — часто невалиден для узла,
   # systemctl возвращает ошибку, exit≠0, хотя бинарник уже установлен. Дальше мы пишем свой config.json.
@@ -478,11 +596,16 @@ _xray_install() {
     XRAY_BIN=/usr/local/bin/xray
   fi
   if [[ ! -x "$XRAY_BIN" ]]; then
-    echo "[xray] не найден бинарник xray" >&2
-    echo "[xray] Частая причина: с ВМ нет стабильного HTTPS до GitHub (в логе выше — curl: (28) SSL connection timeout и т.п.)." >&2
-    echo "[xray] Проверка на узле: curl -vI https://github.com  и  curl -vI https://github.com/XTLS/Xray-core/releases" >&2
-    echo "[xray] Обход: HTTPS_PROXY на узле, другое зеркало релизов, или установите xray вручную в /usr/local/bin/xray и повторите provision." >&2
-    exit 1
+    echo "[xray] бинарник не найден после install-release.sh, пробуем fallback…" >&2
+    if ! _xray_install_direct_fallback; then
+      echo "[xray] не найден бинарник xray" >&2
+      echo "[xray] Частые причины: apt не ставит unzip (зеркала ОС), или нет HTTPS до GitHub." >&2
+      echo "[xray] На узле: apt-get update && apt-get install -y unzip curl" >&2
+      echo "[xray] Проверка: curl -vI https://github.com  и  curl -vI https://github.com/XTLS/Xray-core/releases" >&2
+      echo "[xray] Обход: HTTPS_PROXY, другое зеркало apt, или xray вручную в /usr/local/bin/xray и повтор provision." >&2
+      exit 1
+    fi
+    XRAY_BIN=/usr/local/bin/xray
   fi
 
   if [[ -n "${VPN_REALITY_PRIVATE_KEY:-}" ]]; then
