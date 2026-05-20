@@ -267,6 +267,7 @@ async def create_staff_user(session: AsyncSession, body: UserCreate) -> User:
         telegram_id=body.telegram_id,
         telegram_properties=body.telegram_properties,
         subscription_until=body.subscription_until,
+        account_role="client",
         token=new_subscription_token(),
         vless_uuid=new_vless_uuid(),
     )

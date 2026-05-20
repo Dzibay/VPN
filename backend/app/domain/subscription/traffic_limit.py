@@ -47,7 +47,8 @@ def default_traffic_limit_bytes(cfg: Settings | None = None) -> int:
 
 def apply_default_traffic_limit_for_new_client(user: User, *, cfg: Settings | None = None) -> None:
     """Новый клиент без оплаты: персональный лимит = дефолт из settings."""
-    if user.account_role != "client":
+    # До flush ORM не подставляет server_default — считаем None как client (как в БД).
+    if (user.account_role or "client") != "client":
         return
     if user.traffic_limit_bytes is not None:
         return

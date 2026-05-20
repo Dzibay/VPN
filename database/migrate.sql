@@ -62,39 +62,3 @@ ALTER TABLE users DROP CONSTRAINT IF EXISTS users_traffic_limit_bytes_check;
 ALTER TABLE users ADD CONSTRAINT users_traffic_limit_bytes_check CHECK (
     traffic_limit_bytes IS NULL OR traffic_limit_bytes >= 0
 );
-
-WITH latest_per_server AS (
-    SELECT DISTINCT ON (t.user_id, t.server_id)
-        t.user_id,
-        (t.up_bytes + t.down_bytes)::bigint AS bytes
-    FROM user_server_traffic t
-    ORDER BY t.user_id, t.server_id, t.traffic_date DESC
-),
-traffic_by_user AS (
-    SELECT
-        user_id,
-        COALESCE(SUM(bytes), 0)::bigint AS total_bytes
-    FROM latest_per_server
-    GROUP BY user_id
-),
-default_lim AS (
-    SELECT (20::bigint * 1024 * 1024 * 1024) AS lim
-),
-computed AS (
-    SELECT
-        u.id AS user_id,
-        CASE
-            WHEN EXISTS (
-                SELECT 1
-                FROM payments p
-                WHERE p.user_id = u.id
-            ) THEN NULL::bigint
-            ELSE COALESCE(tb.total_bytes, 0) + (SELECT lim FROM default_lim)
-        END AS new_limit
-    FROM users u
-    LEFT JOIN traffic_by_user tb ON tb.user_id = u.id
-)
-UPDATE users u
-SET traffic_limit_bytes = c.new_limit
-FROM computed c
-WHERE u.id = c.user_id;

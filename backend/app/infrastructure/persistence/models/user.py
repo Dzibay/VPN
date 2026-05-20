@@ -37,6 +37,7 @@ class User(Base):
         Text,
         nullable=False,
         server_default=text("'client'"),
+        default="client",
     )
     subscription_until: Mapped[date | None] = mapped_column(Date, nullable=True)
     #: Персональный потолок трафика (up+down, байты). NULL — без лимита (обычно после оплаты).

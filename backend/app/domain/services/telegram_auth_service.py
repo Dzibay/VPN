@@ -104,6 +104,7 @@ async def telegram_authenticate(
             password_hash=None,
             telegram_id=tid,
             telegram_properties=profile,
+            account_role="client",
             subscription_until=subscription_until_after_registration(extra_trial_days=trial_extra),
             token=new_subscription_token(),
             vless_uuid=new_vless_uuid(),

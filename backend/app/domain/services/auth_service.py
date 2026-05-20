@@ -97,6 +97,7 @@ async def register_with_email(
         password_hash=pwd_hash,
         telegram_id=None,
         telegram_properties=None,
+        account_role="client",
         subscription_until=subscription_until_after_registration(extra_trial_days=trial_extra),
         token=new_subscription_token(),
         vless_uuid=new_vless_uuid(),
