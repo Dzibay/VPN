@@ -4,10 +4,11 @@ import { RouterLink } from 'vue-router'
 import {
   ADMIN_HIGHLIGHT_LIST_KEYS,
   ADMIN_HIGHLIGHT_LIST_PRESETS,
+  adminUserAnalyticsPath,
 } from './adminHighlightListLinkPresets.js'
 
 const props = defineProps({
-  /** Целевой список: users — клиенты, referrals — реферальные ссылки */
+  /** users — аналитика пользователя; referrals — список с подсветкой строки */
   list: {
     type: String,
     required: true,
@@ -27,10 +28,15 @@ const props = defineProps({
 const preset = computed(() => ADMIN_HIGHLIGHT_LIST_PRESETS[props.list])
 const linkTitle = computed(() => props.title || preset.value.title)
 const linkAriaLabel = computed(() => props.ariaLabel || preset.value.ariaLabel)
-const linkTo = computed(() => ({
-  path: preset.value.path,
-  query: { highlight: String(props.highlight) },
-}))
+const linkTo = computed(() => {
+  if (preset.value.routeKind === 'userAnalytics') {
+    return adminUserAnalyticsPath(props.highlight)
+  }
+  return {
+    path: preset.value.path,
+    query: { highlight: String(props.highlight) },
+  }
+})
 
 function onClick(event) {
   if (props.stopPropagation) event.stopPropagation()

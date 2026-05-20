@@ -1,8 +1,9 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import AdminHighlightListLink from '../components/AdminHighlightListLink.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
+import StaffUserIdSuggestInput from '../components/StaffUserIdSuggestInput.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
 import { fetchJson } from '../api/client.js'
@@ -10,6 +11,9 @@ import { formatTrafficWithLimit, isTrafficOverLimit } from '../utils/formatTraff
 import { useTableSort } from '../utils/adminTableSort.js'
 
 const route = useRoute()
+const router = useRouter()
+
+const userSearchQuery = ref('')
 
 const rows = ref([])
 const rowsTotal = ref(0)
@@ -340,6 +344,12 @@ watch(
   { flush: 'post' },
 )
 
+function goToUserAnalytics(row) {
+  const id = Number(row?.id)
+  if (!Number.isFinite(id) || id < 1) return
+  router.push(`/admin/users/${id}/analytics`)
+}
+
 onMounted(() => {
   void load()
 })
@@ -382,6 +392,18 @@ onMounted(() => {
           </p>
         </div>
       </div>
+    </section>
+
+    <section class="clients-search" aria-label="Поиск пользователя">
+      <label class="clients-search-label" for="clients-user-search">
+        Перейти к пользователю
+      </label>
+      <StaffUserIdSuggestInput
+        v-model="userSearchQuery"
+        input-id="clients-user-search"
+        placeholder="Поиск от 3 символов (id, email, @username, tg id)"
+        @select="goToUserAnalytics"
+      />
     </section>
 
     <section v-if="!loading && !error" class="stats stats--pager" aria-live="polite">
@@ -739,6 +761,19 @@ onMounted(() => {
 <style scoped>
 .stats {
   margin-bottom: 1rem;
+}
+
+.clients-search {
+  margin-bottom: 1rem;
+  max-width: 28rem;
+}
+
+.clients-search-label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
 }
 
 .stats--pager {

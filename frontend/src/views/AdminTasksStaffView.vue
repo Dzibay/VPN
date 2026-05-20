@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import AdminHighlightListLink from '../components/AdminHighlightListLink.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
@@ -516,8 +517,21 @@ onMounted(() => {
               <tr v-for="row in sortedRows" :key="row.id">
                 <td class="num">{{ row.id }}</td>
                 <td class="mono-cell">{{ row.type }}</td>
-                <td class="num">{{ row.user_id }}</td>
-                <td class="num">{{ row.referee_id ?? '—' }}</td>
+                <td class="owner-user-id-cell num">
+                  <span class="owner-user-id-inner">
+                    <span>{{ row.user_id }}</span>
+                    <AdminHighlightListLink list="users" :highlight="row.user_id" />
+                  </span>
+                </td>
+                <td class="owner-user-id-cell num">
+                  <span class="owner-user-id-inner">
+                    <template v-if="row.referee_id != null">
+                      <span>{{ row.referee_id }}</span>
+                      <AdminHighlightListLink list="users" :highlight="row.referee_id" />
+                    </template>
+                    <template v-else>—</template>
+                  </span>
+                </td>
                 <td class="num">{{ row.bonus_days ?? '—' }}</td>
                 <td class="num">{{ row.paid_months ?? '—' }}</td>
                 <td>

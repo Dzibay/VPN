@@ -21,7 +21,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'select'])
 
 const localText = ref(String(props.modelValue ?? ''))
 const open = ref(false)
@@ -116,14 +116,45 @@ function onMouseDownOption() {
   }
 }
 
+function parseSubmittedUserId(raw) {
+  const s = String(raw ?? '').trim()
+  if (!/^\d+$/.test(s)) return null
+  const n = Number.parseInt(s, 10)
+  if (!Number.isFinite(n) || n < 1) return null
+  return n
+}
+
 function pickUser(row) {
   clearTimers()
   const id = String(row.id)
   localText.value = id
   emit('update:modelValue', id)
+  emit('select', row)
   suggestions.value = []
   open.value = false
   fetchError.value = null
+}
+
+function onEnterKey(e) {
+  e.preventDefault()
+  clearTimers()
+  const q = localText.value.trim()
+  const userId = parseSubmittedUserId(q)
+  if (userId != null) {
+    const fromList = suggestions.value.find((r) => Number(r.id) === userId)
+    pickUser(
+      fromList ?? {
+        id: userId,
+        email: null,
+        telegram_id: null,
+        telegram_username: null,
+      },
+    )
+    return
+  }
+  if (open.value && suggestions.value.length > 0) {
+    pickUser(suggestions.value[0])
+  }
 }
 
 /** Текст под #id в списке (без дублирования id). */
@@ -158,6 +189,7 @@ function formatRowMeta(row) {
         class="staff-user-suggest-input"
         :placeholder="placeholder"
         @input="onInputNative"
+        @keydown.enter.prevent="onEnterKey"
         @focus="onFocus"
         @blur="onBlur"
       />
