@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.config import Settings, settings
 from app.domain.subscription.validity import subscription_calendar_active_sql
 from app.domain.user_traffic import user_traffic_over_limit_sql
+from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.user import User
 
 log = logging.getLogger("app.subscription.traffic_limit")
@@ -137,4 +138,24 @@ async def clear_traffic_limit_after_payment(
     user.traffic_limit_bytes = None
     await session.flush()
     log.info("traffic limit: снят лимит после оплаты user_id=%s", user.id)
+    return True
+
+
+async def clear_traffic_limit_if_user_has_payments(
+    session: AsyncSession,
+    user: User,
+) -> bool:
+    """Снять лимит, если у пользователя есть хотя бы одна оплата (слияние аккаунтов и т.п.)."""
+    if user.traffic_limit_bytes is None:
+        return False
+    paid = (
+        await session.scalars(
+            select(Payment.id).where(Payment.user_id == user.id).limit(1),
+        )
+    ).first()
+    if paid is None:
+        return False
+    user.traffic_limit_bytes = None
+    await session.flush()
+    log.info("traffic limit: снят лимит (есть оплаты) user_id=%s", user.id)
     return True

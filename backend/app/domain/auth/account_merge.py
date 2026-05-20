@@ -18,6 +18,10 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.referrals.repository import get_user_owned_referral_link
+from app.domain.subscription.traffic_limit import (
+    clear_traffic_limit_if_user_has_payments,
+    enqueue_xray_clients_sync_for_access_change,
+)
 from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.subscription_device import SubscriptionDevice
 from app.infrastructure.persistence.models.task import Task
@@ -214,7 +218,8 @@ async def merge_drop_user_into_keep(session: AsyncSession, keep: User, drop: Use
     Переносятся: трафик по серверам (сумма по совпадающим дням и узлам), владелец личной
     реферальной ссылки, атрибуция ``referral_link_id`` (если у ``keep`` пусто),
     платежи, задачи (в т.ч. ``referee_id``), устройства подписки, HTTP-аудит;
-    дата ``subscription_until`` — более поздняя из двух.
+    дата ``subscription_until`` — более поздняя из двух;
+    при наличии оплат у итогового аккаунта — ``traffic_limit_bytes`` сбрасывается в NULL.
     """
     if keep.id == drop.id:
         return
@@ -222,6 +227,8 @@ async def merge_drop_user_into_keep(session: AsyncSession, keep: User, drop: Use
     await merge_user_server_traffic(session, keep.id, drop.id)
     await merge_owned_referral_links(session, keep.id, drop.id)
     await merge_reassign_payments(session, keep_user_id=keep.id, drop_user_id=drop.id)
+    if await clear_traffic_limit_if_user_has_payments(session, keep):
+        enqueue_xray_clients_sync_for_access_change()
     await merge_reassign_tasks(session, keep_user_id=keep.id, drop_user_id=drop.id)
     await merge_reassign_user_http_traces(session, keep_user_id=keep.id, drop_user_id=drop.id)
     await merge_subscription_devices_users(session, keep_user_id=keep.id, drop_user_id=drop.id)
