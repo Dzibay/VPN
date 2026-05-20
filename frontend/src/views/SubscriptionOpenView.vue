@@ -5,6 +5,10 @@ import AppActionButton from '../components/AppActionButton.vue'
 import CabinetBackLink from '../components/CabinetBackLink.vue'
 import { fetchJson, subscriptionPublicUrl } from '../api/client.js'
 import {
+  hideClientLogoOnError,
+  openClientLogoUrl,
+} from '../util/subscriptionOpenClientLogo.js'
+import {
   forcedStoreRefs,
   getMobileStoreRedirectUrl,
   isMobileAppStoreDevice,
@@ -73,6 +77,8 @@ const displayTitle = computed(() => {
     || client.value
   )
 })
+
+const clientLogoUrl = computed(() => openClientLogoUrl(client.value))
 
 const routeBanner = computed(() => {
   if (localSubError.value === 'load_failed') {
@@ -363,9 +369,23 @@ onBeforeUnmount(() => {
 
       <div class="app-dl-card">
         <template v-if="localSubError && !page">
-          <h1 class="app-dl-h1">
-            Не удалось загрузить данные
-          </h1>
+          <header class="app-dl-head">
+            <div
+              v-if="clientLogoUrl"
+              class="app-dl-logo"
+            >
+              <img
+                :src="clientLogoUrl"
+                :alt="`Логотип ${displayTitle}`"
+                class="app-dl-logo-img"
+                decoding="async"
+                @error="hideClientLogoOnError"
+              />
+            </div>
+            <h1 class="app-dl-h1 app-dl-h1--in-head">
+              Не удалось загрузить данные
+            </h1>
+          </header>
           <p
             v-if="routeBanner"
             class="app-dl-banner app-dl-banner--danger"
@@ -389,10 +409,24 @@ onBeforeUnmount(() => {
             {{ routeBanner.text }}
           </div>
           
-          <h1 class="app-dl-h1">
-            {{ displayTitle }}
-          </h1>
-          
+          <header class="app-dl-head">
+            <div
+              v-if="clientLogoUrl"
+              class="app-dl-logo"
+            >
+              <img
+                :src="clientLogoUrl"
+                :alt="`Логотип ${displayTitle}`"
+                class="app-dl-logo-img"
+                decoding="async"
+                @error="hideClientLogoOnError"
+              />
+            </div>
+            <h1 class="app-dl-h1 app-dl-h1--in-head">
+              {{ displayTitle }}
+            </h1>
+          </header>
+
           <p class="app-dl-lead">
             Мы пытаемся запустить приложение для автоматической настройки. Если ничего не произошло, выполните два простых шага:
           </p>
@@ -546,6 +580,32 @@ onBeforeUnmount(() => {
   color: var(--muted);
 }
 
+.app-dl-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 0 0 0.75rem;
+}
+
+.app-dl-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  flex-shrink: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--card-border);
+}
+
+.app-dl-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
 .app-dl-h1 {
   margin: 0 0 0.75rem;
   font-family: var(--heading);
@@ -553,6 +613,12 @@ onBeforeUnmount(() => {
   font-weight: 600;
   color: var(--text-h);
   line-height: 1.25;
+}
+
+.app-dl-h1--in-head {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
 }
 
 .app-dl-lead {

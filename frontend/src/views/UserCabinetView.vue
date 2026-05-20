@@ -14,6 +14,10 @@ import AppTooltip from '../components/AppTooltip.vue'
 import { formatTrafficBytes } from '../utils/formatTraffic.js'
 import { isMobileDevice, openTelegramDeepLink } from '../util/openDeepLink.js'
 import { payRequiresTelegramBinding } from '../util/payRequiresTelegram.js'
+import {
+  hideClientLogoOnError,
+  openClientLogoUrl,
+} from '../util/subscriptionOpenClientLogo.js'
 import { Check, CreditCard, Link2, Loader2, Send } from 'lucide-vue-next'
 
 /** Подсказки к строкам исх./вх. в блоке трафика */
@@ -365,22 +369,6 @@ function setStorePlatform(p) {
   storePlatform.value = p
 }
 
-/** Картинка `frontend/public/client-logos/{client_code}.png` (например `happ.png`). При отсутствии файла скрывается через @error. */
-function openClientLogoUrl(clientCode) {
-  const code = String(clientCode ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, '')
-  if (!code) return ''
-  const base = import.meta.env.BASE_URL || '/'
-  const prefix = base.endsWith('/') ? base : `${base}/`
-  return `${prefix}client-logos/${encodeURIComponent(code)}.png`
-}
-
-function onClientLogoError(ev) {
-  const el = ev.target
-  if (el instanceof HTMLImageElement) el.style.display = 'none'
-}
 
 /** Локальный путь /sub/…/open/… — открываем в этом же окне через RouterLink. */
 function openClientTo(clientCode) {
@@ -818,7 +806,7 @@ onMounted(() => {
                     class="client-app-tile__logo-img"
                     loading="lazy"
                     decoding="async"
-                    @error="onClientLogoError"
+                    @error="hideClientLogoOnError"
                   />
                 </div>
                 <span class="client-app-tile__name">{{ c.display_name }}</span>
