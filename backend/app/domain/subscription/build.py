@@ -343,7 +343,7 @@ def _pool_auto_vless(
     whitelist: bool | None = None,
 ) -> list[Server]:
     """
-    VLESS с ``include_in_auto`` и валидным URI.
+    VLESS с ``include_in_auto`` и валидным URI (группы Auto).
 
     ``whitelist=None`` — все auto; ``False`` — без WL; ``True`` — только WL.
     """
@@ -356,6 +356,21 @@ def _pool_auto_vless(
         if whitelist is False and s.whitelist:
             continue
         if whitelist is True and not s.whitelist:
+            continue
+        out.append(s)
+    return out
+
+
+def _pool_tiered_wl_vless(
+    ctx: _SubscriptionDeliveryContext,
+    uri_by_id: dict[int, str | None],
+) -> list[Server]:
+    """VLESS с ``whitelist`` и валидным URI — отдельный tiered-профиль (rec + WL, cost)."""
+    out: list[Server] = []
+    for s in ctx.delivery_rows:
+        if not _is_vless_server(s) or not s.whitelist:
+            continue
+        if uri_by_id.get(s.id) is None:
             continue
         out.append(s)
     return out
@@ -460,6 +475,7 @@ class SubscriptionBuildContext:
     fp_by_id: dict[int, str]
     pool_rec: list[Server]
     pool_wl: list[Server]
+    pool_wl_tiered: list[Server]
 
     @property
     def pool_auto(self) -> list[Server]:
@@ -479,6 +495,7 @@ def _subscription_build_context(user: User, rows: list[Server]) -> SubscriptionB
         fp_by_id=fp_by_id,
         pool_rec=_pool_auto_vless(delivery, uri_by_id, whitelist=False),
         pool_wl=_pool_auto_vless(delivery, uri_by_id, whitelist=True),
+        pool_wl_tiered=_pool_tiered_wl_vless(delivery, uri_by_id),
     )
 
 
@@ -591,8 +608,9 @@ def _happ_json_profiles(bctx: SubscriptionBuildContext) -> list[dict[str, Any]]:
             wl_auto["remarks"] = SUBSCRIPTION_AUTO_WHITELIST_LABEL
             profiles.append(wl_auto)
 
+    pool_wl_tiered_ids = {wl.id for wl in bctx.pool_wl_tiered}
     for s in ctx.delivery_rows:
-        if s.whitelist:
+        if s.id in pool_wl_tiered_ids:
             continue
         doc = build_happ_plain_server_profile(
             _node_subscription_label(s, exit_ids_referenced=ctx.exit_ids_referenced),
@@ -603,7 +621,7 @@ def _happ_json_profiles(bctx: SubscriptionBuildContext) -> list[dict[str, Any]]:
         if doc:
             profiles.append(doc)
 
-    for wl in bctx.pool_wl:
+    for wl in bctx.pool_wl_tiered:
         tiered = build_happ_tiered_wl_balanced_profile(
             _node_subscription_label(wl, exit_ids_referenced=ctx.exit_ids_referenced),
             bctx.pool_rec,

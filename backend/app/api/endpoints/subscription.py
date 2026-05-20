@@ -6,7 +6,8 @@
 в процессе API, по умолчанию каждые 5 минут, см. ``SERVER_LOAD_PROMETHEUS_SYNC_*``).
 В начале — ``🔥 Auto (рекомендуемый)`` и при наличии WL-узлов ``📄 Auto (Белые списки)``:
 Happ — JSON-балансировщики; v2raytun/v2rayNG — лучший ``vless://`` по нагрузке; Clash — ``url-test``.
-Узлы с ``include_in_auto=false`` в группы Auto не попадают (остаются отдельными строками).
+Узлы с ``include_in_auto=false`` в группы Auto не попадают; VLESS с ``whitelist=true``
+всё равно получают tiered-профиль Happ (rec + WL с повышенным cost).
 
 ``GET /sub/{token}``: метаданные в HTTP-заголовках Happ; при ``clash`` / ``hiddify`` в User-Agent — YAML;
 при ``happ`` — ``application/json``; иначе — ``text/plain`` Base64.
