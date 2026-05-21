@@ -21,19 +21,19 @@ async def subscription_expiry_notify_loop() -> None:
     hour = int(settings.subscription_expiry_notify_hour_local)
     minute = int(settings.subscription_expiry_notify_minute_local)
     log.info(
-        "Планировщик notify_sub_expire_*: %02d:%02d Europe/Moscow",
+        "Планировщик notify_sub_expire_*: %02d:%02d Europe/Moscow (без тика при старте контейнера)",
         hour,
         minute,
     )
     try:
         while True:
+            delay = seconds_until_next_moscow_time(hour, minute)
+            log.debug("notify_sub_expire_*: сон %.0f с до следующего запуска", delay)
+            await asyncio.sleep(delay)
             try:
                 await run_in_threadpool(enqueue_subscription_expiry_notification_tasks)
             except Exception:
                 log.exception("notify_sub_expire_*: ошибка при создании задач")
-            delay = seconds_until_next_moscow_time(hour, minute)
-            log.debug("notify_sub_expire_*: сон %.0f с до следующего запуска", delay)
-            await asyncio.sleep(delay)
     except asyncio.CancelledError:
         log.info("Планировщик notify_sub_expire_* остановлен")
         raise
