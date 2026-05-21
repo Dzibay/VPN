@@ -9,6 +9,8 @@ import AdminTableWrap from '../components/AdminTableWrap.vue'
 import { fetchJson } from '../api/client.js'
 import { formatTrafficWithLimit, isTrafficOverLimit } from '../utils/formatTraffic.js'
 import { useTableSort } from '../utils/adminTableSort.js'
+import { formatLocaleDateRu } from '../utils/formatLocaleDate.js'
+import { formatSubscriptionConnectionField } from '../util/subscriptionConnectionFormat.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -148,15 +150,6 @@ function nextPage() {
   void load()
 }
 
-function formatDate(d) {
-  if (d == null || d === '') return '—'
-  try {
-    return new Date(d).toLocaleDateString('ru-RU')
-  } catch {
-    return String(d)
-  }
-}
-
 function telegramCell(u) {
   if (u.telegram_id != null && u.telegram_id !== '') {
     return String(u.telegram_id)
@@ -253,20 +246,6 @@ function formatTelegramPropDisplay(key, val) {
     return `@${s}`
   }
   return s
-}
-
-function formatConnectionOs(raw) {
-  if (raw == null || String(raw).trim() === '') return '—'
-  return String(raw).trim()
-}
-
-/** Часть User-Agent до первого «/» (напр. Happ из Happ/2.9.1/…). */
-function formatConnectionUserAgentHead(raw) {
-  if (raw == null || String(raw).trim() === '') return '—'
-  const s = String(raw).trim()
-  const i = s.indexOf('/')
-  const head = i === -1 ? s : s.slice(0, i).trim()
-  return head || '—'
 }
 
 const clientSortAccessors = {
@@ -529,8 +508,8 @@ onMounted(() => {
               <td class="num mono-num">{{ u.id }}</td>
               <td class="email-cell" :title="u.email || undefined">{{ u.email ?? '—' }}</td>
               <td class="tg-cell" :title="telegramCellTitle(u)">{{ telegramUsernameCell(u) }}</td>
-              <td>{{ formatDate(u.registered_at) }}</td>
-              <td>{{ formatDate(u.subscription_until) }}</td>
+              <td>{{ formatLocaleDateRu(u.registered_at) }}</td>
+              <td>{{ formatLocaleDateRu(u.subscription_until) }}</td>
               <td
                 class="num mono-num"
                 :class="{ 'traffic-over-limit': isTrafficOverLimit(u) }"
@@ -631,7 +610,7 @@ onMounted(() => {
                   <span class="tg-props-label">Регистрация</span>
                   <div class="tg-props-value-wrap">
                     <span class="tg-props-value">{{
-                      formatDate(selectedUser.registered_at)
+                      formatLocaleDateRu(selectedUser.registered_at)
                     }}</span>
                   </div>
                 </div>
@@ -641,7 +620,7 @@ onMounted(() => {
                   <span class="tg-props-label">Подписка до</span>
                   <div class="tg-props-value-wrap">
                     <span class="tg-props-value">{{
-                      formatDate(selectedUser.subscription_until)
+                      formatLocaleDateRu(selectedUser.subscription_until)
                     }}</span>
                   </div>
                 </div>
@@ -694,14 +673,14 @@ onMounted(() => {
                         >
                           <div class="connections-expand__line mono">
                             <span class="connections-expand__os">{{
-                              formatConnectionOs(conn.os)
+                              formatSubscriptionConnectionField(conn.os)
                             }}</span>
                             <span
                               class="connections-expand__dot"
                               aria-hidden="true"
                             > · </span>
                             <span class="connections-expand__ua">{{
-                              formatConnectionUserAgentHead(conn.user_agent)
+                              formatSubscriptionConnectionField(conn.user_agent)
                             }}</span>
                           </div>
                         </li>

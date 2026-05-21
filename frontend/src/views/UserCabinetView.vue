@@ -14,6 +14,7 @@ import AppTooltip from '../components/AppTooltip.vue'
 import { formatTrafficBytes } from '../utils/formatTraffic.js'
 import { isMobileDevice, openTelegramDeepLink } from '../util/openDeepLink.js'
 import { payRequiresTelegramBinding } from '../util/payRequiresTelegram.js'
+import { formatSubscriptionConnectionField } from '../util/subscriptionConnectionFormat.js'
 import {
   hideClientLogoOnError,
   openClientLogoUrl,
@@ -415,20 +416,6 @@ const subscriptionConnectionsList = computed(() => {
   return Array.isArray(list) ? list : []
 })
 
-function formatConnectionOs(raw) {
-  if (raw == null || String(raw).trim() === '') return '—'
-  return String(raw).trim()
-}
-
-/** Часть User-Agent до первого «/» (напр. Happ из Happ/2.9.1/…). */
-function formatConnectionUserAgentHead(raw) {
-  if (raw == null || String(raw).trim() === '') return '—'
-  const s = String(raw).trim()
-  const i = s.indexOf('/')
-  const head = i === -1 ? s : s.slice(0, i).trim()
-  return head || '—'
-}
-
 async function deleteSubscriptionConnection(deviceId) {
   const id = Number(deviceId)
   if (!Number.isFinite(id) || id < 1) return
@@ -614,14 +601,14 @@ onMounted(() => {
                       >
                         <div class="connections-expand__line mono">
                           <span class="connections-expand__os">{{
-                            formatConnectionOs(conn.os)
+                            formatSubscriptionConnectionField(conn.os)
                           }}</span>
                           <span
                             class="connections-expand__dot"
                             aria-hidden="true"
                           > · </span>
                           <span class="connections-expand__ua">{{
-                            formatConnectionUserAgentHead(conn.user_agent)
+                            formatSubscriptionConnectionField(conn.user_agent)
                           }}</span>
                         </div>
                         <button
@@ -632,7 +619,7 @@ onMounted(() => {
                             subscriptionConnectionDeletingId === Number(conn.id)
                           "
                           :aria-label="
-                            `Удалить подключение: ${formatConnectionOs(conn.os)}, ${formatConnectionUserAgentHead(conn.user_agent)}`
+                            `Удалить подключение: ${formatSubscriptionConnectionField(conn.os)}, ${formatSubscriptionConnectionField(conn.user_agent)}`
                           "
                           @click.stop="deleteSubscriptionConnection(conn.id)"
                         >
