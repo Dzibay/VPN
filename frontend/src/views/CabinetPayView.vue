@@ -116,7 +116,7 @@ onMounted(() => {
 
       <section v-if="hasSingles" class="pay-group">
         <div class="section-header">
-          <h2 class="section-title">Разовые тарифы (СПБ)</h2>
+          <h2 class="section-title">Разовые тарифы (СБП)</h2>
           <p class="section-desc">Оплачивайте фиксированный период в браузере. Без привязки карты и автоматических списаний. Доступна оплата через СПБ.</p>
         </div>
         
