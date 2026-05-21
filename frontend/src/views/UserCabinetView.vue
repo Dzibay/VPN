@@ -14,7 +14,10 @@ import AppTooltip from '../components/AppTooltip.vue'
 import { formatTrafficBytes } from '../utils/formatTraffic.js'
 import { isMobileDevice, openTelegramDeepLink } from '../util/openDeepLink.js'
 import { payRequiresTelegramBinding } from '../util/payRequiresTelegram.js'
-import { formatSubscriptionConnectionField } from '../util/subscriptionConnectionFormat.js'
+import {
+  formatSubscriptionConnectionOs,
+  formatSubscriptionConnectionUserAgent,
+} from '../util/subscriptionConnectionFormat.js'
 import {
   hideClientLogoOnError,
   openClientLogoUrl,
@@ -601,14 +604,14 @@ onMounted(() => {
                       >
                         <div class="connections-expand__line mono">
                           <span class="connections-expand__os">{{
-                            formatSubscriptionConnectionField(conn.os)
+                            formatSubscriptionConnectionOs(conn.os)
                           }}</span>
                           <span
                             class="connections-expand__dot"
                             aria-hidden="true"
                           > · </span>
                           <span class="connections-expand__ua">{{
-                            formatSubscriptionConnectionField(conn.user_agent)
+                            formatSubscriptionConnectionUserAgent(conn.user_agent)
                           }}</span>
                         </div>
                         <button
@@ -619,7 +622,7 @@ onMounted(() => {
                             subscriptionConnectionDeletingId === Number(conn.id)
                           "
                           :aria-label="
-                            `Удалить подключение: ${formatSubscriptionConnectionField(conn.os)}, ${formatSubscriptionConnectionField(conn.user_agent)}`
+                            `Удалить подключение: ${formatSubscriptionConnectionOs(conn.os)}, ${formatSubscriptionConnectionUserAgent(conn.user_agent)}`
                           "
                           @click.stop="deleteSubscriptionConnection(conn.id)"
                         >

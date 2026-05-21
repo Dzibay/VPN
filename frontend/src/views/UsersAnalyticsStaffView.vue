@@ -10,7 +10,10 @@ import { fetchJson } from '../api/client.js'
 import { formatTrafficWithLimit, isTrafficOverLimit } from '../utils/formatTraffic.js'
 import { useTableSort } from '../utils/adminTableSort.js'
 import { formatLocaleDateRu } from '../utils/formatLocaleDate.js'
-import { formatSubscriptionConnectionField } from '../util/subscriptionConnectionFormat.js'
+import {
+  formatSubscriptionConnectionOs,
+  formatSubscriptionConnectionUserAgent,
+} from '../util/subscriptionConnectionFormat.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -673,14 +676,14 @@ onMounted(() => {
                         >
                           <div class="connections-expand__line mono">
                             <span class="connections-expand__os">{{
-                              formatSubscriptionConnectionField(conn.os)
+                              formatSubscriptionConnectionOs(conn.os)
                             }}</span>
                             <span
                               class="connections-expand__dot"
                               aria-hidden="true"
                             > · </span>
                             <span class="connections-expand__ua">{{
-                              formatSubscriptionConnectionField(conn.user_agent)
+                              formatSubscriptionConnectionUserAgent(conn.user_agent)
                             }}</span>
                           </div>
                         </li>
