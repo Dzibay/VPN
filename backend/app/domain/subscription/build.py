@@ -40,7 +40,7 @@ from app.infrastructure.persistence.models.user import User
 
 log = logging.getLogger("app.subscription.build")
 
-SUBSCRIPTION_AUTO_RECOMMENDED_LABEL = "🔥 Auto (рекомендуемый)"
+SUBSCRIPTION_AUTO_RECOMMENDED_LABEL = "🔥 Aвто (Подорожник рекомендует)"
 SUBSCRIPTION_AUTO_WHITELIST_LABEL = "📄 Auto (Белые списки)"
 
 _AUTO_BALANCER_PROBE_URL = "https://www.gstatic.com/generate_204"
