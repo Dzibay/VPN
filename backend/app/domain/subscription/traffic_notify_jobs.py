@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.subscription.traffic_limit import traffic_limit_quota_applies_sql
+from app.domain.tasks.dedupe import user_ids_with_task_type_ever
 from app.domain.tasks.notification_task_types import NOTIFY_TRAFFIC_LOW, NOTIFY_TRAFFIC_OVER
 from app.domain.user_traffic import user_traffic_totals_by_user_subquery
 from app.infrastructure.persistence.models.task import Task
@@ -24,19 +25,6 @@ TRAFFIC_LOW_NOTIFY_THRESHOLD_BYTES = 1024 * 1024 * 1024
 class TrafficNotifyEnqueueResult:
     low_created: int = 0
     over_created: int = 0
-
-
-def _users_with_traffic_notify_task(session: Session, user_ids: list[int], task_type: str) -> set[int]:
-    """user_id, для которых уже создавали задачу данного типа (любой status)."""
-    if not user_ids:
-        return set()
-    rows = session.execute(
-        select(Task.user_id).where(
-            Task.user_id.in_(user_ids),
-            Task.task_type == task_type,
-        ),
-    ).all()
-    return {int(uid) for uid, in rows}
 
 
 def _candidate_user_ids_traffic_low(session: Session) -> list[int]:
@@ -58,7 +46,7 @@ def _candidate_user_ids_traffic_low(session: Session) -> list[int]:
 
 def _enqueue_traffic_low_tasks(session: Session) -> int:
     user_ids = _candidate_user_ids_traffic_low(session)
-    already = _users_with_traffic_notify_task(session, user_ids, NOTIFY_TRAFFIC_LOW)
+    already = user_ids_with_task_type_ever(session, user_ids, NOTIFY_TRAFFIC_LOW)
     created = 0
     staged: set[int] = set()
     for uid in user_ids:
@@ -89,7 +77,7 @@ def _enqueue_traffic_over_tasks(session: Session, over_limit_user_ids: Iterable[
         ),
     ).all()
     eligible = [int(uid) for uid, in rows]
-    already = _users_with_traffic_notify_task(session, eligible, NOTIFY_TRAFFIC_OVER)
+    already = user_ids_with_task_type_ever(session, eligible, NOTIFY_TRAFFIC_OVER)
     created = 0
     staged: set[int] = set()
     for uid in eligible:

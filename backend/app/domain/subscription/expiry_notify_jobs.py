@@ -14,7 +14,11 @@ from datetime import date, timedelta
 from sqlalchemy import Date, cast, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.core.time import moscow_day_bounds_utc, moscow_today
+from app.core.time import moscow_today
+from app.domain.tasks.dedupe import (
+    user_ids_with_task_type_on_moscow_day,
+    user_task_type_keys_on_moscow_day,
+)
 from app.domain.tasks.notification_task_types import (
     NOTIFY_SUB_EXPIRE,
     NOTIFY_SUB_EXPIRE_0D,
@@ -28,27 +32,6 @@ from app.infrastructure.persistence.models.task import Task
 from app.infrastructure.persistence.models.user import User
 
 log = logging.getLogger("app.subscription.expiry_notify")
-
-
-def _expire_notify_keys_for_users_today(
-    session: Session,
-    user_ids: list[int],
-    *,
-    today: date,
-) -> set[tuple[int, str]]:
-    """Пары (user_id, type) с задачей напоминания, уже созданной сегодня по Москве."""
-    if not user_ids:
-        return set()
-    day_start_utc, day_end_utc = moscow_day_bounds_utc(today)
-    rows = session.execute(
-        select(Task.user_id, Task.task_type).where(
-            Task.user_id.in_(user_ids),
-            Task.task_type.in_(SUBSCRIPTION_EXPIRY_NOTIFY_TYPES),
-            Task.created_at >= day_start_utc,
-            Task.created_at < day_end_utc,
-        ),
-    ).all()
-    return {(int(uid), str(tt)) for uid, tt in rows}
 
 
 def _task_types_for_delta(days_until_end: int) -> Iterable[str]:
@@ -81,7 +64,12 @@ def enqueue_subscription_expiry_notification_tasks() -> int:
             ).all(),
         )
         user_ids = [int(uid) for uid, _su in rows]
-        existing_keys = _expire_notify_keys_for_users_today(db, user_ids, today=today)
+        existing_keys = user_task_type_keys_on_moscow_day(
+            db,
+            user_ids,
+            SUBSCRIPTION_EXPIRY_NOTIFY_TYPES,
+            today=today,
+        )
         staged: set[tuple[int, str]] = set()
         for user_id, sub_until in rows:
             delta = (sub_until - today).days
@@ -122,23 +110,6 @@ def _user_not_registered_on_moscow_day(today: date):
     return or_(User.registered_at.is_(None), reg_moscow_day != today)
 
 
-def _pending_sub_expired_keys(
-    session: Session,
-    user_ids: list[int],
-    task_type: str,
-) -> set[int]:
-    if not user_ids:
-        return set()
-    rows = session.execute(
-        select(Task.user_id).where(
-            Task.user_id.in_(user_ids),
-            Task.status == "pending",
-            Task.task_type == task_type,
-        ),
-    ).all()
-    return {int(uid) for uid, in rows}
-
-
 def _enqueue_sub_expired_notification_tasks(
     *,
     days_after_last_paid: int,
@@ -159,11 +130,16 @@ def _enqueue_sub_expired_notification_tasks(
             filters.append(_user_not_registered_on_moscow_day(today))
         rows = list(db.execute(select(User.id).where(*filters)).all())
         user_ids = [int(uid) for uid, in rows]
-        pending_uids = _pending_sub_expired_keys(db, user_ids, task_type)
+        existing_uids = user_ids_with_task_type_on_moscow_day(
+            db,
+            user_ids,
+            task_type,
+            today=today,
+        )
         staged: set[int] = set()
         for (user_id,) in rows:
             uid = int(user_id)
-            if uid in pending_uids or uid in staged:
+            if uid in existing_uids or uid in staged:
                 continue
             db.add(
                 Task(

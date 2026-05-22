@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.domain.tasks.dedupe import user_ids_with_any_task_type_ever
 from app.domain.tasks.notification_task_types import (
     NOTIFY_REG_1H_HAS_TRAFFIC,
     NOTIFY_REG_1H_NO_TRAFFIC,
@@ -24,19 +25,6 @@ log = logging.getLogger("app.users.post_registration_notify")
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def _users_with_post_reg_task(session: Session, user_ids: list[int]) -> set[int]:
-    """user_id, для которых уже создавали любой из post-reg типов (любой status)."""
-    if not user_ids:
-        return set()
-    rows = session.execute(
-        select(Task.user_id).where(
-            Task.user_id.in_(user_ids),
-            Task.task_type.in_(POST_REGISTRATION_NOTIFY_TYPES),
-        ),
-    ).all()
-    return {int(uid) for uid, in rows}
 
 
 def _users_with_traffic(session: Session, user_ids: list[int]) -> set[int]:
@@ -78,7 +66,7 @@ def enqueue_post_registration_notification_tasks() -> int:
 
         rows = list(db.execute(select(User.id).where(*filters)).all())
         user_ids = [int(uid) for uid, in rows]
-        already = _users_with_post_reg_task(db, user_ids)
+        already = user_ids_with_any_task_type_ever(db, user_ids, POST_REGISTRATION_NOTIFY_TYPES)
         candidates = [uid for uid in user_ids if uid not in already]
         with_traffic = _users_with_traffic(db, candidates)
 

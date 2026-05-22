@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.tasks.dedupe import referee_ids_with_notify_ref_reg_for_owner
 from app.domain.tasks.notification_task_types import NOTIFY_REF_REG
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.task import Task
@@ -26,6 +27,9 @@ async def create_notify_ref_reg_task_if_applicable(
     owner_id = int(referral_link.owner_user_id)
     ref_id = int(referee_user_id)
     if owner_id == ref_id:
+        return
+    already = await referee_ids_with_notify_ref_reg_for_owner(session, owner_id, [ref_id])
+    if ref_id in already:
         return
     session.add(
         Task(
