@@ -31,6 +31,11 @@ const homeNavLinks = [
 
 const showUserLogout = computed(() => Boolean(hasToken.value))
 
+/** Горизонтальный логотип для главной: frontend/public/images/home/header-logo.png */
+const HEADER_LOGO_WORDMARK = '/images/home/header-logo.png'
+
+const headerWordmarkOk = ref(true)
+
 function logout() {
   clearSession()
   refreshSessions()
@@ -51,16 +56,32 @@ router.afterEach(refreshSessions)
     :class="{ 'shell--home': route.name === 'home' }"
     aria-label="Шапка сайта"
   >
-    <RouterLink class="brand" to="/">
+    <RouterLink
+      class="brand"
+      :class="{ 'brand--wordmark': isHome && headerWordmarkOk }"
+      to="/"
+    >
       <img
-        class="brand-logo"
-        src="/icons/podorozhnik-logo.png"
-        width="40"
-        height="40"
-        alt=""
+        v-if="isHome && headerWordmarkOk"
+        class="brand-wordmark"
+        :src="HEADER_LOGO_WORDMARK"
+        width="220"
+        height="48"
+        alt="Подорожник VPN"
         decoding="async"
+        @error="headerWordmarkOk = false"
       />
-      <span class="brand-text">Подорожник VPN</span>
+      <template v-else>
+        <img
+          class="brand-logo"
+          src="/icons/podorozhnik-logo.png"
+          width="40"
+          height="40"
+          alt=""
+          decoding="async"
+        />
+        <span class="brand-text">Подорожник VPN</span>
+      </template>
     </RouterLink>
 
     <nav
@@ -265,6 +286,24 @@ router.afterEach(refreshSessions)
   font-weight: 700;
   font-size: 1.05rem;
   letter-spacing: -0.02em;
+}
+
+.brand--wordmark {
+  gap: 0;
+}
+
+.brand-wordmark {
+  display: block;
+  height: 2.65rem;
+  width: auto;
+  max-width: min(15rem, 48vw);
+  object-fit: contain;
+  object-position: left center;
+}
+
+.shell--home .brand-wordmark {
+  height: clamp(2.25rem, 4.5vw, 2.85rem);
+  max-width: min(13.5rem, 52vw);
 }
 
 .brand-logo {
