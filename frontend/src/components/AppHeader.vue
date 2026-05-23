@@ -15,9 +15,19 @@ function refreshSessions() {
   hasToken.value = Boolean(getAccessToken())
 }
 
+const isHome = computed(() => route.name === 'home')
+
 const showGuestAuthLinks = computed(
   () => !hasToken.value && route.name !== 'cabinet',
 )
+
+const homeNavLinks = [
+  { href: '#benefits', label: 'Преимущества' },
+  { href: '#pricing', label: 'Тарифы' },
+  { href: '#how', label: 'Устройства' },
+  { href: '#faq', label: 'FAQ' },
+  { href: '#faq', label: 'Поддержка' },
+]
 
 const showUserLogout = computed(() => Boolean(hasToken.value))
 
@@ -53,14 +63,27 @@ router.afterEach(refreshSessions)
       <span class="brand-text">Подорожник VPN</span>
     </RouterLink>
 
+    <nav
+      v-if="isHome"
+      class="home-nav"
+      aria-label="Разделы главной страницы"
+    >
+      <a
+        v-for="link in homeNavLinks"
+        :key="link.label"
+        class="home-nav__link"
+        :href="link.href"
+      >{{ link.label }}</a>
+    </nav>
+
     <span class="spacer" aria-hidden="true" />
 
     <div class="toolbar">
       <nav class="user-bar" aria-label="Аккаунт">
         <template v-if="showGuestAuthLinks">
-          <RouterLink class="nav-link" to="/login">Вход</RouterLink>
-          <RouterLink class="nav-link nav-accent" to="/register">
-            Регистрация
+          <RouterLink class="nav-link nav-link--ghost" to="/login">Войти</RouterLink>
+          <RouterLink class="nav-link nav-link--cta" to="/register">
+            Создать аккаунт
           </RouterLink>
         </template>
         <template v-else-if="showUserLogout">
@@ -92,8 +115,92 @@ router.afterEach(refreshSessions)
 
 /* На главной иначе видна «линия» между шапкой и героем с градиентом. */
 .shell--home {
-  border-bottom-color: transparent;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  background: rgba(255, 255, 255, 0.92);
   box-shadow: none;
+}
+
+.shell--home .brand {
+  grid-column: 1;
+  justify-self: start;
+  min-width: 0;
+}
+
+.shell--home .home-nav {
+  grid-column: 2;
+  justify-self: center;
+}
+
+.shell--home .spacer {
+  display: none;
+}
+
+.shell--home .toolbar {
+  grid-column: 3;
+  justify-self: end;
+  margin-left: 0;
+}
+
+.home-nav {
+  display: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem 1.1rem;
+  min-width: 0;
+}
+
+@media (min-width: 900px) {
+  .home-nav {
+    display: flex;
+  }
+}
+
+.home-nav__link {
+  color: #4b5563;
+  text-decoration: none;
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 0.35rem 0.15rem;
+  white-space: nowrap;
+  transition: color 0.2s ease;
+}
+
+.home-nav__link:hover {
+  color: #1d9a5c;
+}
+
+.nav-link--ghost {
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #374151;
+}
+
+.nav-link--ghost:hover {
+  color: #1d9a5c;
+  border-color: rgba(29, 154, 92, 0.35);
+  background: #fff;
+}
+
+.nav-link--cta {
+  color: #fff;
+  background: linear-gradient(135deg, #58d68d 0%, #45b39d 100%);
+  border: none;
+  box-shadow: 0 2px 8px rgba(29, 154, 92, 0.25);
+}
+
+.nav-link--cta:hover {
+  color: #fff;
+  background: linear-gradient(135deg, #6fe9a0 0%, #45b39d 100%);
+  filter: brightness(1.03);
+}
+
+.shell--home .brand-text {
+  color: #111827;
 }
 
 .spacer {

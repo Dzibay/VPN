@@ -1,4 +1,10 @@
 <script setup>
+/**
+ * Картинки для первых двух секций — положите в frontend/public/images/home/:
+ *   hero-bg-map.png      — точечная карта мира на фоне hero (опционально)
+ *   hero-app-mockup.png  — макет приложения справа (обязательно для макета)
+ *   trust-avatars.png    — 4 аватара для блока «10 000+ пользователей» (опционально)
+ */
 import {
   computed,
   onBeforeUnmount,
@@ -6,9 +12,72 @@ import {
   ref,
 } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
+import {
+  ArrowRight,
+  Globe,
+  Headphones,
+  Lock,
+  Monitor,
+  Shield,
+  Star,
+  Zap,
+} from 'lucide-vue-next'
 import { getAccessToken, getSessionRole } from '../auth/session.js'
 import { defaultPathAfterLogin } from '../auth/permissions.js'
 import { sitePublicUrl } from '../api/client.js'
+
+/** @type {const} */
+const HOME_IMAGES = {
+  bgMap: '/images/home/hero-bg-map.png',
+  appMockup: '/images/home/hero-app-mockup.png',
+  trustAvatars: '/images/home/trust-avatars.png',
+}
+
+const heroMiniFeatures = [
+  {
+    icon: Lock,
+    title: 'Защита данных',
+    text: 'Шифрование военного уровня',
+  },
+  {
+    icon: Globe,
+    title: 'Доступ без границ',
+    text: 'Обход блокировок и ограничений',
+  },
+  {
+    icon: Zap,
+    title: 'Высокая скорость',
+    text: 'Стабильное соединение без потери скорости',
+  },
+]
+
+const whyChooseFeatures = [
+  {
+    icon: Shield,
+    title: 'Надёжная защита',
+    text: 'Шифрование AES-256 защищает ваши данные в любой сети.',
+  },
+  {
+    icon: Globe,
+    title: 'Доступ к любому контенту',
+    text: 'Смотрите, слушайте и играйте без ограничений из любой точки мира.',
+  },
+  {
+    icon: Zap,
+    title: 'Стабильная скорость',
+    text: 'Оптимизированные серверы обеспечивают высокую скорость соединения.',
+  },
+  {
+    icon: Monitor,
+    title: 'До 5 устройств',
+    text: 'Используйте VPN на всех ваших устройствах одновременно.',
+  },
+  {
+    icon: Headphones,
+    title: 'Поддержка 24/7',
+    text: 'Наша команда всегда готова помочь вам в любое время.',
+  },
+]
 
 const router = useRouter()
 const hasToken = ref(false)
@@ -28,30 +97,6 @@ const loggedInHomeCtaPath = computed(() =>
 
 onMounted(refreshAuth)
 router.afterEach(refreshAuth)
-
-const benefits = [
-  {
-    title: 'Умный Split Tunneling',
-    text:
-      'Трафик разделяется на уровне системы. ИИ и зарубежные сайты идут через VPN, а российские сервисы — напрямую.',
-    icon:
-      'M13 10V3L4 14h7v7l9-11h-7z',
-  },
-  {
-    title: 'Банки всегда онлайн',
-    text:
-      'Сбербанк, Т-Банк и Госуслуги видят ваш реальный IP. Больше никаких блокировок счетов или медленной работы.',
-    icon:
-      'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04M12 10a2 2 0 110-4 2 2 0 010 4z',
-  },
-  {
-    title: 'Доступ к Gemini и ИИ',
-    text:
-      'Стабильная работа с Google Gemini, ChatGPT и Claude без необходимости постоянно включать и выключать доступ.',
-    icon:
-      'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z',
-  },
-]
 
 const services = {
   vpn: [
@@ -213,104 +258,111 @@ onBeforeUnmount(() => {
   <div class="home">
     <main id="main-content">
     <!-- HERO -->
-    <section id="hero" class="hero" aria-labelledby="hero-title">
-      <div class="hero-bg" aria-hidden="true" />
+    <section id="hero" class="hero hero--landing" aria-labelledby="hero-title">
+      <div class="hero__bg" aria-hidden="true">
+        <img
+          class="hero__bg-map"
+          :src="HOME_IMAGES.bgMap"
+          alt=""
+          width="1200"
+          height="700"
+          decoding="async"
+          @error="($event.target).style.display = 'none'"
+        />
+      </div>
 
-      <div class="hero-container">
-        <div class="hero-content">
-          <div class="badge">
-            <span class="badge-pulse" />
-            Работает стабильно в 2026 году
+      <div class="hero__container">
+        <div class="hero__content">
+          <div class="hero__badge">
+            <span class="hero__badge-dot" aria-hidden="true" />
+            Быстрый • Безопасный • Надёжный
           </div>
 
-          <h1 id="hero-title">
-            VPN, который <br />
-            <span class="text-accent">не нужно выключать</span>
+          <h1 id="hero-title" class="hero__title">
+            Безопасный интернет без ограничений
           </h1>
 
-          <p class="hero-description">
-            Настройте один раз и забудьте.
-            <strong>Gemini, YouTube и Instagram</strong>
-            работают через защищённый туннель, а
-            <strong>Сбербанк и Госуслуги</strong>
-            открываются напрямую без блокировок.
+          <p class="hero__lead">
+            VPN-сервис для защиты вашей конфиденциальности, доступа к любым
+            сайтам и сервисам по всему миру.
           </p>
 
-          <div class="cta-row">
+          <ul class="hero__features" role="list">
+            <li
+              v-for="(item, i) in heroMiniFeatures"
+              :key="i"
+              class="hero__feature"
+            >
+              <span class="hero__feature-ico" aria-hidden="true">
+                <component :is="item.icon" :size="22" :stroke-width="2" />
+              </span>
+              <span class="hero__feature-text">
+                <strong>{{ item.title }}</strong>
+                <span>{{ item.text }}</span>
+              </span>
+            </li>
+          </ul>
+
+          <div class="hero__cta">
             <template v-if="isLoggedIn">
-              <RouterLink class="cta primary large" :to="loggedInHomeCtaPath">
+              <RouterLink class="hero__btn hero__btn--primary" :to="loggedInHomeCtaPath">
                 Перейти в кабинет
+                <ArrowRight :size="20" :stroke-width="2" aria-hidden="true" />
               </RouterLink>
             </template>
             <template v-else>
-              <RouterLink class="cta primary large" to="/register">
-                Попробовать бесплатно
+              <RouterLink class="hero__btn hero__btn--primary" to="/register">
+                Начать пользоваться VPN
+                <ArrowRight :size="20" :stroke-width="2" aria-hidden="true" />
               </RouterLink>
-              <RouterLink class="cta secondary large" to="/login">
-                Войти
-              </RouterLink>
+              <a class="hero__btn hero__btn--secondary" href="#pricing">
+                Выбрать тариф
+              </a>
             </template>
           </div>
 
-          <div class="hero-trust">
-            <div class="trust-item">
-              <svg
-                viewBox="0 0 24 24"
-                width="20"
-                height="20"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                aria-hidden="true"
-              >
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-              </svg>
-              <span>Современный протокол VLESS</span>
+          <div class="hero__social">
+            <div class="hero__social-avatars-wrap">
+              <img
+                class="hero__social-avatars"
+                :src="HOME_IMAGES.trustAvatars"
+                alt=""
+                width="120"
+                height="40"
+                decoding="async"
+                @error="($event.target).style.display = 'none'"
+              />
+              <div class="hero__social-fallback" aria-hidden="true">
+                <span /><span /><span /><span />
+              </div>
             </div>
-            <div class="trust-item">
-              <svg
-                viewBox="0 0 24 24"
-                width="20"
-                height="20"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                aria-hidden="true"
-              >
-                <path d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              <span>Умный Split Tunneling</span>
+            <div class="hero__social-copy">
+              <p class="hero__social-count">10 000+ пользователей доверяют нам</p>
+              <p class="hero__social-rating">
+                <span class="hero__stars" aria-hidden="true">
+                  <Star
+                    v-for="n in 5"
+                    :key="n"
+                    :size="16"
+                    :stroke-width="0"
+                    fill="currentColor"
+                  />
+                </span>
+                <span>4.9 из 5</span>
+              </p>
             </div>
           </div>
         </div>
 
-        <div class="hero-visual" aria-hidden="true">
-          <div class="route-illustration">
-            <div class="node device-node">
-              <div class="node-icon">📱</div>
-              <span>Ваше устройство</span>
-            </div>
-            <div class="path vpn-path">
-              <div class="path-line" />
-              <div class="node service-node vpn-node">
-                <span class="node-label text-accent">Через VPN</span>
-                <div class="apps-mini">
-                  <span>Gemini</span> • <span>YouTube</span> •
-                  <span>Instagram</span>
-                </div>
-              </div>
-            </div>
-            <div class="path direct-path">
-              <div class="path-line" />
-              <div class="node service-node direct-node">
-                <span class="node-label text-green">Напрямую</span>
-                <div class="apps-mini">
-                  <span>Сбербанк</span> • <span>Госуслуги</span> •
-                  <span>Т-Банк</span>
-                </div>
-              </div>
-            </div>
-          </div>
+        <div class="hero__visual">
+          <img
+            class="hero__mockup"
+            :src="HOME_IMAGES.appMockup"
+            alt="Интерфейс VPN: подключение, выбор сервера и скорость"
+            width="520"
+            height="640"
+            decoding="async"
+          />
         </div>
       </div>
     </section>
@@ -382,48 +434,31 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <!-- ПРЕИМУЩЕСТВА -->
+    <!-- ПОЧЕМУ МЫ -->
     <section
       id="benefits"
-      class="section section-benefits"
-      aria-labelledby="benefits-heading"
+      class="section section-why"
+      aria-labelledby="why-heading"
     >
-      <div class="section-inner">
-        <p class="section-eyebrow">Почему Подорожник</p>
-        <h2 id="benefits-heading" class="section-title">
-          Комфорт без компромиссов
+      <div class="section-inner section-why__inner">
+        <h2 id="why-heading" class="section-why__title">
+          Почему выбирают наш VPN?
         </h2>
-        <p class="section-lead section-lead--narrow">
-          Один профиль на все устройства: вы не переключаете VPN десять раз в
-          день и не рискуете забыть его выключить перед оплатой.
-        </p>
 
-        <div class="feature-grid">
+        <div class="why-grid" role="list">
           <article
-            v-for="(b, i) in benefits"
+            v-for="(item, i) in whyChooseFeatures"
             :key="i"
-            class="feature-card"
+            class="why-card"
+            role="listitem"
           >
-            <div class="feature-card__accent" aria-hidden="true" />
-            <div class="feature-icon">
-              <svg
-                viewBox="0 0 24 24"
-                width="26"
-                height="26"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                aria-hidden="true"
-              >
-                <path
-                  :d="b.icon"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
+            <span class="why-card__ico" aria-hidden="true">
+              <component :is="item.icon" :size="22" :stroke-width="2" />
+            </span>
+            <div class="why-card__body">
+              <h3 class="why-card__title">{{ item.title }}</h3>
+              <p class="why-card__text">{{ item.text }}</p>
             </div>
-            <h3 class="feature-title">{{ b.title }}</h3>
-            <p class="feature-text">{{ b.text }}</p>
           </article>
         </div>
       </div>
@@ -732,7 +767,7 @@ onBeforeUnmount(() => {
           aria-label="Разделы главной страницы"
         >
           <a href="#how">Как работает</a>
-          <a href="#benefits">Преимущества</a>
+          <a href="#benefits">Почему мы</a>
           <a href="#pricing">Тарифы</a>
         </nav>
       </div>
@@ -875,317 +910,478 @@ onBeforeUnmount(() => {
   transform: translateY(-2px);
 }
 
-/* ——— HERO ——— */
-.hero {
+/* ——— HERO (макет лендинга, светлая секция) ——— */
+.hero--landing {
+  --home-bg: #ffffff;
+  --home-text: #111827;
+  --home-muted: #6b7280;
+  --home-border: #e5e7eb;
+  --home-accent: #1d9a5c;
+  --home-accent-hover: #18804d;
+  --home-accent-soft: rgba(29, 154, 92, 0.1);
+  --home-on-accent: #ffffff;
+
   position: relative;
-  padding: clamp(4rem, 10vh, 7rem) 1.25rem;
-  display: flex;
-  align-items: center;
-  background: var(--bg-gradient);
+  padding: clamp(2rem, 5vw, 3.5rem) clamp(1rem, 4vw, 2rem) clamp(3rem, 6vw, 4.5rem);
+  background: var(--home-bg);
+  color: var(--home-text);
   overflow: hidden;
 }
 
-.hero-bg {
+.hero__bg {
   pointer-events: none;
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(
-      ellipse 80% 60% at 70% 20%,
-      color-mix(in srgb, var(--accent) 12%, transparent),
-      transparent 55%
-    ),
-    radial-gradient(
-      circle at 20% 80%,
-      color-mix(in srgb, #8b5cf6 10%, transparent),
-      transparent 45%
-    );
-  opacity: 0.85;
+  z-index: 0;
 }
 
-.hero-container {
+.hero__bg-map {
+  position: absolute;
+  right: -8%;
+  top: 50%;
+  transform: translateY(-50%);
+  width: min(72%, 52rem);
+  height: auto;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: right center;
+  opacity: 0.55;
+}
+
+@media (max-width: 1023px) {
+  .hero__bg-map {
+    left: 50%;
+    right: auto;
+    top: 58%;
+    transform: translate(-50%, -50%);
+    width: min(128%, 40rem);
+    max-height: none;
+    object-position: center center;
+    opacity: 0.42;
+  }
+}
+
+@media (max-width: 1023px) {
+  .hero--landing {
+    padding-bottom: clamp(2.5rem, 8vw, 3.5rem);
+  }
+
+  .hero__bg-map {
+    left: 50%;
+    right: auto;
+    top: 58%;
+    transform: translate(-50%, -50%);
+    width: min(175%, 28rem);
+    max-width: none;
+    max-height: none;
+    object-fit: contain;
+    object-position: center center;
+    opacity: 0.42;
+  }
+}
+
+.hero__container {
   position: relative;
+  z-index: 1;
   max-width: 72rem;
   margin: 0 auto;
   display: grid;
   grid-template-columns: 1fr;
-  gap: 3rem;
+  gap: 2.5rem;
   align-items: center;
-  z-index: 2;
-  width: 100%;
 }
 
 @media (min-width: 1024px) {
-  .hero-container {
-    grid-template-columns: 1.1fr 0.9fr;
-    gap: 2rem;
+  .hero__container {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    gap: 1.5rem 2rem;
   }
 }
 
-.hero-content {
+.hero__content {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
   text-align: left;
 }
 
 @media (max-width: 1023px) {
-  .hero-content {
+  .hero__content {
     text-align: center;
     display: flex;
     flex-direction: column;
     align-items: center;
   }
+
+  .hero__container {
+    gap: 0;
+  }
 }
 
-.badge {
+.hero__badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 1rem;
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  color: var(--accent);
-  border-radius: 20px;
-  font-size: 0.85rem;
-  font-weight: 700;
-  margin-bottom: 1.5rem;
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  gap: 0.45rem;
+  margin-bottom: 1.25rem;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--home-accent);
+  background: var(--home-accent-soft);
+  border: 1px solid rgba(29, 154, 92, 0.2);
 }
 
-.badge-pulse {
+.hero__badge-dot {
   width: 8px;
   height: 8px;
-  background-color: #10b981;
   border-radius: 50%;
-  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
-  animation: pulse-green 2s infinite;
+  background: var(--home-accent);
+  box-shadow: 0 0 0 0 rgba(29, 154, 92, 0.45);
+  animation: hero-badge-pulse 2s infinite;
 }
 
-@keyframes pulse-green {
+@keyframes hero-badge-pulse {
   0% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+    box-shadow: 0 0 0 0 rgba(29, 154, 92, 0.45);
   }
   70% {
-    transform: scale(1);
-    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+    box-shadow: 0 0 0 6px rgba(29, 154, 92, 0);
   }
   100% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+    box-shadow: 0 0 0 0 rgba(29, 154, 92, 0);
   }
 }
 
-.hero h1 {
+.hero__title {
+  margin: 0 0 1rem;
   font-family: var(--heading);
-  font-size: clamp(2.2rem, 4.5vw, 4rem);
-  line-height: 1.08;
-  margin-bottom: 1.2rem;
+  font-size: clamp(2rem, 4.2vw, 3.35rem);
   font-weight: 800;
-  letter-spacing: -0.03em;
-  color: var(--text-h);
+  line-height: 1.12;
+  letter-spacing: -0.035em;
+  color: var(--home-text);
 }
 
-.hero-description {
-  max-width: 36rem;
-  margin: 0 0 2rem;
-  font-size: 1.1rem;
-  line-height: 1.65;
-  color: var(--muted);
+.hero__lead {
+  margin: 0 0 1.35rem;
+  max-width: 34rem;
+  font-size: clamp(0.95rem, 1.8vw, 1.05rem);
+  line-height: 1.6;
+  color: var(--home-muted);
 }
 
-@media (max-width: 1023px) {
-  .hero-description {
-    margin: 0 auto 2rem;
-  }
-}
-
-.hero-description strong {
-  color: var(--text-h);
-  font-weight: 600;
-}
-
-.cta-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-  margin-bottom: 2rem;
-}
-
-@media (max-width: 1023px) {
-  .cta-row {
-    justify-content: center;
-  }
-}
-
-.hero-trust {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1.5rem;
-  font-size: 0.9rem;
-  color: var(--muted);
-  font-weight: 500;
-}
-
-@media (max-width: 1023px) {
-  .hero-trust {
-    justify-content: center;
-  }
-}
-
-.trust-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.trust-item svg {
-  color: var(--accent);
-  flex-shrink: 0;
-}
-
-.hero-visual {
-  position: relative;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.route-illustration {
-  position: relative;
+.hero__features {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0 0 1.5rem;
+  padding: 0;
+  list-style: none;
   width: 100%;
-  max-width: 360px;
+  max-width: 36rem;
+}
+
+@media (max-width: 720px) {
+  .hero__features {
+    grid-template-columns: 1fr;
+    max-width: 20rem;
+  }
+}
+
+.hero__feature {
   display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-.node {
-  background: color-mix(in srgb, var(--surface-glass) 95%, transparent);
-  border: 1px solid var(--card-border);
-  padding: 1rem 1.25rem;
-  border-radius: 16px;
-  box-shadow: var(--shadow-md);
-  text-align: center;
-  position: relative;
-  z-index: 2;
-  backdrop-filter: blur(12px);
-}
-
-.device-node {
-  align-self: center;
-  border-color: color-mix(in srgb, var(--text) 20%, transparent);
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  font-size: 1.05rem;
-}
-
-.path {
-  position: relative;
-  display: flex;
-  justify-content: flex-end;
-}
-
-.path-line {
-  position: absolute;
-  top: -1.5rem;
-  left: 50%;
-  width: 2px;
-  height: calc(100% + 1.5rem);
-  background: var(--card-border);
-  z-index: 1;
-}
-
-.path-line::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -2px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  box-shadow: 0 0 10px currentColor;
-  animation: data-flow 2s infinite linear;
-}
-
-@keyframes data-flow {
-  0% {
-    top: 0;
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-  }
-  90% {
-    opacity: 1;
-  }
-  100% {
-    top: 100%;
-    opacity: 0;
-  }
-}
-
-.vpn-path {
-  margin-right: -5%;
-}
-
-.vpn-path .path-line {
-  left: 5%;
-  color: var(--accent);
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    var(--accent) 50%,
-    transparent
-  );
-}
-
-.direct-path {
-  margin-left: -5%;
-  justify-content: flex-start;
-}
-
-.direct-path .path-line {
-  left: 95%;
-  color: #10b981;
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    #10b981 50%,
-    transparent
-  );
-}
-
-.service-node {
-  width: 90%;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.75rem 0.65rem;
+  border: 1px solid var(--home-border);
+  border-radius: 12px;
+  background: #fff;
   text-align: left;
 }
 
-.vpn-node {
-  border-left: 4px solid var(--accent);
+.hero__feature-ico {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--home-accent);
 }
 
-.direct-node {
-  border-left: 4px solid #10b981;
+.hero__feature-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--home-muted);
 }
 
-.node-label {
-  display: block;
-  font-weight: 800;
+.hero__feature-text strong {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--home-text);
+}
+
+.hero__cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.35rem;
+}
+
+@media (max-width: 1023px) {
+  .hero__cta {
+    justify-content: center;
+  }
+}
+
+.hero__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.85rem 1.35rem;
+  border-radius: 12px;
   font-size: 0.95rem;
-  margin-bottom: 0.4rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-weight: 700;
+  text-decoration: none;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease,
+    border-color 0.2s ease;
 }
 
-.apps-mini {
-  font-size: 0.8rem;
-  color: var(--muted);
-  font-weight: 500;
+.hero__btn--primary {
+  color: var(--home-on-accent);
+  background: linear-gradient(135deg, #58d68d 0%, #45b39d 100%);
+  box-shadow: 0 4px 14px rgba(29, 154, 92, 0.28);
+  border: none;
 }
 
-.apps-mini span {
-  color: var(--text-h);
+.hero__btn--primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(29, 154, 92, 0.32);
+  filter: brightness(1.04);
+}
+
+.hero__btn--secondary {
+  color: var(--home-text);
+  background: #fff;
+  border: 1px solid var(--home-border);
+}
+
+.hero__btn--secondary:hover {
+  border-color: rgba(29, 154, 92, 0.35);
+  color: var(--home-accent);
+}
+
+.hero__social {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+}
+
+@media (max-width: 1023px) {
+  .hero__social {
+    justify-content: center;
+  }
+}
+
+.hero__social-avatars-wrap {
+  position: relative;
+  flex-shrink: 0;
+  width: 7.25rem;
+  height: 2.5rem;
+}
+
+.hero__social-avatars {
+  position: relative;
+  z-index: 1;
+  display: block;
+  height: 2.5rem;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.hero__social-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+}
+
+.hero__social-fallback span {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  margin-left: -0.55rem;
+  background: linear-gradient(135deg, #d1d5db, #9ca3af);
+}
+
+.hero__social-fallback span:first-child {
+  margin-left: 0;
+}
+
+.hero__social-copy {
+  text-align: left;
+}
+
+@media (max-width: 1023px) {
+  .hero__social-copy {
+    text-align: center;
+  }
+}
+
+.hero__social-count {
+  margin: 0 0 0.2rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--home-text);
+}
+
+.hero__social-rating {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--home-muted);
+}
+
+.hero__stars {
+  display: inline-flex;
+  gap: 0.05rem;
+  color: #f59e0b;
+}
+
+.hero__visual {
+  display: none;
+  justify-content: center;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .hero__visual {
+    display: flex;
+  }
+}
+
+.hero__mockup {
+  width: min(100%, 26rem);
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 18px 40px rgba(15, 23, 42, 0.12));
+}
+
+@media (min-width: 1024px) {
+  .hero__mockup {
+    width: min(100%, 32rem);
+    margin-right: -1rem;
+  }
+}
+
+/* ——— ПОЧЕМУ ВЫБИРАЮТ ——— */
+.section-why {
+  --home-bg: #ffffff;
+  --home-text: #111827;
+  --home-muted: #6b7280;
+  --home-border: #e5e7eb;
+  --home-accent: #1d9a5c;
+  --home-accent-soft: rgba(29, 154, 92, 0.1);
+
+  padding: clamp(2.5rem, 5vw, 3.75rem) clamp(1rem, 4vw, 2rem);
+  background: var(--home-bg);
+  border-top: 1px solid var(--home-border);
+}
+
+.section-why__inner {
+  text-align: center;
+}
+
+.section-why__title {
+  margin: 0 0 clamp(1.5rem, 3vw, 2rem);
+  font-family: var(--heading);
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--home-text);
+}
+
+.why-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.75rem;
+  text-align: left;
+}
+
+@media (max-width: 1100px) {
+  .why-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .why-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.why-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 1rem 0.85rem;
+  border: 1px solid var(--home-border);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.why-card:hover {
+  border-color: rgba(29, 154, 92, 0.28);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+}
+
+.why-card__ico {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 10px;
+  color: var(--home-accent);
+  background: var(--home-accent-soft);
+}
+
+.why-card__body {
+  min-width: 0;
+}
+
+.why-card__title {
+  margin: 0 0 0.3rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--home-text);
+}
+
+.why-card__text {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--home-muted);
 }
 
 /* ——— КАК РАБОТАЕТ ——— */
@@ -1371,81 +1567,6 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-pill);
   border: 1px dashed color-mix(in srgb, var(--muted) 45%, var(--card-border));
   background: color-mix(in srgb, var(--surface) 88%, transparent);
-}
-
-/* ——— ПРЕИМУЩЕСТВА ——— */
-.section-benefits {
-  background: var(--card-bg);
-  border-block: 1px solid var(--card-border);
-}
-
-.feature-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-  gap: clamp(1rem, 2.5vw, 1.5rem);
-}
-
-.feature-card {
-  position: relative;
-  padding: clamp(1.5rem, 3vw, 1.85rem);
-  border-radius: calc(var(--radius-lg) + 2px);
-  background: color-mix(in srgb, var(--surface-glass) 94%, transparent);
-  border: 1px solid var(--card-border);
-  box-shadow: var(--shadow-sm);
-  text-align: left;
-  overflow: hidden;
-  transition:
-    transform 0.22s ease,
-    box-shadow 0.22s ease,
-    border-color 0.22s ease;
-}
-
-.feature-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-md);
-  border-color: color-mix(in srgb, var(--accent-border) 45%, var(--card-border));
-}
-
-.feature-card__accent {
-  position: absolute;
-  inset: 0 auto auto 0;
-  width: 100%;
-  height: 4px;
-  background: linear-gradient(
-    90deg,
-    var(--accent),
-    color-mix(in srgb, var(--accent-muted) 80%, #8b5cf6)
-  );
-  opacity: 0.95;
-}
-
-.feature-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 3.25rem;
-  height: 3.25rem;
-  margin-bottom: 1.1rem;
-  border-radius: 14px;
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent-border) 55%, transparent);
-}
-
-.feature-title {
-  font-family: var(--heading);
-  font-size: 1.15rem;
-  margin: 0 0 0.55rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--text-h);
-}
-
-.feature-text {
-  margin: 0;
-  font-size: 0.96rem;
-  line-height: 1.6;
-  color: var(--muted);
 }
 
 /* ——— ТАРИФЫ ——— */
@@ -2024,14 +2145,16 @@ onBeforeUnmount(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .feature-card,
+  .why-card,
+  .hero__btn,
   .pricing-card,
   .chip,
   .cta {
     transition: none;
   }
 
-  .feature-card:hover,
+  .why-card:hover,
+  .hero__btn--primary:hover,
   .pricing-card:hover,
   .pricing-card--popular,
   .pricing-card--popular:hover,
