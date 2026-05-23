@@ -31,7 +31,10 @@ from app.domain.models.auth import (
     TokenResponse,
     build_subscription_open_client_items,
 )
-from app.domain.public_urls import telegram_bot_public_page_url
+from app.domain.public_urls import (
+    support_telegram_public_url,
+    telegram_bot_public_page_url,
+)
 from app.domain.referrals.registration_tasks import create_notify_ref_reg_task_if_applicable
 from app.domain.referrals.repository import increment_referral_counter
 from app.domain.users.identifiers import new_subscription_token, new_vless_uuid
@@ -145,6 +148,7 @@ async def account_me_from_user(
         telegram_id=user.telegram_id,
         telegram_properties=user.telegram_properties,
         telegram_bot_page_url=telegram_bot_public_page_url(cfg),
+        support_telegram_url=support_telegram_public_url(cfg),
         registered_at=user.registered_at,
         subscription_until=user.subscription_until,
         subscription_active=user_has_active_subscription(user, used_bytes=total_b),

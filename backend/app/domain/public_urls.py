@@ -23,6 +23,19 @@ def telegram_bot_public_page_url(settings: object) -> str | None:
     return f"https://t.me/{bot}"
 
 
+def _support_telegram_username_clean(settings: object) -> str:
+    """Username аккаунта поддержки без ``@``."""
+    return (getattr(settings, "support_telegram_username", None) or "").strip().lstrip("@")
+
+
+def support_telegram_public_url(settings: object) -> str | None:
+    """``https://t.me/{username}`` для чата поддержки (не бот)."""
+    user = _support_telegram_username_clean(settings)
+    if not user:
+        return None
+    return f"https://t.me/{user}"
+
+
 def public_spa_base_url(settings: object) -> str | None:
     """Публичный origin SPA из ``SITE_ADDRESS`` (полный URL или ``host[:port]``).
 

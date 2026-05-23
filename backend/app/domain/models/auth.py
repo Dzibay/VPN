@@ -378,6 +378,13 @@ class AccountMeResponse(BaseModel):
             "Из TELEGRAM_BOT_USERNAME → https://t.me/{username}; `null`, если не задано."
         ),
     )
+    support_telegram_url: str | None = Field(
+        default=None,
+        description=(
+            "Ссылка на аккаунт поддержки в Telegram. "
+            "Из SUPPORT_TELEGRAM_USERNAME → https://t.me/{username}; `null`, если не задано."
+        ),
+    )
     registered_at: datetime | None = Field(
         default=None,
         description="Момент регистрации (UTC в БД); `null` у старых записей без даты.",

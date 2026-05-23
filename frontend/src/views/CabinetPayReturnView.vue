@@ -1,15 +1,25 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
-import { CheckCircle2, Clock3, ArrowRight } from 'lucide-vue-next'
+import { RouterLink, useRoute } from 'vue-router'
+import {
+  ArrowRight,
+  Calendar,
+  Check,
+  Clock3,
+  Gift,
+  Headphones,
+  Monitor,
+  RefreshCw,
+  Shield,
+  Wifi,
+} from 'lucide-vue-next'
 import { fetchJson } from '../api/client.js'
-import AppActionButton from '../components/AppActionButton.vue'
-import CabinetBackLink from '../components/CabinetBackLink.vue'
+import { formatTrafficWithLimit } from '../utils/formatTraffic.js'
 
 const route = useRoute()
 const meLoading = ref(true)
-const subscriptionActive = ref(false)
-const subscriptionUntil = ref(null)
+/** @type {import('vue').Ref<Record<string, unknown> | null>} */
+const me = ref(null)
 
 const statusHint = computed(() => {
   const q = route.query
@@ -18,14 +28,53 @@ const statusHint = computed(() => {
 })
 
 const isCanceled = computed(() => statusHint.value === 'canceled')
+const subscriptionActive = computed(() => Boolean(me.value?.subscription_active))
+
+const subscriptionUntilLabel = computed(() => {
+  const d = me.value?.subscription_until
+  if (!d) return '—'
+  try {
+    return new Date(String(d)).toLocaleDateString('ru-RU', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    })
+  } catch {
+    return String(d)
+  }
+})
+
+const devicesLabel = computed(() => {
+  const n = Number(me.value?.subscription_connections_count) || 0
+  const limit = me.value?.subscription_connections_limit
+  if (limit == null || limit === '') return `${n}`
+  return `${n} из ${limit}`
+})
+
+const trafficLabel = computed(() =>
+  formatTrafficWithLimit(
+    me.value?.traffic_total_bytes ?? 0,
+    me.value?.traffic_limit_bytes,
+  ),
+)
+
+const supportTelegramUrl = computed(() => {
+  const raw = me.value?.support_telegram_url
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : null
+})
+
+const supportTelegramLabel = computed(() => {
+  const url = supportTelegramUrl.value
+  if (!url) return null
+  const m = url.match(/t\.me\/([^/?#]+)/i)
+  return m?.[1] ? `@${m[1]}` : 'Telegram'
+})
 
 onMounted(async () => {
   try {
-    const me = await fetchJson('/api/me')
-    subscriptionActive.value = Boolean(me.subscription_active)
-    subscriptionUntil.value = me.subscription_until ?? null
+    me.value = await fetchJson('/api/me')
   } catch {
-    /* страница всё равно полезна без /me */
+    me.value = null
   } finally {
     meLoading.value = false
   }
@@ -34,74 +83,137 @@ onMounted(async () => {
 
 <template>
   <main class="return-page">
-    <div class="return-bg" aria-hidden="true" />
-    <div class="return-wrap">
+    <div class="return-page__inner">
       <div class="return-card">
-        <div class="icon-ring" :class="{ 'icon-ring--ok': subscriptionActive, 'icon-ring--wait': !subscriptionActive && !isCanceled }">
-          <CheckCircle2
-            v-if="subscriptionActive"
-            :size="40"
-            :stroke-width="1.75"
+        <div
+          class="return-card__icon"
+          :class="{
+            'return-card__icon--ok': subscriptionActive && !isCanceled,
+            'return-card__icon--wait': !subscriptionActive && !isCanceled,
+            'return-card__icon--fail': isCanceled,
+          }"
+        >
+          <Check
+            v-if="subscriptionActive && !isCanceled"
+            :size="36"
+            :stroke-width="2.5"
             aria-hidden="true"
           />
           <Clock3
             v-else-if="!isCanceled"
-            :size="40"
-            :stroke-width="1.75"
+            :size="36"
+            :stroke-width="2"
             aria-hidden="true"
           />
-          <span v-else class="icon-x" aria-hidden="true">×</span>
+          <span v-else class="return-card__x" aria-hidden="true">×</span>
         </div>
 
-        <h1 v-if="isCanceled" class="return-title">Оплата не завершена</h1>
-        <h1 v-else-if="subscriptionActive" class="return-title">Подписка продлена</h1>
-        <h1 v-else class="return-title">Проверяем оплату</h1>
+        <h1 v-if="isCanceled" class="return-card__title">Оплата не завершена</h1>
+        <h1 v-else-if="subscriptionActive" class="return-card__title">
+          Подписка активирована!
+        </h1>
+        <h1 v-else class="return-card__title">Проверяем оплату</h1>
 
-        <p v-if="isCanceled" class="return-desc">
-          Платёж отменён или прерван. Средства не списаны — выберите тариф снова, когда будете готовы.
+        <p v-if="isCanceled" class="return-card__lead">
+          Платёж отменён или прерван. Средства не списаны.
         </p>
-        <p v-else-if="subscriptionActive" class="return-desc">
-          Спасибо! Доступ обновлён
-          <template v-if="subscriptionUntil"> до {{ subscriptionUntil }}</template>.
-          Можно подключать устройства в личном кабинете.
+        <p v-else-if="subscriptionActive" class="return-card__lead">
+          Спасибо! Оплата прошла успешно. Доступ к VPN-сервису открыт.
         </p>
-        <p v-else class="return-desc">
-          Банк подтвердил перевод — мы получим уведомление от ЮKassa в течение минуты.
-          Обновите кабинет чуть позже: подписка активируется автоматически.
+        <p v-else class="return-card__lead">
+          Банк подтвердил перевод — подписка активируется в течение минуты после
+          уведомления ЮKassa.
         </p>
 
-        <div v-if="!meLoading && !isCanceled && !subscriptionActive" class="return-tip card-pad">
-          <p class="tip-text">
-            Если через 5–10 минут доступ не появился, напишите в поддержку с email аккаунта.
-          </p>
-        </div>
+        <ul
+          v-if="!isCanceled && subscriptionActive && !meLoading"
+          class="return-details"
+        >
+          <li>
+            <span class="return-details__ico" aria-hidden="true">
+              <Calendar :size="20" :stroke-width="2" />
+            </span>
+            <span class="return-details__label">Доступ продлён до</span>
+            <span class="return-details__value">{{ subscriptionUntilLabel }}</span>
+          </li>
+          <li>
+            <span class="return-details__ico" aria-hidden="true">
+              <Monitor :size="20" :stroke-width="2" />
+            </span>
+            <span class="return-details__label">Подключено устройств</span>
+            <span class="return-details__value">{{ devicesLabel }}</span>
+          </li>
+          <li>
+            <span class="return-details__ico" aria-hidden="true">
+              <Wifi :size="20" :stroke-width="2" />
+            </span>
+            <span class="return-details__label">Потреблённый трафик</span>
+            <span class="return-details__value">{{ trafficLabel }}</span>
+          </li>
+        </ul>
 
-        <div class="return-actions">
-          <AppActionButton
-            variant="primary"
-            block
-            :to="{ name: 'cabinet', query: { tab: 'subscription' } }"
-          >
-            <template #icon>
-              <ArrowRight :size="18" :stroke-width="2" aria-hidden="true" />
-            </template>
-            В личный кабинет
-          </AppActionButton>
-          <AppActionButton
-            v-if="!isCanceled && !subscriptionActive"
-            variant="secondary"
-            block
-            :to="{ name: 'cabinet-pay' }"
-          >
-            К тарифам
-          </AppActionButton>
-        </div>
+        <p
+          v-else-if="!isCanceled && !subscriptionActive && !meLoading"
+          class="return-card__hint"
+        >
+          Обновите страницу через 1–2 минуты. Если доступ не появился —
+          <template v-if="supportTelegramUrl">
+            напишите в поддержку
+            <a
+              class="return-card__hint-link"
+              :href="supportTelegramUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+            >{{ supportTelegramLabel ? ` ${supportTelegramLabel}` : '' }}</a>
+          </template>
+          <template v-else>напишите в поддержку</template>
+        </p>
+
+        <RouterLink
+          class="return-cta"
+          :to="{ name: 'cabinet', query: { tab: 'subscription' } }"
+        >
+          Перейти в личный кабинет
+          <ArrowRight :size="20" :stroke-width="2" aria-hidden="true" />
+        </RouterLink>
+
+        <RouterLink
+          v-if="!isCanceled && !subscriptionActive"
+          class="return-cta-secondary"
+          :to="{ name: 'cabinet-pay' }"
+        >
+          К тарифам
+        </RouterLink>
       </div>
 
-      <CabinetBackLink
-        class="return-back"
-        :to="{ name: 'cabinet', query: { tab: 'subscription' } }"
-      />
+      <section v-if="subscriptionActive && !isCanceled" class="return-thanks">
+        <p class="return-thanks__title">
+          <Gift :size="18" :stroke-width="2" aria-hidden="true" />
+          Спасибо, что выбираете нас!
+        </p>
+        <div class="return-benefits">
+          <div>
+            <Shield :size="22" :stroke-width="2" aria-hidden="true" />
+            <strong>Стабильное соединение</strong>
+            <span>Надёжные серверы и шифрование</span>
+          </div>
+          <div>
+            <Headphones :size="22" :stroke-width="2" aria-hidden="true" />
+            <strong>Поддержка 24/7</strong>
+            <span>Поможем с настройкой</span>
+          </div>
+          <div>
+            <RefreshCw :size="22" :stroke-width="2" aria-hidden="true" />
+            <strong>Регулярные обновления</strong>
+            <span>Актуальные конфигурации</span>
+          </div>
+        </div>
+      </section>
+
+      <footer class="return-brand" aria-hidden="true">
+        <Shield :size="22" :stroke-width="2" />
+        <span>VPN</span>
+      </footer>
     </div>
   </main>
 </template>
@@ -109,53 +221,35 @@ onMounted(async () => {
 <style scoped>
 .return-page {
   flex: 1;
-  display: flex;
-  flex-direction: column;
   min-height: 0;
-  position: relative;
-  overflow: hidden;
-  color: var(--text);
   background: var(--bg-gradient);
+  color: var(--text);
+  font: inherit;
 }
 
-.return-bg {
-  position: absolute;
-  inset: -20% -30%;
-  background:
-    radial-gradient(ellipse 55% 45% at 15% 20%, rgba(var(--accent-rgb, 59, 130, 246), 0.18), transparent 60%),
-    radial-gradient(ellipse 50% 40% at 85% 75%, rgba(16, 185, 129, 0.12), transparent 55%);
-  pointer-events: none;
-}
-
-.return-wrap {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem max(1rem, env(safe-area-inset-left, 0px)) 2.5rem
-    max(1rem, env(safe-area-inset-right, 0px));
-  position: relative;
-  z-index: 1;
-  gap: 1rem;
+.return-page__inner {
+  width: 100%;
+  max-width: min(var(--page-content-max, 36rem), 100%);
+  margin: 0 auto;
+  padding: var(--page-content-pad-block-start, 2rem) max(1rem, env(safe-area-inset-left))
+    var(--page-content-pad-block-end, 2.5rem) max(1rem, env(safe-area-inset-right));
+  box-sizing: border-box;
 }
 
 .return-card {
-  width: 100%;
-  max-width: 22rem;
   padding: 2rem 1.5rem 1.75rem;
   text-align: center;
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: 20px;
   box-shadow: var(--shadow-md);
-  animation: rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: return-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-@keyframes rise {
+@keyframes return-rise {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
@@ -163,73 +257,223 @@ onMounted(async () => {
   }
 }
 
-.icon-ring {
+.return-card__icon {
   width: 4.5rem;
   height: 4.5rem;
-  margin: 0 auto 1.25rem;
-  border-radius: 50%;
+  margin: 0 auto 1.15rem;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 50%;
   border: 2px solid var(--card-border);
   color: var(--muted);
 }
 
-.icon-ring--ok {
-  border-color: rgba(16, 185, 129, 0.45);
-  background: color-mix(in srgb, rgb(16, 185, 129) 12%, transparent);
-  color: rgb(16, 185, 129);
+.return-card__icon--ok {
+  background: linear-gradient(
+    135deg,
+    var(--brand-mint) 0%,
+    var(--brand-teal) 100%
+  );
+  border-color: transparent;
+  color: var(--on-accent);
+  box-shadow: 0 8px 24px var(--accent-glow);
 }
 
-.icon-ring--wait {
-  border-color: rgba(var(--accent-rgb, 59, 130, 246), 0.35);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
+.return-card__icon--wait {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
   color: var(--accent);
 }
 
-.icon-x {
+.return-card__icon--fail {
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+  color: var(--danger);
+}
+
+.return-card__x {
   font-size: 2rem;
   line-height: 1;
   font-weight: 300;
 }
 
-.return-title {
-  margin: 0 0 0.65rem;
-  font-size: 1.35rem;
-  font-weight: 650;
+.return-card__title {
+  margin: 0 0 0.5rem;
+  font-size: 1.45rem;
+  font-weight: 800;
   letter-spacing: -0.02em;
   color: var(--text-h);
 }
 
-.return-desc {
-  margin: 0 0 1.25rem;
+.return-card__lead {
+  margin: 0 0 1.35rem;
   font-size: 0.92rem;
   line-height: 1.5;
   color: var(--muted);
 }
 
-.return-tip {
-  margin-bottom: 1.25rem;
+.return-details {
+  margin: 0 0 1.35rem;
+  padding: 0;
+  list-style: none;
   text-align: left;
-  background: color-mix(in srgb, var(--accent) 6%, var(--card-bg));
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--card-border));
-  border-radius: 12px;
+  border-top: 1px solid var(--card-border);
 }
 
-.tip-text {
-  margin: 0;
-  font-size: 0.82rem;
-  line-height: 1.45;
+.return-details li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--card-border);
+}
+
+.return-details__ico {
+  display: flex;
+  color: var(--accent);
+}
+
+.return-details__label {
+  font-size: 0.88rem;
   color: var(--muted);
 }
 
-.return-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+.return-details__value {
+  grid-column: 3;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--accent-muted);
+  text-align: right;
 }
 
-.return-back {
-  margin-top: 0.25rem;
+.return-card__hint {
+  margin: 0 0 1.25rem;
+  padding: 0.75rem 0.9rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--muted);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  text-align: left;
+}
+
+.return-card__hint-link {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.return-card__hint-link:hover {
+  color: var(--accent-hover);
+}
+
+.return-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 0.85rem 1.25rem;
+  border-radius: 14px;
+  background: linear-gradient(
+    135deg,
+    var(--brand-mint) 0%,
+    var(--brand-teal) 100%
+  );
+  color: var(--on-accent);
+  font-size: 1rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: filter 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+  box-shadow: var(--shadow-sm);
+}
+
+.return-cta:hover {
+  filter: brightness(1.06);
+  box-shadow: var(--shadow-md);
+}
+
+.return-cta-secondary {
+  display: block;
+  margin-top: 0.65rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.return-cta-secondary:hover {
+  color: var(--accent-hover);
+}
+
+.return-thanks {
+  margin-top: 1.5rem;
+  padding: 1.25rem 1rem;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.return-thanks__title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin: 0 0 1rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--accent-muted);
+}
+
+.return-benefits {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  text-align: center;
+}
+
+@media (min-width: 520px) {
+  .return-benefits {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.return-benefits div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.return-benefits :deep(svg) {
+  color: var(--accent);
+}
+
+.return-benefits strong {
+  font-size: 0.82rem;
+}
+
+.return-benefits span {
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.return-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  margin-top: 2rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
 }
 </style>

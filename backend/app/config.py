@@ -109,6 +109,13 @@ class Settings(BaseSettings):
             "Ссылки: https://t.me/{username}, рефералы — …?start={token}, страница бота в ЛК."
         ),
     )
+    support_telegram_username: str = Field(
+        default="",
+        description=(
+            "Аккаунт поддержки в Telegram без @ (env: SUPPORT_TELEGRAM_USERNAME). "
+            "Ссылка https://t.me/{username} — в ЛК после оплаты, заголовок support-url подписки."
+        ),
+    )
 
     referral_bonus_days_per_paid_month: int = Field(
         default=3,

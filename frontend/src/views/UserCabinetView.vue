@@ -1110,7 +1110,9 @@ onMounted(() => {
 .cabinet-tab {
   appearance: none;
   margin: 0;
-  padding: 0.4rem 0.5rem;
+  box-sizing: border-box;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.65rem;
   border-radius: var(--radius-pill);
   font: inherit;
   font-size: 0.82rem;
@@ -1213,8 +1215,9 @@ onMounted(() => {
 
 @media (max-width: 420px) {
   .cabinet-tab {
-    font-size: 0.72rem;
-    padding: 0.38rem 0.35rem;
+    min-height: 2.35rem;
+    font-size: 0.75rem;
+    padding: 0.45rem 0.4rem;
   }
 }
 

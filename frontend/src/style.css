@@ -83,7 +83,7 @@
   --radius-pill: 999px;
 
   /* Узкие страницы (кабинет, вход, open-sub): ширина и отступы — в т.ч. для SitePageLayout */
-  --page-content-max: 32rem;
+  --page-content-max: 36rem;
   --page-content-pad-block-start: 1.75rem;
   --page-content-pad-block-start-compact: 1.5rem;
   --page-content-pad-block-end: 2.5rem;

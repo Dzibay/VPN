@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from app.config import Settings, settings
+from app.domain.public_urls import support_telegram_public_url
 from app.domain.models.subscription import SubscriptionOpenPageData, SubscriptionPayload
 from app.domain.subscription.build import (
     build_subscription_payload,
@@ -178,7 +179,7 @@ def _subscription_announce_url(
 ) -> str:
     if block_reason is not None or expire_banner_active or not calendar_active:
         return renew_button_link(cfg)
-    return "https://t.me/Podoroznik_Support"
+    return support_telegram_public_url(cfg) or renew_button_link(cfg)
 
 
 def _happ_advanced_subscription_headers(cfg: Settings | None = None) -> dict[str, str]:
@@ -306,7 +307,11 @@ async def subscription_client_metadata_headers(
         "subscription-userinfo": userinfo,
         "profile-update-interval": "1",
         "profile-title": subscription_profile_title_header_value(),
-        "support-url": "https://t.me/Podoroznik_Support",
+        **(
+            {"support-url": url}
+            if (url := support_telegram_public_url(settings))
+            else {}
+        ),
         "profile-web-page-url": "https://cool-vpn.ru",
         "announce": subscription_announce_header_value(announce_raw),
         "announce-url": _subscription_announce_url(
