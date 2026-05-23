@@ -1,6 +1,6 @@
 Файлы для главной страницы (public/images/home/):
 
-  header-logo.png      — логотип в шапке на главной (горизонтальный wordmark)
+  header-logo.png      — логотип в шапке на всех страницах (горизонтальный wordmark)
   hero-bg-map.png      — точечная карта на фоне hero
   hero-app-mockup.png  — макет приложения справа
   trust-avatars.png    — аватары в блоке «10 000+» (опционально)

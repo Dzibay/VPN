@@ -31,8 +31,8 @@ const homeNavLinks = [
 
 const showUserLogout = computed(() => Boolean(hasToken.value))
 
-/** Горизонтальный логотип для главной: frontend/public/images/home/header-logo.png */
-const HEADER_LOGO_WORDMARK = '/images/home/header-logo.png'
+/** Горизонтальный логотип сайта: frontend/public/images/home/header-logo.png */
+const SITE_LOGO_WORDMARK = '/images/home/header-logo.png'
 
 const headerWordmarkOk = ref(true)
 
@@ -58,13 +58,13 @@ router.afterEach(refreshSessions)
   >
     <RouterLink
       class="brand"
-      :class="{ 'brand--wordmark': isHome && headerWordmarkOk }"
+      :class="{ 'brand--wordmark': headerWordmarkOk }"
       to="/"
     >
       <img
-        v-if="isHome && headerWordmarkOk"
+        v-if="headerWordmarkOk"
         class="brand-wordmark"
-        :src="HEADER_LOGO_WORDMARK"
+        :src="SITE_LOGO_WORDMARK"
         width="220"
         height="48"
         alt="Подорожник VPN"
@@ -294,16 +294,11 @@ router.afterEach(refreshSessions)
 
 .brand-wordmark {
   display: block;
-  height: 2.65rem;
+  height: clamp(2.25rem, 4.5vw, 2.85rem);
   width: auto;
-  max-width: min(15rem, 48vw);
+  max-width: min(13.75rem, 52vw);
   object-fit: contain;
   object-position: left center;
-}
-
-.shell--home .brand-wordmark {
-  height: clamp(2.25rem, 4.5vw, 2.85rem);
-  max-width: min(13.5rem, 52vw);
 }
 
 .brand-logo {
