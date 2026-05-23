@@ -258,7 +258,6 @@ onBeforeUnmount(() => {
 <template>
   <div class="home">
     <main id="main-content">
-    <div class="home-fold">
     <!-- HERO -->
     <section id="hero" class="hero hero--landing" aria-labelledby="hero-title">
       <div class="hero__bg" aria-hidden="true">
@@ -386,7 +385,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <!-- ПОЧЕМУ МЫ (второй экран: 25% высоты вместе с hero на десктопе) -->
+    <!-- ПОЧЕМУ МЫ -->
     <section
       id="benefits"
       class="section section-why"
@@ -415,7 +414,6 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </section>
-    </div>
 
     <!-- КАК РАБОТАЕТ -->
     <section
@@ -801,72 +799,10 @@ onBeforeUnmount(() => {
 <style scoped>
 .home {
   --landing-content-max: 84rem;
-  --home-header-h: 4.5rem;
   flex: 1;
   color: var(--text);
   display: flex;
   flex-direction: column;
-}
-
-/* Hero + benefits: один «экран» под шапкой (75% / 25%) на широких экранах */
-.home-fold {
-  display: block;
-}
-
-@media (min-width: 1024px) and (min-height: 640px) {
-  .home-fold {
-    --home-fold-h: calc(100dvh - var(--home-header-h));
-    --home-hero-h: calc(var(--home-fold-h) * 0.75);
-    --home-benefits-h: calc(var(--home-fold-h) * 0.25);
-    display: flex;
-    flex-direction: column;
-    height: var(--home-fold-h);
-    min-height: var(--home-fold-h);
-    max-height: var(--home-fold-h);
-    overflow: hidden;
-  }
-
-  .home-fold .hero--landing {
-    flex: none;
-    height: var(--home-hero-h);
-    min-height: var(--home-hero-h);
-    max-height: var(--home-hero-h);
-    overflow: hidden;
-  }
-
-  .home-fold .hero__container {
-    height: 100%;
-    max-height: 100%;
-    align-items: center;
-  }
-
-  .home-fold .section-why {
-    flex: none;
-    height: var(--home-benefits-h);
-    min-height: var(--home-benefits-h);
-    max-height: var(--home-benefits-h);
-    overflow: hidden;
-  }
-}
-
-@media (max-width: 1023px), (max-height: 639px) {
-  .home-fold {
-    height: auto;
-    min-height: 0;
-    max-height: none;
-  }
-
-  .home-fold .hero--landing {
-    min-height: auto;
-    height: auto;
-    max-height: none;
-  }
-
-  .home-fold .section-why {
-    height: auto;
-    min-height: 0;
-    max-height: none;
-  }
 }
 
 .home :is(section[id]) {
@@ -1009,7 +945,7 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  padding: clamp(1rem, 2vh, 1.5rem) clamp(1rem, 4vw, 2rem);
+  padding: clamp(1.25rem, 3vh, 2rem) clamp(1rem, 4vw, 2rem) clamp(1rem, 2vh, 1.5rem);
   background: #fafcfb;
   color: var(--home-text);
   overflow: hidden;
@@ -1405,15 +1341,8 @@ onBeforeUnmount(() => {
   }
 }
 
-@media (min-width: 1024px) and (min-height: 640px) {
-  .home-fold .hero__mockup {
-    max-width: min(100%, 22rem);
-    max-height: min(100%, calc(var(--home-hero-h) * 0.78));
-  }
-}
-
 /* ——— ПОЧЕМУ ВЫБИРАЮТ ——— */
-.section-why {
+.section.section-why {
   --home-bg: #fafcfb;
   --home-text: #111827;
   --home-muted: #6b7280;
@@ -1421,46 +1350,15 @@ onBeforeUnmount(() => {
   --home-accent: #1d9a5c;
   --home-accent-soft: rgba(29, 154, 92, 0.1);
 
-  padding: clamp(2.5rem, 5vw, 3.75rem) clamp(1rem, 4vw, 2rem);
-  padding-top: clamp(2.75rem, 6vw, 4rem);
+  padding: clamp(3.25rem, 7vw, 5.5rem) clamp(1.25rem, 4vw, 2rem);
   background: var(--home-bg);
   border-top: none;
 }
 
-@media (min-width: 1024px) and (min-height: 640px) {
-  /* Перебиваем .section — обычные отступы benefits, фиксированная четверть экрана */
-  .home-fold .section.section-why {
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-start;
-    box-sizing: border-box;
-    padding: clamp(1.5rem, 4vh, 2.25rem) clamp(1rem, 4vw, 2rem)
-      clamp(0.85rem, 1.5vh, 1.15rem);
-  }
-
-  .home-fold .section-why__inner {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-start;
-    width: 100%;
-    padding-top: clamp(0.35rem, 1vh, 0.65rem);
-  }
-
-  .home-fold .section-why__title {
-    margin-top: 0;
-    margin-bottom: clamp(0.65rem, 1.5vh, 1rem);
-  }
-}
-
-@media (max-width: 1023px) {
-  .section-why {
-    padding-top: clamp(3rem, 10vw, 4.5rem);
-  }
-
-  .section-why__title {
-    margin-top: clamp(0.75rem, 3vw, 1.25rem);
+@media (min-width: 1024px) {
+  .hero--landing {
+    padding-top: clamp(2rem, 5vh, 3rem);
+    padding-bottom: clamp(2rem, 4vh, 3rem);
   }
 }
 
@@ -1469,7 +1367,7 @@ onBeforeUnmount(() => {
 }
 
 .section-why__title {
-  margin: clamp(0.5rem, 2vw, 1rem) 0 clamp(1.5rem, 3vw, 2rem);
+  margin: 0 0 clamp(1.5rem, 3vw, 2rem);
   font-family: var(--heading);
   font-size: clamp(1.5rem, 3vw, 2rem);
   font-weight: 800;
@@ -1547,14 +1445,9 @@ onBeforeUnmount(() => {
 }
 
 /* ——— КАК РАБОТАЕТ ——— */
-.section-how {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--bg) 100%, transparent) 0%,
-    color-mix(in srgb, var(--surface) 35%, var(--bg)) 50%,
-    color-mix(in srgb, var(--bg) 100%, transparent) 100%
-  );
-  border-block: 1px solid color-mix(in srgb, var(--card-border) 65%, transparent);
+.section.section-how {
+  background: #ffffff;
+  border-block: 1px solid #e5e7eb;
 }
 
 .how-panels {
