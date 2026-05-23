@@ -19,7 +19,7 @@ from app.domain.models.staff_ledger import (
     StaffPaymentsFinanceSummaryResponse,
     StaffTaskItem,
 )
-from app.domain.services.tribute_service import staff_apply_tribute_payment
+from app.domain.services.payment_service import create_staff_manual_payment
 from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.task import Task
 from app.infrastructure.persistence.models.user import User
@@ -45,7 +45,7 @@ async def staff_payments_finance_summary(
     return StaffPaymentsFinanceSummaryResponse.model_validate(raw)
 
 
-async def create_staff_tribute_payment(
+async def create_staff_manual_payment_record(
     session: AsyncSession,
     settings: Settings,
     *,
@@ -55,33 +55,21 @@ async def create_staff_tribute_payment(
     payment_kind: Literal["subscription", "one_time"],
     created_at: datetime | None = None,
 ) -> StaffCreateTributePaymentResponse:
-    amount_minor = int((amount_rub * Decimal("100")).quantize(Decimal("1")))
-    ack = await staff_apply_tribute_payment(
+    """Ручной платёж в админке: provider=manual, продление как после оплаты."""
+    row = await create_staff_manual_payment(
         session,
         settings,
         user_id=int(user_id),
         months=int(months),
-        amount_minor=amount_minor,
+        amount=amount_rub,
         payment_kind=payment_kind,
         created_at=created_at,
     )
-    payment: StaffPaymentItem | None = None
-    if not ack.duplicate:
-        row = (
-            await session.scalars(
-                select(Payment)
-                .where(Payment.user_id == int(user_id))
-                .order_by(Payment.id.desc())
-                .limit(1),
-            )
-        ).first()
-        if row is not None:
-            payment = StaffPaymentItem.model_validate(row)
     return StaffCreateTributePaymentResponse(
-        payment=payment,
-        ok=ack.ok,
-        event=ack.event,
-        duplicate=ack.duplicate,
+        payment=StaffPaymentItem.model_validate(row),
+        ok=True,
+        event=None,
+        duplicate=False,
     )
 
 

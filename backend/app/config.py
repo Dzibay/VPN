@@ -79,6 +79,7 @@ class Settings(BaseSettings):
             "Секрет для POST /api/auth/telegram, POST /api/telegram/link, POST /api/telegram/site-link/start, "
             "GET /api/telegram/referral/me, DELETE /api/telegram/subscription-devices/{device_id}, "
             "GET /api/telegram/payments/tribute-links, POST /api/payments/tribute/webhook-test, "
+            "POST /api/payments/yookassa/webhook, "
             "GET /api/telegram/notification-tasks, POST /api/telegram/notification-tasks/completed, "
             "GET /api/telegram/users, GET /api/telegram/users/{topic_id} и "
             "GET /api/telegram/subscription-open-clients: "
@@ -127,6 +128,21 @@ class Settings(BaseSettings):
             "Api-Key Tribute (Creator Dashboard → Settings → API Keys). Используется ТОЛЬКО как "
             "секрет для проверки подписи webhook (заголовок trbt-signature, HMAC-SHA256 от raw body). "
             "Пусто — POST /api/payments/tribute/webhook отвечает 503 (эндпоинт отключён)."
+        ),
+    )
+    yookassa_shop_id: str = Field(
+        default="",
+        description="Идентификатор магазина ЮKassa (shopId). Пусто — оплата на сайте отключена.",
+    )
+    yookassa_secret_key: str = Field(
+        default="",
+        description="Секретный ключ ЮKassa. Пусто — оплата на сайте отключена.",
+    )
+    yookassa_return_url: str = Field(
+        default="",
+        description=(
+            "URL возврата после оплаты (redirect). Пусто — {SITE_ADDRESS}/cabinet/pay/return "
+            "или относительный /cabinet/pay/return."
         ),
     )
     redis_url: str = Field(

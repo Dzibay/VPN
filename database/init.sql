@@ -123,9 +123,9 @@ CREATE TABLE IF NOT EXISTS payments (
     months INTEGER NOT NULL CHECK (months >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     provider TEXT NOT NULL DEFAULT 'manual',
-    tribute_webhook JSONB,
+    provider_webhook JSONB,
     payment_kind TEXT NOT NULL DEFAULT 'subscription',
-    CONSTRAINT payments_provider_check CHECK (provider IN ('manual', 'tribute')),
+    CONSTRAINT payments_provider_check CHECK (provider IN ('manual', 'tribute', 'yookassa')),
     CONSTRAINT payments_payment_kind_check CHECK (
         payment_kind IN ('subscription', 'one_time')
     )
@@ -262,7 +262,10 @@ CREATE INDEX IF NOT EXISTS idx_staff_chart_events_event_at
 CREATE INDEX IF NOT EXISTS idx_payments_user_created_at
     ON payments (user_id, created_at DESC);
 
--- Индексы по tribute_webhook — в migrate.sql (после ADD COLUMN на существующих БД).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_yookassa_object_id
+    ON payments ((provider_webhook #>> '{object,id}'))
+    WHERE provider = 'yookassa'
+      AND (provider_webhook #>> '{object,id}') IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_tasks_user_created_at
     ON tasks (user_id, created_at DESC);

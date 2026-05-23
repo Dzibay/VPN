@@ -1,10 +1,7 @@
 /**
- * Нужна ли привязка Telegram перед оплатой (страница /cabinet/pay).
- * Webhook Tribute идентифицирует пользователя по telegram_id — это имеет смысл
- * только когда на API настроен бот (TELEGRAM_BOT_USERNAME → telegram_bot_page_url в GET /api/me).
+ * Раньше оплата на сайте шла через Tribute по telegram_id.
+ * С ЮKassa зачисление идёт по user_id из JWT — привязка Telegram для /cabinet/pay не обязательна.
  */
-export function payRequiresTelegramBinding(me) {
-  if (!me || me.telegram_id != null) return false
-  const botUrl = me.telegram_bot_page_url
-  return typeof botUrl === 'string' && botUrl.trim() !== ''
+export function payRequiresTelegramBinding(_me) {
+  return false
 }

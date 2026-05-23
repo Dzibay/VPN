@@ -76,7 +76,7 @@ const paymentLedgerSortAccessors = {
   months: (r) => Number(r.months) || 0,
   provider: (r) => String(r.provider ?? '').toLowerCase(),
   payment_kind: (r) => String(r.payment_kind ?? '').toLowerCase(),
-  tribute_webhook: (r) => JSON.stringify(r.tribute_webhook ?? '').toLowerCase(),
+  provider_webhook: (r) => JSON.stringify(r.provider_webhook ?? '').toLowerCase(),
   created_at: (r) => String(r.created_at ?? ''),
 }
 
@@ -1054,8 +1054,8 @@ onMounted(() => {
                 @sort="togglePayLedgerSort"
               />
               <AdminSortTh
-                label="Webhook Tribute"
-                column-key="tribute_webhook"
+                label="Webhook провайдера"
+                column-key="provider_webhook"
                 :sort-key="paySortKey"
                 :sort-dir="paySortDir"
                 @sort="togglePayLedgerSort"
@@ -1090,11 +1090,12 @@ onMounted(() => {
               </td>
               <td
                 class="mono-cell"
-                :title="row.tribute_webhook ? JSON.stringify(row.tribute_webhook) : ''"
+                :title="row.provider_webhook ? JSON.stringify(row.provider_webhook) : ''"
               >
                 {{
-                  row.tribute_webhook?.name ||
-                  (row.tribute_webhook ? JSON.stringify(row.tribute_webhook).slice(0, 80) : '—')
+                  row.provider_webhook?.name ||
+                  row.provider_webhook?.event ||
+                  (row.provider_webhook ? JSON.stringify(row.provider_webhook).slice(0, 80) : '—')
                 }}
               </td>
               <td class="date-cell">{{ formatRefTableDate(row.created_at) }}</td>

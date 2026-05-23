@@ -21,7 +21,7 @@ class StaffPaymentItem(BaseModel):
     provider: str
     #: ``subscription`` (Tribute) | ``one_time`` (Tribute цифровой товар).
     payment_kind: str
-    tribute_webhook: dict[str, Any] | None = None
+    provider_webhook: dict[str, Any] | None = None
     created_at: datetime
 
 
@@ -44,7 +44,7 @@ class StaffPaymentsBulkDeleteResponse(BaseModel):
 
 
 class StaffCreateTributePaymentBody(BaseModel):
-    """Ручное начисление оплаты — тот же commit, что после webhook Tribute."""
+    """Ручное начисление в админке (``payments.provider = manual``)."""
 
     user_id: int = Field(ge=1, description="users.id")
     months: int = Field(ge=1, le=120, description="Срок подписки в месяцах (× 31 день)")

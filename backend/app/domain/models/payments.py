@@ -40,8 +40,8 @@ class TributePaymentsLinksResponse(BaseModel):
     )
 
 
-class TributeWebhookAck(BaseModel):
-    """Краткий ответ webhook (для Tribute главное HTTP 200; тело только для отладки)."""
+class PaymentWebhookAck(BaseModel):
+    """Краткий ответ webhook провайдера (HTTP 200; тело для отладки)."""
 
     ok: bool = True
     event: str | None = None
@@ -49,6 +49,31 @@ class TributeWebhookAck(BaseModel):
     payment_id: int | None = None
     fulfilled: bool = False
     skip_reason: str | None = None
+
+
+# Обратная совместимость импортов и OpenAPI
+TributeWebhookAck = PaymentWebhookAck
+
+
+class SitePaymentTariffItem(BaseModel):
+    """Разовый тариф для оплаты на сайте (ЮKassa)."""
+
+    months: int = Field(ge=1, le=120, description="Срок в месяцах.")
+    price: int = Field(ge=1, description="Цена в рублях (целое число).")
+    name: str = Field(description="Подпись для UI.")
+
+
+class SitePaymentTariffsResponse(BaseModel):
+    tariffs: list[SitePaymentTariffItem] = Field(default_factory=list)
+
+
+class YookassaCheckoutBody(BaseModel):
+    months: int = Field(ge=1, le=120, description="Срок из yookassa_tariffs.json")
+
+
+class YookassaCheckoutResponse(BaseModel):
+    confirmation_url: str = Field(description="URL редиректа на оплату ЮKassa")
+    yookassa_payment_id: str = Field(description="Идентификатор платежа в ЮKassa")
 
 
 class TributeWebhookSubscriptionTestPayload(BaseModel):
@@ -63,7 +88,7 @@ class TributeWebhookSubscriptionTestPayload(BaseModel):
         description="Telegram user id; должен совпадать с users.telegram_id в БД.",
     )
     expires_at: datetime = Field(
-        description="Дата окончания периода в Tribute (ISO-8601 UTC); сохраняется в tribute_webhook.",
+        description="Дата окончания периода в Tribute (ISO-8601 UTC); сохраняется в provider_webhook.",
     )
     period: Literal["monthly", "quarterly", "yearly"] = Field(
         default="monthly",
@@ -83,7 +108,7 @@ class TributeWebhookSubscriptionTestPayload(BaseModel):
 class TributeWebhookDigitalTestPayload(BaseModel):
     """Тест ``new_digital_product`` (разовая покупка)."""
 
-    purchase_id: int = Field(ge=1, description="Уникальный purchase_id Tribute (дедупликация в tribute_webhook).")
+    purchase_id: int = Field(ge=1, description="Уникальный purchase_id Tribute (дедупликация в provider_webhook).")
     product_id: int = Field(ge=1, description="ID цифрового товара в Tribute.")
     amount: int = Field(default=19900, ge=0, description="Сумма в минорных единицах.")
     telegram_user_id: int = Field(ge=1, description="Telegram user id в БД.")

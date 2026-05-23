@@ -18,11 +18,18 @@ from app.domain.models.auth import (
     AccountMeResponse,
     TelegramSyncStartResponse,
 )
-from app.domain.models.payments import TributePaymentsLinksResponse
+from app.domain.models.payments import (
+    SitePaymentTariffsResponse,
+    YookassaCheckoutBody,
+    YookassaCheckoutResponse,
+)
 from app.domain.services.auth_service import account_me, change_account_password
 from app.domain.services.me_service import delete_subscription_device
 from app.domain.services.telegram_auth_service import telegram_sync_start_link
-from app.domain.services.tribute_service import tribute_payments_links_public_response
+from app.domain.services.yookassa_service import (
+    create_yookassa_checkout,
+    yookassa_tariffs_public_response,
+)
 from app.infrastructure.cache import get_redis
 
 router = APIRouter(prefix="/me", tags=["user"])
@@ -124,17 +131,36 @@ async def me(
 
 
 @router.get(
-    "/payments/tribute-links",
-    response_model=TributePaymentsLinksResponse,
+    "/payments/yookassa-tariffs",
+    response_model=SitePaymentTariffsResponse,
     dependencies=[Depends(require_client_jwt)],
-    summary="Tribute: тарифы из app/data/tribute_tariffs.json",
+    summary="Тарифы разовой оплаты на сайте (app/data/yookassa_tariffs.json)",
 )
-async def me_tribute_links(
+async def me_yookassa_tariffs(
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
-) -> TributePaymentsLinksResponse:
+) -> SitePaymentTariffsResponse:
     if principal.role != "user" or principal.user_id is None:
         raise ForbiddenError(detail="Доступно только клиентской роли")
-    return tribute_payments_links_public_response()
+    return yookassa_tariffs_public_response()
+
+
+@router.post(
+    "/payments/yookassa/checkout",
+    response_model=YookassaCheckoutResponse,
+    dependencies=[Depends(require_client_jwt)],
+    summary="Создать платёж ЮKassa и получить URL для оплаты",
+)
+async def me_yookassa_checkout(
+    principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
+    body: YookassaCheckoutBody,
+) -> YookassaCheckoutResponse:
+    if principal.role != "user" or principal.user_id is None:
+        raise ForbiddenError(detail="Доступно только клиентской роли")
+    return await create_yookassa_checkout(
+        settings,
+        user_id=int(principal.user_id),
+        months=int(body.months),
+    )
 
 
 @router.post(

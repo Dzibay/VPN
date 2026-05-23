@@ -455,13 +455,6 @@ async function copySubscriptionUrl() {
 }
 
 function goCabinetPay() {
-  if (payRequiresTelegramBinding(me.value)) {
-    void router.push({
-      path: '/cabinet',
-      query: { tab: 'profile', pay_need_telegram: '1' },
-    })
-    return
-  }
   void router.push({ name: 'cabinet-pay' })
 }
 

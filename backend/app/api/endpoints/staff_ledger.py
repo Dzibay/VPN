@@ -23,7 +23,7 @@ from app.domain.models.staff_ledger import (
 )
 from app.domain.services.staff_ledger_service import (
     create_staff_task,
-    create_staff_tribute_payment,
+    create_staff_manual_payment_record,
     delete_staff_task,
     get_staff_task,
     list_staff_payments,
@@ -84,16 +84,16 @@ async def staff_list_payments(
     "",
     response_model=StaffCreateTributePaymentResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Создать платёж (логика webhook Tribute)",
-    description="Продлевает подписку, пишет payments, создаёт notify_payment и реферальные бонусы — "
-    "как ``_commit_tribute_paid_months`` после webhook. Нужен ``users.telegram_id``.",
+    summary="Создать ручной платёж (provider=manual)",
+    description="Продлевает подписку, пишет payments (provider=manual), notify_payment и реферальные бонусы. "
+    "Telegram не обязателен.",
 )
-async def staff_create_tribute_payment(
+async def staff_create_manual_payment(
     session: SessionDep,
     body: StaffCreateTributePaymentBody,
 ) -> StaffCreateTributePaymentResponse:
     try:
-        return await create_staff_tribute_payment(
+        return await create_staff_manual_payment_record(
             session,
             settings,
             user_id=body.user_id,
@@ -108,11 +108,6 @@ async def staff_create_tribute_payment(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Пользователь с таким user_id не найден",
-            ) from err
-        if code == "telegram_id_missing":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="У пользователя не задан telegram_id — начисление невозможно",
             ) from err
         raise
 

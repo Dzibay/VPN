@@ -23,13 +23,17 @@ def _normalized_route_path(path_with_query: str) -> str:
 
 
 def http_audit_always_persist_for_path(path_with_query: str, *, api_prefix: str) -> bool:
-    """Tribute webhook — всегда в ``user_http_request_traces`` (тело webhook — в ``payments.tribute_webhook``)."""
+    """Webhook платежей — всегда в ``user_http_request_traces`` (тело — в ``payments.provider_webhook``)."""
     normalized = _normalized_route_path(path_with_query)
     pfx = (api_prefix or "/api").strip()
     if not pfx.startswith("/"):
         pfx = "/" + pfx.lstrip("/")
     pfx = pfx.rstrip("/")
-    for suffix in ("/payments/tribute/webhook", "/payments/tribute/webhook-test"):
+    for suffix in (
+        "/payments/tribute/webhook",
+        "/payments/tribute/webhook-test",
+        "/payments/yookassa/webhook",
+    ):
         if normalized == f"{pfx}{suffix}":
             return True
     return False

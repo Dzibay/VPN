@@ -11,7 +11,6 @@ import {
   isAdminJwtRequired,
 } from '../auth/session.js'
 import { fetchJson } from '../api/client.js'
-import { payRequiresTelegramBinding } from '../util/payRequiresTelegram.js'
 
 /**
  * Ленивые импорты вью: каждый роут — отдельный chunk.
@@ -23,6 +22,7 @@ const UserRegisterView = () => import('../views/UserRegisterView.vue')
 const LinkFromTelegramView = () => import('../views/LinkFromTelegramView.vue')
 const UserCabinetView = () => import('../views/UserCabinetView.vue')
 const CabinetPayView = () => import('../views/CabinetPayView.vue')
+const CabinetPayReturnView = () => import('../views/CabinetPayReturnView.vue')
 const SubscriptionOpenView = () => import('../views/SubscriptionOpenView.vue')
 const AdminTablesPage = () => import('../views/AdminTablesPage.vue')
 const ReferralFunnelView = () => import('../views/ReferralFunnelView.vue')
@@ -61,6 +61,11 @@ const routes = [
     path: '/cabinet/pay',
     name: 'cabinet-pay',
     component: CabinetPayView,
+  },
+  {
+    path: '/cabinet/pay/return',
+    name: 'cabinet-pay-return',
+    component: CabinetPayReturnView,
   },
   {
     path: '/apps/:client',
@@ -168,37 +173,16 @@ router.beforeEach(async (to, _from, next) => {
   const token = getAccessToken()
   const role = getSessionRole()
 
-  if ((to.name === 'cabinet' || to.name === 'cabinet-pay') && !token) {
+  if (
+    (to.name === 'cabinet' ||
+      to.name === 'cabinet-pay' ||
+      to.name === 'cabinet-pay-return') &&
+    !token
+  ) {
     return next({
       name: 'login',
       query: { redirect: to.fullPath },
     })
-  }
-
-  if (to.name === 'cabinet-pay' && token) {
-    try {
-      const me = await fetchJson('/api/me')
-      if (payRequiresTelegramBinding(me)) {
-        return next({
-          name: 'cabinet',
-          query: { tab: 'profile', pay_need_telegram: '1' },
-          replace: true,
-        })
-      }
-    } catch (e) {
-      const st = e?.status
-      if (st === 401) {
-        return next({
-          name: 'login',
-          query: { redirect: to.fullPath },
-        })
-      }
-      return next({
-        name: 'cabinet',
-        query: { tab: 'profile', pay_need_telegram: '1' },
-        replace: true,
-      })
-    }
   }
 
   if ((to.name === 'login' || to.name === 'register') && token) {

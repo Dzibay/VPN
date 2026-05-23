@@ -1,4 +1,4 @@
-"""Платежи: публичный webhook Tribute (подписка и цифровой товар)."""
+"""Платежи: webhook Tribute и ЮKassa."""
 
 from __future__ import annotations
 
@@ -8,11 +8,12 @@ from fastapi import APIRouter, Depends, Header, Request
 
 from app.config import settings
 from app.core.dependencies import SessionDep, require_telegram_bot_api_secret
-from app.domain.models.payments import TributeWebhookAck, TributeWebhookTestBody
+from app.domain.models.payments import PaymentWebhookAck, TributeWebhookAck, TributeWebhookTestBody
 from app.domain.services.tribute_service import (
     process_tribute_webhook_event,
     process_tribute_webhook_raw_body,
 )
+from app.domain.services.yookassa_service import process_yookassa_webhook_raw_body
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 
@@ -53,4 +54,22 @@ async def tribute_webhook_test_ep(
         settings=settings,
         name=body.name,
         payload=body.payload.model_dump(mode="json"),
+    )
+
+
+@router.post(
+    "/yookassa/webhook",
+    response_model=PaymentWebhookAck,
+    summary="Webhook ЮKassa: payment.succeeded (тело проверяется повторным GET платежа)",
+    description=(),
+)
+async def yookassa_webhook_ep(
+    request: Request,
+    session: SessionDep,
+) -> PaymentWebhookAck:
+    raw = await request.body()
+    return await process_yookassa_webhook_raw_body(
+        session,
+        settings=settings,
+        raw_body=raw,
     )

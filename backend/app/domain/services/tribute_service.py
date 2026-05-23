@@ -1,8 +1,7 @@
 """Tribute: webhook подписки и разовой цифровой покупки; публичные тарифы — ``app/data/tribute_tariffs.json``.
 
 Каждый HTTP webhook пишется в ``user_http_request_traces`` (см. ``http_audit_always_persist_for_path``).
-В ``payments`` всегда создаётся строка с полным ``tribute_webhook`` (если не дубликат). Продление подписки,
-задачи и реферальные бонусы — только при полном наборе данных.
+Зачисление подписки — через :func:`app.domain.services.payment_service.ingest_provider_payment`.
 
 HMAC: заголовок ``trbt-signature``, ключ ``TRIBUTE_API_KEY``.
 """
@@ -14,34 +13,29 @@ import hmac
 import json
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import constants
 from app.config import Settings
 from app.core.exceptions import BadRequestError, ServiceUnavailableError, UnauthorizedError
-from app.core.time import moscow_today
 from app.domain.models.payments import (
+    PaymentWebhookAck,
     TributePaymentsLinksResponse,
     TributeWebhookAck,
 )
-from app.core.request_subject import bind_request_subject_user
-from app.domain.referrals.payment_tasks import apply_referral_bonus_on_payment
-from app.domain.referrals.task_bonus_days import sum_referral_bonus_days_pending_activation
-from app.infrastructure.persistence.models.payment import Payment
-from app.infrastructure.persistence.models.task import Task
+from app.domain.services.payment_service import (
+    PaymentIngestParsed,
+    amount_from_minor_units,
+    ingest_provider_payment,
+)
 from app.infrastructure.persistence.models.user import User
 
 log = logging.getLogger("app.tribute_service")
-
-_DAYS_PER_MONTH = 31
 
 _TRIBUTE_TARIFFS_JSON = Path(__file__).resolve().parents[2] / "data" / "tribute_tariffs.json"
 
@@ -72,14 +66,6 @@ _PERIOD_TO_MONTHS: dict[str, int] = {
     "yearly": 12,
 }
 
-_MONTHS_TO_PERIOD: dict[int, str] = {
-    1: "monthly",
-    3: "quarterly",
-    6: "biannual",
-    12: "yearly",
-}
-
-
 @dataclass(frozen=True)
 class _TributeWebhookParsed:
     payment_kind: Literal["subscription", "one_time"]
@@ -109,31 +95,8 @@ def verify_tribute_webhook_signature(*, raw_body: bytes, header_signature: str |
         raise UnauthorizedError(detail="Недействительная подпись webhook")
 
 
-def _amount_from_minor_units(amount_minor: int) -> Decimal:
-    return (Decimal(int(amount_minor)) * Decimal("0.01")).quantize(Decimal("0.01"))
-
-
-def _ensure_utc(dt: datetime) -> datetime:
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
-
-
-def _iso_utc(dt: datetime) -> str:
-    """ISO-8601 UTC для JSONB tribute_webhook (как в теле webhook Tribute)."""
-    return _ensure_utc(dt).isoformat().replace("+00:00", "Z")
-
-
 def _period_to_months(period: str) -> int | None:
     return _PERIOD_TO_MONTHS.get((period or "").strip().lower())
-
-
-def _extend_subscription_until(base: date | None, *, days: int) -> date:
-    if days < 1:
-        raise ValueError("days must be >= 1")
-    today = moscow_today()
-    start = base if base is not None and base >= today else today
-    return start + timedelta(days=days)
 
 
 class _TributeWebhookEnvelope(BaseModel):
@@ -193,7 +156,7 @@ def _resolve_new_digital_product_months(p: _DigitalProductPaidPayload) -> int | 
     return None
 
 
-def _tribute_webhook_envelope(*, event_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+def _provider_webhook_envelope(*, event_name: str, payload: dict[str, Any]) -> dict[str, Any]:
     return {"name": event_name, "payload": payload}
 
 
@@ -301,95 +264,24 @@ def _parse_generic_webhook(
     )
 
 
-async def _find_duplicate_payment_id(
-    session: AsyncSession,
+def _tribute_parsed_to_ingest(
     *,
-    webhook: dict[str, Any],
-) -> int | None:
-    name = (webhook.get("name") or "").strip()
-    payload = webhook.get("payload")
-    if not isinstance(payload, dict):
-        return None
-
-    if name == "new_digital_product":
-        purchase_id = payload.get("purchase_id")
-        if purchase_id is None:
-            return None
-        stmt = (
-            select(Payment.id)
-            .where(
-                Payment.provider == "tribute",
-                Payment.tribute_webhook["name"].astext == name,
-                Payment.tribute_webhook["payload"]["purchase_id"].as_integer() == int(purchase_id),
-            )
-            .limit(1)
-        )
-    elif name in _PAID_SUBSCRIPTION_EVENTS:
-        subscription_id = payload.get("subscription_id")
-        expires_at = payload.get("expires_at")
-        if subscription_id is None or expires_at is None:
-            return None
-        stmt = (
-            select(Payment.id)
-            .where(
-                Payment.provider == "tribute",
-                Payment.tribute_webhook["payload"]["subscription_id"].as_integer()
-                == int(subscription_id),
-                Payment.tribute_webhook["payload"]["expires_at"].astext == str(expires_at),
-            )
-            .limit(1)
-        )
-    else:
-        return None
-
-    row = (await session.scalars(stmt)).first()
-    return int(row) if row is not None else None
-
-
-async def _find_user_by_telegram_id(session: AsyncSession, telegram_id: int) -> User | None:
-    stmt = select(User).where(User.telegram_id == int(telegram_id)).limit(1)
-    return (await session.scalars(stmt)).first()
-
-
-async def _fulfill_tribute_payment(
-    session: AsyncSession,
-    settings: Settings,
-    *,
-    user: User,
-    months: int,
-    paid_at: datetime | None,
-) -> None:
-    from app.domain.subscription.traffic_limit import (
-        clear_traffic_limit_after_payment,
-        enqueue_xray_clients_sync_for_access_change,
+    event_name: str,
+    payload: dict[str, Any],
+    parsed: _TributeWebhookParsed,
+) -> PaymentIngestParsed:
+    return PaymentIngestParsed(
+        provider="tribute",
+        payment_kind=parsed.payment_kind,
+        amount=amount_from_minor_units(parsed.amount_minor),
+        months=max(0, int(parsed.months)),
+        provider_webhook=_provider_webhook_envelope(event_name=event_name, payload=payload),
+        fulfill=parsed.fulfill,
+        skip_reason=parsed.skip_reason,
+        telegram_user_id=parsed.telegram_user_id,
+        created_at=parsed.created_at,
+        event=event_name,
     )
-
-    paid_days = int(months) * _DAYS_PER_MONTH
-    accumulated_bonus_days = await sum_referral_bonus_days_pending_activation(
-        session,
-        user_id=int(user.id),
-    )
-    total_days = paid_days + accumulated_bonus_days
-    user.subscription_until = _extend_subscription_until(user.subscription_until, days=total_days)
-
-    session.add(
-        Task(
-            task_type="notify_payment",
-            user_id=int(user.id),
-            referee_id=None,
-            bonus_days=accumulated_bonus_days if accumulated_bonus_days > 0 else None,
-            paid_months=months,
-            **({"created_at": paid_at} if paid_at is not None else {}),
-        ),
-    )
-    await apply_referral_bonus_on_payment(
-        session,
-        settings=settings,
-        referee_user_id=int(user.id),
-        paid_months=months,
-    )
-    if await clear_traffic_limit_after_payment(session, user):
-        enqueue_xray_clients_sync_for_access_change()
 
 
 async def _ingest_tribute_webhook(
@@ -400,99 +292,14 @@ async def _ingest_tribute_webhook(
     payload: dict[str, Any],
     parsed: _TributeWebhookParsed,
 ) -> TributeWebhookAck:
-    webhook = _tribute_webhook_envelope(event_name=event_name, payload=payload)
-
-    dup_id = await _find_duplicate_payment_id(session, webhook=webhook)
-    if dup_id is not None:
-        skip_reason = parsed.skip_reason or "duplicate"
-        log.warning("Tribute %s: дубликат webhook (payment_id=%s)", event_name, dup_id)
-        return TributeWebhookAck(
-            ok=True,
-            event=event_name,
-            duplicate=True,
-            payment_id=dup_id,
-            fulfilled=False,
-            skip_reason=skip_reason,
-        )
-
-    amount_decimal = _amount_from_minor_units(parsed.amount_minor)
-    paid_at = _ensure_utc(parsed.created_at) if parsed.created_at is not None else None
-    payment_user_id: int | None = None
-    fulfilled = False
-    skip_reason = parsed.skip_reason
-
-    payment = Payment(
-        user_id=None,
-        amount=amount_decimal,
-        months=max(0, int(parsed.months)),
-        provider="tribute",
-        payment_kind=parsed.payment_kind,
-        tribute_webhook=webhook,
-        **({"created_at": paid_at} if paid_at is not None else {}),
-    )
-
-    try:
-        async with session.begin_nested():
-            session.add(payment)
-            await session.flush()
-    except IntegrityError:
-        existing_id = await _find_duplicate_payment_id(session, webhook=webhook)
-        if existing_id is None:
-            raise
-        skip_reason = parsed.skip_reason or "duplicate"
-        return TributeWebhookAck(
-            ok=True,
-            event=event_name,
-            duplicate=True,
-            payment_id=existing_id,
-            fulfilled=False,
-            skip_reason=skip_reason,
-        )
-
-    payment_id = int(payment.id)
-
-    if parsed.fulfill and parsed.telegram_user_id is not None and parsed.months >= 1:
-        user = await _find_user_by_telegram_id(session, int(parsed.telegram_user_id))
-        if user is None:
-            skip_reason = "user_not_found"
-            log.warning(
-                "Tribute %s: пользователь telegram_id=%s не найден — платёж %s без продления",
-                event_name,
-                parsed.telegram_user_id,
-                payment_id,
-            )
-        else:
-            payment_user_id = int(user.id)
-            payment.user_id = payment_user_id
-            bind_request_subject_user(payment_user_id, source="tribute_webhook")
-            await _fulfill_tribute_payment(
-                session,
-                settings,
-                user=user,
-                months=int(parsed.months),
-                paid_at=paid_at,
-            )
-            fulfilled = True
-            skip_reason = None
-            log.info(
-                "Tribute %s: платёж %s, user_id=%s, months=%s",
-                event_name,
-                payment_id,
-                payment_user_id,
-                parsed.months,
-            )
-    elif parsed.fulfill and skip_reason is None:
-        skip_reason = "incomplete_payload"
-
-    await session.flush()
-
-    return TributeWebhookAck(
-        ok=True,
-        event=event_name,
-        duplicate=False,
-        payment_id=payment_id,
-        fulfilled=fulfilled,
-        skip_reason=skip_reason,
+    return await ingest_provider_payment(
+        session,
+        settings,
+        parsed=_tribute_parsed_to_ingest(
+            event_name=event_name,
+            payload=payload,
+            parsed=parsed,
+        ),
     )
 
 
@@ -534,115 +341,13 @@ async def process_tribute_webhook_raw_body(
         payload=env.payload,
     )
 
-
-def _admin_manual_external_id(*, telegram_user_id: int, paid_at: datetime) -> int:
-    """Отрицательный id для admin_manual: влезает в PostgreSQL INTEGER, не как у Tribute."""
-    paid_at_utc = _ensure_utc(paid_at)
-    return -(int(paid_at_utc.timestamp()) + int(telegram_user_id) % 100_000)
-
-
-def _admin_manual_tribute_webhook(
-    *,
-    payment_kind: Literal["subscription", "one_time"],
-    months: int,
-    amount_minor: int,
-    telegram_user_id: int,
-    paid_at: datetime,
-) -> tuple[str, dict[str, Any]]:
-    """Синтетический webhook для админки; уникальные id — чтобы не попасть в дедуп."""
-    paid_at_utc = _ensure_utc(paid_at)
-    unique = _admin_manual_external_id(telegram_user_id=telegram_user_id, paid_at=paid_at_utc)
-    if payment_kind == "one_time":
-        return (
-            "new_digital_product",
-            {
-                "product_id": 0,
-                "amount": int(amount_minor),
-                "purchase_id": unique,
-                "telegram_user_id": int(telegram_user_id),
-                "months": int(months),
-                "product_name": "admin_manual",
-                "purchase_created_at": _iso_utc(paid_at_utc),
-            },
-        )
-    period = _MONTHS_TO_PERIOD.get(int(months), "monthly")
-    expires_at = paid_at_utc + timedelta(days=int(months) * _DAYS_PER_MONTH)
-    return (
-        "new_subscription",
-        {
-            "subscription_id": unique,
-            "period": period,
-            "price": int(amount_minor),
-            "expires_at": _iso_utc(expires_at),
-            "telegram_user_id": int(telegram_user_id),
-            "type": "regular",
-        },
-    )
-
-
-async def staff_apply_tribute_payment(
-    session: AsyncSession,
-    settings: Settings,
-    *,
-    user_id: int,
-    months: int,
-    amount_minor: int,
-    payment_kind: Literal["subscription", "one_time"],
-    created_at: datetime | None = None,
-) -> TributeWebhookAck:
-    """Ручное начисление: тот же ingest, что после webhook Tribute."""
-    user = await session.get(User, int(user_id))
-    if user is None:
-        raise LookupError("user_not_found")
-    if user.telegram_id is None:
-        raise LookupError("telegram_id_missing")
-
-    paid_at = _ensure_utc(created_at) if created_at is not None else datetime.now(timezone.utc)
-
-    event_name, payload = _admin_manual_tribute_webhook(
-        payment_kind=payment_kind,
-        months=int(months),
-        amount_minor=int(amount_minor),
-        telegram_user_id=int(user.telegram_id),
-        paid_at=paid_at,
-    )
-    if payment_kind == "one_time":
-        parsed = _parse_digital_product_paid(payload=payload)
-        parsed = _TributeWebhookParsed(
-            payment_kind=parsed.payment_kind,
-            amount_minor=parsed.amount_minor,
-            months=int(months),
-            telegram_user_id=int(user.telegram_id),
-            fulfill=True,
-            skip_reason=None,
-            created_at=paid_at,
-        )
-    else:
-        parsed = _TributeWebhookParsed(
-            payment_kind="subscription",
-            amount_minor=int(amount_minor),
-            months=int(months),
-            telegram_user_id=int(user.telegram_id),
-            fulfill=True,
-            skip_reason=None,
-        )
-
-    return await _ingest_tribute_webhook(
-        session,
-        settings,
-        event_name=event_name,
-        payload=payload,
-        parsed=parsed,
-    )
-
-
 async def process_tribute_webhook_event(
     session: AsyncSession,
     *,
     settings: Settings,
     name: str,
     payload: dict[str, Any],
-) -> TributeWebhookAck:
+) -> PaymentWebhookAck:
     """Диспетчер по ``name`` (реальный webhook и ``/webhook-test``)."""
     n = (name or "").strip()
 

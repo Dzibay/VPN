@@ -21,7 +21,7 @@ const formMonths = ref('1')
 const formAmountRub = ref('')
 const formPaymentKind = ref('one_time')
 const formCreatedAt = ref('')
-/** @type {import('vue').Ref<Array<{ id: number, user_id: number | null, amount: string | number, months: number, provider: string, payment_kind: string, tribute_webhook: Record<string, unknown> | null, created_at: string }>>} */
+/** @type {import('vue').Ref<Array<{ id: number, user_id: number | null, amount: string | number, months: number, provider: string, payment_kind: string, provider_webhook: Record<string, unknown> | null, created_at: string }>>} */
 const items = ref([])
 const total = ref(0)
 const limit = 200
@@ -34,7 +34,7 @@ const sortAccessors = {
   months: (r) => Number(r.months) || 0,
   provider: (r) => String(r.provider ?? '').toLowerCase(),
   payment_kind: (r) => String(r.payment_kind ?? '').toLowerCase(),
-  tribute_webhook: (r) => JSON.stringify(r.tribute_webhook ?? '').toLowerCase(),
+  provider_webhook: (r) => JSON.stringify(r.provider_webhook ?? '').toLowerCase(),
   created_at: (r) => String(r.created_at ?? ''),
 }
 
@@ -87,7 +87,7 @@ function fmtDate(iso) {
   }
 }
 
-function tributeWebhookPreview(webhook) {
+function providerWebhookPreview(webhook) {
   if (!webhook || typeof webhook !== 'object') return '—'
   const name = webhook.name
   if (name) return String(name)
@@ -237,7 +237,7 @@ async function submitCreatePayment() {
       body: JSON.stringify(body),
     })
     if (res?.duplicate) {
-      createError.value = 'Дубликат платежа (такой webhook уже был). Запись не создана.'
+      createError.value = 'Дубликат платежа. Запись не создана.'
       return
     }
     modalOpen.value = false
@@ -376,8 +376,8 @@ onMounted(() => {
                 @sort="toggleSort"
               />
               <AdminSortTh
-                label="Webhook Tribute"
-                column-key="tribute_webhook"
+                label="Webhook провайдера"
+                column-key="provider_webhook"
                 :sort-key="sortKey"
                 :sort-dir="sortDir"
                 @sort="toggleSort"
@@ -426,9 +426,9 @@ onMounted(() => {
                 </td>
                 <td
                   class="mono-cell"
-                  :title="row.tribute_webhook ? JSON.stringify(row.tribute_webhook) : ''"
+                  :title="row.provider_webhook ? JSON.stringify(row.provider_webhook) : ''"
                 >
-                  {{ tributeWebhookPreview(row.tribute_webhook) }}
+                  {{ providerWebhookPreview(row.provider_webhook) }}
                 </td>
                 <td class="date-cell">{{ fmtDate(row.created_at) }}</td>
               </tr>

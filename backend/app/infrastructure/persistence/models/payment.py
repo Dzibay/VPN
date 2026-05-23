@@ -36,8 +36,8 @@ class Payment(Base):
         nullable=False,
         server_default=text("'subscription'"),
     )
-    #: Полное тело webhook Tribute ``{name, payload}``; null для manual.
-    tribute_webhook: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    #: Полное тело webhook провайдера (Tribute ``{name,payload}``, ЮKassa ``{event,object}``); null для manual.
+    provider_webhook: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
