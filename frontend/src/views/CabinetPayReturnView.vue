@@ -13,6 +13,7 @@ import {
   Shield,
   Wifi,
 } from 'lucide-vue-next'
+import AppActionButton from '../components/AppActionButton.vue'
 import { fetchJson } from '../api/client.js'
 import { formatTrafficWithLimit } from '../utils/formatTraffic.js'
 
@@ -169,21 +170,28 @@ onMounted(async () => {
           <template v-else>напишите в поддержку</template>
         </p>
 
-        <RouterLink
-          class="return-cta"
+        <AppActionButton
+          variant="primary"
+          large
+          block
+          class="return-cta-btn--trail"
           :to="{ name: 'cabinet', query: { tab: 'subscription' } }"
         >
           Перейти в личный кабинет
-          <ArrowRight :size="20" :stroke-width="2" aria-hidden="true" />
-        </RouterLink>
+          <template #icon>
+            <ArrowRight :size="20" :stroke-width="2" aria-hidden="true" />
+          </template>
+        </AppActionButton>
 
-        <RouterLink
+        <AppActionButton
           v-if="!isCanceled && !subscriptionActive"
-          class="return-cta-secondary"
+          variant="secondary"
+          block
+          class="return-cta-alt"
           :to="{ name: 'cabinet-pay' }"
         >
           К тарифам
-        </RouterLink>
+        </AppActionButton>
       </div>
 
       <section v-if="subscriptionActive && !isCanceled" class="return-thanks">
@@ -212,7 +220,7 @@ onMounted(async () => {
 
       <footer class="return-brand" aria-hidden="true">
         <Shield :size="22" :stroke-width="2" />
-        <span>VPN</span>
+        <span>Подорожник VPN</span>
       </footer>
     </div>
   </main>
@@ -270,14 +278,24 @@ onMounted(async () => {
 }
 
 .return-card__icon--ok {
+  border-color: transparent;
+  color: var(--on-accent);
   background: linear-gradient(
     135deg,
     var(--brand-mint) 0%,
     var(--brand-teal) 100%
   );
-  border-color: transparent;
-  color: var(--on-accent);
-  box-shadow: 0 8px 24px var(--accent-glow);
+  box-shadow: var(--shadow-sm), 0 8px 24px var(--accent-glow);
+}
+
+@media (prefers-color-scheme: light) {
+  .return-card__icon--ok {
+    background: linear-gradient(
+      135deg,
+      var(--accent) 0%,
+      var(--accent-muted) 100%
+    );
+  }
 }
 
 .return-card__icon--wait {
@@ -371,44 +389,12 @@ onMounted(async () => {
   color: var(--accent-hover);
 }
 
-.return-cta {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  width: 100%;
-  padding: 0.85rem 1.25rem;
-  border-radius: 14px;
-  background: linear-gradient(
-    135deg,
-    var(--brand-mint) 0%,
-    var(--brand-teal) 100%
-  );
-  color: var(--on-accent);
-  font-size: 1rem;
-  font-weight: 700;
-  text-decoration: none;
-  transition: filter 0.2s, box-shadow 0.2s;
-  box-sizing: border-box;
-  box-shadow: var(--shadow-sm);
+.return-cta-btn--trail {
+  flex-direction: row-reverse;
 }
 
-.return-cta:hover {
-  filter: brightness(1.06);
-  box-shadow: var(--shadow-md);
-}
-
-.return-cta-secondary {
-  display: block;
+.return-cta-alt {
   margin-top: 0.65rem;
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--muted);
-  text-decoration: none;
-}
-
-.return-cta-secondary:hover {
-  color: var(--accent-hover);
 }
 
 .return-thanks {

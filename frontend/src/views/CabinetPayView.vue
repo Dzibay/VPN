@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { ArrowLeft, Lock, ShieldCheck, Zap } from 'lucide-vue-next'
+import AppActionButton from '../components/AppActionButton.vue'
 import { fetchJson } from '../api/client.js'
 
 /** Кошелёк / карта с щитом: frontend/public/images/pay-wallet.png */
@@ -214,14 +215,16 @@ onMounted(() => {
               Экономия {{ savingsRub(tariff) }} ₽
             </p>
 
-            <button
-              type="button"
-              class="pay-tariff__btn"
+            <AppActionButton
+              variant="primary"
+              large
+              block
+              class="pay-tariff__checkout"
               :disabled="payingMonths != null"
               @click="startCheckout(tariff.months)"
             >
               {{ payingMonths === tariff.months ? 'Переход…' : 'Оплатить' }}
-            </button>
+            </AppActionButton>
           </article>
         </div>
 
@@ -497,34 +500,8 @@ onMounted(() => {
   margin-bottom: 1rem;
 }
 
-.pay-tariff__btn {
+.pay-tariff__checkout {
   margin-top: auto;
-  width: 100%;
-  padding: 0.8rem 1rem;
-  border: none;
-  border-radius: 12px;
-  background: linear-gradient(
-    135deg,
-    var(--brand-mint) 0%,
-    var(--brand-teal) 100%
-  );
-  color: var(--on-accent);
-  font: inherit;
-  font-size: 0.9375rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: filter 0.15s ease, box-shadow 0.15s ease;
-  box-shadow: var(--shadow-sm);
-}
-
-.pay-tariff__btn:hover:not(:disabled) {
-  filter: brightness(1.06);
-  box-shadow: var(--shadow-md);
-}
-
-.pay-tariff__btn:disabled {
-  opacity: 0.7;
-  cursor: wait;
 }
 
 .pay-features {

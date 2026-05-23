@@ -22,6 +22,7 @@ import {
   Star,
   Zap,
 } from 'lucide-vue-next'
+import AppActionButton from '../components/AppActionButton.vue'
 import { getAccessToken, getSessionRole } from '../auth/session.js'
 import { defaultPathAfterLogin } from '../auth/permissions.js'
 import { sitePublicUrl } from '../api/client.js'
@@ -305,17 +306,33 @@ onBeforeUnmount(() => {
 
           <div class="hero__cta">
             <template v-if="isLoggedIn">
-              <RouterLink class="hero__btn hero__btn--primary" :to="loggedInHomeCtaPath">
+              <AppActionButton
+                variant="primary"
+                large
+                elevate-on-hover
+                class="hero-cta-btn--trail"
+                :to="loggedInHomeCtaPath"
+              >
                 Перейти в кабинет
-                <ArrowRight :size="20" :stroke-width="2" aria-hidden="true" />
-              </RouterLink>
+                <template #icon>
+                  <ArrowRight :size="20" :stroke-width="2" aria-hidden="true" />
+                </template>
+              </AppActionButton>
             </template>
             <template v-else>
-              <RouterLink class="hero__btn hero__btn--primary" to="/register">
+              <AppActionButton
+                variant="primary"
+                large
+                elevate-on-hover
+                class="hero-cta-btn--trail"
+                to="/register"
+              >
                 Начать пользоваться VPN
-                <ArrowRight :size="20" :stroke-width="2" aria-hidden="true" />
-              </RouterLink>
-              <a class="hero__btn hero__btn--secondary" href="#pricing">
+                <template #icon>
+                  <ArrowRight :size="20" :stroke-width="2" aria-hidden="true" />
+                </template>
+              </AppActionButton>
+              <a class="btn-secondary hero__cta-alt" href="#pricing">
                 Выбрать тариф
               </a>
             </template>
@@ -477,7 +494,7 @@ onBeforeUnmount(() => {
             <div class="pricing-trial__copy">
               <span class="pricing-trial__pill">Пробный период</span>
               <h2 id="pricing-trial-title" class="pricing-trial__title">
-                14 дней бесплатно
+                3 дня бесплатно
               </h2>
               <p class="pricing-trial__lead">
                 Оцените split tunneling и подписку VLESS без карты и без ограничений по функциям.
@@ -617,7 +634,7 @@ onBeforeUnmount(() => {
 
         <p class="pricing-footnote">
           После <RouterLink class="pricing-footnote__link" to="/register">регистрации</RouterLink>
-          вы получите пробный доступ на 14 дней — затем можно выбрать любой из тарифов в личном кабинете.
+          вы получите пробный доступ на 3 дня — затем можно выбрать любой из тарифов в личном кабинете.
         </p>
       </div>
     </section>
@@ -1137,45 +1154,24 @@ onBeforeUnmount(() => {
   }
 }
 
-.hero__btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
+.hero-cta-btn--trail {
+  flex-direction: row-reverse;
+}
+
+.hero__cta-alt {
   padding: 0.85rem 1.35rem;
-  border-radius: 12px;
+  min-height: 3rem;
   font-size: 0.95rem;
-  font-weight: 700;
-  text-decoration: none;
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease,
-    background 0.2s ease,
-    border-color 0.2s ease;
-}
-
-.hero__btn--primary {
-  color: var(--home-on-accent);
-  background: linear-gradient(135deg, #58d68d 0%, #45b39d 100%);
-  box-shadow: 0 4px 14px rgba(29, 154, 92, 0.28);
-  border: none;
-}
-
-.hero__btn--primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 22px rgba(29, 154, 92, 0.32);
-  filter: brightness(1.04);
-}
-
-.hero__btn--secondary {
-  color: var(--home-text);
+  border-radius: 12px;
   background: #fff;
-  border: 1px solid var(--home-border);
+  border-color: var(--home-border, #e5e7eb);
+  color: var(--home-text, #111827);
 }
 
-.hero__btn--secondary:hover {
+.hero__cta-alt:hover {
   border-color: rgba(29, 154, 92, 0.35);
-  color: var(--home-accent);
+  color: #1d9a5c;
+  background: #fff;
 }
 
 .hero__social {
@@ -2154,7 +2150,7 @@ onBeforeUnmount(() => {
   }
 
   .why-card:hover,
-  .hero__btn--primary:hover,
+  :deep(.app-action-btn--elevate:hover),
   .pricing-card:hover,
   .pricing-card--popular,
   .pricing-card--popular:hover,

@@ -13,6 +13,10 @@ const props = defineProps({
   },
   block: { type: Boolean, default: false },
   stacked: { type: Boolean, default: false },
+  /** Крупнее (hero, главные CTA) */
+  large: { type: Boolean, default: false },
+  /** Подъём и усиленная тень при hover — только если явно включено */
+  elevateOnHover: { type: Boolean, default: false },
   disabled: { type: Boolean, default: false },
   type: { type: String, default: 'button' },
   href: { type: String, default: undefined },
@@ -41,6 +45,8 @@ const rootClass = computed(() => [
   {
     'app-action-btn--block': props.block,
     'app-action-btn--stacked': props.stacked,
+    'app-action-btn--large': props.large,
+    'app-action-btn--elevate': props.elevateOnHover,
   },
   attrs.class,
 ])
@@ -151,6 +157,31 @@ function onClick(event) {
 .app-action-btn--primary:hover:not(:disabled):not([aria-disabled='true']) {
   filter: brightness(1.06);
   box-shadow: var(--shadow-md);
+}
+
+.app-action-btn--large {
+  padding: 0.85rem 1.35rem;
+  min-height: 3rem;
+  font-size: 0.95rem;
+  border-radius: 12px;
+}
+
+.app-action-btn--elevate {
+  transition:
+    filter 0.2s ease,
+    transform 0.2s ease,
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease,
+    box-shadow 0.2s ease;
+}
+
+.app-action-btn--elevate.app-action-btn--primary:hover:not(:disabled):not(
+    [aria-disabled='true']
+  ) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .app-action-btn--secondary {
@@ -278,6 +309,12 @@ function onClick(event) {
     box-shadow:
       inset 0 1px 0 0 rgba(29, 154, 92, 0.18),
       inset 0 0 0 2px rgba(99, 102, 234, 0.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-action-btn--elevate:hover:not(:disabled):not([aria-disabled='true']) {
+    transform: none;
   }
 }
 </style>

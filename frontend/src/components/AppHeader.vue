@@ -81,8 +81,8 @@ router.afterEach(refreshSessions)
     <div class="toolbar">
       <nav class="user-bar" aria-label="Аккаунт">
         <template v-if="showGuestAuthLinks">
-          <RouterLink class="nav-link nav-link--ghost" to="/login">Войти</RouterLink>
-          <RouterLink class="nav-link nav-link--cta" to="/register">
+          <RouterLink class="nav-link" to="/login">Войти</RouterLink>
+          <RouterLink class="nav-link nav-accent" to="/register">
             Создать аккаунт
           </RouterLink>
         </template>
@@ -174,33 +174,26 @@ router.afterEach(refreshSessions)
   color: #1d9a5c;
 }
 
-.nav-link--ghost {
-  border: 1px solid #e5e7eb;
-  background: #fff;
-  color: #374151;
-}
-
-.nav-link--ghost:hover {
-  color: #1d9a5c;
-  border-color: rgba(29, 154, 92, 0.35);
-  background: #fff;
-}
-
-.nav-link--cta {
-  color: #fff;
-  background: linear-gradient(135deg, #58d68d 0%, #45b39d 100%);
-  border: none;
-  box-shadow: 0 2px 8px rgba(29, 154, 92, 0.25);
-}
-
-.nav-link--cta:hover {
-  color: #fff;
-  background: linear-gradient(135deg, #6fe9a0 0%, #45b39d 100%);
-  filter: brightness(1.03);
-}
-
 .shell--home .brand-text {
   color: #111827;
+}
+
+.shell--home .nav-link {
+  color: #4b5563;
+}
+
+.shell--home .nav-link:hover {
+  color: #111827;
+  background: rgba(29, 154, 92, 0.08);
+}
+
+.shell--home .nav-accent {
+  color: #1d9a5c;
+}
+
+.shell--home .nav-accent:hover {
+  color: #18804d;
+  background: rgba(29, 154, 92, 0.1);
 }
 
 .spacer {
