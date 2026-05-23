@@ -262,10 +262,7 @@ CREATE INDEX IF NOT EXISTS idx_staff_chart_events_event_at
 CREATE INDEX IF NOT EXISTS idx_payments_user_created_at
     ON payments (user_id, created_at DESC);
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_yookassa_object_id
-    ON payments ((provider_webhook #>> '{object,id}'))
-    WHERE provider = 'yookassa'
-      AND (provider_webhook #>> '{object,id}') IS NOT NULL;
+-- uq_payments_yookassa_object_id — в migrate.sql (после tribute_webhook → provider_webhook).
 
 CREATE INDEX IF NOT EXISTS idx_tasks_user_created_at
     ON tasks (user_id, created_at DESC);
