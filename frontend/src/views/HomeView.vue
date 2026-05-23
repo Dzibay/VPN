@@ -26,6 +26,7 @@ import AppActionButton from '../components/AppActionButton.vue'
 import { getAccessToken, getSessionRole } from '../auth/session.js'
 import { defaultPathAfterLogin } from '../auth/permissions.js'
 import { sitePublicUrl } from '../api/client.js'
+import { LEGAL_FOOTER_LINKS } from '../content/legal.js'
 
 /** @type {const} */
 const HOME_IMAGES = {
@@ -33,6 +34,8 @@ const HOME_IMAGES = {
   appMockup: '/images/home/hero-app-mockup.png',
   trustAvatars: '/images/home/trust-avatars.png',
 }
+
+const legalLinks = LEGAL_FOOTER_LINKS
 
 const heroMiniFeatures = [
   {
@@ -780,14 +783,28 @@ onBeforeUnmount(() => {
             российское — напрямую.
           </p>
         </div>
-        <nav
-          class="footer-links"
-          aria-label="Разделы главной страницы"
-        >
-          <a href="#how">Как работает</a>
-          <a href="#benefits">Почему мы</a>
-          <a href="#pricing">Тарифы</a>
-        </nav>
+        <div class="footer-nav-group">
+          <nav
+            class="footer-links"
+            aria-label="Разделы главной страницы"
+          >
+            <a href="#how">Как работает</a>
+            <a href="#benefits">Почему мы</a>
+            <a href="#pricing">Тарифы</a>
+          </nav>
+          <nav
+            class="footer-legal"
+            aria-label="Юридические документы"
+          >
+            <RouterLink
+              v-for="link in legalLinks"
+              :key="link.to"
+              :to="link.to"
+            >
+              {{ link.label }}
+            </RouterLink>
+          </nav>
+        </div>
       </div>
       <div class="footer-bottom">
         <span>© 2026 Подорожник VPN. Все права защищены.</span>
@@ -2418,6 +2435,45 @@ onBeforeUnmount(() => {
 }
 
 .footer-links a:hover {
+  color: var(--accent);
+}
+
+.footer-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  align-items: center;
+}
+
+@media (min-width: 768px) {
+  .footer-nav-group {
+    align-items: flex-end;
+  }
+}
+
+.footer-legal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem 1.1rem;
+  justify-content: center;
+}
+
+@media (min-width: 768px) {
+  .footer-legal {
+    justify-content: flex-end;
+    max-width: 22rem;
+  }
+}
+
+.footer-legal a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.84rem;
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+.footer-legal a:hover {
   color: var(--accent);
 }
 

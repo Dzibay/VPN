@@ -46,11 +46,42 @@ const AdminPaymentsStaffView = () =>
 const AdminFinanceStaffView = () =>
   import('../views/AdminFinanceStaffView.vue')
 const AdminTasksStaffView = () => import('../views/AdminTasksStaffView.vue')
+const LegalDocumentView = () => import('../views/LegalDocumentView.vue')
 
 const routes = [
   { path: '/', name: 'home', component: HomeView },
   { path: '/login', name: 'login', component: UserLoginView },
   { path: '/register', name: 'register', component: UserRegisterView },
+  {
+    path: '/terms',
+    name: 'legal-terms',
+    component: LegalDocumentView,
+    meta: { legalDoc: 'terms' },
+  },
+  {
+    path: '/privacy',
+    name: 'legal-privacy',
+    component: LegalDocumentView,
+    meta: { legalDoc: 'privacy' },
+  },
+  {
+    path: '/consent',
+    name: 'legal-consent',
+    component: LegalDocumentView,
+    meta: { legalDoc: 'consent' },
+  },
+  {
+    path: '/refund',
+    name: 'legal-refund',
+    component: LegalDocumentView,
+    meta: { legalDoc: 'refund' },
+  },
+  {
+    path: '/cookies',
+    name: 'legal-cookies',
+    component: LegalDocumentView,
+    meta: { legalDoc: 'cookies' },
+  },
   {
     path: '/link-from-telegram',
     name: 'link-from-telegram',

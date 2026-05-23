@@ -11,6 +11,7 @@ const router = useRouter()
 const email = ref('')
 const password = ref('')
 const passwordConfirm = ref('')
+const acceptedLegal = ref(false)
 const submitting = ref(false)
 const error = ref(null)
 
@@ -20,6 +21,10 @@ async function submit() {
   try {
     if (password.value !== passwordConfirm.value) {
       error.value = 'Пароли не совпадают'
+      return
+    }
+    if (!acceptedLegal.value) {
+      error.value = 'Необходимо принять условия и дать согласие на обработку данных'
       return
     }
     const referral_token = peekPendingReferralToken()
@@ -49,10 +54,6 @@ async function submit() {
       <header class="head">
         <RouterLink class="back" to="/">← На главную</RouterLink>
         <h1>Регистрация</h1>
-        <p class="sub">
-          Минимум 8 символов в пароле. После регистрации вы попадёте в личный
-          кабинет.
-        </p>
       </header>
     </template>
 
@@ -94,8 +95,28 @@ async function submit() {
           required
         />
       </label>
+      <label class="consent">
+        <input
+          v-model="acceptedLegal"
+          class="consent-input"
+          type="checkbox"
+          name="legal-consent"
+          required
+        />
+        <span class="consent-text">
+          Я принимаю
+          <RouterLink to="/terms" target="_blank">публичную оферту</RouterLink>,
+          <RouterLink to="/privacy" target="_blank">политику конфиденциальности</RouterLink>
+          и даю
+          <RouterLink to="/consent" target="_blank">согласие на обработку персональных данных</RouterLink>
+        </span>
+      </label>
       <p v-if="error" class="err">{{ error }}</p>
-      <button class="btn-primary btn-block" type="submit" :disabled="submitting">
+      <button
+        class="btn-primary btn-block"
+        type="submit"
+        :disabled="submitting || !acceptedLegal"
+      >
         {{ submitting ? 'Регистрация…' : 'Создать аккаунт' }}
       </button>
       <p class="extra">
@@ -211,6 +232,38 @@ h1 {
 }
 
 .extra a:hover {
+  text-decoration: underline;
+}
+
+.consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.consent-input {
+  flex-shrink: 0;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-top: 0.2rem;
+  accent-color: var(--accent);
+}
+
+.consent-text {
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.consent-text a {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.consent-text a:hover {
   text-decoration: underline;
 }
 </style>
