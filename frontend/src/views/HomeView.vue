@@ -4,6 +4,8 @@
  *   hero-bg-map.png      — точечная карта мира на фоне hero (опционально)
  *   hero-app-mockup.png  — макет приложения справа (обязательно для макета)
  *   trust-avatars.png    — 4 аватара для блока «10 000+ пользователей» (опционально)
+ *   how/vpn/*.png        — иконки в секции «Умная маршрутизация» (см. public/images/home/how/README.txt)
+ *   how/direct/*.png
  */
 import {
   computed,
@@ -14,12 +16,18 @@ import {
 import { RouterLink, useRouter } from 'vue-router'
 import {
   ArrowRight,
+  Building2,
+  CheckCircle2,
+  Gauge,
   Globe,
   Headphones,
   Lock,
+  MapPin,
   Monitor,
+  Route,
   Shield,
   Star,
+  Wifi,
   Zap,
 } from 'lucide-vue-next'
 import AppActionButton from '../components/AppActionButton.vue'
@@ -102,24 +110,54 @@ const loggedInHomeCtaPath = computed(() =>
 onMounted(refreshAuth)
 router.afterEach(refreshAuth)
 
-const services = {
-  vpn: [
-    'YouTube',
-    'Instagram',
-    'Google Gemini',
-    'Netflix',
-    'ChatGPT',
-    'Claude AI',
-  ],
-  direct: [
-    'Сбербанк',
-    'Т-Банк',
-    'Госуслуги',
-    'Кинопоиск',
-    'Яндекс Еда',
-    'Wildberries',
-  ],
+/** Иконки приложений — положите PNG в public/images/home/how/ (см. README там). */
+const HOW_APP_ICONS = {
+  vpn: '/images/home/how/vpn',
+  direct: '/images/home/how/direct',
 }
+
+const howVpnApps = [
+  { id: 'youtube', label: 'YouTube', icon: `${HOW_APP_ICONS.vpn}/youtube.png` },
+  { id: 'instagram', label: 'Instagram', icon: `${HOW_APP_ICONS.vpn}/instagram.png` },
+  { id: 'gemini', label: 'Google Gemini', icon: `${HOW_APP_ICONS.vpn}/google-gemini.png` },
+  { id: 'claude', label: 'Claude AI', icon: `${HOW_APP_ICONS.vpn}/claude.png` },
+  { id: 'chatgpt', label: 'ChatGPT', icon: `${HOW_APP_ICONS.vpn}/chatgpt.png` },
+  { id: 'telegram', label: 'Telegram', icon: `${HOW_APP_ICONS.vpn}/telegram.png` },
+]
+
+const howDirectApps = [
+  { id: 'sber', label: 'Сбербанк', icon: `${HOW_APP_ICONS.direct}/sberbank.png` },
+  { id: 'tbank', label: 'Т-Банк', icon: `${HOW_APP_ICONS.direct}/tbank.png` },
+  { id: 'gosuslugi', label: 'Госуслуги', icon: `${HOW_APP_ICONS.direct}/gosuslugi.png` },
+  { id: 'kinopoisk', label: 'Кинопоиск', icon: `${HOW_APP_ICONS.direct}/kinopoisk.png` },
+  { id: 'yandex-eda', label: 'Яндекс Еда', icon: `${HOW_APP_ICONS.direct}/yandex-eda.png` },
+  { id: 'wildberries', label: 'Wildberries', icon: `${HOW_APP_ICONS.direct}/wildberries.png` },
+]
+
+const howVpnPerks = [
+  { icon: Shield, text: 'Максимальная конфиденциальность' },
+  { icon: Zap, text: 'Быстрое соединение' },
+  { icon: Globe, text: 'Доступ по всему миру' },
+]
+
+const howDirectPerks = [
+  { icon: Gauge, text: 'Без потери скорости' },
+  { icon: Building2, text: 'Банки и госуслуги' },
+  { icon: Wifi, text: 'Стабильный домашний IP' },
+]
+
+const howHighlights = [
+  {
+    icon: Route,
+    title: 'Автоматический выбор маршрута',
+    text: 'Подорожник сам определяет, какой трафик пустить в туннель, а какой — напрямую',
+  },
+  {
+    icon: CheckCircle2,
+    title: 'Никаких сложных настроек',
+    text: 'Включили VPN — split tunneling уже работает, списки сервисов обновляются на нашей стороне',
+  },
+]
 
 /** Одни и те же возможности на любом сроке — меняется только цена. */
 const planIncludes = [
@@ -424,62 +462,222 @@ onBeforeUnmount(() => {
       class="section section-how"
       aria-labelledby="how-heading"
     >
-      <div class="section-inner">
-        <p class="section-eyebrow">Умная маршрутизация</p>
-        <h2 id="how-heading" class="section-title">
-          Две дороги из одного VPN
+      <div class="how-decor" aria-hidden="true">
+        <svg class="how-decor__routes how-decor__routes--left" viewBox="0 0 320 280" fill="none">
+          <path
+            d="M24 48 C 80 20, 140 90, 120 150 S 60 220, 140 248"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-dasharray="4 7"
+            stroke-linecap="round"
+          />
+          <path
+            d="M48 200 C 100 170, 180 210, 200 120"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-dasharray="4 7"
+            stroke-linecap="round"
+            opacity="0.55"
+          />
+          <circle cx="120" cy="150" r="5" fill="currentColor" opacity="0.35" />
+          <circle cx="200" cy="120" r="4" fill="currentColor" opacity="0.25" />
+        </svg>
+        <svg class="how-decor__routes how-decor__routes--right" viewBox="0 0 320 280" fill="none">
+          <path
+            d="M296 56 C 240 24, 170 88, 190 148 S 250 218, 170 246"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-dasharray="4 7"
+            stroke-linecap="round"
+          />
+          <path
+            d="M272 204 C 220 176, 140 214, 120 126"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-dasharray="4 7"
+            stroke-linecap="round"
+            opacity="0.55"
+          />
+          <circle cx="190" cy="148" r="5" fill="currentColor" opacity="0.35" />
+          <circle cx="120" cy="126" r="4" fill="currentColor" opacity="0.25" />
+        </svg>
+        <span class="how-decor__pin how-decor__pin--tl">
+          <MapPin :size="14" stroke-width="2.2" />
+        </span>
+        <span class="how-decor__pin how-decor__pin--tr">
+          <MapPin :size="14" stroke-width="2.2" />
+        </span>
+      </div>
+
+      <div class="section-inner how-inner">
+        <p class="how-eyebrow">
+          <span class="how-eyebrow__dot" aria-hidden="true" />
+          Умная маршрутизация
+        </p>
+        <h2 id="how-heading" class="how-title">
+          Две дороги из одного <span class="how-title__accent">VPN</span>
         </h2>
-        <p class="section-lead">
+        <p class="how-lead">
           Подорожник делит трафик автоматически: международные сервисы идут через
           зашифрованный канал (VLESS), а привычные российские приложения —
           по вашему обычному IP, без лишних задержек
         </p>
 
-        <div class="how-panels">
-          <article class="how-panel how-panel--vpn">
-            <header class="how-panel__head">
-              <span class="how-panel__tag how-panel__tag--vpn">Туннель</span>
-              <h3 class="how-panel__title">Через VPN</h3>
-              <p class="how-panel__sub">
+        <div class="how-stage">
+          <article class="how-card how-card--vpn">
+            <header class="how-card__head">
+              <span class="how-card__badge how-card__badge--vpn">
+                <Lock :size="12" stroke-width="2.5" aria-hidden="true" />
+                Туннель
+              </span>
+              <h3 class="how-card__title">
+                Через <span class="how-card__title-accent">VPN</span>
+              </h3>
+              <p class="how-card__desc">
                 Стриминг, соцсети, ИИ и всё, что за рубежом
               </p>
             </header>
-            <ul class="chip-list" role="list">
+
+            <div class="how-card__body">
+              <div class="how-card__viz how-card__viz--vpn" aria-hidden="true">
+                <span class="how-card__ring how-card__ring--3" />
+                <span class="how-card__ring how-card__ring--2" />
+                <span class="how-card__ring how-card__ring--1" />
+                <span class="how-card__hub how-card__hub--vpn">
+                  <Globe :size="22" stroke-width="2" />
+                </span>
+                <span class="how-card__arrow how-card__arrow--vpn" />
+              </div>
+              <ul class="how-apps how-apps--vpn" role="list">
+                <li
+                  v-for="app in howVpnApps"
+                  :key="app.id"
+                  class="how-apps__item"
+                >
+                  <span class="how-apps__chip">
+                    <img
+                      class="how-apps__icon"
+                      :src="app.icon"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                      decoding="async"
+                      @error="($event.target).classList.add('how-apps__icon--missing')"
+                    />
+                    <span class="how-apps__label">{{ app.label }}</span>
+                  </span>
+                </li>
+              </ul>
+            </div>
+
+            <ul class="how-card__perks" role="list">
               <li
-                v-for="s in services.vpn"
-                :key="s"
-                class="chip chip--vpn"
+                v-for="(perk, i) in howVpnPerks"
+                :key="i"
+                class="how-card__perk"
               >
-                {{ s }}
+                <component
+                  :is="perk.icon"
+                  class="how-card__perk-ico"
+                  :size="15"
+                  stroke-width="2.2"
+                  aria-hidden="true"
+                />
+                <span>{{ perk.text }}</span>
               </li>
             </ul>
           </article>
 
-          <div class="how-connector" aria-hidden="true">
-            <span class="how-connector__line" />
-            <span class="how-connector__badge">split</span>
-            <span class="how-connector__line" />
+          <div class="how-split" aria-hidden="true">
+            <span class="how-split__line" />
+            <span class="how-split__badge">split</span>
+            <span class="how-split__line" />
           </div>
 
-          <article class="how-panel how-panel--direct">
-            <header class="how-panel__head">
-              <span class="how-panel__tag how-panel__tag--direct">
+          <article class="how-card how-card--direct">
+            <header class="how-card__head">
+              <span class="how-card__badge how-card__badge--direct">
+                <Shield :size="12" stroke-width="2.5" aria-hidden="true" />
                 Прямой IP
               </span>
-              <h3 class="how-panel__title">Напрямую (РФ)</h3>
-              <p class="how-panel__sub">
+              <h3 class="how-card__title">
+                Напрямую <span class="how-card__title-accent">(РФ)</span>
+              </h3>
+              <p class="how-card__desc">
                 Банки, госуслуги и локальные сервисы без обходов
               </p>
             </header>
-            <ul class="chip-list" role="list">
+
+            <div class="how-card__body">
+              <div class="how-card__viz how-card__viz--direct" aria-hidden="true">
+                <span class="how-card__ring how-card__ring--3" />
+                <span class="how-card__ring how-card__ring--2" />
+                <span class="how-card__ring how-card__ring--1" />
+                <span class="how-card__hub how-card__hub--direct">
+                  <MapPin :size="22" stroke-width="2" />
+                </span>
+                <span class="how-card__arrow how-card__arrow--direct" />
+              </div>
+              <ul class="how-apps how-apps--direct" role="list">
+                <li
+                  v-for="app in howDirectApps"
+                  :key="app.id"
+                  class="how-apps__item"
+                >
+                  <span class="how-apps__chip">
+                    <img
+                      class="how-apps__icon"
+                      :src="app.icon"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                      decoding="async"
+                      @error="($event.target).classList.add('how-apps__icon--missing')"
+                    />
+                    <span class="how-apps__label">{{ app.label }}</span>
+                  </span>
+                </li>
+              </ul>
+            </div>
+
+            <ul class="how-card__perks" role="list">
               <li
-                v-for="s in services.direct"
-                :key="s"
-                class="chip chip--direct"
+                v-for="(perk, i) in howDirectPerks"
+                :key="i"
+                class="how-card__perk"
               >
-                {{ s }}
+                <component
+                  :is="perk.icon"
+                  class="how-card__perk-ico"
+                  :size="15"
+                  stroke-width="2.2"
+                  aria-hidden="true"
+                />
+                <span>{{ perk.text }}</span>
               </li>
             </ul>
+          </article>
+        </div>
+
+        <div class="how-highlights">
+          <article
+            v-for="(item, i) in howHighlights"
+            :key="i"
+            class="how-highlight"
+          >
+            <component
+              :is="item.icon"
+              class="how-highlight__ico"
+              :size="22"
+              stroke-width="2"
+              aria-hidden="true"
+            />
+            <div class="how-highlight__copy">
+              <h3 class="how-highlight__title">{{ item.title }}</h3>
+              <p class="how-highlight__text">{{ item.text }}</p>
+            </div>
           </article>
         </div>
       </div>
@@ -1463,182 +1661,554 @@ onBeforeUnmount(() => {
 
 /* ——— КАК РАБОТАЕТ ——— */
 .section.section-how {
+  --how-green: #1d9a5c;
+  --how-green-soft: rgba(29, 154, 92, 0.1);
+  --how-blue: #4a90e2;
+  --how-blue-soft: rgba(74, 144, 226, 0.1);
+  --how-text: #111827;
+  --how-muted: #6b7280;
+  --how-border: #e8ece9;
+  --how-decor: #d1d9d4;
+
+  position: relative;
+  overflow: hidden;
   background: #ffffff;
   border-block: 1px solid #e5e7eb;
 }
 
-.how-panels {
-  display: grid;
-  gap: 1.5rem;
-  align-items: stretch;
-  margin-top: 0.5rem;
+.how-decor {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
 }
 
-@media (min-width: 900px) {
-  .how-panels {
-    grid-template-columns: 1fr auto 1fr;
-    gap: 1.25rem;
-    align-items: center;
+.how-decor__routes {
+  position: absolute;
+  width: clamp(12rem, 22vw, 18rem);
+  height: auto;
+  color: var(--how-decor);
+  opacity: 0.85;
+}
+
+.how-decor__routes--left {
+  top: 6%;
+  left: -2%;
+}
+
+.how-decor__routes--right {
+  top: 4%;
+  right: -2%;
+}
+
+.how-decor__pin {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  border-radius: 50%;
+  color: var(--how-green);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06);
+}
+
+.how-decor__pin--tl {
+  top: 18%;
+  left: 14%;
+}
+
+.how-decor__pin--tr {
+  top: 14%;
+  right: 12%;
+}
+
+@media (max-width: 720px) {
+  .how-decor__routes--right,
+  .how-decor__pin {
+    display: none;
+  }
+
+  .how-decor__routes--left {
+    opacity: 0.5;
+    width: 9rem;
   }
 }
 
-.how-panel {
+.how-inner {
   position: relative;
+  z-index: 1;
+}
+
+.how-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.85rem;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--how-green);
+  background: var(--how-green-soft);
+  border-radius: var(--radius-pill);
+}
+
+.how-eyebrow__dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--how-green);
+}
+
+.how-title {
+  font-family: var(--heading);
+  margin: 0 0 1rem;
+  font-size: clamp(1.85rem, 4.2vw, 2.65rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.12;
+  color: var(--how-text);
+}
+
+.how-title__accent {
+  color: var(--how-green);
+}
+
+.how-lead {
+  max-width: 42rem;
+  margin: 0 auto 2.25rem;
+  font-size: 1.05rem;
+  line-height: 1.65;
+  color: var(--how-muted);
+}
+
+.how-stage {
+  display: grid;
+  gap: 1rem;
+  align-items: stretch;
   text-align: left;
-  padding: clamp(1.35rem, 3vw, 1.85rem);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--card-border);
-  background: color-mix(in srgb, var(--card-bg) 88%, transparent);
-  box-shadow: var(--shadow-md);
-  backdrop-filter: blur(14px);
+}
+
+.how-card--vpn {
+  grid-area: vpn;
+}
+
+.how-split {
+  grid-area: split;
+}
+
+.how-card--direct {
+  grid-area: direct;
+}
+
+@media (min-width: 960px) {
+  .how-stage {
+    grid-template-columns: minmax(0, 1fr) 2.75rem minmax(0, 1fr);
+    grid-template-areas: 'vpn split direct';
+    gap: 0;
+    align-items: stretch;
+  }
+
+  .how-card--vpn {
+    border-top-right-radius: 12px;
+    border-bottom-right-radius: 12px;
+  }
+
+  .how-card--direct {
+    border-top-left-radius: 12px;
+    border-bottom-left-radius: 12px;
+  }
+}
+
+@media (max-width: 959px) {
+  .how-stage {
+    grid-template-areas:
+      'vpn'
+      'split'
+      'direct';
+  }
+}
+
+.how-card {
+  display: flex;
+  flex-direction: column;
+  padding: clamp(1.25rem, 2.5vw, 1.65rem);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 32px rgba(15, 23, 42, 0.06);
+}
+
+.how-card--vpn {
+  border: 1px solid color-mix(in srgb, var(--how-blue) 35%, var(--how-border));
+}
+
+.how-card--direct {
+  border: 1px solid color-mix(in srgb, var(--how-green) 35%, var(--how-border));
+}
+
+.how-card__head {
+  margin-bottom: 1.1rem;
+}
+
+.how-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.6rem;
+  padding: 0.28rem 0.7rem;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: var(--radius-pill);
+}
+
+.how-card__badge--vpn {
+  color: var(--how-blue);
+  background: var(--how-blue-soft);
+  border: 1px solid color-mix(in srgb, var(--how-blue) 28%, transparent);
+}
+
+.how-card__badge--direct {
+  color: var(--how-green);
+  background: var(--how-green-soft);
+  border: 1px solid color-mix(in srgb, var(--how-green) 28%, transparent);
+}
+
+.how-card__title {
+  margin: 0 0 0.3rem;
+  font-family: var(--heading);
+  font-size: clamp(1.15rem, 2vw, 1.35rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--how-text);
+}
+
+.how-card__title-accent {
+  color: var(--how-green);
+}
+
+.how-card__desc {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--how-muted);
+}
+
+.how-card__body {
+  display: flex;
+  align-items: center;
+  gap: clamp(0.75rem, 2vw, 1.25rem);
+  margin-bottom: 1.15rem;
+  min-height: 7.5rem;
+}
+
+.how-card__viz {
+  position: relative;
+  flex-shrink: 0;
+  width: 5.5rem;
+  height: 5.5rem;
+}
+
+.how-card__ring {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  border-radius: 50%;
+  border: 1px solid #e5ebe8;
+}
+
+.how-card__ring--1 {
+  width: 3.25rem;
+  height: 3.25rem;
+}
+
+.how-card__ring--2 {
+  width: 4.35rem;
+  height: 4.35rem;
+  opacity: 0.75;
+}
+
+.how-card__ring--3 {
+  width: 5.5rem;
+  height: 5.5rem;
+  opacity: 0.45;
+}
+
+.how-card__hub {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.65rem;
+  height: 2.65rem;
+  border-radius: 50%;
+  z-index: 1;
+}
+
+.how-card__hub--vpn {
+  color: var(--how-green);
+  background: var(--how-green-soft);
+  box-shadow: 0 0 0 6px rgba(29, 154, 92, 0.06);
+}
+
+.how-card__hub--direct {
+  color: var(--how-green);
+  background: var(--how-green-soft);
+  box-shadow: 0 0 0 6px rgba(29, 154, 92, 0.06);
+}
+
+.how-card__arrow {
+  position: absolute;
+  top: 50%;
+  right: -0.35rem;
+  width: 2.25rem;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.how-card__arrow--vpn {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--how-blue) 55%, transparent), transparent);
+}
+
+.how-card__arrow--vpn::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 0.35rem;
+  height: 0.35rem;
+  border-top: 1.5px solid var(--how-blue);
+  border-right: 1.5px solid var(--how-blue);
+  transform: translateY(-50%) rotate(45deg);
+  opacity: 0.65;
+}
+
+.how-card__arrow--direct {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--how-green) 55%, transparent), transparent);
+}
+
+.how-card__arrow--direct::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 0.35rem;
+  height: 0.35rem;
+  border-top: 1.5px solid var(--how-green);
+  border-right: 1.5px solid var(--how-green);
+  transform: translateY(-50%) rotate(45deg);
+  opacity: 0.65;
+}
+
+.how-apps {
+  list-style: none;
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+  padding: 0;
+  margin: 0;
+}
+
+@media (min-width: 520px) {
+  .how-apps--vpn {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.how-apps--direct {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (min-width: 1100px) {
+  .how-apps--direct {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.how-apps__item {
+  min-width: 0;
+}
+
+.how-apps__chip {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  min-height: 2.35rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 10px;
+  border: 1px solid var(--how-border);
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  box-sizing: border-box;
+}
+
+.how-apps__icon {
+  flex-shrink: 0;
+  width: 1.65rem;
+  height: 1.65rem;
+  object-fit: contain;
+}
+
+.how-apps__icon--missing {
+  width: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
   overflow: hidden;
 }
 
-.how-panel::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 3px;
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-}
-
-.how-panel--vpn::before {
-  background: linear-gradient(
-    90deg,
-    var(--accent),
-    color-mix(in srgb, var(--accent) 40%, #8b5cf6)
-  );
-}
-
-.how-panel--direct::before {
-  background: linear-gradient(
-    90deg,
-    #10b981,
-    color-mix(in srgb, #58d68d 70%, #45b39d)
-  );
-}
-
-.how-panel__head {
-  margin-bottom: 1.25rem;
-}
-
-.how-panel__tag {
-  display: inline-block;
+.how-apps__label {
+  min-width: 0;
   font-size: 0.68rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  padding: 0.28rem 0.65rem;
-  border-radius: var(--radius-pill);
-  margin-bottom: 0.65rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--how-text);
+  text-align: left;
 }
 
-.how-panel__tag--vpn {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--accent);
-  border: 1px solid var(--accent-border);
+.how-apps--direct .how-apps__label {
+  font-size: 0.64rem;
 }
 
-.how-panel__tag--direct {
-  background: color-mix(in srgb, #10b981 16%, transparent);
-  color: #34d399;
-  border: 1px solid color-mix(in srgb, #10b981 45%, transparent);
-}
-
-.how-panel__title {
-  font-family: var(--heading);
-  margin: 0 0 0.35rem;
-  font-size: 1.35rem;
-  font-weight: 800;
-  color: var(--text-h);
-  letter-spacing: -0.02em;
-}
-
-.how-panel__sub {
-  margin: 0;
-  font-size: 0.92rem;
-  line-height: 1.5;
-  color: var(--muted);
-}
-
-.chip-list {
+.how-card__perks {
   list-style: none;
-  padding: 0;
-  margin: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.65rem 1rem;
+  padding: 0.85rem 0 0;
+  margin: auto 0 0;
+  border-top: 1px solid var(--how-border);
 }
 
-.chip {
+.how-card__perk {
   display: inline-flex;
   align-items: center;
-  padding: 0.45rem 0.75rem;
-  border-radius: var(--radius-pill);
-  font-size: 0.82rem;
-  font-weight: 600;
-  border: 1px solid var(--card-border);
-  background: color-mix(in srgb, var(--surface) 90%, transparent);
-  color: var(--text-h);
-  transition:
-    border-color 0.2s ease,
-    background 0.2s ease,
-    transform 0.2s ease;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  line-height: 1.3;
+  color: var(--how-muted);
 }
 
-.chip:hover {
-  transform: translateY(-1px);
+.how-card__perk-ico {
+  flex-shrink: 0;
+  color: var(--how-green);
 }
 
-.chip--vpn {
-  border-color: color-mix(in srgb, var(--accent-border) 55%, var(--card-border));
-  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
-}
-
-.chip--direct {
-  border-color: color-mix(in srgb, #10b981 35%, var(--card-border));
-  background: color-mix(in srgb, #10b981 7%, var(--surface));
-}
-
-.how-connector {
-  display: none;
-  flex-direction: column;
+.how-split {
+  display: flex;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem;
-  padding: 0 0.25rem;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0.15rem 0;
+  box-sizing: border-box;
 }
 
-@media (min-width: 900px) {
-  .how-connector {
-    display: flex;
+@media (min-width: 960px) {
+  .how-split {
+    flex-direction: column;
+    gap: 0.35rem;
+    width: 2.75rem;
+    max-width: 2.75rem;
+    min-width: 2.75rem;
+    padding: 0;
+    justify-self: center;
+    align-self: stretch;
   }
 }
 
-.how-connector__line {
-  width: 2px;
-  height: 2rem;
-  border-radius: 2px;
-  background: linear-gradient(
-    180deg,
-    transparent,
-    var(--card-border),
-    transparent
-  );
+.how-split__line {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  border-top: 1px dashed #d1d9d4;
 }
 
-.how-connector__badge {
-  font-size: 0.62rem;
+@media (min-width: 960px) {
+  .how-split__line {
+    flex: 1 1 0;
+    width: 0;
+    min-width: 0;
+    border-top: none;
+    border-left: 1px dashed #d1d9d4;
+  }
+}
+
+.how-split__badge {
+  flex-shrink: 0;
+  margin: 0.35rem 0;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.58rem;
   font-weight: 800;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--muted);
-  padding: 0.35rem 0.55rem;
+  color: var(--how-green);
+  background: #fff;
+  border: 1px solid var(--how-border);
   border-radius: var(--radius-pill);
-  border: 1px dashed color-mix(in srgb, var(--muted) 45%, var(--card-border));
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+}
+
+.how-highlights {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: clamp(1.5rem, 3vw, 2rem);
+  text-align: left;
+}
+
+@media (min-width: 720px) {
+  .how-highlights {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+  }
+}
+
+.how-highlight {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 1.1rem 1.15rem;
+  border-radius: 16px;
+  background: #f4f7f5;
+  border: 1px solid var(--how-border);
+}
+
+.how-highlight__ico {
+  flex-shrink: 0;
+  color: var(--how-green);
+}
+
+.how-highlight__copy {
+  min-width: 0;
+}
+
+.how-highlight__title {
+  margin: 0 0 0.3rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--how-text);
+}
+
+.how-highlight__text {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--how-muted);
 }
 
 /* ——— ТАРИФЫ ——— */
