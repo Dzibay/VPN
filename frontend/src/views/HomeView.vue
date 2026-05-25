@@ -54,14 +54,6 @@ const HOME_IMAGES = {
   logoWordmark: '/images/home/header-logo.png',
 }
 
-const footerProductLinks = [
-  { href: '#benefits', label: 'Преимущества' },
-  { href: '#pricing', label: 'Тарифы' },
-  { href: '#how', label: 'Устройства' },
-  { href: '#faq', label: 'FAQ' },
-  { href: '#faq', label: 'Поддержка' },
-]
-
 const footerHighlights = [
   {
     icon: Shield,
@@ -90,8 +82,6 @@ const footerPayBrands = [
   { src: '/images/pay-brands/mastercard.png', alt: 'Mastercard' },
   { src: '/images/pay-brands/mir.png', alt: 'Мир' },
 ]
-
-const legalLinks = LEGAL_FOOTER_LINKS
 
 const heroMiniFeatures = [
   {
@@ -155,11 +145,6 @@ const loggedInHomeCtaPath = computed(() =>
   defaultPathAfterLogin(sessionRole.value),
 )
 
-onMounted(() => {
-  refreshAuth()
-  void loadYookassaTariffs()
-  void loadSiteLinks()
-})
 router.afterEach(refreshAuth)
 
 /** Иконки приложений — положите PNG в public/images/home/how/ (см. README там). */
@@ -351,6 +336,22 @@ const supportTelegramLabel = computed(() => {
   return m?.[1] ? `@${m[1]}` : SUPPORT_TELEGRAM
 })
 
+const footerProductLinks = computed(() => {
+  const links = [
+    { href: '#benefits', label: 'Преимущества' },
+    { href: '#pricing', label: 'Тарифы' },
+    { href: '#how', label: 'Устройства' },
+    { href: '#faq', label: 'FAQ' },
+  ]
+  const supportUrl = supportTelegramUrl.value
+  links.push(
+    supportUrl
+      ? { href: supportUrl, label: 'Поддержка', external: true }
+      : { href: '#faq-support', label: 'Поддержка' },
+  )
+  return links
+})
+
 async function loadSiteLinks() {
   try {
     siteLinks.value = await fetchJson('/api/public/site-links')
@@ -414,7 +415,7 @@ function toggleFaq(index) {
 /** JSON-LD FAQ для поисковых систем (Google понимает SPA при рендере). */
 let faqLdEl = null
 
-onMounted(() => {
+function injectHomeJsonLd() {
   const origin =
     typeof window !== 'undefined' ? window.location.origin : sitePublicUrl()
   const base = origin?.replace(/\/$/, '') || ''
@@ -449,6 +450,13 @@ onMounted(() => {
   script.textContent = JSON.stringify(structured)
   document.head.appendChild(script)
   faqLdEl = script
+}
+
+onMounted(() => {
+  refreshAuth()
+  void loadYookassaTariffs()
+  void loadSiteLinks()
+  injectHomeJsonLd()
 })
 
 onBeforeUnmount(() => {
@@ -1279,7 +1287,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="faq-support">
+        <div id="faq-support" class="faq-support">
           <div class="faq-support__copy">
             <span class="faq-support__icon" aria-hidden="true">
               <Headphones :size="22" :stroke-width="2.2" />
@@ -1455,7 +1463,11 @@ onBeforeUnmount(() => {
                 v-for="(link, i) in footerProductLinks"
                 :key="`${link.href}-${i}`"
               >
-                <a :href="link.href">{{ link.label }}</a>
+                <a
+                  :href="link.href"
+                  :target="link.external ? '_blank' : undefined"
+                  :rel="link.external ? 'noopener noreferrer' : undefined"
+                >{{ link.label }}</a>
               </li>
             </ul>
           </nav>
@@ -1470,7 +1482,7 @@ onBeforeUnmount(() => {
             </h3>
             <ul class="footer-col__list">
               <li
-                v-for="link in legalLinks"
+                v-for="link in LEGAL_FOOTER_LINKS"
                 :key="link.to"
               >
                 <RouterLink :to="link.to">{{ link.label }}</RouterLink>
@@ -1598,53 +1610,6 @@ onBeforeUnmount(() => {
   max-width: min(var(--landing-content-max, 84rem), 100%);
   margin: 0 auto;
   text-align: center;
-}
-
-.section-title {
-  font-family: var(--heading);
-  font-size: clamp(1.85rem, 4.2vw, 2.65rem);
-  margin: 0 0 1rem;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  line-height: 1.15;
-  color: var(--text-h);
-}
-
-.section-lead {
-  font-size: 1.08rem;
-  line-height: 1.65;
-  color: var(--muted);
-  margin: 0 auto 2.5rem;
-  max-width: 42rem;
-}
-
-.section-lead--narrow {
-  max-width: 36rem;
-}
-
-.section-eyebrow {
-  margin: 0 0 0.65rem;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--accent);
-}
-
-.section-eyebrow--center {
-  text-align: center;
-}
-
-.text-accent {
-  color: var(--accent);
-  background: linear-gradient(120deg, var(--accent), #8b5cf6);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.text-green {
-  color: #10b981;
 }
 
 .cta {
@@ -4446,16 +4411,5 @@ onBeforeUnmount(() => {
   height: 1.15rem;
   object-fit: contain;
   opacity: 0.88;
-}
-
-@media (prefers-color-scheme: light) {
-  .how-panel__tag--direct {
-    color: var(--accent-muted);
-  }
-
-  .chip--direct {
-    border-color: color-mix(in srgb, var(--accent-muted) 35%, var(--card-border));
-    background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface));
-  }
 }
 </style>
