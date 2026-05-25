@@ -25,6 +25,8 @@ import {
   Lock,
   MapPin,
   Monitor,
+  RefreshCw,
+  Rocket,
   Route,
   Shield,
   ShieldCheck,
@@ -193,9 +195,39 @@ const trialVisualOrbit = [
 
 /** Одни и те же возможности на любом сроке — меняется только цена. */
 const planIncludes = [
-  'Split tunneling: РФ напрямую, зарубежное через VPN',
-  'Протокол VLESS и ключ подписки в личном кабинете',
-  'До 5 устройств одновременно на один ключ',
+  'Все функции Подорожник VPN',
+  'Шифрование VLESS и умная маршрутизация',
+  'До 5 устройств на одной подписке',
+  'Поддержка 24/7',
+]
+
+const pricingTrustTop = [
+  { icon: ShieldCheck, text: 'Полный доступ ко всем функциям' },
+  { icon: Globe, text: 'Стабильное соединение на всех серверах' },
+  { icon: Smartphone, text: 'До 5 устройств на одной подписке' },
+]
+
+const pricingBenefitsBottom = [
+  {
+    icon: Rocket,
+    title: 'Молниеносная скорость',
+    text: 'Без потери качества',
+  },
+  {
+    icon: Lock,
+    title: 'Без логов и слежки',
+    text: 'Ваша приватность под защитой',
+  },
+  {
+    icon: Globe,
+    title: 'Проверенные локации',
+    text: 'Стабильный доступ к нужным сервисам',
+  },
+  {
+    icon: RefreshCw,
+    title: 'Простое управление',
+    text: 'Удобные приложения для всех платформ',
+  },
 ]
 
 /** Сроки на лендинге; цены и экономия — из yookassa_tariffs.json через API. */
@@ -203,18 +235,23 @@ const LANDING_PLAN_MONTHS = [1, 6, 12]
 
 const LANDING_PLAN_META = {
   1: {
-    tagline: 'Попробовать без долгих обязательств.',
-    ctaGuest: 'Оформить месяц',
-    periodShort: 'за 30 дней',
+    displayName: 'Ежемесячная',
+    periodBadge: '1 месяц',
+    tagline: 'Идеально, чтобы попробовать сервис',
+    ctaGuest: 'Оформить подписку',
   },
   6: {
-    tagline: 'Лучшее соотношение срока и цены за месяц.',
+    displayName: 'Полгода',
+    periodBadge: '6 месяцев',
+    tagline: 'Оптимальный баланс цены и срока',
     popular: true,
     ctaGuest: 'Подключить на полгода',
   },
   12: {
-    tagline: 'Минимальная цена месяца при оплате раз в год.',
-    ctaGuest: 'Взять на год',
+    displayName: 'Годовая',
+    periodBadge: '12 месяцев',
+    tagline: 'Максимальная выгода на длительный срок',
+    ctaGuest: 'Подключить на год',
   },
 }
 
@@ -823,48 +860,52 @@ onBeforeUnmount(() => {
       aria-labelledby="pricing-plans-heading"
     >
       <div class="section-inner">
-        <div class="pricing-plans-head">
-          <p class="section-eyebrow section-eyebrow--center">Подписка</p>
-          <h3
-            id="pricing-plans-heading"
-            class="pricing-plans-heading"
-          >
-            Один сервис — три способа платить
-          </h3>
-          <p class="pricing-plans-lead">
-            На любом тарифе одинаковые возможности: умная маршрутизация, VLESS и до 5
-            устройств. Отличается только срок и сумма за месяц.
+        <div class="pricing-head">
+          <p class="pricing-head__eyebrow">
+            <span class="pricing-head__eyebrow-dot" aria-hidden="true" />
+            Подписка
           </p>
-          <div
-            class="pricing-trust-strip"
-            aria-label="Ключевые условия"
+          <h2
+            id="pricing-plans-heading"
+            class="pricing-head__title"
           >
-            <span class="pricing-trust-strip__item">
-              <svg class="pricing-trust-strip__icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              Полный функционал на всех планах
-            </span>
-            <span class="pricing-trust-strip__dot" aria-hidden="true" />
-            <span class="pricing-trust-strip__item">
-              <svg class="pricing-trust-strip__icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              Цены на сайте — без навязанных доплат
-            </span>
-            <span class="pricing-trust-strip__dot" aria-hidden="true" />
-            <span class="pricing-trust-strip__item">
-              <svg class="pricing-trust-strip__icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
-              Один ключ — смартфон и компьютер
+            Один <span class="pricing-head__accent">VPN</span> — максимум возможностей
+          </h2>
+          <p class="pricing-head__lead">
+            Подорожник VPN объединяет скорость, безопасность и удобство.<br />
+            Выберите подписку, которая подходит именно вам.
+          </p>
+
+          <div
+            class="pricing-trust-bar"
+            aria-label="Ключевые условия подписки"
+          >
+            <span
+              v-for="(item, i) in pricingTrustTop"
+              :key="i"
+              class="pricing-trust-bar__item"
+            >
+              <component
+                :is="item.icon"
+                class="pricing-trust-bar__icon"
+                :size="17"
+                :stroke-width="2.2"
+                aria-hidden="true"
+              />
+              {{ item.text }}
             </span>
           </div>
         </div>
 
         <p
           v-if="pricingLoading"
-          class="pricing-plans-lead pricing-plans-lead--status"
+          class="pricing-status"
         >
           Загрузка тарифов…
         </p>
         <p
           v-else-if="plans.length === 0"
-          class="pricing-plans-lead pricing-plans-lead--status"
+          class="pricing-status"
           role="status"
         >
           Тарифы временно недоступны. Обновите страницу или напишите в поддержку.
@@ -883,27 +924,46 @@ onBeforeUnmount(() => {
             :class="{ 'pricing-card--popular': plan.popular }"
             role="listitem"
           >
-            <div v-if="plan.popular" class="pricing-card__ribbon">
-              Чаще выбирают
+            <div
+              v-if="plan.popular"
+              class="pricing-card__ribbon"
+            >
+              {{ plan.ribbonLabel }}
             </div>
+
+            <span class="pricing-card__period-badge">{{ plan.periodBadge }}</span>
+
             <div class="pricing-card__header">
-              <h4 class="pricing-card__name">{{ plan.name }}</h4>
+              <h3 class="pricing-card__name">{{ plan.displayName }}</h3>
               <p class="pricing-card__tagline">{{ plan.tagline }}</p>
             </div>
 
             <div class="pricing-card__metrics">
-              <div class="pricing-card__monthly-big">
+              <div class="pricing-card__price-row">
                 <span class="pricing-card__monthly-num">{{ plan.monthlyHighlight }}</span>
-                <span class="pricing-card__monthly-unit">в месяц</span>
-                <span class="pricing-card__monthly-hint">при оплате за период целиком</span>
+                <span class="pricing-card__monthly-unit">/ месяц</span>
               </div>
 
-              <div class="pricing-card__total-row">
-                <template v-if="plan.compareAtTotal">
-                  <span class="pricing-card__compare">{{ plan.compareAtTotal }}</span>
-                </template>
-                <span class="pricing-card__total-price">{{ plan.totalPrice }}</span>
-                <span class="pricing-card__period-badge">{{ plan.periodShort }}</span>
+              <p
+                v-if="plan.paymentHint"
+                class="pricing-card__payment-hint"
+              >
+                {{ plan.paymentHint }}
+              </p>
+
+              <div
+                v-else-if="plan.totalPeriodLabel"
+                class="pricing-card__billing-row"
+              >
+                <span class="pricing-card__total-price">{{ plan.totalPeriodLabel }}</span>
+                <span
+                  v-if="plan.compareAtTotal"
+                  class="pricing-card__compare"
+                >{{ plan.compareAtTotal }}</span>
+                <span
+                  v-if="plan.discountPercent"
+                  class="pricing-card__discount"
+                >−{{ plan.discountPercent }}%</span>
               </div>
 
               <p
@@ -914,11 +974,22 @@ onBeforeUnmount(() => {
               </p>
             </div>
 
-            <ul class="pricing-card__features" aria-label="Что входит">
+            <hr class="pricing-card__divider" aria-hidden="true">
+
+            <ul
+              class="pricing-card__features"
+              aria-label="Что входит"
+            >
               <li
                 v-for="(line, idx) in planIncludes"
                 :key="idx"
               >
+                <CheckCircle2
+                  class="pricing-card__check"
+                  :size="16"
+                  :stroke-width="2.2"
+                  aria-hidden="true"
+                />
                 {{ line }}
               </li>
             </ul>
@@ -943,9 +1014,38 @@ onBeforeUnmount(() => {
           </article>
         </div>
 
+        <div
+          class="pricing-benefits"
+          aria-label="Преимущества Подорожник VPN"
+        >
+          <article
+            v-for="(item, i) in pricingBenefitsBottom"
+            :key="i"
+            class="pricing-benefits__item"
+          >
+            <span class="pricing-benefits__icon" aria-hidden="true">
+              <component
+                :is="item.icon"
+                :size="20"
+                :stroke-width="2.2"
+              />
+            </span>
+            <span class="pricing-benefits__copy">
+              <strong>{{ item.title }}</strong>
+              <span>{{ item.text }}</span>
+            </span>
+          </article>
+        </div>
+
         <p class="pricing-footnote">
-          После <RouterLink class="pricing-footnote__link" to="/register">регистрации</RouterLink>
-          вы получите пробный доступ на 3 дня — затем можно выбрать любой из тарифов в личном кабинете.
+          <ShieldCheck
+            class="pricing-footnote__icon"
+            :size="17"
+            :stroke-width="2.2"
+            aria-hidden="true"
+          />
+          Попробуйте бесплатно в течение 3 дней после
+          <RouterLink class="pricing-footnote__link" to="/register">регистрации</RouterLink>
         </p>
       </div>
     </section>
@@ -2700,94 +2800,114 @@ onBeforeUnmount(() => {
 
 /* ——— ТАРИФЫ ——— */
 .section-pricing {
-  background: linear-gradient(
-    180deg,
-    transparent,
-    color-mix(in srgb, var(--accent) 4%, transparent) 40%,
-    transparent
-  );
+  --pricing-bg: #f3f4f6;
+  --pricing-text: #111827;
+  --pricing-muted: #6b7280;
+  --pricing-border: #e5e7eb;
+  --pricing-accent: #1d9a5c;
+  --pricing-accent-soft: rgba(29, 154, 92, 0.1);
+  --pricing-card-bg: #ffffff;
+  background: var(--pricing-bg);
 }
 
-.pricing-plans-head {
-  margin-bottom: clamp(1.5rem, 4vw, 2.25rem);
+.section-pricing .section-inner {
+  text-align: center;
 }
 
-.pricing-trust-strip {
+.pricing-head {
+  margin-bottom: clamp(1.75rem, 4vw, 2.5rem);
+}
+
+.pricing-head__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.85rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pricing-muted);
+}
+
+.pricing-head__eyebrow-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pricing-accent);
+  box-shadow: 0 0 0 3px var(--pricing-accent-soft);
+}
+
+.pricing-head__title {
+  font-family: var(--heading);
+  font-size: clamp(1.75rem, 4vw, 2.65rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.12;
+  color: var(--pricing-text);
+  margin: 0 0 0.85rem;
+}
+
+.pricing-head__accent {
+  color: var(--pricing-accent);
+}
+
+.pricing-head__lead {
+  margin: 0 auto 1.35rem;
+  max-width: 38rem;
+  font-size: 1rem;
+  line-height: 1.65;
+  color: var(--pricing-muted);
+}
+
+.pricing-trust-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem 0.85rem;
-  margin-top: 1.2rem;
-  padding: 0.62rem 1.05rem;
-  border-radius: var(--radius-pill);
-  border: 1px solid color-mix(in srgb, var(--card-border) 92%, transparent);
-  background: color-mix(in srgb, var(--surface-glass) 90%, transparent);
-  font-size: 0.81rem;
-  font-weight: 600;
-  line-height: 1.35;
-  color: color-mix(in srgb, var(--muted) 40%, var(--text-h));
-  max-width: 46rem;
-  margin-inline: auto;
+  gap: 0.65rem 1.35rem;
+  margin: 0 auto;
+  padding: 0.85rem 1.25rem;
+  max-width: 52rem;
+  border-radius: calc(var(--radius-lg) + 4px);
+  border: 1px solid var(--pricing-border);
+  background: var(--pricing-card-bg);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
 }
 
-.pricing-trust-strip__item {
+.pricing-trust-bar__item {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.45rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--pricing-muted) 35%, var(--pricing-text));
   text-align: left;
 }
 
-.pricing-trust-strip__icon {
+.pricing-trust-bar__icon {
   flex-shrink: 0;
-  color: var(--accent);
-  opacity: 0.92;
+  color: var(--pricing-accent);
 }
 
-.pricing-trust-strip__dot {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--muted);
-  opacity: 0.4;
-}
-
-@media (max-width: 560px) {
-  .pricing-trust-strip__dot {
-    display: none;
-  }
-}
-
-.pricing-plans-heading {
-  font-family: var(--heading);
-  font-size: clamp(1.55rem, 3.2vw, 2.15rem);
-  font-weight: 800;
-  color: var(--text-h);
-  margin: 0 0 0.7rem;
-  letter-spacing: -0.03em;
-  line-height: 1.15;
-}
-
-.pricing-plans-lead {
-  margin: 0 auto;
+.pricing-status {
+  margin: 0 auto 1.5rem;
   max-width: 40rem;
-  font-size: 1.02rem;
-  line-height: 1.62;
-  color: var(--muted);
-}
-
-.pricing-plans-lead--status {
-  margin-bottom: 1.5rem;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--pricing-muted);
 }
 
 .pricing-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 1.35rem;
+  gap: 1.25rem;
   text-align: left;
+  margin-bottom: clamp(1.5rem, 4vw, 2rem);
 }
 
-@media (min-width: 768px) {
+@media (min-width: 900px) {
   .pricing-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 1rem;
@@ -2799,14 +2919,14 @@ onBeforeUnmount(() => {
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: clamp(1.55rem, 3vw, 1.85rem) clamp(1.35rem, 3vw, 1.55rem)
-    clamp(1.35rem, 3vw, 1.55rem);
-  padding-top: 1.95rem;
-  border-radius: calc(var(--radius-lg) + 6px);
-  background: color-mix(in srgb, var(--surface-glass) 94%, transparent);
-  border: 1px solid var(--card-border);
-  box-shadow: var(--shadow-sm);
-  backdrop-filter: blur(14px);
+  padding: clamp(1.5rem, 3vw, 1.85rem);
+  padding-top: 1.75rem;
+  border-radius: calc(var(--radius-lg) + 8px);
+  background: var(--pricing-card-bg);
+  border: 1px solid var(--pricing-border);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 10px 28px rgba(15, 23, 42, 0.05);
   overflow: visible;
   transition:
     transform 0.22s ease,
@@ -2815,33 +2935,26 @@ onBeforeUnmount(() => {
 }
 
 .pricing-card:hover {
-  transform: translateY(-5px);
-  box-shadow: var(--shadow-md);
-  border-color: color-mix(in srgb, var(--accent-border) 42%, var(--card-border));
+  transform: translateY(-4px);
+  box-shadow:
+    0 2px 4px rgba(15, 23, 42, 0.05),
+    0 16px 36px rgba(15, 23, 42, 0.08);
 }
 
 .pricing-card--popular {
-  border-color: color-mix(in srgb, var(--accent-border) 75%, var(--card-border));
-  background:
-    linear-gradient(
-      165deg,
-      color-mix(in srgb, var(--accent) 14%, var(--surface-glass)) 0%,
-      color-mix(in srgb, var(--surface-glass) 94%, transparent) 42%,
-      color-mix(in srgb, var(--surface-glass) 96%, transparent) 100%
-    );
+  border-color: color-mix(in srgb, var(--pricing-accent) 35%, var(--pricing-border));
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent),
-    0 18px 40px color-mix(in srgb, var(--accent) 12%, transparent),
-    var(--shadow-md);
+    0 0 0 1px color-mix(in srgb, var(--pricing-accent) 18%, transparent),
+    0 16px 40px rgba(29, 154, 92, 0.12);
 }
 
-@media (min-width: 768px) {
+@media (min-width: 900px) {
   .pricing-card--popular {
-    transform: translateY(-8px);
+    transform: translateY(-6px);
   }
 
   .pricing-card--popular:hover {
-    transform: translateY(-11px);
+    transform: translateY(-9px);
   }
 }
 
@@ -2852,149 +2965,155 @@ onBeforeUnmount(() => {
   transform: translate(-50%, -52%);
   z-index: 2;
   padding: 0.38rem 0.95rem;
-  font-size: 0.66rem;
+  font-size: 0.64rem;
   font-weight: 800;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--on-accent);
-  background: linear-gradient(
-    125deg,
-    var(--accent),
-    color-mix(in srgb, var(--accent-muted) 92%, var(--accent))
-  );
+  color: #fff;
+  background: var(--pricing-accent);
   border-radius: var(--radius-pill);
-  box-shadow:
-    0 6px 18px color-mix(in srgb, var(--accent) 38%, transparent),
-    0 1px 0 color-mix(in srgb, #fff 12%, transparent);
+  box-shadow: 0 6px 16px rgba(29, 154, 92, 0.28);
   white-space: nowrap;
+}
+
+.pricing-card__period-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  margin-bottom: 0.85rem;
+  padding: 0.28rem 0.65rem;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pricing-muted);
+  border-radius: var(--radius-pill);
+  background: #f3f4f6;
 }
 
 .pricing-card__header {
   margin-bottom: 1rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--card-border) 85%, transparent);
 }
 
 .pricing-card__name {
   font-family: var(--heading);
-  margin: 0 0 0.4rem;
-  font-size: 1.12rem;
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
   font-weight: 800;
   letter-spacing: -0.02em;
-  color: var(--text-h);
+  color: var(--pricing-text);
 }
 
 .pricing-card__tagline {
   margin: 0;
   font-size: 0.86rem;
   line-height: 1.5;
-  color: var(--muted);
+  color: var(--pricing-muted);
 }
 
 .pricing-card__metrics {
   margin-bottom: 1rem;
 }
 
-.pricing-card__monthly-big {
-  margin-bottom: 0.75rem;
+.pricing-card__price-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.35rem;
+  margin-bottom: 0.45rem;
 }
 
 .pricing-card__monthly-num {
   font-family: var(--heading);
-  font-size: clamp(2rem, 4vw, 2.45rem);
+  font-size: clamp(1.85rem, 3.5vw, 2.35rem);
   font-weight: 800;
   letter-spacing: -0.04em;
-  color: var(--accent);
+  color: var(--pricing-accent);
   line-height: 1;
 }
 
 .pricing-card__monthly-unit {
-  margin-left: 0.35rem;
-  font-size: 0.92rem;
+  font-size: 0.95rem;
   font-weight: 700;
-  color: color-mix(in srgb, var(--muted) 55%, var(--text-h));
+  color: color-mix(in srgb, var(--pricing-muted) 45%, var(--pricing-text));
 }
 
-.pricing-card__monthly-hint {
-  display: block;
-  margin-top: 0.35rem;
-  font-size: 0.74rem;
-  font-weight: 600;
-  color: var(--muted);
-  line-height: 1.35;
+.pricing-card__payment-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--pricing-muted);
 }
 
-.pricing-card__total-row {
+.pricing-card__billing-row {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.35rem 0.65rem;
-}
-
-.pricing-card__compare {
-  font-size: 0.92rem;
-  font-weight: 600;
-  color: var(--muted);
-  text-decoration: line-through;
-  text-decoration-color: color-mix(in srgb, var(--muted) 65%, transparent);
+  align-items: center;
+  gap: 0.35rem 0.55rem;
 }
 
 .pricing-card__total-price {
-  font-family: var(--mono);
-  font-size: 1.05rem;
+  font-size: 0.92rem;
   font-weight: 700;
-  color: var(--text-h);
-  letter-spacing: -0.02em;
+  color: var(--pricing-text);
 }
 
-.pricing-card__period-badge {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 0.22rem 0.5rem;
+.pricing-card__compare {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--pricing-muted);
+  text-decoration: line-through;
+}
+
+.pricing-card__discount {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--pricing-accent);
   border-radius: var(--radius-pill);
-  border: 1px solid var(--card-border);
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  color: color-mix(in srgb, var(--muted) 55%, var(--text-h));
+  background: var(--pricing-accent-soft);
 }
 
 .pricing-card__save {
-  margin: 0.55rem 0 0;
-  font-size: 0.8rem;
+  margin: 0.45rem 0 0;
+  font-size: 0.78rem;
   font-weight: 700;
   line-height: 1.4;
-  color: color-mix(in srgb, var(--accent) 92%, var(--text-h));
+  color: var(--pricing-accent);
+}
+
+.pricing-card__divider {
+  margin: 0 0 1rem;
+  border: 0;
+  border-top: 1px solid var(--pricing-border);
 }
 
 .pricing-card__features {
   list-style: none;
   padding: 0;
-  margin: 0 0 1.15rem;
+  margin: 0 0 1.25rem;
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  gap: 0.65rem;
 }
 
 .pricing-card__features li {
-  position: relative;
-  padding-left: 1.35rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
   font-size: 0.84rem;
   line-height: 1.45;
-  color: color-mix(in srgb, var(--text) 82%, var(--muted));
+  color: color-mix(in srgb, var(--pricing-text) 88%, var(--pricing-muted));
 }
 
-.pricing-card__features li::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0.48em;
-  width: 6px;
-  height: 6px;
-  border-radius: 2px;
-  background: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+.pricing-card__check {
+  flex-shrink: 0;
+  margin-top: 0.08rem;
+  color: var(--pricing-accent);
 }
 
 .pricing-card__cta {
@@ -3007,20 +3126,108 @@ onBeforeUnmount(() => {
 }
 
 .pricing-card--popular .pricing-card__btn.primary {
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 32%, transparent);
+  box-shadow: 0 6px 18px rgba(29, 154, 92, 0.28);
+}
+
+.section-pricing .cta--outline {
+  color: var(--pricing-accent);
+  background: #fff;
+  border: 1.5px solid var(--pricing-accent);
+  box-shadow: none;
+}
+
+.section-pricing .cta--outline:hover {
+  color: #fff;
+  background: var(--pricing-accent);
+  border-color: var(--pricing-accent);
+}
+
+.pricing-benefits {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+  margin: 0 auto;
+  padding: 1rem 1.15rem;
+  max-width: 56rem;
+  border-radius: calc(var(--radius-lg) + 4px);
+  border: 1px solid var(--pricing-border);
+  background: var(--pricing-card-bg);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+}
+
+@media (min-width: 640px) {
+  .pricing-benefits {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem 1.25rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .pricing-benefits {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.pricing-benefits__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  text-align: left;
+}
+
+.pricing-benefits__icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.65rem;
+  color: var(--pricing-accent);
+  background: var(--pricing-accent-soft);
+}
+
+.pricing-benefits__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.pricing-benefits__copy strong {
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--pricing-text);
+}
+
+.pricing-benefits__copy span {
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--pricing-muted);
 }
 
 .pricing-footnote {
-  margin: clamp(1.85rem, 4vw, 2.5rem) auto 0;
-  max-width: 38rem;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem 0.45rem;
+  margin: clamp(1.75rem, 4vw, 2.35rem) auto 0;
+  max-width: 42rem;
   text-align: center;
-  font-size: 0.87rem;
-  line-height: 1.58;
-  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--pricing-muted);
+}
+
+.pricing-footnote__icon {
+  flex-shrink: 0;
+  color: var(--pricing-accent);
 }
 
 .pricing-footnote__link {
-  color: var(--accent);
+  color: var(--pricing-accent);
   font-weight: 700;
   text-decoration: underline;
   text-decoration-thickness: 1px;
@@ -3028,7 +3235,7 @@ onBeforeUnmount(() => {
 }
 
 .pricing-footnote__link:hover {
-  color: var(--accent-hover);
+  color: #18804d;
 }
 
 /* ——— FAQ ——— */

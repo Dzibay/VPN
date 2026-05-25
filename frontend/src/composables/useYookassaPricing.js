@@ -13,15 +13,15 @@ import { fetchJson } from '../api/client.js'
  *   periodShort: string;
  *   compareAtTotal: string | null;
  *   savingsLabel: string | null;
+ *   discountPercent: number | null;
+ *   paymentHint: string | null;
+ *   totalPeriodLabel: string | null;
+ *   displayName: string;
+ *   periodBadge: string;
+ *   ribbonLabel: string;
  *   popular: boolean;
  *   ctaGuest: string;
  * }} LandingPlanRow */
-
-const MONTHS_DATIVE = {
-  3: 'трём',
-  6: 'шести',
-  12: 'двенадцати',
-}
 
 /** @param {number} amount */
 export function formatRub(amount) {
@@ -52,10 +52,24 @@ export function savingsRub(tariff, baseMonthly) {
   return save > 0 ? save : null
 }
 
-/** @param {number} months @param {number} save @param {number} baseMonthly */
-function savingsLabel(months, save, baseMonthly) {
-  const dative = MONTHS_DATIVE[months] ?? String(months)
-  return `Экономия ${formatRub(save)} к ${dative} месяцам по ${formatRub(baseMonthly)}`
+/** @param {number} save */
+function savingsLabel(save) {
+  return `Экономия ${formatRub(save)} по сравнению с ежемесячной оплатой`
+}
+
+/** @param {number} months @param {number} price */
+function totalPeriodLabel(months, price) {
+  if (months === 1) return null
+  if (months === 6) return `${formatRub(price)} за 6 месяцев`
+  if (months === 12) return `${formatRub(price)} за 12 месяцев`
+  return `${formatRub(price)} за ${formatPeriod(months).toLowerCase()}`
+}
+
+/** @param {number | null} save @param {number | null} base @param {number} months */
+function discountPercent(save, base, months) {
+  if (!save || !base || months <= 1) return null
+  const full = base * months
+  return Math.round((save / full) * 100)
 }
 
 /** @param {YookassaTariff[]} tariffs */
@@ -67,7 +81,15 @@ export function baseMonthlyFromTariffs(tariffs) {
 /**
  * @param {YookassaTariff[]} tariffs
  * @param {number[]} monthsList
- * @param {Record<number, { tagline: string, popular?: boolean, ctaGuest: string, periodShort?: string }>} metaByMonths
+ * @param {Record<number, {
+ *   displayName: string;
+ *   periodBadge: string;
+ *   tagline: string;
+ *   popular?: boolean;
+ *   ctaGuest: string;
+ *   periodShort?: string;
+ *   ribbonLabel?: string;
+ * }>} metaByMonths
  * @returns {LandingPlanRow[]}
  */
 export function buildLandingPlans(tariffs, monthsList, metaByMonths) {
@@ -87,6 +109,8 @@ export function buildLandingPlans(tariffs, monthsList, metaByMonths) {
         id: months,
         months,
         name: formatPeriod(months),
+        displayName: meta.displayName ?? formatPeriod(months),
+        periodBadge: meta.periodBadge ?? formatPeriod(months),
         tagline: meta.tagline,
         monthlyHighlight: formatRub(monthly),
         totalPrice: formatRub(tariff.price),
@@ -95,11 +119,15 @@ export function buildLandingPlans(tariffs, monthsList, metaByMonths) {
           (months === 1 ? 'за 30 дней' : 'единый платёж'),
         compareAtTotal:
           save != null && base != null ? formatRub(base * months) : null,
-        savingsLabel:
-          save != null && base != null
-            ? savingsLabel(months, save, base)
+        savingsLabel: save != null ? savingsLabel(save) : null,
+        discountPercent: discountPercent(save, base, months),
+        paymentHint:
+          months === 1
+            ? `${formatRub(tariff.price)} при оплате каждый месяц`
             : null,
+        totalPeriodLabel: totalPeriodLabel(months, tariff.price),
         popular: Boolean(meta.popular),
+        ribbonLabel: meta.ribbonLabel ?? 'Выгоднее всего',
         ctaGuest: meta.ctaGuest,
       }
     })
