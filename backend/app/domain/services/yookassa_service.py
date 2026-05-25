@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from pydantic import ValidationError
@@ -64,22 +64,38 @@ def _find_tariff(months: int) -> tuple[int, str, Decimal] | None:
     return None
 
 
-def yookassa_return_url(settings: Settings) -> str:
+def _yookassa_return_url_for_path(settings: Settings, *, path: str, env_override: str) -> str:
     """ЮKassa требует абсолютный URL; относительный путь приведёт к ошибке create payment."""
-    explicit = (settings.yookassa_return_url or "").strip()
+    explicit = (env_override or "").strip()
     url = explicit
     if not url:
         base = public_spa_base_url(settings)
         if base:
-            url = f"{base.rstrip('/')}/cabinet/pay/return"
+            url = f"{base.rstrip('/')}{path}"
     if not url.lower().startswith(("http://", "https://")):
         raise ServiceUnavailableError(
             detail=(
                 "Задайте SITE_ADDRESS (публичный домен) или YOOKASSA_RETURN_URL "
-                "(полный https://…/cabinet/pay/return) для redirect после оплаты"
+                f"(полный https://…{path}) для redirect после оплаты"
             ),
         )
     return url
+
+
+def yookassa_return_url(settings: Settings) -> str:
+    return _yookassa_return_url_for_path(
+        settings,
+        path="/cabinet/pay/return",
+        env_override=settings.yookassa_return_url,
+    )
+
+
+def yookassa_bot_return_url(settings: Settings) -> str:
+    return _yookassa_return_url_for_path(
+        settings,
+        path="/cabinet/pay/return/bot",
+        env_override="",
+    )
 
 
 async def create_yookassa_checkout(
@@ -87,6 +103,7 @@ async def create_yookassa_checkout(
     *,
     user_id: int,
     months: int,
+    return_target: Literal["site", "bot"] = "site",
 ) -> YookassaCheckoutResponse:
     """Создать платёж в ЮKassa и вернуть URL для редиректа (зачисление — в webhook)."""
     shop_id, secret = _require_yookassa_credentials(settings)
@@ -102,7 +119,11 @@ async def create_yookassa_checkout(
         "capture": True,
         "confirmation": {
             "type": "redirect",
-            "return_url": yookassa_return_url(settings),
+            "return_url": (
+                yookassa_bot_return_url(settings)
+                if return_target == "bot"
+                else yookassa_return_url(settings)
+            ),
         },
         "description": f"VPN — {label}",
         "metadata": {

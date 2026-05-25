@@ -21,7 +21,11 @@ from app.domain.models.auth import (
     TelegramWebLinkBody,
     TelegramWebLinkResponse,
 )
-from app.domain.models.payments import TributePaymentsLinksResponse
+from app.domain.models.payments import (
+    TelegramYookassaCheckoutBody,
+    TributePaymentsLinksResponse,
+    YookassaCheckoutResponse,
+)
 from app.domain.models.telegram_notification_tasks import (
     TelegramNotificationTasksListResponse,
     TelegramTasksAckBody,
@@ -43,6 +47,7 @@ from app.domain.services.telegram_notification_tasks_service import (
     list_pending_notification_tasks,
 )
 from app.domain.services.tribute_service import tribute_payments_links_public_response
+from app.domain.services.yookassa_service import create_yookassa_checkout
 from app.domain.services.telegram_service import (
     get_user_by_topic_id,
     list_telegram_user_ids,
@@ -182,6 +187,29 @@ async def get_user_by_topic_id_ep(
 )
 async def telegram_tribute_links_ep() -> TributePaymentsLinksResponse:
     return tribute_payments_links_public_response()
+
+
+@router.post(
+    "/payments/yookassa/checkout",
+    response_model=YookassaCheckoutResponse,
+    dependencies=[Depends(require_telegram_bot_api_secret)],
+    summary="ЮKassa: создать платёж и получить URL оплаты по telegram_id",
+    description=(
+        "Сумма и срок из app/data/yookassa_tariffs.json; после оплаты redirect на "
+        "/cabinet/pay/return/bot; зачисление — webhook ЮKassa."
+    ),
+)
+async def telegram_yookassa_checkout_ep(
+    body: TelegramYookassaCheckoutBody,
+    session: ReadonlySessionDep,
+) -> YookassaCheckoutResponse:
+    user = await require_user_by_telegram_id(session, body.telegram_id)
+    return await create_yookassa_checkout(
+        settings,
+        user_id=int(user.id),
+        months=int(body.months),
+        return_target="bot",
+    )
 
 
 @router.get(

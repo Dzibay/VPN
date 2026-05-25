@@ -78,7 +78,8 @@ class Settings(BaseSettings):
         description=(
             "Секрет для POST /api/auth/telegram, POST /api/telegram/link, POST /api/telegram/site-link/start, "
             "GET /api/telegram/referral/me, DELETE /api/telegram/subscription-devices/{device_id}, "
-            "GET /api/telegram/payments/tribute-links, POST /api/payments/tribute/webhook-test, "
+            "GET /api/telegram/payments/tribute-links, POST /api/telegram/payments/yookassa/checkout, "
+            "POST /api/payments/tribute/webhook-test, "
             "POST /api/payments/yookassa/webhook, "
             "GET /api/telegram/notification-tasks, POST /api/telegram/notification-tasks/completed, "
             "GET /api/telegram/users, GET /api/telegram/users/{topic_id} и "
@@ -148,8 +149,8 @@ class Settings(BaseSettings):
     yookassa_return_url: str = Field(
         default="",
         description=(
-            "URL возврата после оплаты (redirect). Пусто — {SITE_ADDRESS}/cabinet/pay/return "
-            "или относительный /cabinet/pay/return."
+            "URL возврата после оплаты с сайта (redirect). Пусто — {SITE_ADDRESS}/cabinet/pay/return. "
+            "Оплата из бота всегда возвращает на {SITE_ADDRESS}/cabinet/pay/return/bot."
         ),
     )
     redis_url: str = Field(

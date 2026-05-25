@@ -6,6 +6,7 @@ from app.api.endpoints import (
     auth,
     client_app_public,
     health,
+    site_public,
     http_audit_staff,
     me as me_endpoints,
     payments,
@@ -23,6 +24,7 @@ from app.api.endpoints import (
 api_router = APIRouter(dependencies=[Depends(apply_request_subject_from_bearer_optional)])
 api_router.include_router(health.router)
 api_router.include_router(client_app_public.router)
+api_router.include_router(site_public.router)
 api_router.include_router(referral_links.public_router)
 api_router.include_router(referral_links.me_router)
 api_router.include_router(me_endpoints.router)

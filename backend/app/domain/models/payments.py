@@ -71,6 +71,17 @@ class YookassaCheckoutBody(BaseModel):
     months: int = Field(ge=1, le=120, description="Срок из yookassa_tariffs.json")
 
 
+class TelegramYookassaCheckoutBody(BaseModel):
+    """Запрос бота: POST /api/telegram/payments/yookassa/checkout (X-Telegram-Bot-Secret)."""
+
+    telegram_id: int = Field(ge=1, description="Telegram user id (Bot API); должен быть в users.telegram_id.")
+    months: int = Field(
+        ge=1,
+        le=120,
+        description="Срок разовой оплаты в месяцах; цена берётся из yookassa_tariffs.json (не из запроса).",
+    )
+
+
 class YookassaCheckoutResponse(BaseModel):
     confirmation_url: str = Field(description="URL редиректа на оплату ЮKassa")
     yookassa_payment_id: str = Field(description="Идентификатор платежа в ЮKassa")

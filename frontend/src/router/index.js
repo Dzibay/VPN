@@ -23,6 +23,7 @@ const LinkFromTelegramView = () => import('../views/LinkFromTelegramView.vue')
 const UserCabinetView = () => import('../views/UserCabinetView.vue')
 const CabinetPayView = () => import('../views/CabinetPayView.vue')
 const CabinetPayReturnView = () => import('../views/CabinetPayReturnView.vue')
+const CabinetPayReturnBotView = () => import('../views/CabinetPayReturnBotView.vue')
 const SubscriptionOpenView = () => import('../views/SubscriptionOpenView.vue')
 const AdminTablesPage = () => import('../views/AdminTablesPage.vue')
 const ReferralFunnelView = () => import('../views/ReferralFunnelView.vue')
@@ -92,6 +93,11 @@ const routes = [
     path: '/cabinet/pay',
     name: 'cabinet-pay',
     component: CabinetPayView,
+  },
+  {
+    path: '/cabinet/pay/return/bot',
+    name: 'cabinet-pay-return-bot',
+    component: CabinetPayReturnBotView,
   },
   {
     path: '/cabinet/pay/return',
@@ -205,9 +211,7 @@ router.beforeEach(async (to, _from, next) => {
   const role = getSessionRole()
 
   if (
-    (to.name === 'cabinet' ||
-      to.name === 'cabinet-pay' ||
-      to.name === 'cabinet-pay-return') &&
+    (to.name === 'cabinet' || to.name === 'cabinet-pay' || to.name === 'cabinet-pay-return') &&
     !token
   ) {
     return next({
