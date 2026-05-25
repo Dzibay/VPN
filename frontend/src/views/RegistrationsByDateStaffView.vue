@@ -116,6 +116,9 @@ const {
   error,
   chartPoints,
   chartAriaLabel,
+  chartYTitle,
+  chartPercentMode,
+  formatChartYTick,
   registrationChartLabels,
   registrationChartDatasets,
   registrationTooltipTitle,
@@ -320,6 +323,32 @@ watch(payExpMonth, () => {
               По часам
             </button>
           </div>
+          <div
+            v-if="granularity === 'day'"
+            class="granularity-toggle percent-toggle"
+            role="group"
+            aria-label="Единицы на графике: абсолютные числа или доля от регистраций"
+          >
+            <button
+              type="button"
+              class="granularity-btn"
+              :class="{ 'granularity-btn--active': !chartPercentMode }"
+              :disabled="loading"
+              @click="chartPercentMode = false"
+            >
+              Числа
+            </button>
+            <button
+              type="button"
+              class="granularity-btn"
+              :class="{ 'granularity-btn--active': chartPercentMode }"
+              :disabled="loading"
+              title="Все серии — в % от накопленных регистраций за день; линия «Всего пользователей» скрыта"
+              @click="chartPercentMode = true"
+            >
+              В %
+            </button>
+          </div>
           <label v-if="granularity === 'hour'" class="hour-day-field">
             <span class="hour-day-label-text">День (МСК)</span>
             <input
@@ -354,7 +383,9 @@ watch(payExpMonth, () => {
       :loading="loading"
       :error="error"
       :has-data="chartPoints.length > 0"
-      y-title="Пользователей"
+      :y-title="chartYTitle"
+      :format-y-tick="formatChartYTick"
+      :y-grace="chartPercentMode ? '2%' : '8%'"
       :labels="registrationChartLabels"
       :datasets="registrationChartDatasets"
       :event-markers="chartEventMarkers"

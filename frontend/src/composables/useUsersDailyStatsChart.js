@@ -207,7 +207,11 @@ export function useUsersDailyStatsChart() {
   const loading = ref(false)
   const error = ref(null)
 
-  watch(granularity, () => {
+  /** Режим «по дням»: все серии кроме регистраций — в % от накопленных пользователей за день. */
+  const chartPercentMode = ref(false)
+
+  watch(granularity, (g) => {
+    if (g === 'hour') chartPercentMode.value = false
     void load()
   })
 
@@ -441,11 +445,36 @@ export function useUsersDailyStatsChart() {
     granularity.value === 'hour' ? 'Часов на графике' : 'Дней на графике',
   )
 
-  const chartAriaLabel = computed(() =>
-    granularity.value === 'hour'
-      ? `По часам за ${formatMskCalendarDayShort(hourDayMsk.value)} (МСК): накопление пользователей и первых подключений устройств`
-      : 'По дням UTC: накопление регистраций и клиентов с устройствами, с оплатой, активные по трафику, активные с оплатой, с активной подпиской (снимок), >100 Мбит накопленного объёма, возвращающиеся активные',
+  const chartAriaLabel = computed(() => {
+    if (granularity.value === 'hour') {
+      return `По часам за ${formatMskCalendarDayShort(hourDayMsk.value)} (МСК): накопление пользователей и первых подключений устройств`
+    }
+    if (chartPercentMode.value) {
+      return 'По дням UTC: доля от накопленных регистраций — с трафиком, с устройствами, с оплатой, активные, с оплатой активных, >100 Мбит, возвращающиеся активные, с активной подпиской'
+    }
+    return 'По дням UTC: накопление регистраций и клиентов с устройствами, с оплатой, активные по трафику, активные с оплатой, с активной подпиской (снимок), >100 Мбит накопленного объёма, возвращающиеся активные'
+  })
+
+  const chartYTitle = computed(() =>
+    granularity.value === 'day' && chartPercentMode.value
+      ? '% от регистраций'
+      : 'Пользователей',
   )
+
+  function pctOfUsers(value, totalUsers) {
+    const t = Number(totalUsers) || 0
+    if (t <= 0) return 0
+    return (Number(value) / t) * 100
+  }
+
+  function formatChartYTick(v) {
+    const n = Number(v)
+    if (!Number.isFinite(n)) return ''
+    if (granularity.value === 'day' && chartPercentMode.value) {
+      return `${n.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`
+    }
+    return n.toLocaleString('ru-RU')
+  }
 
   function fmtRu(n) {
     return Number(n).toLocaleString('ru-RU')
@@ -461,6 +490,24 @@ export function useUsersDailyStatsChart() {
   /** Одна строка тултипа: «Метрика: 12 (+3)». */
   function lineValueDelta(label, value, delta) {
     return [`${label}: ${fmtRu(value)} (${fmtDeltaRu(delta)})`]
+  }
+
+  function fmtPct(n) {
+    return `${Number(n).toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
+  }
+
+  function fmtDeltaPct(n) {
+    const v = Number(n) || 0
+    if (v > 0) return `+${v.toFixed(1)}%`
+    if (v < 0) return `${v.toFixed(1)}%`
+    return '0%'
+  }
+
+  /** Тултип в режиме %: доля и абсолют, прирост в процентных пунктах. */
+  function lineValueDeltaPct(label, rawValue, pct, deltaPct) {
+    return [
+      `${label}: ${fmtPct(pct)} · ${fmtRu(rawValue)} (${fmtDeltaPct(deltaPct)})`,
+    ]
   }
 
   const registrationChartLabels = computed(() =>
@@ -483,6 +530,7 @@ export function useUsersDailyStatsChart() {
     const pts = chartPoints.value
     const accentRgb = rgbTupleFromVar('--accent', '#58d68d')
     const trafficOrange = [251, 146, 60]
+    const percent = granularity.value === 'day' && chartPercentMode.value
     const registrationsDs = {
       label: 'Всего пользователей',
       data: pts.map((p) => p.totalUsers),
@@ -490,16 +538,65 @@ export function useUsersDailyStatsChart() {
     }
     const trafficDs = {
       label: 'С трафиком',
-      data: pts.map((p) => p.totalTraffic),
+      data: percent
+        ? pts.map((p) => pctOfUsers(p.totalTraffic, p.totalUsers))
+        : pts.map((p) => p.totalTraffic),
       rgb: trafficOrange,
     }
     const devicesDs = {
       label: 'С подключением устройства',
-      data: pts.map((p) => p.totalDevices),
+      data: percent
+        ? pts.map((p) => pctOfUsers(p.totalDevices, p.totalUsers))
+        : pts.map((p) => p.totalDevices),
       rgb: deviceVioletRgb,
     }
     if (granularity.value === 'hour') {
       return [registrationsDs, devicesDs]
+    }
+    if (percent) {
+      return [
+        trafficDs,
+        devicesDs,
+        {
+          label: 'С оплатой',
+          data: pts.map((p) => pctOfUsers(p.totalPayment, p.totalUsers)),
+          rgb: paymentAmberRgb,
+        },
+        {
+          label: 'Активные',
+          data: pts.map((p) => pctOfUsers(p.dayActive, p.totalUsers)),
+          rgb: activeSkyRgb,
+          filled: false,
+        },
+        {
+          label: 'С оплатой активных',
+          data: pts.map((p) => pctOfUsers(p.dayActiveWithPayment, p.totalUsers)),
+          rgb: activePayTealRgb,
+          filled: false,
+        },
+        {
+          label: 'С трафиком > 100 Мбит',
+          data: pts.map((p) => pctOfUsers(p.dayOver100Mbit, p.totalUsers)),
+          rgb: over100EmeraldRgb,
+          filled: false,
+        },
+        {
+          label: 'Возвращающиеся активные',
+          data: pts.map((p) =>
+            pctOfUsers(p.dayPersistentTraffic, p.totalUsers),
+          ),
+          rgb: persistentPinkRgb,
+          filled: false,
+        },
+        {
+          label: 'С активной подпиской',
+          data: pts.map((p) =>
+            pctOfUsers(p.dayActiveSubscription, p.totalUsers),
+          ),
+          rgb: subscriptionIndigoRgb,
+          filled: false,
+        },
+      ]
     }
     return [
       registrationsDs,
@@ -557,6 +654,7 @@ export function useUsersDailyStatsChart() {
     const pts = chartPoints.value
     const p = pts[i]
     if (!p) return ''
+    const label = String(ctx.dataset?.label ?? '')
 
     if (gran === 'hour') {
       if (ctx.datasetIndex === 0) {
@@ -578,21 +676,124 @@ export function useUsersDailyStatsChart() {
       return []
     }
 
-    const prevUsers = i > 0 ? pts[i - 1].totalUsers : 0
-    const prevTraffic = i > 0 ? pts[i - 1].totalTraffic : 0
-    const prevPayment = i > 0 ? pts[i - 1].totalPayment : 0
+    const percent = chartPercentMode.value
+    const prev = i > 0 ? pts[i - 1] : null
+
+    if (percent) {
+      const base = p.totalUsers
+      const prevBase = prev?.totalUsers ?? 0
+      if (label === 'С трафиком') {
+        const pct = pctOfUsers(p.totalTraffic, base)
+        const prevPct = prev
+          ? pctOfUsers(prev.totalTraffic, prevBase)
+          : 0
+        return lineValueDeltaPct(
+          'С трафиком',
+          p.totalTraffic,
+          pct,
+          pct - prevPct,
+        )
+      }
+      if (label === 'С подключением устройства') {
+        const pct = pctOfUsers(p.totalDevices, base)
+        const prevPct = prev
+          ? pctOfUsers(prev.totalDevices, prevBase)
+          : 0
+        return lineValueDeltaPct(
+          'С подключением',
+          p.totalDevices,
+          pct,
+          pct - prevPct,
+        )
+      }
+      if (label === 'С оплатой') {
+        const pct = pctOfUsers(p.totalPayment, base)
+        const prevPct = prev
+          ? pctOfUsers(prev.totalPayment, prevBase)
+          : 0
+        return lineValueDeltaPct(
+          'С оплатой',
+          p.totalPayment,
+          pct,
+          pct - prevPct,
+        )
+      }
+      if (label === 'Активные') {
+        const pct = pctOfUsers(p.dayActive, base)
+        const prevPct = prev ? pctOfUsers(prev.dayActive, prevBase) : 0
+        return lineValueDeltaPct(
+          'Активных',
+          p.dayActive,
+          pct,
+          pct - prevPct,
+        )
+      }
+      if (label === 'С оплатой активных') {
+        const pct = pctOfUsers(p.dayActiveWithPayment, base)
+        const prevPct = prev
+          ? pctOfUsers(prev.dayActiveWithPayment, prevBase)
+          : 0
+        return lineValueDeltaPct(
+          'С оплатой активных',
+          p.dayActiveWithPayment,
+          pct,
+          pct - prevPct,
+        )
+      }
+      if (label === 'С трафиком > 100 Мбит') {
+        const pct = pctOfUsers(p.dayOver100Mbit, base)
+        const prevPct = prev
+          ? pctOfUsers(prev.dayOver100Mbit, prevBase)
+          : 0
+        return lineValueDeltaPct(
+          'С трафиком > 100 Мбит',
+          p.dayOver100Mbit,
+          pct,
+          pct - prevPct,
+        )
+      }
+      if (label === 'Возвращающиеся активные') {
+        const pct = pctOfUsers(p.dayPersistentTraffic, base)
+        const prevPct = prev
+          ? pctOfUsers(prev.dayPersistentTraffic, prevBase)
+          : 0
+        return lineValueDeltaPct(
+          'Возвращающиеся активные',
+          p.dayPersistentTraffic,
+          pct,
+          pct - prevPct,
+        )
+      }
+      if (label === 'С активной подпиской') {
+        const pct = pctOfUsers(p.dayActiveSubscription, base)
+        const prevPct = prev
+          ? pctOfUsers(prev.dayActiveSubscription, prevBase)
+          : 0
+        return lineValueDeltaPct(
+          'С активной подпиской',
+          p.dayActiveSubscription,
+          pct,
+          pct - prevPct,
+        )
+      }
+      return []
+    }
+
+    const prevUsers = prev?.totalUsers ?? 0
+    const prevTraffic = prev?.totalTraffic ?? 0
+    const prevPayment = prev?.totalPayment ?? 0
     const dUsers = p.totalUsers - prevUsers
     const dTraffic = p.totalTraffic - prevTraffic
     const dPayment = p.totalPayment - prevPayment
 
-    if (ctx.datasetIndex === 0) {
+    if (label === 'Всего пользователей') {
       return lineValueDelta('Пользователи', p.totalUsers, dUsers)
     }
-    if (ctx.datasetIndex === 1) {
+    if (label === 'С трафиком') {
       return lineValueDelta('С трафиком', p.totalTraffic, dTraffic)
     }
-    if (ctx.datasetIndex === 2) {
-      const prevDev = i > 0 ? pts[i - 1].totalDevices : 0
+    if (label === 'С подключением устройства') {
+      const prevDev = prev?.totalDevices ?? 0
       const dDev = p.totalDevices - prevDev
       return lineValueDelta(
         'С подключением',
@@ -600,29 +801,29 @@ export function useUsersDailyStatsChart() {
         dDev,
       )
     }
-    if (ctx.datasetIndex === 3) {
+    if (label === 'С оплатой') {
       return lineValueDelta(
         'С оплатой',
         p.totalPayment,
         dPayment,
       )
     }
-    if (ctx.datasetIndex === 4) {
-      const prevA = i > 0 ? pts[i - 1].dayActive : 0
+    if (label === 'Активные') {
+      const prevA = prev?.dayActive ?? 0
       const dA = p.dayActive - prevA
       return lineValueDelta('Активных', p.dayActive, dA)
     }
-    if (ctx.datasetIndex === 5) {
-      const prevAp = i > 0 ? pts[i - 1].dayActiveWithPayment : 0
+    if (label === 'С оплатой активных') {
+      const prevAp = prev?.dayActiveWithPayment ?? 0
       const dAp = p.dayActiveWithPayment - prevAp
       return lineValueDelta(
-        'С оплатой активных)',
+        'С оплатой активных',
         p.dayActiveWithPayment,
         dAp,
       )
     }
-    if (ctx.datasetIndex === 6) {
-      const prevH = i > 0 ? pts[i - 1].dayOver100Mbit : 0
+    if (label === 'С трафиком > 100 Мбит') {
+      const prevH = prev?.dayOver100Mbit ?? 0
       const dH = p.dayOver100Mbit - prevH
       return lineValueDelta(
         'С трафиком > 100 Мбит',
@@ -630,8 +831,8 @@ export function useUsersDailyStatsChart() {
         dH,
       )
     }
-    if (ctx.datasetIndex === 7) {
-      const prevP = i > 0 ? pts[i - 1].dayPersistentTraffic : 0
+    if (label === 'Возвращающиеся активные') {
+      const prevP = prev?.dayPersistentTraffic ?? 0
       const dP = p.dayPersistentTraffic - prevP
       return lineValueDelta(
         'Возвращающиеся активные',
@@ -639,8 +840,8 @@ export function useUsersDailyStatsChart() {
         dP,
       )
     }
-    if (ctx.datasetIndex === 8) {
-      const prevS = i > 0 ? pts[i - 1].dayActiveSubscription : 0
+    if (label === 'С активной подпиской') {
+      const prevS = prev?.dayActiveSubscription ?? 0
       const dS = p.dayActiveSubscription - prevS
       return lineValueDelta(
         'С активной подпиской',
@@ -717,6 +918,9 @@ export function useUsersDailyStatsChart() {
     pluralRuBuckets,
     bucketAxisLabel,
     chartAriaLabel,
+    chartYTitle,
+    chartPercentMode,
+    formatChartYTick,
     registrationChartLabels,
     registrationChartDatasets,
     registrationTooltipTitle,
