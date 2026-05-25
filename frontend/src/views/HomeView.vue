@@ -22,8 +22,10 @@ import {
   Gift,
   Globe,
   Headphones,
+  HelpCircle,
   Lock,
   MapPin,
+  MessageCircle,
   Monitor,
   RefreshCw,
   Rocket,
@@ -38,8 +40,8 @@ import {
 import AppActionButton from '../components/AppActionButton.vue'
 import { getAccessToken, getSessionRole } from '../auth/session.js'
 import { defaultPathAfterLogin } from '../auth/permissions.js'
-import { sitePublicUrl } from '../api/client.js'
-import { LEGAL_FOOTER_LINKS } from '../content/legal.js'
+import { sitePublicUrl, fetchJson } from '../api/client.js'
+import { LEGAL_FOOTER_LINKS, SUPPORT_TELEGRAM } from '../content/legal.js'
 import { buildLandingPlans, useYookassaPricing } from '../composables/useYookassaPricing.js'
 
 /** @type {const} */
@@ -116,6 +118,7 @@ const loggedInHomeCtaPath = computed(() =>
 onMounted(() => {
   refreshAuth()
   void loadYookassaTariffs()
+  void loadSiteLinks()
 })
 router.afterEach(refreshAuth)
 
@@ -274,9 +277,9 @@ const faqs = [
       'Да, все популярные ИИ-сервисы, включая Google Gemini, включены в список умной маршрутизации и открываются без проблем.',
   },
   {
-    q: 'На каких устройствах работает?',
+    q: 'На каких устройствах работает Подорожник VPN?',
     a:
-      'Мы поддерживаем Android, iOS, Windows и macOS. Вы можете использовать удобные клиенты вроде V2Ray или Happ с современным протоколом VLESS.',
+      'Windows, macOS, Android, iOS, Linux и даже Android TV. Подключайтесь через клиенты с поддержкой VLESS — например V2Ray или Happ.',
   },
   {
     q: 'Сколько устройств можно подключить?',
@@ -286,6 +289,51 @@ const faqs = [
 ]
 
 const activeFaq = ref(null)
+
+/** @type {import('vue').Ref<{ support_telegram_url?: string | null } | null>} */
+const siteLinks = ref(null)
+
+function telegramUrlFromHandle(handle) {
+  const user = String(handle || '').trim().replace(/^@/, '')
+  return user ? `https://t.me/${user}` : null
+}
+
+const supportTelegramUrl = computed(() => {
+  const fromApi = siteLinks.value?.support_telegram_url
+  if (typeof fromApi === 'string' && fromApi.trim()) return fromApi.trim()
+  return telegramUrlFromHandle(SUPPORT_TELEGRAM)
+})
+
+async function loadSiteLinks() {
+  try {
+    siteLinks.value = await fetchJson('/api/public/site-links')
+  } catch {
+    siteLinks.value = null
+  }
+}
+
+const faqTrustHighlights = [
+  {
+    icon: Zap,
+    title: 'Быстрые ответы',
+    text: 'Не тратьте время на поиск',
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Проверенная информация',
+    text: 'Только актуальные данные',
+  },
+  {
+    icon: MessageCircle,
+    title: 'Помощь 24/7',
+    text: 'Мы всегда рядом',
+  },
+  {
+    icon: Lock,
+    title: 'Конфиденциальность',
+    text: 'Ваши данные под защитой',
+  },
+]
 
 function toggleFaq(index) {
   activeFaq.value = activeFaq.value === index ? null : index
@@ -1057,13 +1105,46 @@ onBeforeUnmount(() => {
       aria-labelledby="faq-heading"
     >
       <div class="section-inner">
-        <p class="section-eyebrow">Поддержка</p>
-        <h2 id="faq-heading" class="section-title">
-          Частые вопросы
-        </h2>
-        <p class="section-lead section-lead--narrow">
-          Коротко о том, как устроен умный VPN и чего ждать после регистрации.
-        </p>
+        <div class="faq-head">
+          <p class="faq-head__eyebrow">
+            <Headphones
+              :size="14"
+              :stroke-width="2.2"
+              aria-hidden="true"
+            />
+            Поддержка
+          </p>
+          <h2 id="faq-heading" class="faq-head__title">
+            Частые вопросы
+          </h2>
+          <p class="faq-head__lead">
+            Коротко о том, как устроен Подорожник VPN и чего ждать после регистрации.
+            Если не нашли ответ — мы всегда на связи.
+          </p>
+
+          <div
+            class="faq-trust-row"
+            aria-label="Почему можно доверять ответам"
+          >
+            <article
+              v-for="(item, i) in faqTrustHighlights"
+              :key="i"
+              class="faq-trust-row__item"
+            >
+              <span class="faq-trust-row__icon" aria-hidden="true">
+                <component
+                  :is="item.icon"
+                  :size="18"
+                  :stroke-width="2.2"
+                />
+              </span>
+              <span class="faq-trust-row__copy">
+                <strong>{{ item.title }}</strong>
+                <span>{{ item.text }}</span>
+              </span>
+            </article>
+          </div>
+        </div>
 
         <div
           class="faq-shell"
@@ -1086,7 +1167,10 @@ onBeforeUnmount(() => {
                   :id="`faq-trigger-${i}`"
                   @click="toggleFaq(i)"
                 >
-                  {{ faq.q }}
+                  <span class="faq-question__mark" aria-hidden="true">
+                    <HelpCircle :size="18" :stroke-width="2.2" />
+                  </span>
+                  <span class="faq-question__text">{{ faq.q }}</span>
                   <span
                     class="faq-icon"
                     aria-hidden="true"
@@ -1121,6 +1205,27 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </div>
+        </div>
+
+        <div class="faq-support">
+          <div class="faq-support__copy">
+            <span class="faq-support__icon" aria-hidden="true">
+              <Headphones :size="22" :stroke-width="2.2" />
+            </span>
+            <span class="faq-support__text">
+              <strong>Не нашли ответ?</strong>
+              <span>Напишите нам — мы поможем разобраться</span>
+            </span>
+          </div>
+          <a
+            class="cta primary large faq-support__btn"
+            :href="supportTelegramUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Связаться с поддержкой
+            <ArrowRight :size="20" :stroke-width="2" aria-hidden="true" />
+          </a>
         </div>
       </div>
     </section>
@@ -3240,19 +3345,132 @@ onBeforeUnmount(() => {
 
 /* ——— FAQ ——— */
 .section-faq {
-  background: var(--card-bg);
-  border-block: 1px solid var(--card-border);
+  --faq-bg: #f9fafb;
+  --faq-text: #111827;
+  --faq-muted: #6b7280;
+  --faq-border: #e5e7eb;
+  --faq-accent: #1d9a5c;
+  --faq-accent-soft: rgba(29, 154, 92, 0.1);
+  --faq-card-bg: #ffffff;
+  background: var(--faq-bg);
+}
+
+.section-faq .section-inner {
+  text-align: center;
+}
+
+.faq-head {
+  margin-bottom: clamp(1.5rem, 4vw, 2.25rem);
+}
+
+.faq-head__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.85rem;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faq-accent);
+  border-radius: var(--radius-pill);
+  background: var(--faq-accent-soft);
+}
+
+.faq-head__title {
+  font-family: var(--heading);
+  font-size: clamp(1.75rem, 4vw, 2.65rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.12;
+  color: var(--faq-text);
+  margin: 0 0 0.85rem;
+}
+
+.faq-head__lead {
+  margin: 0 auto 1.35rem;
+  max-width: 40rem;
+  font-size: 1rem;
+  line-height: 1.65;
+  color: var(--faq-muted);
+}
+
+.faq-trust-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+  margin: 0 auto;
+  max-width: 56rem;
+  padding: 1rem 1.15rem;
+  border-radius: calc(var(--radius-lg) + 4px);
+  border: 1px solid var(--faq-border);
+  background: var(--faq-card-bg);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+}
+
+@media (min-width: 640px) {
+  .faq-trust-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem 1.25rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .faq-trust-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.faq-trust-row__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  text-align: left;
+}
+
+.faq-trust-row__icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.65rem;
+  color: var(--faq-accent);
+  background: var(--faq-accent-soft);
+}
+
+.faq-trust-row__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.faq-trust-row__copy strong {
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--faq-text);
+}
+
+.faq-trust-row__copy span {
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--faq-muted);
 }
 
 .faq-shell {
-  max-width: 44rem;
-  margin: 0 auto;
+  max-width: 52rem;
+  margin: 0 auto clamp(1.25rem, 3vw, 1.75rem);
   padding: clamp(0.35rem, 1.5vw, 0.65rem);
-  border-radius: calc(var(--radius-lg) + 6px);
-  border: 1px solid var(--card-border);
-  background: color-mix(in srgb, var(--surface-glass) 92%, transparent);
-  box-shadow: var(--shadow-md);
-  backdrop-filter: blur(14px);
+  border-radius: calc(var(--radius-lg) + 8px);
+  border: 1px solid var(--faq-border);
+  background: var(--faq-card-bg);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 32px rgba(15, 23, 42, 0.06);
 }
 
 .faq-accordion {
@@ -3260,7 +3478,7 @@ onBeforeUnmount(() => {
 }
 
 .faq-item {
-  border-bottom: 1px solid color-mix(in srgb, var(--card-border) 85%, transparent);
+  border-bottom: 1px solid var(--faq-border);
 }
 
 .faq-item:last-child {
@@ -3276,17 +3494,12 @@ onBeforeUnmount(() => {
 .faq-question {
   width: 100%;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 1rem;
-  padding: 1.15rem 1rem;
+  gap: 0.85rem;
+  padding: 1.05rem 1rem;
   background: none;
   border: none;
   font-family: var(--sans);
-  font-size: 1.02rem;
-  font-weight: 700;
-  line-height: 1.35;
-  color: var(--text-h);
   cursor: pointer;
   text-align: left;
   border-radius: var(--radius);
@@ -3296,16 +3509,41 @@ onBeforeUnmount(() => {
 }
 
 .faq-question:hover {
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  background: var(--faq-accent-soft);
 }
 
 .faq-item.is-open .faq-question {
-  color: var(--accent);
+  color: var(--faq-accent);
+}
+
+.faq-question__mark {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  color: var(--faq-accent);
+  background: var(--faq-accent-soft);
+}
+
+.faq-question__text {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--faq-text);
+}
+
+.faq-item.is-open .faq-question__text {
+  color: var(--faq-accent);
 }
 
 .faq-icon {
   flex-shrink: 0;
-  color: var(--muted);
+  color: var(--faq-muted);
   transition:
     transform 0.25s ease,
     color 0.25s ease;
@@ -3315,7 +3553,7 @@ onBeforeUnmount(() => {
 
 .faq-item.is-open .faq-icon {
   transform: rotate(180deg);
-  color: var(--accent);
+  color: var(--faq-accent);
 }
 
 .faq-answer-wrapper {
@@ -3330,45 +3568,86 @@ onBeforeUnmount(() => {
 
 .faq-answer {
   overflow: hidden;
-  color: var(--muted);
-  font-size: 0.96rem;
+  color: var(--faq-muted);
+  font-size: 0.94rem;
   line-height: 1.65;
-  padding: 0 1rem;
+  padding: 0 1rem 0 3.85rem;
 }
 
 .faq-item.is-open .faq-answer {
   padding-bottom: 1.15rem;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .why-card,
-  .hero__btn,
-  .pricing-card,
-  .chip,
-  .cta {
-    transition: none;
+@media (max-width: 560px) {
+  .faq-answer {
+    padding-left: 1rem;
   }
+}
 
-  .why-card:hover,
-  :deep(.app-action-btn--elevate:hover),
-  .pricing-card:hover,
-  .pricing-card--popular,
-  .pricing-card--popular:hover,
-  .cta.primary:hover,
-  .cta--outline:hover {
-    transform: none;
-  }
+.faq-support {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 1.25rem;
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 1rem 1.15rem;
+  border-radius: calc(var(--radius-lg) + 4px);
+  border: 1px solid var(--faq-border);
+  background: var(--faq-card-bg);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+  text-align: left;
+}
 
-  .faq-answer-wrapper {
-    transition: none;
-  }
+.faq-support__copy {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  min-width: min(100%, 18rem);
+}
 
-  .faq-item.is-open .faq-answer-wrapper {
-    grid-template-rows: 1fr;
-  }
+.faq-support__icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.65rem;
+  color: var(--faq-accent);
+  background: var(--faq-accent-soft);
+}
 
-  .faq-item:not(.is-open) .faq-answer-wrapper {
-    grid-template-rows: 0fr;
+.faq-support__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.faq-support__text strong {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--faq-text);
+  line-height: 1.35;
+}
+
+.faq-support__text span {
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--faq-muted);
+}
+
+.faq-support__btn {
+  gap: 0.55rem;
+  margin-left: auto;
+  box-sizing: border-box;
+}
+
+@media (max-width: 640px) {
+  .faq-support__btn {
+    width: 100%;
+    margin-left: 0;
   }
 }
 
