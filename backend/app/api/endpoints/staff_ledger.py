@@ -196,6 +196,11 @@ async def staff_create_task(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Пользователь с таким referee_id не найден",
             ) from err
+        if code == "recipient_no_telegram":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="У получателя (user_id) не привязан Telegram — задачу оповещения создать нельзя",
+            ) from err
         raise
 
 

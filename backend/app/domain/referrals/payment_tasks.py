@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.domain.referrals.repository import increment_referral_counter
+from app.domain.tasks.eligibility import async_user_has_telegram_id
 from app.domain.tasks.notification_task_types import NOTIFY_REF_PAY
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.task import Task
@@ -61,6 +62,8 @@ async def apply_referral_bonus_on_payment(
     per_month = int(settings.referral_bonus_days_per_paid_month)
     bonus_days = per_month * int(paid_months)
     if bonus_days <= 0:
+        return None
+    if not await async_user_has_telegram_id(session, owner_id):
         return None
 
     session.add(

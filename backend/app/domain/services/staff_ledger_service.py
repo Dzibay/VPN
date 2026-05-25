@@ -166,8 +166,11 @@ async def create_staff_task(
     paid_months: int | None,
 ) -> StaffTaskItem:
     """Создать pending-задачу (разрешённые типы совпадают с CHECK в БД)."""
-    if await session.scalar(select(User.id).where(User.id == user_id)) is None:
+    recipient = await session.get(User, int(user_id))
+    if recipient is None:
         raise LookupError("user_not_found")
+    if recipient.telegram_id is None:
+        raise LookupError("recipient_no_telegram")
     if referee_id is not None:
         if await session.scalar(select(User.id).where(User.id == referee_id)) is None:
             raise LookupError("referee_not_found")

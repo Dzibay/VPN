@@ -30,6 +30,7 @@ async def list_pending_notification_tasks(
         .where(
             Task.status == "pending",
             Task.task_type.in_(NOTIFICATION_TASK_TYPES),
+            ur.telegram_id.isnot(None),
         )
         .order_by(Task.created_at.asc())
     )

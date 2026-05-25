@@ -93,16 +93,17 @@ async def fulfill_subscription_payment(
     total_days = paid_days + accumulated_bonus_days
     user.subscription_until = extend_subscription_until(user.subscription_until, days=total_days)
 
-    session.add(
-        Task(
-            task_type="notify_payment",
-            user_id=int(user.id),
-            referee_id=None,
-            bonus_days=accumulated_bonus_days if accumulated_bonus_days > 0 else None,
-            paid_months=months,
-            **({"created_at": paid_at} if paid_at is not None else {}),
-        ),
-    )
+    if user.telegram_id is not None:
+        session.add(
+            Task(
+                task_type="notify_payment",
+                user_id=int(user.id),
+                referee_id=None,
+                bonus_days=accumulated_bonus_days if accumulated_bonus_days > 0 else None,
+                paid_months=months,
+                **({"created_at": paid_at} if paid_at is not None else {}),
+            ),
+        )
     await apply_referral_bonus_on_payment(
         session,
         settings=settings,
