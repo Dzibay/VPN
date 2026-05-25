@@ -19,6 +19,7 @@ import {
   Building2,
   CheckCircle2,
   Gauge,
+  Clock,
   Gift,
   Globe,
   Headphones,
@@ -30,6 +31,7 @@ import {
   RefreshCw,
   Rocket,
   Route,
+  Send,
   Shield,
   ShieldCheck,
   Smartphone,
@@ -49,7 +51,45 @@ const HOME_IMAGES = {
   bgMap: '/images/home/hero-bg-map.png',
   appMockup: '/images/home/hero-app-mockup.png',
   trustAvatars: '/images/home/trust-avatars.png',
+  logoWordmark: '/images/home/header-logo.png',
 }
+
+const footerProductLinks = [
+  { href: '#benefits', label: 'Преимущества' },
+  { href: '#pricing', label: 'Тарифы' },
+  { href: '#how', label: 'Устройства' },
+  { href: '#faq', label: 'FAQ' },
+  { href: '#faq', label: 'Поддержка' },
+]
+
+const footerHighlights = [
+  {
+    icon: Shield,
+    title: 'Надёжность',
+    text: 'Шифрование военного уровня и защита данных',
+  },
+  {
+    icon: Zap,
+    title: 'Скорость',
+    text: 'Стабильное соединение без потери скорости',
+  },
+  {
+    icon: Globe,
+    title: 'Доступность',
+    text: 'Сервисы и сайты доступны по всему миру',
+  },
+  {
+    icon: MessageCircle,
+    title: 'Поддержка',
+    text: 'Мы рядом 24/7 и готовы помочь в любой момент',
+  },
+]
+
+const footerPayBrands = [
+  { src: '/images/pay-brands/visa.png', alt: 'Visa' },
+  { src: '/images/pay-brands/mastercard.png', alt: 'Mastercard' },
+  { src: '/images/pay-brands/mir.png', alt: 'Мир' },
+]
 
 const legalLinks = LEGAL_FOOTER_LINKS
 
@@ -302,6 +342,13 @@ const supportTelegramUrl = computed(() => {
   const fromApi = siteLinks.value?.support_telegram_url
   if (typeof fromApi === 'string' && fromApi.trim()) return fromApi.trim()
   return telegramUrlFromHandle(SUPPORT_TELEGRAM)
+})
+
+const supportTelegramLabel = computed(() => {
+  const url = supportTelegramUrl.value
+  if (!url) return SUPPORT_TELEGRAM
+  const m = url.match(/t\.me\/([^/?#]+)/i)
+  return m?.[1] ? `@${m[1]}` : SUPPORT_TELEGRAM
 })
 
 async function loadSiteLinks() {
@@ -1360,41 +1407,173 @@ onBeforeUnmount(() => {
       class="footer"
       role="contentinfo"
     >
-      <div class="footer-inner">
-        <div class="footer-brand">
-          <span class="footer-logo">Подорожник VPN</span>
-          <p class="footer-desc">
-            Умный VPN на VLESS с split tunneling: зарубежное — через туннель,
-            российское — напрямую.
+      <div class="footer-shell">
+        <div class="footer-top">
+          <div class="footer-brand">
+            <img
+              class="footer-brand__logo"
+              :src="HOME_IMAGES.logoWordmark"
+              width="220"
+              height="48"
+              alt="Подорожник VPN"
+              decoding="async"
+            />
+            <p class="footer-brand__desc">
+              Умный VPN на VLESS с split tunneling: зарубежное — через туннель,
+              российское — напрямую.
+            </p>
+            <div class="footer-social" aria-label="Связаться с нами">
+              <a
+                class="footer-social__btn"
+                :href="supportTelegramUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Telegram поддержки"
+              >
+                <Send :size="17" :stroke-width="2.2" aria-hidden="true" />
+              </a>
+              <a
+                class="footer-social__btn"
+                href="#faq"
+                aria-label="Раздел поддержки"
+              >
+                <MessageCircle :size="17" :stroke-width="2.2" aria-hidden="true" />
+              </a>
+            </div>
+          </div>
+
+          <nav
+            class="footer-col"
+            aria-label="Продукт"
+          >
+            <h3 class="footer-col__title">
+              <span class="footer-col__dot" aria-hidden="true" />
+              Продукт
+            </h3>
+            <ul class="footer-col__list">
+              <li
+                v-for="(link, i) in footerProductLinks"
+                :key="`${link.href}-${i}`"
+              >
+                <a :href="link.href">{{ link.label }}</a>
+              </li>
+            </ul>
+          </nav>
+
+          <nav
+            class="footer-col"
+            aria-label="Документы"
+          >
+            <h3 class="footer-col__title">
+              <span class="footer-col__dot" aria-hidden="true" />
+              Документы
+            </h3>
+            <ul class="footer-col__list">
+              <li
+                v-for="link in legalLinks"
+                :key="link.to"
+              >
+                <RouterLink :to="link.to">{{ link.label }}</RouterLink>
+              </li>
+            </ul>
+          </nav>
+
+          <div class="footer-col footer-col--contacts">
+            <h3 class="footer-col__title">
+              <span class="footer-col__dot" aria-hidden="true" />
+              Контакты
+            </h3>
+            <ul class="footer-col__contacts">
+              <li>
+                <Send
+                  class="footer-col__contact-ico"
+                  :size="16"
+                  :stroke-width="2.2"
+                  aria-hidden="true"
+                />
+                <a
+                  class="footer-col__contact-link"
+                  :href="supportTelegramUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {{ supportTelegramLabel }}
+                </a>
+              </li>
+              <li>
+                <Clock
+                  class="footer-col__contact-ico"
+                  :size="16"
+                  :stroke-width="2.2"
+                  aria-hidden="true"
+                />
+                <span>Поддержка 24/7</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div
+          class="footer-highlights"
+          aria-label="Ключевые преимущества сервиса"
+        >
+          <article
+            v-for="(item, i) in footerHighlights"
+            :key="i"
+            class="footer-highlights__item"
+          >
+            <span class="footer-highlights__icon" aria-hidden="true">
+              <component
+                :is="item.icon"
+                :size="18"
+                :stroke-width="2.2"
+              />
+            </span>
+            <span class="footer-highlights__copy">
+              <strong>{{ item.title }}</strong>
+              <span>{{ item.text }}</span>
+            </span>
+          </article>
+        </div>
+
+        <div class="footer-bottom">
+          <p class="footer-bottom__note">
+            <ShieldCheck
+              class="footer-bottom__ico"
+              :size="15"
+              :stroke-width="2.2"
+              aria-hidden="true"
+            />
+            © 2026 Подорожник VPN. Все права защищены.
           </p>
-        </div>
-        <div class="footer-nav-group">
-          <nav
-            class="footer-links"
-            aria-label="Разделы главной страницы"
+          <p class="footer-bottom__note footer-bottom__note--center">
+            <Lock
+              class="footer-bottom__ico"
+              :size="15"
+              :stroke-width="2.2"
+              aria-hidden="true"
+            />
+            Ваши данные под защитой. Мы не храним логи и не передаём вашу информацию третьим лицам.
+          </p>
+          <div
+            class="footer-payments"
+            aria-label="Способы оплаты"
           >
-            <a href="#how">Как работает</a>
-            <a href="#benefits">Почему мы</a>
-            <a href="#pricing">Тарифы</a>
-          </nav>
-          <nav
-            class="footer-legal"
-            aria-label="Юридические документы"
-          >
-            <RouterLink
-              v-for="link in legalLinks"
-              :key="link.to"
-              :to="link.to"
-            >
-              {{ link.label }}
-            </RouterLink>
-          </nav>
+            <img
+              v-for="brand in footerPayBrands"
+              :key="brand.alt"
+              class="footer-payments__logo"
+              :src="brand.src"
+              :alt="brand.alt"
+              width="44"
+              height="28"
+              decoding="async"
+            />
+          </div>
         </div>
-      </div>
-      <div class="footer-bottom">
-        <span>© 2026 Подорожник VPN. Все права защищены.</span>
       </div>
     </footer>
+
   </div>
 </template>
 
@@ -3982,27 +4161,39 @@ onBeforeUnmount(() => {
 
 /* ——— FOOTER ——— */
 .footer {
-  background: color-mix(in srgb, var(--card-bg) 100%, transparent);
-  border-top: 1px solid var(--card-border);
-  padding: clamp(2.5rem, 5vw, 3.25rem) 1.25rem 1.5rem;
+  --footer-bg: #f3f4f6;
+  --footer-text: #111827;
+  --footer-muted: #6b7280;
+  --footer-border: #e5e7eb;
+  --footer-accent: #1d9a5c;
+  --footer-accent-soft: rgba(29, 154, 92, 0.1);
+  --footer-card-bg: #ffffff;
+  padding: clamp(2rem, 5vw, 3rem) 1.25rem clamp(1.5rem, 3vw, 2rem);
+  background: var(--footer-bg);
 }
 
-.footer-inner {
+.footer-shell {
   max-width: min(var(--landing-content-max, 84rem), 100%);
   margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2rem;
-  align-items: center;
-  text-align: center;
+  padding: clamp(1.35rem, 3vw, 1.85rem);
+  border-radius: calc(var(--radius-lg) + 10px);
+  border: 1px solid var(--footer-border);
+  background: var(--footer-card-bg);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 36px rgba(15, 23, 42, 0.05);
+}
+
+.footer-top {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.75rem 1.25rem;
 }
 
 @media (min-width: 768px) {
-  .footer-inner {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: flex-start;
-    text-align: left;
+  .footer-top {
+    grid-template-columns: minmax(0, 1.35fr) repeat(3, minmax(0, 1fr));
+    gap: 1.5rem 1.75rem;
   }
 }
 
@@ -4010,94 +4201,251 @@ onBeforeUnmount(() => {
   max-width: 22rem;
 }
 
-.footer-logo {
-  font-family: var(--heading);
-  font-size: 1.22rem;
-  font-weight: 800;
-  color: var(--text-h);
+.footer-brand__logo {
   display: block;
-  margin-bottom: 0.5rem;
+  width: min(100%, 11.5rem);
+  height: auto;
+  margin-bottom: 0.85rem;
 }
 
-.footer-desc {
-  color: var(--muted);
-  font-size: 0.92rem;
-  line-height: 1.55;
-  margin: 0;
+.footer-brand__desc {
+  margin: 0 0 1rem;
+  color: var(--footer-muted);
+  font-size: 0.88rem;
+  line-height: 1.58;
 }
 
-.footer-links {
+.footer-social {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.65rem 1.35rem;
+  gap: 0.55rem;
+}
+
+.footer-social__btn {
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-}
-
-@media (min-width: 768px) {
-  .footer-links {
-    justify-content: flex-end;
-  }
-}
-
-.footer-links a {
-  color: var(--muted);
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 0.65rem;
+  color: var(--footer-accent);
+  background: #f3f4f6;
+  border: 1px solid var(--footer-border);
   text-decoration: none;
-  font-size: 0.93rem;
-  font-weight: 600;
-  transition: color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
 }
 
-.footer-links a:hover {
-  color: var(--accent);
+.footer-social__btn:hover {
+  color: #fff;
+  background: var(--footer-accent);
+  border-color: var(--footer-accent);
 }
 
-.footer-nav-group {
+.footer-col__title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.85rem;
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: var(--footer-text);
+}
+
+.footer-col__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--footer-accent);
+  box-shadow: 0 0 0 3px var(--footer-accent-soft);
+}
+
+.footer-col__list,
+.footer-col__contacts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  align-items: center;
+  gap: 0.55rem;
 }
 
-@media (min-width: 768px) {
-  .footer-nav-group {
-    align-items: flex-end;
-  }
-}
-
-.footer-legal {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.55rem 1.1rem;
-  justify-content: center;
-}
-
-@media (min-width: 768px) {
-  .footer-legal {
-    justify-content: flex-end;
-    max-width: 22rem;
-  }
-}
-
-.footer-legal a {
-  color: var(--muted);
+.footer-col__list a {
+  color: var(--footer-muted);
   text-decoration: none;
   font-size: 0.84rem;
   font-weight: 500;
+  line-height: 1.45;
   transition: color 0.2s ease;
 }
 
-.footer-legal a:hover {
-  color: var(--accent);
+.footer-col__list a:hover {
+  color: var(--footer-accent);
+}
+
+.footer-col__contacts li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--footer-muted);
+}
+
+.footer-col__contact-ico {
+  flex-shrink: 0;
+  color: var(--footer-accent);
+}
+
+.footer-col__contact-link {
+  color: var(--footer-accent);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.footer-col__contact-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.footer-highlights {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+  margin-top: clamp(1.35rem, 3vw, 1.75rem);
+  padding: 1rem 1.1rem;
+  border-radius: calc(var(--radius-lg) + 2px);
+  border: 1px solid var(--footer-border);
+  background: #f9fafb;
+}
+
+@media (min-width: 640px) {
+  .footer-highlights {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.85rem 1rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .footer-highlights {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.footer-highlights__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding-right: 0.35rem;
+}
+
+@media (min-width: 1024px) {
+  .footer-highlights__item:not(:last-child) {
+    border-right: 1px solid var(--footer-border);
+  }
+}
+
+.footer-highlights__icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 0.65rem;
+  color: var(--footer-accent);
+  background: var(--footer-accent-soft);
+}
+
+.footer-highlights__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.footer-highlights__copy strong {
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--footer-text);
+}
+
+.footer-highlights__copy span {
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: var(--footer-muted);
 }
 
 .footer-bottom {
-  max-width: min(var(--landing-content-max, 84rem), 100%);
-  margin: 2rem auto 0;
-  padding-top: 1.5rem;
-  border-top: 1px solid var(--card-border);
-  text-align: center;
-  font-size: 0.84rem;
-  color: var(--muted);
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem 1rem;
+  margin-top: clamp(1.25rem, 3vw, 1.65rem);
+  padding-top: 1.15rem;
+  border-top: 1px solid var(--footer-border);
+  align-items: center;
+}
+
+@media (min-width: 900px) {
+  .footer-bottom {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  }
+}
+
+.footer-bottom__note {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--footer-muted);
+  text-align: left;
+}
+
+.footer-bottom__note--center {
+  justify-self: center;
+}
+
+@media (max-width: 899px) {
+  .footer-bottom__note--center {
+    justify-self: start;
+  }
+}
+
+.footer-bottom__ico {
+  flex-shrink: 0;
+  margin-top: 0.08rem;
+  color: var(--footer-accent);
+}
+
+.footer-payments {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem 0.65rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--footer-border);
+  background: #fff;
+}
+
+@media (max-width: 899px) {
+  .footer-payments {
+    justify-content: flex-start;
+  }
+}
+
+.footer-payments__logo {
+  display: block;
+  width: auto;
+  height: 1.15rem;
+  object-fit: contain;
+  opacity: 0.88;
 }
 
 @media (prefers-color-scheme: light) {
