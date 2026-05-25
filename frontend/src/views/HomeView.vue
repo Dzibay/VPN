@@ -335,6 +335,31 @@ const faqTrustHighlights = [
   },
 ]
 
+const finalCtaFeatures = [
+  {
+    icon: Route,
+    title: 'Умная маршрутизация',
+    text: 'Зарубежное через VPN, своё — напрямую',
+  },
+  {
+    icon: Shield,
+    title: 'Фоновая защита',
+    text: 'Работает незаметно и стабильно',
+  },
+  {
+    icon: Lock,
+    title: 'Без лишних действий',
+    text: 'Никаких переключений и сложных настроек',
+  },
+]
+
+const finalVisualPins = [
+  { pos: 'tl' },
+  { pos: 'tr' },
+  { pos: 'bl' },
+  { pos: 'br' },
+]
+
 function toggleFaq(index) {
   activeFaq.value = activeFaq.value === index ? null : index
 }
@@ -1235,31 +1260,85 @@ onBeforeUnmount(() => {
       class="section section-final"
       aria-labelledby="final-cta-heading"
     >
-      <div class="section-inner section-inner--cta">
+      <div class="section-inner">
         <div class="final-cta-card">
-          <div class="final-cta-card__accent" aria-hidden="true" />
           <div class="final-cta-card__main">
-            <p class="section-eyebrow final-cta-card__eyebrow">
+            <span class="final-cta-card__pill">
+              <ShieldCheck
+                :size="14"
+                :stroke-width="2.2"
+                aria-hidden="true"
+              />
               Следующий шаг
-            </p>
+            </span>
             <h2
               id="final-cta-heading"
               class="final-cta-card__title"
             >
-              Забудьте про постоянное включение и выключение VPN
+              Забудьте про постоянное включение и выключение
+              <span class="final-cta-card__accent">VPN</span>
             </h2>
             <p class="final-cta-card__lead">
               Один раз настроили маршруты — дальше интернет ведёт себя предсказуемо:
-              сервисы за рубежом через туннель, российские приложения без лишних обходов.
+              зарубежные сервисы через туннель, российские приложения без лишних обходов.
             </p>
+            <ul
+              class="final-cta-card__features"
+              aria-label="Преимущества после настройки"
+            >
+              <li
+                v-for="(item, i) in finalCtaFeatures"
+                :key="i"
+                class="final-cta-card__feature"
+              >
+                <span class="final-cta-card__feature-ico" aria-hidden="true">
+                  <component
+                    :is="item.icon"
+                    :size="18"
+                    :stroke-width="2.2"
+                  />
+                </span>
+                <span class="final-cta-card__feature-text">
+                  <strong>{{ item.title }}</strong>
+                  <span>{{ item.text }}</span>
+                </span>
+              </li>
+            </ul>
           </div>
-          <div class="final-cta-card__action">
+
+          <div class="final-cta-card__aside">
+            <div class="final-visual" aria-hidden="true">
+              <img
+                class="final-visual__map"
+                :src="HOME_IMAGES.bgMap"
+                alt=""
+                width="480"
+                height="280"
+                decoding="async"
+                @error="($event.target).style.display = 'none'"
+              />
+              <span class="final-visual__ring final-visual__ring--1" />
+              <span class="final-visual__ring final-visual__ring--2" />
+              <span class="final-visual__shield">
+                <ShieldCheck :size="40" :stroke-width="1.6" />
+              </span>
+              <span
+                v-for="(pin, i) in finalVisualPins"
+                :key="i"
+                class="final-visual__pin"
+                :class="`final-visual__pin--${pin.pos}`"
+              >
+                <MapPin :size="16" :stroke-width="2.2" fill="currentColor" />
+              </span>
+            </div>
+
             <RouterLink
               v-if="isLoggedIn"
               class="cta primary large final-cta-card__btn"
               :to="loggedInHomeCtaPath"
             >
               Открыть кабинет
+              <ArrowRight :size="20" :stroke-width="2" aria-hidden="true" />
             </RouterLink>
             <RouterLink
               v-else
@@ -1267,13 +1346,7 @@ onBeforeUnmount(() => {
               to="/register"
             >
               Создать аккаунт
-            </RouterLink>
-            <RouterLink
-              v-if="!isLoggedIn"
-              class="cta secondary final-cta-card__btn-secondary"
-              to="/login"
-            >
-              Уже есть аккаунт — войти
+              <ArrowRight :size="20" :stroke-width="2" aria-hidden="true" />
             </RouterLink>
           </div>
         </div>
@@ -3653,120 +3726,257 @@ onBeforeUnmount(() => {
 
 /* ——— ФИНАЛЬНЫЙ CTA ——— */
 .section-final {
+  --final-bg: #f9fafb;
+  --final-text: #111827;
+  --final-muted: #6b7280;
+  --final-border: #e5e7eb;
+  --final-accent: #1d9a5c;
+  --final-accent-soft: rgba(29, 154, 92, 0.1);
+  --final-card-bg: #ffffff;
   padding-bottom: clamp(4rem, 8vw, 6rem);
+  background: var(--final-bg);
 }
 
-.section-inner--cta {
-  max-width: min(var(--landing-content-max, 84rem), 100%);
-  margin: 0 auto;
-  padding-inline: 0;
+.section-final .section-inner {
+  text-align: left;
 }
 
 .final-cta-card {
-  position: relative;
   display: grid;
-  gap: clamp(1.25rem, 3vw, 1.65rem);
-  padding: clamp(1.45rem, 4vw, 2rem);
-  border-radius: calc(var(--radius-lg) + 8px);
-  border: 1px solid var(--card-border);
-  background: color-mix(in srgb, var(--surface-glass) 95%, transparent);
-  box-shadow: var(--shadow-md);
-  backdrop-filter: blur(16px);
+  gap: clamp(1.5rem, 3vw, 2rem);
+  padding: clamp(1.65rem, 4vw, 2.25rem);
+  border-radius: calc(var(--radius-lg) + 10px);
+  border: 1px solid var(--final-border);
+  background: var(--final-card-bg);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 14px 40px rgba(15, 23, 42, 0.06);
   overflow: hidden;
-  text-align: left;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 900px) {
   .final-cta-card {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr);
     align-items: center;
-    gap: clamp(1.75rem, 4vw, 2.5rem);
+    gap: clamp(1.25rem, 3vw, 2rem);
   }
 }
 
-.final-cta-card__accent {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 3px;
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--accent-muted) 55%, var(--accent)),
-    var(--accent),
-    color-mix(in srgb, #8b5cf6 45%, var(--accent))
-  );
-  opacity: 0.95;
-}
-
-.final-cta-card__main {
-  position: relative;
-  z-index: 1;
-  min-width: 0;
-}
-
-.final-cta-card__eyebrow {
-  margin: 0 0 0.45rem;
-  text-align: left;
+.final-cta-card__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--final-accent);
+  border-radius: var(--radius-pill);
+  background: var(--final-accent-soft);
 }
 
 .final-cta-card__title {
   font-family: var(--heading);
-  font-size: clamp(1.38rem, 2.8vw, 1.85rem);
+  font-size: clamp(1.45rem, 3vw, 2.1rem);
   font-weight: 800;
-  letter-spacing: -0.028em;
-  line-height: 1.22;
-  margin: 0 0 0.55rem;
-  color: var(--text-h);
+  letter-spacing: -0.03em;
+  line-height: 1.18;
+  margin: 0 0 0.65rem;
+  color: var(--final-text);
+}
+
+.final-cta-card__accent {
+  color: var(--final-accent);
 }
 
 .final-cta-card__lead {
-  margin: 0;
+  margin: 0 0 1.25rem;
   font-size: 0.96rem;
   line-height: 1.62;
-  color: var(--muted);
-  max-width: 40rem;
+  color: var(--final-muted);
+  max-width: 36rem;
 }
 
-.final-cta-card__action {
-  position: relative;
-  z-index: 1;
+.final-cta-card__features {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+}
+
+@media (min-width: 560px) {
+  .final-cta-card__features {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+}
+
+.final-cta-card__feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.final-cta-card__feature-ico {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 0.65rem;
+  color: var(--final-accent);
+  background: #f3f4f6;
+  border: 1px solid var(--final-border);
+}
+
+.final-cta-card__feature-text {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
-  align-items: stretch;
+  gap: 0.12rem;
+  min-width: 0;
 }
 
-@media (min-width: 768px) {
-  .final-cta-card__action {
-    align-items: flex-end;
+.final-cta-card__feature-text strong {
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--final-text);
+}
+
+.final-cta-card__feature-text span {
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--final-muted);
+}
+
+.final-cta-card__aside {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+}
+
+.final-visual {
+  position: relative;
+  width: min(100%, 320px);
+  height: 200px;
+  margin-bottom: 1rem;
+}
+
+@media (min-width: 900px) {
+  .final-visual {
+    width: 100%;
+    height: 240px;
+    margin-bottom: 0;
   }
+
+  .final-cta-card__btn {
+    position: absolute;
+    right: clamp(0.5rem, 2vw, 1.25rem);
+    bottom: clamp(0.5rem, 2vw, 1.25rem);
+    z-index: 2;
+    min-width: 13.5rem;
+  }
+}
+
+.final-visual__map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.final-visual__ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  border-radius: 50%;
+  border: 1px dashed color-mix(in srgb, var(--final-muted) 35%, transparent);
+}
+
+.final-visual__ring--1 {
+  width: 72%;
+  height: 72%;
+}
+
+.final-visual__ring--2 {
+  width: 48%;
+  height: 48%;
+}
+
+.final-visual__shield {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 4.25rem;
+  height: 4.25rem;
+  border-radius: 1rem;
+  color: var(--final-accent);
+  background: linear-gradient(
+    145deg,
+    rgba(29, 154, 92, 0.18),
+    rgba(29, 154, 92, 0.06)
+  );
+  box-shadow: 0 8px 24px rgba(29, 154, 92, 0.12);
+}
+
+.final-visual__pin {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--final-accent);
+  filter: drop-shadow(0 2px 6px rgba(29, 154, 92, 0.2));
+}
+
+.final-visual__pin--tl {
+  left: 14%;
+  top: 18%;
+}
+
+.final-visual__pin--tr {
+  right: 12%;
+  top: 22%;
+}
+
+.final-visual__pin--bl {
+  left: 18%;
+  bottom: 16%;
+}
+
+.final-visual__pin--br {
+  right: 16%;
+  bottom: 20%;
 }
 
 .final-cta-card__btn {
+  gap: 0.55rem;
+  width: 100%;
+  max-width: 18rem;
   box-sizing: border-box;
+  box-shadow: 0 8px 22px rgba(29, 154, 92, 0.28);
 }
 
-.final-cta-card__btn-secondary {
-  box-sizing: border-box;
-  font-size: 0.88rem;
-  font-weight: 600;
-  padding: 0.55rem 1rem;
-}
-
-@media (min-width: 768px) {
-  .final-cta-card__btn,
-  .final-cta-card__btn-secondary {
-    width: auto;
-    min-width: 12.5rem;
-    justify-content: center;
-  }
-}
-
-@media (max-width: 767px) {
-  .final-cta-card__btn,
-  .final-cta-card__btn-secondary {
-    width: 100%;
+@media (max-width: 899px) {
+  .final-cta-card__aside {
+    padding-top: 0.5rem;
   }
 }
 
