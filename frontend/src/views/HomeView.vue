@@ -19,6 +19,7 @@ import {
   Building2,
   CheckCircle2,
   Gauge,
+  Gift,
   Globe,
   Headphones,
   Lock,
@@ -26,6 +27,8 @@ import {
   Monitor,
   Route,
   Shield,
+  ShieldCheck,
+  Smartphone,
   Star,
   Wifi,
   Zap,
@@ -35,6 +38,7 @@ import { getAccessToken, getSessionRole } from '../auth/session.js'
 import { defaultPathAfterLogin } from '../auth/permissions.js'
 import { sitePublicUrl } from '../api/client.js'
 import { LEGAL_FOOTER_LINKS } from '../content/legal.js'
+import { buildLandingPlans, useYookassaPricing } from '../composables/useYookassaPricing.js'
 
 /** @type {const} */
 const HOME_IMAGES = {
@@ -107,7 +111,10 @@ const loggedInHomeCtaPath = computed(() =>
   defaultPathAfterLogin(sessionRole.value),
 )
 
-onMounted(refreshAuth)
+onMounted(() => {
+  refreshAuth()
+  void loadYookassaTariffs()
+})
 router.afterEach(refreshAuth)
 
 /** Иконки приложений — положите PNG в public/images/home/how/ (см. README там). */
@@ -159,6 +166,31 @@ const howHighlights = [
   },
 ]
 
+const trialFeatures = [
+  {
+    icon: Zap,
+    title: 'Без привязки банковской карты',
+    text: 'Никаких скрытых платежей и обязательств',
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Полный доступ ко всем функциям',
+    text: 'Все серверы, все устройства, без ограничений',
+  },
+  {
+    icon: Smartphone,
+    title: 'До 5 устройств одновременно',
+    text: 'Подключайте все ваши устройства',
+  },
+]
+
+const trialVisualOrbit = [
+  { icon: Globe, pos: 'tl' },
+  { icon: Zap, pos: 'tr' },
+  { icon: Lock, pos: 'bl' },
+  { icon: Monitor, pos: 'br' },
+]
+
 /** Одни и те же возможности на любом сроке — меняется только цена. */
 const planIncludes = [
   'Split tunneling: РФ напрямую, зарубежное через VPN',
@@ -166,60 +198,32 @@ const planIncludes = [
   'До 5 устройств одновременно на один ключ',
 ]
 
-/**
- * @typedef {{
- *   id: number;
- *   name: string;
- *   tagline: string;
- *   monthlyHighlight: string;
- *   totalPrice: string;
- *   periodShort: string;
- *   compareAtTotal: string | null;
- *   savingsLabel: string | null;
- *   popular: boolean;
- *   ctaGuest: string;
- * }} PlanRow
- */
+/** Сроки на лендинге; цены и экономия — из yookassa_tariffs.json через API. */
+const LANDING_PLAN_MONTHS = [1, 6, 12]
 
-/** @type {PlanRow[]} */
-const plans = [
-  {
-    id: 1,
-    name: '1 месяц',
+const LANDING_PLAN_META = {
+  1: {
     tagline: 'Попробовать без долгих обязательств.',
-    monthlyHighlight: '100 ₽',
-    totalPrice: '100 ₽',
-    periodShort: 'за 30 дней',
-    compareAtTotal: null,
-    savingsLabel: null,
-    popular: false,
     ctaGuest: 'Оформить месяц',
+    periodShort: 'за 30 дней',
   },
-  {
-    id: 3,
-    name: '6 месяцев',
+  6: {
     tagline: 'Лучшее соотношение срока и цены за месяц.',
-    monthlyHighlight: '85 ₽',
-    totalPrice: '510 ₽',
-    periodShort: 'единый платёж',
-    compareAtTotal: '600 ₽',
-    savingsLabel: 'Экономия 90 ₽ к шести месяцам по 100 ₽',
     popular: true,
     ctaGuest: 'Подключить на полгода',
   },
-  {
-    id: 4,
-    name: '12 месяцев',
+  12: {
     tagline: 'Минимальная цена месяца при оплате раз в год.',
-    monthlyHighlight: '80 ₽',
-    totalPrice: '960 ₽',
-    periodShort: 'единый платёж',
-    compareAtTotal: '1 200 ₽',
-    savingsLabel: 'Экономия 240 ₽ к двенадцати месяцам по 100 ₽',
-    popular: false,
     ctaGuest: 'Взять на год',
   },
-]
+}
+
+const { loading: pricingLoading, tariffs, load: loadYookassaTariffs } =
+  useYookassaPricing()
+
+const plans = computed(() =>
+  buildLandingPlans(tariffs.value, LANDING_PLAN_MONTHS, LANDING_PLAN_META),
+)
 
 const faqs = [
   {
@@ -683,52 +687,142 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
+    <!-- ПРОБНЫЙ ПЕРИОД -->
+    <section
+      id="trial"
+      class="section section-trial"
+      aria-labelledby="trial-title"
+    >
+      <div class="section-inner">
+        <div class="trial-card">
+          <div class="trial-card__main">
+            <div class="trial-card__copy">
+              <span class="trial-card__pill">
+                <Gift
+                  :size="14"
+                  :stroke-width="2.2"
+                  aria-hidden="true"
+                />
+                Пробный период
+              </span>
+              <h2 id="trial-title" class="trial-card__title">
+                3 дня бесплатно
+              </h2>
+              <p class="trial-card__lead">
+                Протестируйте все преимущества Подорожник VPN без ограничений
+              </p>
+              <ul
+                class="trial-card__features"
+                aria-label="Что входит в пробный период"
+              >
+                <li
+                  v-for="(item, i) in trialFeatures"
+                  :key="i"
+                  class="trial-card__feature"
+                >
+                  <span class="trial-card__feature-ico" aria-hidden="true">
+                    <component
+                      :is="item.icon"
+                      :size="18"
+                      :stroke-width="2.2"
+                    />
+                  </span>
+                  <span class="trial-card__feature-text">
+                    <strong>{{ item.title }}</strong>
+                    <span>{{ item.text }}</span>
+                  </span>
+                </li>
+              </ul>
+            </div>
+
+            <div class="trial-card__visual" aria-hidden="true">
+              <div class="trial-visual">
+                <span class="trial-visual__ring trial-visual__ring--1" />
+                <span class="trial-visual__ring trial-visual__ring--2" />
+                <span class="trial-visual__ring trial-visual__ring--3" />
+                <span class="trial-visual__shield">
+                  <ShieldCheck :size="42" :stroke-width="1.6" />
+                </span>
+                <span
+                  v-for="(item, i) in trialVisualOrbit"
+                  :key="i"
+                  class="trial-visual__tile"
+                  :class="`trial-visual__tile--${item.pos}`"
+                >
+                  <component
+                    :is="item.icon"
+                    :size="16"
+                    :stroke-width="2"
+                  />
+                </span>
+              </div>
+            </div>
+
+            <div class="trial-card__cta">
+              <RouterLink
+                v-if="isLoggedIn"
+                class="cta primary large trial-card__cta-btn"
+                :to="loggedInHomeCtaPath"
+              >
+                Перейти в кабинет
+                <ArrowRight :size="20" :stroke-width="2" aria-hidden="true" />
+              </RouterLink>
+              <RouterLink
+                v-else
+                class="cta primary large trial-card__cta-btn"
+                to="/register"
+              >
+                Начать бесплатно
+                <ArrowRight :size="20" :stroke-width="2" aria-hidden="true" />
+              </RouterLink>
+              <p class="trial-card__hint">
+                <CheckCircle2
+                  :size="15"
+                  :stroke-width="2.2"
+                  aria-hidden="true"
+                />
+                Отмена в любой момент — никаких обязательств
+              </p>
+            </div>
+          </div>
+
+          <div class="trial-card__proof" aria-label="Отзывы пользователей">
+            <div class="trial-card__proof-users">
+              <span class="trial-card__proof-badge" aria-hidden="true">
+                <Star :size="18" :stroke-width="2" fill="currentColor" />
+              </span>
+              <div class="trial-card__proof-copy">
+                <strong>Более 10 000 пользователей</strong>
+                <span>
+                  уже оценили стабильность и скорость соединения Подорожник VPN
+                </span>
+              </div>
+            </div>
+            <div class="trial-card__proof-rating">
+              <strong class="trial-card__proof-score">4.9 из 5</strong>
+              <div class="trial-card__proof-stars" aria-hidden="true">
+                <Star
+                  v-for="n in 5"
+                  :key="n"
+                  :size="15"
+                  :stroke-width="2"
+                  fill="currentColor"
+                />
+              </div>
+              <span class="trial-card__proof-reviews">на основе 2500+ отзывов</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- ТАРИФЫ -->
     <section
       id="pricing"
       class="section section-pricing"
-      aria-labelledby="pricing-trial-title"
-      aria-describedby="pricing-plans-heading"
+      aria-labelledby="pricing-plans-heading"
     >
       <div class="section-inner">
-        <div class="pricing-trial">
-          <div class="pricing-trial__grid">
-            <div class="pricing-trial__copy">
-              <span class="pricing-trial__pill">Пробный период</span>
-              <h2 id="pricing-trial-title" class="pricing-trial__title">
-                3 дня бесплатно
-              </h2>
-              <p class="pricing-trial__lead">
-                Оцените split tunneling и подписку VLESS без карты и без ограничений по функциям.
-              </p>
-              <ul class="pricing-trial__checks" aria-label="Что входит в пробный период">
-                <li>Без привязки банковской карты</li>
-                <li>Те же правила маршрутизации, что после оплаты</li>
-                <li>До 5 устройств на одну подписку</li>
-              </ul>
-            </div>
-            <div class="pricing-trial__aside">
-              <RouterLink
-                v-if="isLoggedIn"
-                class="cta primary large pricing-trial__cta"
-                :to="loggedInHomeCtaPath"
-              >
-                Перейти в кабинет
-              </RouterLink>
-              <RouterLink
-                v-else
-                class="cta primary large pricing-trial__cta"
-                to="/register"
-              >
-                Начать бесплатно
-              </RouterLink>
-              <p class="pricing-trial__hint">
-                Регистрация занимает минуту — ключ подписки в личном кабинете.
-              </p>
-            </div>
-          </div>
-        </div>
-
         <div class="pricing-plans-head">
           <p class="section-eyebrow section-eyebrow--center">Подписка</p>
           <h3
@@ -762,7 +856,22 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
+        <p
+          v-if="pricingLoading"
+          class="pricing-plans-lead pricing-plans-lead--status"
+        >
+          Загрузка тарифов…
+        </p>
+        <p
+          v-else-if="plans.length === 0"
+          class="pricing-plans-lead pricing-plans-lead--status"
+          role="status"
+        >
+          Тарифы временно недоступны. Обновите страницу или напишите в поддержку.
+        </p>
+
         <div
+          v-else
           class="pricing-grid"
           role="list"
           aria-labelledby="pricing-plans-heading"
@@ -2211,6 +2320,384 @@ onBeforeUnmount(() => {
   color: var(--how-muted);
 }
 
+/* ——— ПРОБНЫЙ ПЕРИОД ——— */
+.section-trial {
+  --trial-bg: #ffffff;
+  --trial-text: #111827;
+  --trial-muted: #6b7280;
+  --trial-border: #e5e7eb;
+  --trial-accent: #1d9a5c;
+  --trial-accent-soft: rgba(29, 154, 92, 0.1);
+  --trial-proof-bg: #f3f4f6;
+  padding-top: clamp(2rem, 5vw, 3.25rem);
+  padding-bottom: clamp(2rem, 5vw, 3.25rem);
+}
+
+.section-trial .section-inner {
+  text-align: left;
+}
+
+.trial-card {
+  position: relative;
+  border-radius: calc(var(--radius-lg) + 10px);
+  border: 1px solid var(--trial-border);
+  background: var(--trial-bg);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 40px rgba(15, 23, 42, 0.06);
+  overflow: hidden;
+}
+
+.trial-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--trial-accent);
+  z-index: 1;
+}
+
+.trial-card__main {
+  display: grid;
+  gap: clamp(1.5rem, 3vw, 2.25rem);
+  padding: clamp(1.75rem, 4vw, 2.5rem);
+  padding-left: clamp(2rem, 4vw, 2.75rem);
+}
+
+@media (min-width: 900px) {
+  .trial-card__main {
+    grid-template-columns: minmax(0, 1.15fr) minmax(160px, 200px) auto;
+    align-items: center;
+    gap: clamp(1.25rem, 3vw, 2rem);
+  }
+}
+
+.trial-card__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.85rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--trial-accent);
+  border-radius: var(--radius-pill);
+  background: var(--trial-accent-soft);
+}
+
+.trial-card__title {
+  font-family: var(--heading);
+  font-size: clamp(1.65rem, 3.5vw, 2.35rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin: 0 0 0.55rem;
+  color: var(--trial-text);
+  line-height: 1.15;
+}
+
+.trial-card__lead {
+  margin: 0;
+  max-width: 34rem;
+  font-size: 0.98rem;
+  line-height: 1.6;
+  color: var(--trial-muted);
+}
+
+.trial-card__features {
+  list-style: none;
+  padding: 0;
+  margin: 1.35rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.trial-card__feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.trial-card__feature-ico {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  color: var(--trial-accent);
+  background: var(--trial-accent-soft);
+}
+
+.trial-card__feature-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.trial-card__feature-text strong {
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--trial-text);
+}
+
+.trial-card__feature-text span {
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--trial-muted);
+}
+
+.trial-card__visual {
+  display: none;
+  justify-content: center;
+  align-items: center;
+}
+
+@media (min-width: 900px) {
+  .trial-card__visual {
+    display: flex;
+  }
+}
+
+.trial-visual {
+  position: relative;
+  width: 180px;
+  height: 180px;
+}
+
+.trial-visual__ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  border-radius: 50%;
+  border: 1px dashed color-mix(in srgb, var(--trial-muted) 35%, transparent);
+}
+
+.trial-visual__ring--1 {
+  width: 88%;
+  height: 88%;
+}
+
+.trial-visual__ring--2 {
+  width: 68%;
+  height: 68%;
+}
+
+.trial-visual__ring--3 {
+  width: 48%;
+  height: 48%;
+}
+
+.trial-visual__shield {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 1.1rem;
+  color: var(--trial-accent);
+  background: linear-gradient(
+    145deg,
+    rgba(29, 154, 92, 0.18),
+    rgba(29, 154, 92, 0.06)
+  );
+  box-shadow: 0 8px 24px rgba(29, 154, 92, 0.12);
+}
+
+.trial-visual__tile {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 0.65rem;
+  color: var(--trial-accent);
+  background: #fff;
+  border: 1px solid var(--trial-border);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+}
+
+.trial-visual__tile--tl {
+  left: 8%;
+  top: 12%;
+}
+
+.trial-visual__tile--tr {
+  right: 8%;
+  top: 12%;
+}
+
+.trial-visual__tile--bl {
+  left: 8%;
+  bottom: 12%;
+}
+
+.trial-visual__tile--br {
+  right: 8%;
+  bottom: 12%;
+}
+
+.trial-card__cta {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+@media (min-width: 900px) {
+  .trial-card__cta {
+    align-items: flex-end;
+    text-align: right;
+    min-width: min(100%, 15rem);
+  }
+}
+
+.trial-card__cta-btn {
+  width: 100%;
+  gap: 0.55rem;
+  box-sizing: border-box;
+}
+
+@media (min-width: 900px) {
+  .trial-card__cta-btn {
+    width: auto;
+    min-width: 14.5rem;
+  }
+}
+
+.trial-card__hint {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--trial-muted);
+  max-width: 16rem;
+}
+
+.trial-card__hint svg {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  color: var(--trial-accent);
+}
+
+@media (min-width: 900px) {
+  .trial-card__hint {
+    margin-left: auto;
+    justify-content: flex-end;
+  }
+}
+
+.trial-card__proof {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  padding: 1rem clamp(1.5rem, 4vw, 2.25rem);
+  padding-left: clamp(1.75rem, 4vw, 2.5rem);
+  background: var(--trial-proof-bg);
+  border-top: 1px solid var(--trial-border);
+}
+
+.trial-card__proof-users {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  min-width: min(100%, 22rem);
+}
+
+.trial-card__proof-badge {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.65rem;
+  color: var(--trial-accent);
+  background: #fff;
+  border: 1px solid var(--trial-border);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.trial-card__proof-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  text-align: left;
+}
+
+.trial-card__proof-copy strong {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--trial-text);
+  line-height: 1.35;
+}
+
+.trial-card__proof-copy span {
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--trial-muted);
+}
+
+.trial-card__proof-rating {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.35rem 0.55rem;
+  margin-left: auto;
+  text-align: right;
+}
+
+.trial-card__proof-score {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--trial-text);
+}
+
+.trial-card__proof-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.12rem;
+  color: var(--trial-accent);
+}
+
+.trial-card__proof-reviews {
+  flex-basis: 100%;
+  font-size: 0.78rem;
+  color: var(--trial-muted);
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .trial-card__proof {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .trial-card__proof-rating {
+    margin-left: 0;
+    align-self: stretch;
+    width: 100%;
+  }
+}
+
 /* ——— ТАРИФЫ ——— */
 .section-pricing {
   background: linear-gradient(
@@ -2219,150 +2706,6 @@ onBeforeUnmount(() => {
     color-mix(in srgb, var(--accent) 4%, transparent) 40%,
     transparent
   );
-}
-
-.pricing-trial {
-  position: relative;
-  margin-bottom: clamp(2.5rem, 5vw, 3.75rem);
-  border-radius: calc(var(--radius-lg) + 8px);
-  border: 1px solid var(--card-border);
-  background: color-mix(in srgb, var(--surface-glass) 94%, transparent);
-  box-shadow: var(--shadow-md);
-  backdrop-filter: blur(18px);
-  overflow: hidden;
-  text-align: left;
-}
-
-.pricing-trial::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  background: linear-gradient(
-    180deg,
-    var(--accent),
-    color-mix(in srgb, var(--accent-muted) 85%, #8b5cf6)
-  );
-}
-
-.pricing-trial__grid {
-  display: grid;
-  gap: clamp(1.35rem, 4vw, 2rem);
-  padding: clamp(1.45rem, 4vw, 2.2rem);
-  padding-left: clamp(1.6rem, 4vw, 2.35rem);
-}
-
-@media (min-width: 768px) {
-  .pricing-trial__grid {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: clamp(1.75rem, 4vw, 2.75rem);
-  }
-}
-
-.pricing-trial__pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.3rem 0.8rem;
-  margin-bottom: 0.75rem;
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-  color: var(--accent);
-  border: 1px solid var(--accent-border);
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--accent) 9%, transparent);
-}
-
-.pricing-trial__title {
-  font-family: var(--heading);
-  font-size: clamp(1.45rem, 3.2vw, 2rem);
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  margin: 0 0 0.55rem;
-  color: var(--text-h);
-  line-height: 1.18;
-}
-
-.pricing-trial__lead {
-  margin: 0;
-  max-width: 36rem;
-  font-size: 0.98rem;
-  line-height: 1.6;
-  color: var(--muted);
-}
-
-.pricing-trial__checks {
-  list-style: none;
-  padding: 0;
-  margin: 1.05rem 0 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-
-.pricing-trial__checks li {
-  position: relative;
-  padding-left: 1.4rem;
-  font-size: 0.9rem;
-  line-height: 1.45;
-  color: color-mix(in srgb, var(--text) 88%, var(--muted));
-}
-
-.pricing-trial__checks li::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0.52em;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
-}
-
-.pricing-trial__aside {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.35rem;
-}
-
-@media (min-width: 768px) {
-  .pricing-trial__aside {
-    align-items: flex-end;
-    text-align: right;
-    min-width: min(100%, 240px);
-  }
-}
-
-.pricing-trial__cta {
-  width: 100%;
-  box-sizing: border-box;
-}
-
-@media (min-width: 768px) {
-  .pricing-trial__cta {
-    width: auto;
-    min-width: 13.5rem;
-  }
-}
-
-.pricing-trial__hint {
-  margin: 0.65rem 0 0;
-  font-size: 0.8rem;
-  line-height: 1.45;
-  color: var(--muted);
-  max-width: 18rem;
-}
-
-@media (min-width: 768px) {
-  .pricing-trial__hint {
-    margin-left: auto;
-  }
 }
 
 .pricing-plans-head {
@@ -2431,6 +2774,10 @@ onBeforeUnmount(() => {
   font-size: 1.02rem;
   line-height: 1.62;
   color: var(--muted);
+}
+
+.pricing-plans-lead--status {
+  margin-bottom: 1.5rem;
 }
 
 .pricing-grid {
