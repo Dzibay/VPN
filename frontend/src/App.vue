@@ -1,6 +1,7 @@
 <script setup>
 import { RouterView } from 'vue-router'
 import AppHeader from './components/AppHeader.vue'
+import CookieConsentBanner from './components/CookieConsentBanner.vue'
 </script>
 
 <template>
@@ -9,6 +10,7 @@ import AppHeader from './components/AppHeader.vue'
     <main class="main">
       <RouterView />
     </main>
+    <CookieConsentBanner />
   </div>
 </template>
 
