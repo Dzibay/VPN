@@ -1225,7 +1225,7 @@ tr.client-row-has-payments.client-row-active-today.user-row--selected {
 }
 /* Email: ограничение ширины, длинные адреса — с многоточием (полный текст в title) */
 .email-cell {
-  max-width: 14rem;
+  max-width: 10rem;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
