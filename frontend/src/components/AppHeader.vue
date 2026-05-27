@@ -31,8 +31,9 @@ const homeNavLinks = [
 
 const showUserLogout = computed(() => Boolean(hasToken.value))
 
-/** Горизонтальный логотип сайта: frontend/public/images/home/header-logo.png */
+/** Wordmark: header-logo.png (светлая тема), header-logo-white.png (тёмная). */
 const SITE_LOGO_WORDMARK = '/images/home/header-logo.png'
+const SITE_LOGO_WORDMARK_DARK = '/images/home/header-logo-white.png'
 
 const headerWordmarkOk = ref(true)
 
@@ -61,16 +62,21 @@ router.afterEach(refreshSessions)
       :class="{ 'brand--wordmark': headerWordmarkOk }"
       to="/"
     >
-      <img
-        v-if="headerWordmarkOk"
-        class="brand-wordmark"
-        :src="SITE_LOGO_WORDMARK"
-        width="220"
-        height="48"
-        alt="Подорожник VPN"
-        decoding="async"
-        @error="headerWordmarkOk = false"
-      />
+      <picture v-if="headerWordmarkOk">
+        <source
+          :srcset="SITE_LOGO_WORDMARK_DARK"
+          media="(prefers-color-scheme: dark)"
+        />
+        <img
+          class="brand-wordmark"
+          :src="SITE_LOGO_WORDMARK"
+          width="220"
+          height="48"
+          alt="Подорожник VPN"
+          decoding="async"
+          @error="headerWordmarkOk = false"
+        />
+      </picture>
       <template v-else>
         <img
           class="brand-logo"

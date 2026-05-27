@@ -52,6 +52,7 @@ const HOME_IMAGES = {
   appMockup: '/images/home/hero-app-mockup.png',
   trustAvatars: '/images/home/trust-avatars.png',
   logoWordmark: '/images/home/header-logo.png',
+  logoWordmarkDark: '/images/home/header-logo-white.png',
 }
 
 const footerHighlights = [
@@ -1418,14 +1419,19 @@ onBeforeUnmount(() => {
       <div class="footer-shell">
         <div class="footer-top">
           <div class="footer-brand">
-            <img
-              class="footer-brand__logo"
-              :src="HOME_IMAGES.logoWordmark"
-              width="220"
-              height="48"
-              alt="Подорожник VPN"
-              decoding="async"
-            />
+            <picture class="footer-brand__logo">
+              <source
+                :srcset="HOME_IMAGES.logoWordmarkDark"
+                media="(prefers-color-scheme: dark)"
+              />
+              <img
+                :src="HOME_IMAGES.logoWordmark"
+                width="220"
+                height="48"
+                alt="Подорожник VPN"
+                decoding="async"
+              />
+            </picture>
             <p class="footer-brand__desc">
               Умный VPN на VLESS с split tunneling: зарубежное — через туннель,
               российское — напрямую.
@@ -4226,8 +4232,13 @@ onBeforeUnmount(() => {
 .footer-brand__logo {
   display: block;
   width: min(100%, 11.5rem);
-  height: auto;
   margin-bottom: 0.85rem;
+}
+
+.footer-brand__logo img {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 .footer-brand__desc {
