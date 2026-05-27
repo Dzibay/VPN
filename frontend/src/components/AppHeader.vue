@@ -134,14 +134,14 @@ router.afterEach(refreshSessions)
   container-name: shell;
 }
 
-/* На главной иначе видна «линия» между шапкой и героем с градиентом. */
+/* На главной — фон шапки согласован с системной темой (как :root). */
 .shell--home {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 0.75rem 1rem;
-  border-bottom: 1px solid #e5e7eb;
-  background: rgba(255, 255, 255, 0.92);
+  border-bottom: 1px solid var(--nav-border);
+  background: var(--nav-bg);
   box-shadow: none;
 }
 
@@ -182,7 +182,7 @@ router.afterEach(refreshSessions)
 }
 
 .home-nav__link {
-  color: #4b5563;
+  color: var(--nav-link);
   text-decoration: none;
   font-size: 0.88rem;
   font-weight: 600;
@@ -192,29 +192,66 @@ router.afterEach(refreshSessions)
 }
 
 .home-nav__link:hover {
-  color: #1d9a5c;
+  color: var(--accent);
 }
 
 .shell--home .brand-text {
-  color: #111827;
+  color: var(--text-h);
 }
 
 .shell--home .nav-link {
-  color: #4b5563;
+  color: var(--nav-link);
 }
 
 .shell--home .nav-link:hover {
-  color: #111827;
-  background: rgba(29, 154, 92, 0.08);
+  color: var(--text-h);
+  background: var(--nav-link-hover-bg);
 }
 
 .shell--home .nav-accent {
-  color: #1d9a5c;
+  color: var(--accent);
 }
 
 .shell--home .nav-accent:hover {
-  color: #18804d;
-  background: rgba(29, 154, 92, 0.1);
+  color: var(--accent-hover);
+  background: var(--accent-soft);
+}
+
+@media (prefers-color-scheme: light) {
+  .shell--home {
+    border-bottom: 1px solid #e5e7eb;
+    background: rgba(255, 255, 255, 0.92);
+  }
+
+  .home-nav__link {
+    color: #4b5563;
+  }
+
+  .home-nav__link:hover {
+    color: #1d9a5c;
+  }
+
+  .shell--home .brand-text {
+    color: #111827;
+  }
+
+  .shell--home .nav-link {
+    color: #4b5563;
+  }
+
+  .shell--home .nav-link:hover {
+    color: #111827;
+    background: rgba(29, 154, 92, 0.08);
+  }
+
+  .shell--home .nav-accent {
+    color: #1d9a5c;
+  }
+
+  .shell--home .nav-accent:hover {
+    color: #18804d;
+    background: rgba(29, 154, 92, 0.1);
+  }
 }
 
 .spacer {
