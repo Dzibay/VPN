@@ -349,11 +349,6 @@ watch(payExpMonth, () => {
       </div>
     </template>
 
-    <p v-if="granularity === 'hour'" class="stats-hint">
-      Почасовой график за выбранный календарный день по Москве (24 часа); время на оси — МСК. Накопительные регистрации и
-      первые подключения устройств. Серии про трафик не показываются.
-    </p>
-
     <AdminLineChartPanel
       :aria-label="chartAriaLabel"
       :loading="loading"
@@ -482,7 +477,7 @@ watch(payExpMonth, () => {
         :has-data="payExpRows.length > 0"
         title="Оплаты и окончания подписки"
         unit-label="МСК"
-        hint="Календарные дни Europe/Moscow; оплаты по created_at, окончание — по subscription_until."
+        hint=""
         :labels="payExpLabels"
         :datasets="payExpDatasets"
         :x-markers="payExpXMarkers"
