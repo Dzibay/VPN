@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import BearerPrincipal
@@ -31,7 +31,29 @@ from app.domain.referrals.task_bonus_days import (
     sum_referral_bonus_days_pending_activation,
     sum_referral_bonus_days_received_via_notify_payment,
 )
+from app.domain.models.referral_links import ReferralDirectTrafficStats
 from app.infrastructure.persistence.models.referral_link import ReferralLink
+from app.infrastructure.persistence.models.user import User
+
+
+async def direct_traffic_users_stats(session: AsyncSession) -> ReferralDirectTrafficStats:
+    """Число пользователей без referral_link_id, с разбивкой по наличию telegram_id."""
+    row = (
+        await session.execute(
+            select(
+                func.count().label("total"),
+                func.count().filter(User.telegram_id.is_not(None)).label("with_telegram_id"),
+                func.count().filter(User.telegram_id.is_(None)).label("without_telegram_id"),
+            )
+            .select_from(User)
+            .where(User.referral_link_id.is_(None)),
+        )
+    ).one()
+    return ReferralDirectTrafficStats(
+        total=int(row.total or 0),
+        with_telegram_id=int(row.with_telegram_id or 0),
+        without_telegram_id=int(row.without_telegram_id or 0),
+    )
 
 
 async def list_staff_referral_links(session: AsyncSession, cfg: object) -> list:

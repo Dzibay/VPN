@@ -20,6 +20,23 @@ class ReferralLinkRead(BaseModel):
     created_at: datetime
 
 
+class ReferralDirectTrafficStats(BaseModel):
+    """Пользователи без привязки к реферальной ссылке (прямой трафик)."""
+
+    total: int = Field(
+        ge=0,
+        description="Все пользователи с referral_link_id IS NULL",
+    )
+    with_telegram_id: int = Field(
+        ge=0,
+        description="Прямой трафик с telegram_id (регистрация через Telegram без ref/start)",
+    )
+    without_telegram_id: int = Field(
+        ge=0,
+        description="Прямой трафик без telegram_id (регистрация на сайте без ?ref)",
+    )
+
+
 class ReferralFunnelSummary(BaseModel):
     """Воронка: без фильтра — пользователи БД и трафик; при выборе ссылки — клики по счётчику и дальше."""
 

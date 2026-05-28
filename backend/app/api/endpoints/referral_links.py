@@ -13,6 +13,7 @@ from app.core.dependencies import (
     require_referrals_staff,
 )
 from app.domain.models.referral_links import (
+    ReferralDirectTrafficStats,
     ReferralFunnelSummary,
     ReferralLinkCreate,
     ReferralLinkOut,
@@ -29,6 +30,7 @@ from app.domain.referrals.repository import (
 )
 from app.domain.services.referral_links_service import (
     delete_referral_link_row,
+    direct_traffic_users_stats,
     get_staff_referral_link_by_id,
     list_staff_referral_links,
     referral_me_for_user,
@@ -49,6 +51,17 @@ staff_router = APIRouter(
 )
 async def list_referral_links(session: ReadonlySessionDep) -> list[ReferralLinkOut]:
     return await list_staff_referral_links(session, settings)
+
+
+@staff_router.get(
+    "/direct-traffic-stats",
+    response_model=ReferralDirectTrafficStats,
+    summary="Пользователи без реферальной ссылки (прямой трафик)",
+)
+async def referral_direct_traffic_stats(
+    session: ReadonlySessionDep,
+) -> ReferralDirectTrafficStats:
+    return await direct_traffic_users_stats(session)
 
 
 @staff_router.get(

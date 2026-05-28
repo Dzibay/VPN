@@ -14,6 +14,10 @@ const route = useRoute()
 const rows = ref([])
 const loading = ref(false)
 const error = ref(null)
+/** @type {import('vue').Ref<{ total: number; with_telegram_id: number; without_telegram_id: number } | null>} */
+const directTraffic = ref(null)
+const directTrafficLoading = ref(false)
+const directTrafficError = ref(null)
 
 const modalOpen = ref(false)
 const creating = ref(false)
@@ -27,15 +31,22 @@ const formChannelKind = ref('campaign')
 const formOwnerUserId = ref('')
 const formToken = ref('')
 
-const statsLine = computed(() => {
-  if (loading.value) return 'Загрузка…'
-  if (error.value) return 'Ошибка загрузки'
-  return `${rows.value.length} записей`
-})
-
 const modalTitle = computed(() =>
   editingId.value != null ? 'Редактировать токен' : 'Новый реферальный токен',
 )
+
+async function loadDirectTraffic() {
+  directTrafficLoading.value = true
+  directTrafficError.value = null
+  try {
+    directTraffic.value = await fetchJson('/api/referral-links/direct-traffic-stats')
+  } catch (e) {
+    directTrafficError.value = e.message || String(e)
+    directTraffic.value = null
+  } finally {
+    directTrafficLoading.value = false
+  }
+}
 
 async function load() {
   loading.value = true
@@ -48,6 +59,10 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+async function reloadAll() {
+  await Promise.all([load(), loadDirectTraffic()])
 }
 
 function openModal() {
@@ -222,7 +237,7 @@ async function removeReferral(r) {
   error.value = null
   try {
     await fetchJson(`/api/referral-links/${r.id}`, { method: 'DELETE' })
-    await load()
+    await reloadAll()
   } catch (e) {
     error.value = e.message || String(e)
   } finally {
@@ -254,7 +269,7 @@ watch(
 )
 
 onMounted(() => {
-  void load()
+  void reloadAll()
 })
 </script>
 
@@ -267,10 +282,10 @@ onMounted(() => {
           <button
             type="button"
             class="btn-secondary"
-            :disabled="loading"
-            @click="load"
+            :disabled="loading || directTrafficLoading"
+            @click="reloadAll"
           >
-            {{ loading ? 'Обновление…' : 'Обновить' }}
+            {{ loading || directTrafficLoading ? 'Обновление…' : 'Обновить' }}
           </button>
           <button type="button" class="btn-primary" @click="openModal">
             Новый токен
@@ -279,8 +294,45 @@ onMounted(() => {
       </div>
     </template>
 
-    <section class="stats" aria-live="polite">
-      <p class="stats-value">{{ statsLine }}</p>
+    <section class="stats widgets-row" aria-live="polite">
+      <div class="widgets-grid">
+        <div class="stat-widget" aria-label="Прямой трафик без реферальной ссылки">
+          <h3 class="stat-widget-title">Прямой трафик</h3>
+          <p class="stat-widget-value">
+            {{
+              directTrafficLoading
+                ? '…'
+                : directTrafficError
+                  ? '—'
+                  : (directTraffic?.total ?? 0)
+            }}
+          </p>
+          <p v-if="!directTrafficLoading && !directTrafficError" class="stat-widget-meta">
+            Пользователи без реферальной ссылки
+          </p>
+          <dl
+            v-if="!directTrafficLoading && !directTrafficError"
+            class="stat-widget-split"
+          >
+            <div>
+              <dt>Telegram</dt>
+              <dd>{{ directTraffic?.with_telegram_id ?? 0 }}</dd>
+            </div>
+            <div>
+              <dt>Сайт</dt>
+              <dd>{{ directTraffic?.without_telegram_id ?? 0 }}</dd>
+            </div>
+          </dl>
+          <p v-else-if="directTrafficError" class="stat-widget-err">{{ directTrafficError }}</p>
+        </div>
+        <div class="stat-widget" aria-label="Число реферальных токенов">
+          <h3 class="stat-widget-title">Токены</h3>
+          <p class="stat-widget-value">
+            {{ loading ? '…' : error ? '—' : rows.length }}
+          </p>
+          <p v-if="!loading && !error" class="stat-widget-meta">Записей в таблице</p>
+        </div>
+      </div>
       <p v-if="copyHint" class="copy-hint">{{ copyHint }}</p>
     </section>
 
@@ -588,6 +640,73 @@ onMounted(() => {
 }
 .stats {
   margin-bottom: 1rem;
+}
+.widgets-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+@media (max-width: 640px) {
+  .widgets-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.stat-widget {
+  padding: 1rem 1.1rem;
+  border-radius: 10px;
+  border: 1px solid var(--nav-border);
+  background: var(--surface, color-mix(in srgb, var(--bg) 92%, var(--text) 8%));
+}
+.stat-widget-title {
+  margin: 0 0 0.65rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.stat-widget-value {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  color: var(--text-h);
+}
+.stat-widget-meta {
+  margin: 0.4rem 0 0;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+.stat-widget-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  margin: 0.75rem 0 0;
+}
+.stat-widget-split div {
+  margin: 0;
+  min-width: 0;
+}
+.stat-widget-split dt {
+  margin: 0 0 0.2rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.stat-widget-split dd {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-h);
+}
+.stat-widget-err {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+  color: var(--danger);
 }
 .stats-value {
   margin: 0;
