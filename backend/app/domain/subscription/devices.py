@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from app.config import Settings
+from app.core.time import utc_now
 from app.infrastructure.persistence.models.subscription_device import SubscriptionDevice
 from app.infrastructure.persistence.models.user import User
 
