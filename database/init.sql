@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS payments (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT REFERENCES users (id) ON DELETE CASCADE,
     amount NUMERIC(14, 2) NOT NULL CHECK (amount >= 0),
+    net_amount NUMERIC(14, 2) NOT NULL CHECK (net_amount >= 0),
     months INTEGER NOT NULL CHECK (months >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     provider TEXT NOT NULL DEFAULT 'manual',

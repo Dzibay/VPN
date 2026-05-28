@@ -17,6 +17,7 @@ class StaffPaymentItem(BaseModel):
     id: int
     user_id: int | None = None
     amount: Decimal
+    net_amount: Decimal
     months: int
     provider: str
     #: ``subscription`` (Tribute) | ``one_time`` (Tribute цифровой товар).
@@ -86,12 +87,24 @@ class StaffPaymentsFinanceSummaryResponse(BaseModel):
         description="Объединение месяцев YYYY-MM, где есть данные в cash или spread",
     )
     cash: StaffPaymentsFinanceBuckets = Field(
-        description="Вся сумма платежа в месяце created_at (UTC)",
+        description="net_amount в месяце created_at (UTC)",
+    )
+    cash_gross: StaffPaymentsFinanceBuckets = Field(
+        default_factory=StaffPaymentsFinanceBuckets,
+        description="amount (валовая) в месяце created_at (UTC)",
     )
     spread: StaffPaymentsFinanceBuckets = Field(
-        description="amount/months на каждый из months календарных месяцев вперёд от created_at (UTC)",
+        description="net_amount/months на каждый из months календарных месяцев вперёд от created_at (UTC)",
     )
-    grand_total: str = Field(description="Сумма amount по всем платежам (без деления)")
+    spread_gross: StaffPaymentsFinanceBuckets = Field(
+        default_factory=StaffPaymentsFinanceBuckets,
+        description="amount/months (валовая) по месяцам подписки",
+    )
+    grand_total: str = Field(description="Сумма net_amount по всем платежам (после комиссии PSP)")
+    grand_total_gross: str = Field(
+        default="0",
+        description="Сумма amount по всем платежам (валовая)",
+    )
     payment_count: int = Field(ge=0, description="Число строк payments")
 
 

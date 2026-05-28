@@ -22,20 +22,21 @@ const formMonths = ref('1')
 const formAmountRub = ref('')
 const formPaymentKind = ref('one_time')
 const formCreatedAt = ref('')
-/** @type {import('vue').Ref<Array<{ id: number, user_id: number | null, amount: string | number, months: number, provider: string, payment_kind: string, provider_webhook: Record<string, unknown> | null, created_at: string }>>} */
+/** @type {import('vue').Ref<Array<{ id: number, user_id: number | null, amount: string | number, net_amount: string | number, months: number, provider: string, payment_kind: string, provider_webhook: Record<string, unknown> | null, created_at: string }>>} */
 const items = ref([])
 const total = ref(0)
 const limit = 200
 const offset = ref(0)
+const expandedPaymentId = ref(null)
 
 const sortAccessors = {
   id: (r) => Number(r.id) || 0,
   user_id: (r) => Number(r.user_id) || 0,
   amount: (r) => Number(r.amount) || 0,
+  net_amount: (r) => Number(r.net_amount ?? r.amount) || 0,
   months: (r) => Number(r.months) || 0,
   provider: (r) => String(r.provider ?? '').toLowerCase(),
   payment_kind: (r) => String(r.payment_kind ?? '').toLowerCase(),
-  provider_webhook: (r) => JSON.stringify(r.provider_webhook ?? '').toLowerCase(),
   created_at: (r) => String(r.created_at ?? ''),
 }
 
@@ -80,16 +81,22 @@ function fmtDate(iso) {
   return formatMskApiDateTime(iso, { dateStyle: 'short', timeStyle: 'medium' })
 }
 
-function providerWebhookPreview(webhook) {
+function formatWebhookFull(webhook) {
   if (!webhook || typeof webhook !== 'object') return '—'
-  const name = webhook.name
-  if (name) return String(name)
   try {
-    const s = JSON.stringify(webhook)
-    return s.length > 80 ? `${s.slice(0, 77)}…` : s
+    return JSON.stringify(webhook, null, 2)
   } catch {
-    return '—'
+    return String(webhook)
   }
+}
+
+function togglePaymentRow(row, event) {
+  const target = event?.target
+  if (target instanceof HTMLElement && target.closest('input, a, button, label')) {
+    return
+  }
+  const id = Number(row.id)
+  expandedPaymentId.value = expandedPaymentId.value === id ? null : id
 }
 
 function paymentKindLabel(k) {
@@ -122,6 +129,7 @@ async function load() {
     const data = await fetchJson(`/api/admin/payments?${params.toString()}`)
     items.value = Array.isArray(data?.items) ? data.items : []
     total.value = Number(data?.total) || 0
+    expandedPaymentId.value = null
   } catch (e) {
     error.value = e.message || String(e)
     items.value = []
@@ -347,6 +355,14 @@ onMounted(() => {
                 @sort="toggleSort"
               />
               <AdminSortTh
+                label="После комиссии"
+                column-key="net_amount"
+                align="right"
+                :sort-key="sortKey"
+                :sort-dir="sortDir"
+                @sort="toggleSort"
+              />
+              <AdminSortTh
                 label="Мес."
                 column-key="months"
                 align="right"
@@ -369,13 +385,6 @@ onMounted(() => {
                 @sort="toggleSort"
               />
               <AdminSortTh
-                label="Webhook провайдера"
-                column-key="provider_webhook"
-                :sort-key="sortKey"
-                :sort-dir="sortDir"
-                @sort="toggleSort"
-              />
-              <AdminSortTh
                 label="Создан"
                 column-key="created_at"
                 :sort-key="sortKey"
@@ -389,42 +398,51 @@ onMounted(() => {
               <td :colspan="canDeletePayments ? 9 : 8" class="muted">Нет записей</td>
             </tr>
             <template v-else>
-              <tr v-for="row in sortedRows" :key="row.id">
-                <td v-if="canDeletePayments" class="td-select">
-                  <input
-                    v-model="selectedIds"
-                    type="checkbox"
-                    :value="row.id"
-                  />
-                </td>
-                <td class="num">{{ row.id }}</td>
-                <td class="owner-user-id-cell num">
-                  <span class="owner-user-id-inner">
-                    <template v-if="row.user_id != null">
-                      <span>{{ row.user_id }}</span>
-                      <AdminHighlightListLink list="users" :highlight="row.user_id" />
-                    </template>
-                    <template v-else>—</template>
-                  </span>
-                </td>
-                <td class="num">{{ formatAmount(row.amount) }}</td>
-                <td class="num">{{ row.months }}</td>
-                <td>
-                  <span class="pill pill-mono" :title="row.payment_kind">{{
-                    paymentKindLabel(row.payment_kind)
-                  }}</span>
-                </td>
-                <td>
-                  <span class="pill pill-mono" :title="row.provider">{{ row.provider }}</span>
-                </td>
-                <td
-                  class="mono-cell"
-                  :title="row.provider_webhook ? JSON.stringify(row.provider_webhook) : ''"
+              <template v-for="row in sortedRows" :key="row.id">
+                <tr
+                  class="payment-row"
+                  :class="{ 'payment-row--expanded': expandedPaymentId === row.id }"
+                  @click="togglePaymentRow(row, $event)"
                 >
-                  {{ providerWebhookPreview(row.provider_webhook) }}
-                </td>
-                <td class="date-cell">{{ fmtDate(row.created_at) }}</td>
-              </tr>
+                  <td v-if="canDeletePayments" class="td-select" @click.stop>
+                    <input
+                      v-model="selectedIds"
+                      type="checkbox"
+                      :value="row.id"
+                    />
+                  </td>
+                  <td class="num">{{ row.id }}</td>
+                  <td class="owner-user-id-cell num" @click.stop>
+                    <span class="owner-user-id-inner">
+                      <template v-if="row.user_id != null">
+                        <span>{{ row.user_id }}</span>
+                        <AdminHighlightListLink list="users" :highlight="row.user_id" />
+                      </template>
+                      <template v-else>—</template>
+                    </span>
+                  </td>
+                  <td class="num">{{ formatAmount(row.amount) }}</td>
+                  <td class="num">{{ formatAmount(row.net_amount ?? row.amount) }}</td>
+                  <td class="num">{{ row.months }}</td>
+                  <td>
+                    <span class="pill pill-mono" :title="row.payment_kind">{{
+                      paymentKindLabel(row.payment_kind)
+                    }}</span>
+                  </td>
+                  <td>
+                    <span class="pill pill-mono" :title="row.provider">{{ row.provider }}</span>
+                  </td>
+                  <td class="date-cell">{{ fmtDate(row.created_at) }}</td>
+                </tr>
+                <tr v-if="expandedPaymentId === row.id" class="payment-detail-row">
+                  <td :colspan="canDeletePayments ? 9 : 8">
+                    <div class="webhook-detail">
+                      <p class="webhook-detail-label">Webhook провайдера</p>
+                      <pre class="webhook-json">{{ formatWebhookFull(row.provider_webhook) }}</pre>
+                    </div>
+                  </td>
+                </tr>
+              </template>
             </template>
           </tbody>
         </table>
@@ -617,11 +635,44 @@ onMounted(() => {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-.mono-cell {
+.payment-row {
+  cursor: pointer;
+}
+.payment-row:hover td {
+  background: color-mix(in srgb, var(--text-h) 4%, transparent);
+}
+.payment-row--expanded td {
+  background: color-mix(in srgb, var(--accent, #58d68d) 8%, transparent);
+}
+.payment-detail-row td {
+  padding: 0;
+  border-bottom: 1px solid var(--card-border);
+  background: var(--surface);
+}
+.webhook-detail {
+  padding: 0.75rem 1rem 1rem;
+}
+.webhook-detail-label {
+  margin: 0 0 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.webhook-json {
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  background: color-mix(in srgb, var(--surface) 88%, black);
   font-family: ui-monospace, monospace;
-  font-size: 0.78rem;
-  word-break: break-all;
-  max-width: 28rem;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 24rem;
+  overflow: auto;
 }
 .date-cell {
   white-space: nowrap;

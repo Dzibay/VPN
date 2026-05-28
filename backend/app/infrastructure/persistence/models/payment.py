@@ -21,6 +21,8 @@ class Payment(Base):
         nullable=True,
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    #: Сумма к зачислению после комиссии PSP (ЮKassa income_amount; Tribute −10%; manual = amount).
+    net_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     months: Mapped[int] = mapped_column(Integer, nullable=False)
     provider: Mapped[str] = mapped_column(
         Text,

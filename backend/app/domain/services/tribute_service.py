@@ -31,6 +31,7 @@ from app.domain.models.payments import (
 from app.domain.services.payment_service import (
     PaymentIngestParsed,
     amount_from_minor_units,
+    compute_tribute_net_amount,
     ingest_provider_payment,
 )
 from app.infrastructure.persistence.models.user import User
@@ -270,10 +271,12 @@ def _tribute_parsed_to_ingest(
     payload: dict[str, Any],
     parsed: _TributeWebhookParsed,
 ) -> PaymentIngestParsed:
+    gross = amount_from_minor_units(parsed.amount_minor)
     return PaymentIngestParsed(
         provider="tribute",
         payment_kind=parsed.payment_kind,
-        amount=amount_from_minor_units(parsed.amount_minor),
+        amount=gross,
+        net_amount=compute_tribute_net_amount(gross),
         months=max(0, int(parsed.months)),
         provider_webhook=_provider_webhook_envelope(event_name=event_name, payload=payload),
         fulfill=parsed.fulfill,

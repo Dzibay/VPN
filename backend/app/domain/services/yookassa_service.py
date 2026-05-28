@@ -25,6 +25,7 @@ from app.domain.public_urls import public_spa_base_url
 from app.domain.services.payment_service import (
     PaymentIngestParsed,
     ingest_provider_payment,
+    net_amount_from_yookassa_payment_obj,
 )
 
 log = logging.getLogger("app.yookassa_service")
@@ -223,6 +224,22 @@ def _parse_yookassa_succeeded(*, payment_obj: dict[str, Any]) -> PaymentIngestPa
         )
         return None
 
+    net_amount = net_amount_from_yookassa_payment_obj(payment_obj)
+    if net_amount is None:
+        log.warning(
+            "ЮKassa: нет income_amount в платеже %s — net_amount = gross",
+            payment_obj.get("id"),
+        )
+        net_amount = amount
+    elif net_amount <= 0 or net_amount > amount:
+        log.warning(
+            "ЮKassa: некорректный income_amount %s (gross %s), payment_id=%s",
+            net_amount,
+            amount,
+            payment_obj.get("id"),
+        )
+        return None
+
     paid_at: datetime | None = None
     created_at_raw = payment_obj.get("captured_at") or payment_obj.get("created_at")
     if isinstance(created_at_raw, str) and created_at_raw.strip():
@@ -238,6 +255,7 @@ def _parse_yookassa_succeeded(*, payment_obj: dict[str, Any]) -> PaymentIngestPa
         provider="yookassa",
         payment_kind="one_time",
         amount=amount,
+        net_amount=net_amount,
         months=months,
         provider_webhook=provider_webhook,
         fulfill=True,

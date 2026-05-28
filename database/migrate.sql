@@ -1,73 +1,23 @@
 -- Догонка существующих БД: tribute_webhook → provider_webhook, провайдер yookassa.
 
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'payments'
-          AND column_name = 'tribute_webhook'
-    ) AND NOT EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'payments'
-          AND column_name = 'provider_webhook'
-    ) THEN
-        ALTER TABLE payments RENAME COLUMN tribute_webhook TO provider_webhook;
-    END IF;
+-- Чистая сумма после комиссии PSP (ЮKassa income_amount; Tribute −10%; manual = amount).
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS net_amount NUMERIC(14, 2);
 
-    IF NOT EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'payments'
-          AND column_name = 'provider_webhook'
-    ) THEN
-        ALTER TABLE payments ADD COLUMN provider_webhook JSONB;
-    END IF;
-END $$;
+UPDATE payments
+SET net_amount = (provider_webhook #>> '{object,income_amount,value}')::numeric(14, 2)
+WHERE net_amount IS NULL
+  AND provider = 'yookassa'
+  AND provider_webhook #>> '{object,income_amount,value}' ~ '^[0-9]+(\.[0-9]+)?$';
 
-ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_provider_check;
+UPDATE payments
+SET net_amount = ROUND(amount * 0.90, 2)
+WHERE net_amount IS NULL
+  AND provider = 'tribute';
 
-ALTER TABLE payments
-    ADD CONSTRAINT payments_provider_check CHECK (provider IN ('manual', 'tribute', 'yookassa'));
+UPDATE payments
+SET net_amount = amount
+WHERE net_amount IS NULL;
 
--- Идемпотентность ЮKassa (только после появления колонки provider_webhook).
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'payments'
-          AND column_name = 'provider_webhook'
-    ) THEN
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_yookassa_object_id
-            ON payments ((provider_webhook #>> '{object,id}'))
-            WHERE provider = 'yookassa'
-              AND (provider_webhook #>> '{object,id}') IS NOT NULL;
-    END IF;
-END $$;
+ALTER TABLE payments ALTER COLUMN net_amount SET NOT NULL;
 
--- Оповещения по лимиту трафика (notify_traffic_low / notify_traffic_over).
-ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_type_check;
 
-ALTER TABLE tasks
-    ADD CONSTRAINT tasks_type_check CHECK (
-        type IN (
-            'notify_ref_reg',
-            'notify_ref_pay',
-            'notify_payment',
-            'notify_sub_expire_3d',
-            'notify_sub_expire_1d',
-            'notify_sub_expire_0d',
-            'notify_sub_expire',
-            'notify_sub_expired_7d',
-            'notify_reg_1h_has_traffic',
-            'notify_reg_1h_no_traffic',
-            'notify_traffic_low',
-            'notify_traffic_over'
-        )
-    );

@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import constants
 from app.config import Settings
 from app.core.request_subject import bind_request_subject_user
 from app.core.time import ensure_utc, moscow_today, utc_now
@@ -39,6 +40,7 @@ class PaymentIngestParsed:
     provider: PaymentProvider
     payment_kind: PaymentKind
     amount: Decimal
+    net_amount: Decimal
     months: int
     provider_webhook: dict[str, Any]
     fulfill: bool
@@ -51,6 +53,23 @@ class PaymentIngestParsed:
 
 def amount_from_minor_units(amount_minor: int) -> Decimal:
     return (Decimal(int(amount_minor)) * Decimal("0.01")).quantize(Decimal("0.01"))
+
+
+def compute_tribute_net_amount(gross: Decimal) -> Decimal:
+    """Чистая сумма после комиссии Tribute (10% от валовой)."""
+    rate = Decimal(constants.TRIBUTE_PSP_FEE_RATE)
+    return (Decimal(gross) * (Decimal("1") - rate)).quantize(Decimal("0.01"))
+
+
+def net_amount_from_yookassa_payment_obj(payment_obj: dict[str, Any]) -> Decimal | None:
+    """Сумма к зачислению из ``object.income_amount`` (точная комиссия ЮKassa)."""
+    income = payment_obj.get("income_amount")
+    if not isinstance(income, dict) or income.get("value") is None:
+        return None
+    try:
+        return Decimal(str(income["value"])).quantize(Decimal("0.01"))
+    except Exception:
+        return None
 
 
 def extend_subscription_until(base: date | None, *, days: int) -> date:
@@ -212,6 +231,7 @@ async def create_staff_manual_payment(
     payment = Payment(
         user_id=int(user_id),
         amount=amount_q,
+        net_amount=amount_q,
         months=int(months),
         provider="manual",
         payment_kind=payment_kind,
@@ -287,6 +307,7 @@ async def ingest_provider_payment(
     payment = Payment(
         user_id=None,
         amount=parsed.amount,
+        net_amount=parsed.net_amount,
         months=max(0, int(parsed.months)),
         provider=parsed.provider,
         payment_kind=parsed.payment_kind,

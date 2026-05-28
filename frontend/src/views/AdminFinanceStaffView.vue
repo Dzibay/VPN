@@ -7,27 +7,27 @@ import { adminChartTheme } from '../utils/adminChartTheme.js'
 
 /** @typedef {{ subscription: string[]; one_time: string[] }} FinanceBuckets */
 
-/** После включения: все суммы на странице × (1 − 10%) — чистый доход за вычетом комиссии Tribute. */
-const NET_AFTER_TRIBUTE_FEE = 0.9
-
 const loading = ref(false)
 const error = ref(null)
 /**
  * @type {import('vue').Ref<null | {
  *   months: string[]
  *   cash: FinanceBuckets
+ *   cash_gross: FinanceBuckets
  *   spread: FinanceBuckets
+ *   spread_gross: FinanceBuckets
  *   grand_total: string
+ *   grand_total_gross: string
  *   payment_count: number
  * }>}
  */
 const summary = ref(null)
 
-/** «cash» — вся сумма в месяце платежа; «spread» — amount/months по месяцам подписки вперёд (UTC). */
+/** «cash» — вся сумма в месяце платежа; «spread» — net_amount/months по месяцам подписки вперёд (UTC). */
 const chartDistribution = ref(/** @type {'cash' | 'spread'} */ ('cash'))
 
-/** Вычитать 10% комиссии Tribute из суммы и графика (включено по умолчанию). */
-const deductTributeFee = ref(true)
+/** По умолчанию — чистый доход после комиссии PSP. */
+const useNetAmount = ref(true)
 
 /** Нижний слой стека → верхний (порядок важен для stacked bar). */
 const KIND_ORDER = /** @type {const} */ ([
@@ -38,7 +38,15 @@ const KIND_ORDER = /** @type {const} */ ([
 const activeBuckets = computed(() => {
   const s = summary.value
   if (!s) return null
-  const raw = chartDistribution.value === 'spread' ? s.spread : s.cash
+  const useNet = useNetAmount.value
+  const raw =
+    chartDistribution.value === 'spread'
+      ? useNet
+        ? s.spread
+        : s.spread_gross ?? s.spread
+      : useNet
+        ? s.cash
+        : s.cash_gross ?? s.cash
   if (!raw || typeof raw !== 'object') {
     return { subscription: [], one_time: [] }
   }
@@ -47,6 +55,10 @@ const activeBuckets = computed(() => {
     one_time: Array.isArray(raw.one_time) ? raw.one_time : [],
   }
 })
+
+const totalLabel = computed(() =>
+  useNetAmount.value ? 'Чистый доход (после комиссии)' : 'Валовая сумма платежей',
+)
 
 function formatMonthLabel(ym) {
   const [ys, ms] = String(ym).split('-')
@@ -69,16 +81,13 @@ function parseAmounts(arr) {
   })
 }
 
-const displayAmountFactor = computed(() =>
-  deductTributeFee.value ? NET_AFTER_TRIBUTE_FEE : 1,
-)
-
 const totalFormatted = computed(() => {
-  const g = summary.value?.grand_total
-  const n = g != null ? Number(String(g).replace(',', '.')) : 0
+  const rawTotal = useNetAmount.value
+    ? summary.value?.grand_total
+    : summary.value?.grand_total_gross ?? summary.value?.grand_total
+  const n = rawTotal != null ? Number(String(rawTotal).replace(',', '.')) : 0
   if (!Number.isFinite(n)) return '0,00'
-  const out = n * displayAmountFactor.value
-  return out.toLocaleString('ru-RU', {
+  return n.toLocaleString('ru-RU', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
@@ -106,10 +115,9 @@ const financeChartDatasets = computed(() => {
     subscription: theme.accent,
     one_time: theme.trafficOrange,
   }
-  const factor = displayAmountFactor.value
   return KIND_ORDER.map(({ field, label }) => ({
     label,
-    data: parseAmounts(buckets[field]).map((v) => v * factor),
+    data: parseAmounts(buckets[field]),
     rgb: rgbByField[field] ?? theme.accent,
     borderRadius: 4,
     maxBarThickness: 48,
@@ -202,11 +210,11 @@ onMounted(() => {
 
     <template v-else-if="summary">
       <section class="total-card" aria-live="polite">
-        <p class="total-label">Сумма всех платежей</p>
+        <p class="total-label">{{ totalLabel }}</p>
         <p class="total-value">{{ totalFormatted }}&nbsp;₽</p>
         <label class="fee-row">
-          <input v-model="deductTributeFee" type="checkbox" class="fee-input" />
-          <span class="fee-label">Вычесть 10%</span>
+          <input v-model="useNetAmount" type="checkbox" class="fee-input" />
+          <span class="fee-label">Учитывать комиссию</span>
         </label>
         <p class="total-meta">
           {{ paymentCountLabel }} записей

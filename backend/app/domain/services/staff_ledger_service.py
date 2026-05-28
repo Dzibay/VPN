@@ -37,8 +37,11 @@ async def staff_payments_finance_summary(
         return StaffPaymentsFinanceSummaryResponse(
             months=[],
             cash=StaffPaymentsFinanceBuckets(),
+            cash_gross=StaffPaymentsFinanceBuckets(),
             spread=StaffPaymentsFinanceBuckets(),
+            spread_gross=StaffPaymentsFinanceBuckets(),
             grand_total="0",
+            grand_total_gross="0",
             payment_count=0,
         )
     if not isinstance(raw, dict):

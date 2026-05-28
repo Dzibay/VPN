@@ -26,4 +26,7 @@ TRIBUTE_DIGITAL_PRODUCT_NAME_3M: str = "Оптимальный (3 месяца)"
 TRIBUTE_DIGITAL_PRODUCT_NAME_6M: str = "Популярный (6 месяцев) 🔥"
 TRIBUTE_DIGITAL_PRODUCT_NAME_1Y: str = "Максимальная выгода (1 год) 💎"
 
+# Комиссия Tribute с валовой суммы (10%). В webhook нет income_amount — считаем сами.
+TRIBUTE_PSP_FEE_RATE = "0.10"
+
 
