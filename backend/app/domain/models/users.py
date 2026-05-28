@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 StatsGranularity = Literal["day", "hour"]
 
 from app.constants import BIGINT_MAX
+from app.core.time import ensure_utc
 from app.domain.models.auth import SubscriptionConnectionItem
 
 
@@ -424,9 +425,7 @@ class UserUpdate(BaseModel):
         if v is None:
             return None
         if isinstance(v, datetime):
-            if v.tzinfo is None:
-                return v.replace(tzinfo=timezone.utc)
-            return v.astimezone(timezone.utc)
+            return ensure_utc(v)
         if isinstance(v, date) and not isinstance(v, datetime):
             return datetime(v.year, v.month, v.day, tzinfo=timezone.utc)
         if isinstance(v, str):
@@ -447,9 +446,7 @@ class UserUpdate(BaseModel):
                         tzinfo=timezone.utc,
                     )
             dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt.astimezone(timezone.utc)
+            return ensure_utc(dt)
         raise ValueError(
             "registered_at: ожидается дата или дата-время в формате ISO (UTC)",
         )

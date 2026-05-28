@@ -9,6 +9,7 @@ import StaffUserIdSuggestInput from '../components/StaffUserIdSuggestInput.vue'
 import { fetchJson } from '../api/client.js'
 import { getSessionRole } from '../auth/session.js'
 import { useTableSort } from '../utils/adminTableSort.js'
+import { formatMskApiDateTime } from '../utils/mskDate.js'
 
 const TASK_TYPE_OPTIONS = [
   { value: 'notify_ref_reg', label: 'Регистрация по реф. ссылке (notify_ref_reg)' },
@@ -115,15 +116,7 @@ const canNext = computed(() => offset.value + items.value.length < total.value)
 const canDeleteTask = computed(() => getSessionRole() === 'admin')
 
 function fmtDate(iso) {
-  if (!iso) return '—'
-  try {
-    return new Date(iso).toLocaleString('ru-RU', {
-      dateStyle: 'short',
-      timeStyle: 'medium',
-    })
-  } catch {
-    return String(iso)
-  }
+  return formatMskApiDateTime(iso, { dateStyle: 'short', timeStyle: 'medium' })
 }
 
 /** ISO с сервера → значение для input[type=datetime-local] (локальное время браузера). */

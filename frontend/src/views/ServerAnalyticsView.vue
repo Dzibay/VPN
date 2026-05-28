@@ -5,6 +5,7 @@ import Chart from '../utils/chartSetup.js'
 import AdminHighlightListLink from '../components/AdminHighlightListLink.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import { fetchJson } from '../api/client.js'
+import { formatMskApiDateTime } from '../utils/mskDate.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -166,8 +167,7 @@ const userTrafficCollectDetail = computed(
 
 function formatTs(iso) {
   if (!iso) return '—'
-  const d = new Date(iso)
-  return d.toLocaleString('ru-RU', {
+  return formatMskApiDateTime(iso, {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',

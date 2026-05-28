@@ -1,100 +1,19 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
-import { rgbTupleFromVar } from '../utils/adminChartTheme.js'
+import { chartSeriesRgb, rgbTupleFromVar } from '../utils/adminChartTheme.js'
 import { fetchJson } from '../api/client.js'
+import {
+  addCalendarDayIso,
+  formatMskCalendarDayShort,
+  formatMskDateTimeShort,
+  formatMskHourAxis,
+  mskTodayIso,
+  utcHourFloorMs,
+} from '../utils/mskDate.js'
 
 /**
  * @typedef {'day' | 'hour'} StatsGranularity
  * @typedef {{ stats_date: string | null; period_start_utc?: string | null; users_count: number; users_with_traffic_count?: number; active_users_count?: number; subscription_devices_users_count?: number; users_cumulative_traffic_over_100_mbit_count?: number; persistent_traffic_users_count?: number; users_with_payment_count?: number; active_users_with_payment_count?: number; users_with_active_subscription_count?: number }} DailyStatsRow
  */
-
-/** Полночь текущего календарного дня UTC (YYYY-MM-DD). */
-export function utcTodayIso() {
-  const d = new Date()
-  const y = d.getUTCFullYear()
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0')
-  const day = String(d.getUTCDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
-/** Текущий календарный день Europe/Moscow в форме YYYY-MM-DD (для hour_day и type=\"date\"). */
-export function mskTodayIso() {
-  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Moscow' })
-}
-
-/** Текущий календарный месяц Europe/Moscow (YYYY-MM) для `<input type=\"month\">`. */
-export function mskMonthInputDefault() {
-  return mskTodayIso().slice(0, 7)
-}
-
-/** Подпись календарной даты, интерпретированной как день по Москве (YYYY-MM-DD). */
-export function formatMskCalendarDayShort(iso) {
-  if (iso == null || iso === '') return '—'
-  try {
-    const s = String(iso).slice(0, 10)
-    return new Date(`${s}T12:00:00+03:00`).toLocaleDateString('ru-RU', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      timeZone: 'Europe/Moscow',
-    })
-  } catch {
-    return String(iso)
-  }
-}
-
-/** Подпись календарного дня UTC (YYYY-MM-DD). */
-export function formatDayShort(iso) {
-  if (iso == null || iso === '') return '—'
-  try {
-    const s = String(iso).slice(0, 10)
-    return new Date(s + 'T12:00:00Z').toLocaleDateString('ru-RU', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    })
-  } catch {
-    return String(iso)
-  }
-}
-
-/** Почасовая метка: значение из API (UTC), подпись в Москве (как в JSON ответа). */
-export function formatHourShortMsk(isoOrTs) {
-  if (isoOrTs == null || isoOrTs === '') return '—'
-  try {
-    return (
-      new Date(isoOrTs).toLocaleString('ru-RU', {
-        timeZone: 'Europe/Moscow',
-        day: '2-digit',
-        month: 'short',
-        hour: '2-digit',
-        minute: '2-digit',
-        hourCycle: 'h23',
-      }) + ' МСК'
-    )
-  } catch {
-    return String(isoOrTs)
-  }
-}
-
-/** Короткая подпись часа по Москве для оси X (одни сутки — без повтора даты). */
-export function formatHourAxisMsk(isoOrTs) {
-  if (isoOrTs == null || isoOrTs === '') return '—'
-  try {
-    return (
-      new Date(isoOrTs).toLocaleTimeString('ru-RU', {
-        timeZone: 'Europe/Moscow',
-        hour: '2-digit',
-        minute: '2-digit',
-        hourCycle: 'h23',
-      }) + ' МСК'
-    )
-  } catch {
-    return String(isoOrTs)
-  }
-}
-
-/** @deprecated используйте formatHourShortMsk */
-export const formatHourShortUtc = formatHourShortMsk
 
 function isUndatedRow(r) {
   const noDate = r.stats_date == null || r.stats_date === ''
@@ -120,33 +39,6 @@ function bucketSortKey(r, gran) {
   const d = r.stats_date
   if (d == null || d === '') return null
   return String(d).slice(0, 10)
-}
-
-/** Следующий календарный день YYYY-MM-DD (для плотного ряда по МСК). */
-function addCalendarDayIso(isoDay) {
-  const s = String(isoDay).slice(0, 10)
-  const [y, m, d] = s.split('-').map(Number)
-  if (!y || !m || !d) return s
-  const t = Date.UTC(y, m - 1, d + 1)
-  const x = new Date(t)
-  const yy = x.getUTCFullYear()
-  const mo = String(x.getUTCMonth() + 1).padStart(2, '0')
-  const day = String(x.getUTCDate()).padStart(2, '0')
-  return `${yy}-${mo}-${day}`
-}
-
-/** Полночь часа UTC для метки времени (мс). */
-function utcHourFloorMs(ms) {
-  const d = new Date(ms)
-  return Date.UTC(
-    d.getUTCFullYear(),
-    d.getUTCMonth(),
-    d.getUTCDate(),
-    d.getUTCHours(),
-    0,
-    0,
-    0,
-  )
 }
 
 /**
@@ -187,7 +79,7 @@ function densifyMskDays(sortedRows) {
 
 /**
  * Общая загрузка `/api/users/daily-stats` и расчёт данных для `AdminLineChartPanel`
- * (страница «Статистика по дням» и график на «Воронке» — только утилиты формата даты).
+ * (страница «Статистика по дням»). Даты/МСК — ``utils/mskDate.js``; бакеты с API.
  */
 export function useUsersDailyStatsChart() {
   /** @type {import('vue').Ref<StatsGranularity>} */
@@ -513,23 +405,15 @@ export function useUsersDailyStatsChart() {
   const registrationChartLabels = computed(() =>
     chartPoints.value.map((p) =>
       granularity.value === 'hour'
-        ? formatHourAxisMsk(p.periodStart || p.iso)
+        ? formatMskHourAxis(p.periodStart || p.iso)
         : formatMskCalendarDayShort(p.iso),
     ),
   )
 
-  const activeSkyRgb = [56, 189, 248]
-  const deviceVioletRgb = [167, 139, 250]
-  const over100EmeraldRgb = [52, 211, 153]
-  const persistentPinkRgb = [244, 114, 182]
-  const paymentAmberRgb = [245, 158, 11]
-  const activePayTealRgb = [45, 212, 191]
-  const subscriptionIndigoRgb = [129, 140, 248]
-
   const registrationChartDatasets = computed(() => {
     const pts = chartPoints.value
     const accentRgb = rgbTupleFromVar('--accent', '#58d68d')
-    const trafficOrange = [251, 146, 60]
+    const trafficOrange = chartSeriesRgb.traffic
     const percent = granularity.value === 'day' && chartPercentMode.value
     const registrationsDs = {
       label: 'Всего пользователей',
@@ -548,7 +432,7 @@ export function useUsersDailyStatsChart() {
       data: percent
         ? pts.map((p) => pctOfUsers(p.totalDevices, p.totalUsers))
         : pts.map((p) => p.totalDevices),
-      rgb: deviceVioletRgb,
+      rgb: chartSeriesRgb.device,
     }
     if (granularity.value === 'hour') {
       return [registrationsDs, devicesDs]
@@ -560,24 +444,24 @@ export function useUsersDailyStatsChart() {
         {
           label: 'С оплатой',
           data: pts.map((p) => pctOfUsers(p.totalPayment, p.totalUsers)),
-          rgb: paymentAmberRgb,
+          rgb: chartSeriesRgb.payment,
         },
         {
           label: 'Активные',
           data: pts.map((p) => pctOfUsers(p.dayActive, p.totalUsers)),
-          rgb: activeSkyRgb,
+          rgb: chartSeriesRgb.active,
           filled: false,
         },
         {
           label: 'С оплатой активных',
           data: pts.map((p) => pctOfUsers(p.dayActiveWithPayment, p.totalUsers)),
-          rgb: activePayTealRgb,
+          rgb: chartSeriesRgb.activePay,
           filled: false,
         },
         {
           label: 'С трафиком > 100 Мбит',
           data: pts.map((p) => pctOfUsers(p.dayOver100Mbit, p.totalUsers)),
-          rgb: over100EmeraldRgb,
+          rgb: chartSeriesRgb.over100Mbit,
           filled: false,
         },
         {
@@ -585,7 +469,7 @@ export function useUsersDailyStatsChart() {
           data: pts.map((p) =>
             pctOfUsers(p.dayPersistentTraffic, p.totalUsers),
           ),
-          rgb: persistentPinkRgb,
+          rgb: chartSeriesRgb.persistent,
           filled: false,
         },
         {
@@ -593,7 +477,7 @@ export function useUsersDailyStatsChart() {
           data: pts.map((p) =>
             pctOfUsers(p.dayActiveSubscription, p.totalUsers),
           ),
-          rgb: subscriptionIndigoRgb,
+          rgb: chartSeriesRgb.subscription,
           filled: false,
         },
       ]
@@ -605,36 +489,36 @@ export function useUsersDailyStatsChart() {
       {
         label: 'С оплатой',
         data: pts.map((p) => p.totalPayment),
-        rgb: paymentAmberRgb,
+        rgb: chartSeriesRgb.payment,
       },
       {
         label: 'Активные',
         data: pts.map((p) => p.dayActive),
-        rgb: activeSkyRgb,
+        rgb: chartSeriesRgb.active,
         filled: false,
       },
       {
         label: 'С оплатой активных',
         data: pts.map((p) => p.dayActiveWithPayment),
-        rgb: activePayTealRgb,
+        rgb: chartSeriesRgb.activePay,
         filled: false,
       },
       {
         label: 'С трафиком > 100 Мбит',
         data: pts.map((p) => p.dayOver100Mbit),
-        rgb: over100EmeraldRgb,
+        rgb: chartSeriesRgb.over100Mbit,
         filled: false,
       },
       {
         label: 'Возвращающиеся активные',
         data: pts.map((p) => p.dayPersistentTraffic),
-        rgb: persistentPinkRgb,
+        rgb: chartSeriesRgb.persistent,
         filled: false,
       },
       {
         label: 'С активной подпиской',
         data: pts.map((p) => p.dayActiveSubscription),
-        rgb: subscriptionIndigoRgb,
+        rgb: chartSeriesRgb.subscription,
         filled: false,
       },
     ]
@@ -644,7 +528,7 @@ export function useUsersDailyStatsChart() {
     const p = chartPoints.value[i]
     if (!p) return ''
     return granularity.value === 'hour'
-      ? formatHourShortMsk(p.periodStart || p.iso)
+      ? formatMskDateTimeShort(p.periodStart || p.iso)
       : formatMskCalendarDayShort(p.iso)
   }
 

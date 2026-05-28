@@ -6,6 +6,7 @@ import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
 import { fetchJson } from '../api/client.js'
 import { useTableSort } from '../utils/adminTableSort.js'
+import { formatMskApiDateTime } from '../utils/mskDate.js'
 
 const loading = ref(false)
 const error = ref(null)
@@ -44,7 +45,7 @@ const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(rows, sortAcce
 
 function formatTs(ts) {
   if (ts == null || Number.isNaN(Number(ts))) return '—'
-  return new Date(Number(ts) * 1000).toLocaleString('ru-RU', {
+  return formatMskApiDateTime(Number(ts) * 1000, {
     day: '2-digit',
     month: '2-digit',
     hour: '2-digit',

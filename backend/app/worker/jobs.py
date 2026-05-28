@@ -12,7 +12,7 @@ import shlex
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.core.time import utc_now
 from app.domain.servers.reality_defaults import normalize_reality_spider_x
 from app.infrastructure.database.session import SessionLocal
 from app.infrastructure.persistence.models.server import Server
@@ -596,7 +597,7 @@ def collect_xray_user_traffic(server_id: int) -> dict[str, Any]:
         collected_at: datetime | None = None
         if err is None:
             db.commit()
-            collected_at = datetime.now(timezone.utc)
+            collected_at = utc_now()
             pu = getattr(detail, "parsed_users", None) if detail else None
             log.info(
                 "collect_xray_user_traffic: готово server_id=%s host=%s пользователей в ответе=%s",

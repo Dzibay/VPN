@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 
 from typing import Any
 
@@ -6,11 +6,8 @@ from sqlalchemy import BigInteger, Date, DateTime, ForeignKey, Index, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.time import utc_now
 from app.infrastructure.database.base import Base
-
-
-def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 class User(Base):
@@ -51,7 +48,7 @@ class User(Base):
     registered_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
-        default=_utc_now,
+        default=utc_now,
     )
     token: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     vless_uuid: Mapped[str] = mapped_column(Text, unique=True, nullable=False)

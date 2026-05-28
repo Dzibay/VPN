@@ -8,6 +8,7 @@ import StaffUserIdSuggestInput from '../components/StaffUserIdSuggestInput.vue'
 import { fetchJson } from '../api/client.js'
 import { getSessionRole } from '../auth/session.js'
 import { useTableSort } from '../utils/adminTableSort.js'
+import { formatMskApiDateTime } from '../utils/mskDate.js'
 
 const loading = ref(false)
 const error = ref(null)
@@ -76,15 +77,7 @@ function formatAmount(v) {
 }
 
 function fmtDate(iso) {
-  if (!iso) return '—'
-  try {
-    return new Date(iso).toLocaleString('ru-RU', {
-      dateStyle: 'short',
-      timeStyle: 'medium',
-    })
-  } catch {
-    return String(iso)
-  }
+  return formatMskApiDateTime(iso, { dateStyle: 'short', timeStyle: 'medium' })
 }
 
 function providerWebhookPreview(webhook) {

@@ -5,13 +5,14 @@ import AdminLineChartPanel from '../components/AdminLineChartPanel.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import { fetchJson } from '../api/client.js'
 import { mapStaffChartEventsToMarkers } from '../utils/chartStaffMarkersPlugin.js'
+import { useUsersDailyStatsChart } from '../composables/useUsersDailyStatsChart.js'
+import { chartSeriesRgb, rgba } from '../utils/adminChartTheme.js'
 import {
   formatMskCalendarDayShort,
+  formatMskDateTimeShort,
   mskMonthInputDefault,
   mskTodayIso,
-  useUsersDailyStatsChart,
-} from '../composables/useUsersDailyStatsChart.js'
-import { rgba } from '../utils/adminChartTheme.js'
+} from '../utils/mskDate.js'
 
 /** @typedef {{ id: number; event_at: string; title: string; color: string; created_at: string }} ChartEventRow */
 
@@ -22,25 +23,6 @@ const eventsBusy = ref(false)
 const newEventTitle = ref('')
 const newEventColor = ref('#58D68D')
 const newEventDatetimeLocal = ref('')
-
-function formatChartEventDisplay(iso) {
-  if (iso == null || iso === '') return '—'
-  try {
-    return (
-      new Date(iso).toLocaleString('ru-RU', {
-        timeZone: 'Europe/Moscow',
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hourCycle: 'h23',
-      }) + ' МСК'
-    )
-  } catch {
-    return String(iso)
-  }
-}
 
 function localDatetimeToIsoUtc(localStr) {
   if (localStr == null || String(localStr).trim() === '') return null
@@ -162,18 +144,15 @@ const payExpXMarkers = computed(() => {
     (r) => String(r.stats_date ?? '').slice(0, 10) === today,
   )
   if (idx < 0) return []
-  return [{ index: idx, title: 'Сегодня (МСК)', color: '#34d399', kind: 'today' }]
+  return [
+    {
+      index: idx,
+      title: 'Сегодня (МСК)',
+      color: chartSeriesRgb.todayMarker,
+      kind: 'today',
+    },
+  ]
 })
-
-/** Как на линейном графике: «С оплатой» (амбар), не путать с «С трафиком». */
-const PAYMENT_AMBER_RGB = /** @type {const} */ ([245, 158, 11])
-/** «С оплатой активных» на линейном графике — слой «активны по трафику сегодня (МСК)» для столбца даты окончания. */
-const ACTIVE_PAY_TEAL_RGB = /** @type {const} */ ([45, 212, 191])
-/** «Активные» на линейном графике — рост трафика в день окончания (не сегодняшний день МСК). */
-const ACTIVE_SKY_RGB = /** @type {const} */ ([56, 189, 248])
-/** «С трафиком» на линейном графике. */
-const TRAFFIC_ORANGE_RGB = /** @type {const} */ ([251, 146, 60])
-const SUBSCRIPTION_EXPIRY_GRAY_RGB = /** @type {const} */ ([148, 163, 184])
 
 /** Как на графике «Финансы»: один столбец, скругление только снаружи у стека. */
 const PAY_EXP_BAR_STYLE = /** @type {const} */ ({
@@ -198,39 +177,39 @@ const payExpDatasets = computed(() => {
     {
       label: 'Оплаты',
       data: rows.map((r) => Number(r.payments_count) || 0),
-      rgb: /** @type {[number, number, number]} */ ([...PAYMENT_AMBER_RGB]),
+      rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.payment]),
       borderRadius,
       maxBarThickness,
     },
     {
       label: 'Окончание: без трафика',
       data: rows.map((r) => Number(r.subscription_expiring_no_traffic_count) || 0),
-      backgroundColor: rgba(SUBSCRIPTION_EXPIRY_GRAY_RGB, 0.45),
-      borderColor: rgba(SUBSCRIPTION_EXPIRY_GRAY_RGB, 0.68),
+      backgroundColor: rgba(chartSeriesRgb.expiryGray, 0.45),
+      borderColor: rgba(chartSeriesRgb.expiryGray, 0.68),
       borderWidth: 0,
-      hoverBackgroundColor: rgba(SUBSCRIPTION_EXPIRY_GRAY_RGB, 0.58),
-      hoverBorderColor: rgba(SUBSCRIPTION_EXPIRY_GRAY_RGB, 0.88),
+      hoverBackgroundColor: rgba(chartSeriesRgb.expiryGray, 0.58),
+      hoverBorderColor: rgba(chartSeriesRgb.expiryGray, 0.88),
       borderRadius,
       maxBarThickness,
     },
     {
       label: 'Окончание: с трафиком',
       data: rows.map((r) => Number(r.subscription_expiring_has_traffic_count) || 0),
-      rgb: /** @type {[number, number, number]} */ ([...TRAFFIC_ORANGE_RGB]),
+      rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.traffic]),
       borderRadius,
       maxBarThickness,
     },
     {
       label: 'Окончание: активные в день окончания',
       data: rows.map((r) => Number(r.subscription_expiring_active_on_day_count) || 0),
-      rgb: /** @type {[number, number, number]} */ ([...ACTIVE_SKY_RGB]),
+      rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.active]),
       borderRadius,
       maxBarThickness,
     },
     {
       label: 'Окончание: активные сегодня (МСК)',
       data: rows.map((r) => Number(r.subscription_expiring_active_today_count) || 0),
-      rgb: /** @type {[number, number, number]} */ ([...ACTIVE_PAY_TEAL_RGB]),
+      rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.activePay]),
       borderRadius,
       maxBarThickness,
     },
@@ -465,7 +444,7 @@ watch(payExpMonth, () => {
         >
           <div class="chart-events-item-main">
             <time class="chart-events-time mono-inline" :datetime="ev.event_at">{{
-              formatChartEventDisplay(ev.event_at)
+              formatMskDateTimeShort(ev.event_at)
             }}</time>
             <span class="chart-events-dot" :style="{ background: ev.color }" aria-hidden="true" />
             <span class="chart-events-caption">{{ ev.title }}</span>

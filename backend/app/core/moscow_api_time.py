@@ -7,22 +7,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
-from zoneinfo import ZoneInfo
-
-_MOSCOW_TZ = ZoneInfo("Europe/Moscow")
+from app.core.time import MOSCOW_TZ, ensure_utc
 
 
 def utc_datetime_to_moscow_iso(dt: datetime) -> str:
     """Наивное время считается UTC; возвращает ISO 8601 со смещением Москвы."""
 
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    else:
-        dt = dt.astimezone(timezone.utc)
-    return dt.astimezone(_MOSCOW_TZ).isoformat()
+    return ensure_utc(dt).astimezone(MOSCOW_TZ).isoformat()
 
 
 def install_moscow_json_encoder() -> None:

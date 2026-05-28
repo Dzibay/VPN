@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -279,7 +279,7 @@ def fetch_node_metrics_merged(
     _circuit_check()
 
     inst = _escape_instance(instance.strip())
-    end = datetime.now(timezone.utc).timestamp()
+    end = utc_now().timestamp()
     start = end - hours * 3600
     step = max(15, min(300, step_seconds))
 

@@ -8,6 +8,7 @@ import AdminTableWrap from '../components/AdminTableWrap.vue'
 import RowActionsDropdown from '../components/RowActionsDropdown.vue'
 import { fetchJson, sitePublicUrl } from '../api/client.js'
 import { useTableSort } from '../utils/adminTableSort.js'
+import { formatMskApiDateTime } from '../utils/mskDate.js'
 
 const route = useRoute()
 const rows = ref([])
@@ -81,15 +82,7 @@ function closeModal() {
 }
 
 function fmtDate(iso) {
-  if (!iso) return '—'
-  try {
-    return new Date(iso).toLocaleString('ru-RU', {
-      dateStyle: 'short',
-      timeStyle: 'medium',
-    })
-  } catch {
-    return iso
-  }
+  return formatMskApiDateTime(iso, { dateStyle: 'short', timeStyle: 'medium' })
 }
 
 async function submitModal() {

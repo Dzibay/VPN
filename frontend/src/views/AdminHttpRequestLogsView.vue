@@ -8,6 +8,7 @@ import MultiSelectDropdown from '../components/MultiSelectDropdown.vue'
 import { fetchJson } from '../api/client.js'
 import { getSessionRole } from '../auth/session.js'
 import { useTableSort } from '../utils/adminTableSort.js'
+import { formatMskApiDateTime } from '../utils/mskDate.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -32,8 +33,6 @@ const page = ref({
   offset: 0,
 })
 
-const HTTP_TRACE_DT_LOCALE = 'ru-RU'
-
 function httpTraceCreatedAtTs(iso) {
   const t = Date.parse(String(iso ?? ''))
   return Number.isFinite(t) ? t : NaN
@@ -43,19 +42,13 @@ function httpTraceCreatedAtTs(iso) {
 function formatHttpTraceDateTime(iso) {
   const ts = httpTraceCreatedAtTs(iso)
   if (!Number.isFinite(ts)) return '—'
-  return new Date(ts).toLocaleString(HTTP_TRACE_DT_LOCALE, {
-    dateStyle: 'short',
-    timeStyle: 'medium',
-  })
+  return formatMskApiDateTime(ts, { dateStyle: 'short', timeStyle: 'medium' })
 }
 
 function formatHttpTraceFullDateTime(iso) {
   const ts = httpTraceCreatedAtTs(iso)
   if (!Number.isFinite(ts)) return ''
-  return new Date(ts).toLocaleString(HTTP_TRACE_DT_LOCALE, {
-    dateStyle: 'long',
-    timeStyle: 'medium',
-  })
+  return formatMskApiDateTime(ts, { dateStyle: 'long', timeStyle: 'medium' })
 }
 
 function fullHttpTracePath(path) {

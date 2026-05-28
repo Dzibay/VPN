@@ -1,5 +1,19 @@
 /** Тема линейных графиков админки из CSS-переменных (:root). */
 
+/** @type {const} RGB-серии для графиков статистики (линейный и столбчатый). */
+export const chartSeriesRgb = {
+  payment: [245, 158, 11],
+  traffic: [251, 146, 60],
+  device: [167, 139, 250],
+  active: [56, 189, 248],
+  activePay: [45, 212, 191],
+  over100Mbit: [52, 211, 153],
+  persistent: [244, 114, 182],
+  subscription: [129, 140, 248],
+  expiryGray: [148, 163, 184],
+  todayMarker: '#34d399',
+}
+
 export function rgbTupleFromCssColor(css) {
   const m = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(String(css).trim())
   if (m) return [Number(m[1]), Number(m[2]), Number(m[3])]
@@ -43,7 +57,7 @@ export function rgba(rgb, a) {
 
 export function adminChartTheme(extraRgb) {
   const accent = rgbTupleFromVar('--accent', '#58d68d')
-  const trafficOrange = extraRgb?.trafficOrange ?? [251, 146, 60]
+  const trafficOrange = extraRgb?.trafficOrange ?? chartSeriesRgb.traffic
   const cardBorder = rootToken('--accent-border', 'rgba(88, 214, 141, 0.42)')
   const surface = rootToken('--card-bg', 'rgba(12, 16, 14, 0.94)')
   return {

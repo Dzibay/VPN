@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
 from app.core.time import as_calendar_date
+from app.domain.traffic_daily import cumulative_traffic_by_calendar_days
 from app.domain.models.server_traffic import (
     UserTrafficByDayRow,
     UserTrafficByServersBundle,
@@ -41,7 +42,6 @@ async def user_traffic_cumulative_by_day_rows(
     )
     rows_raw = (await session.execute(stmt)).all()
     by_server: dict[int, list[tuple[date, int]]] = {}
-    day_markers: set[date] = set()
     for sid_raw, td_raw, total_raw in rows_raw:
         cal = as_calendar_date(td_raw)
         if cal is None:
@@ -51,24 +51,11 @@ async def user_traffic_cumulative_by_day_rows(
         if tot < 0:
             tot = 0
         by_server.setdefault(sid, []).append((cal, tot))
-        day_markers.add(cal)
-    if not day_markers:
-        return []
-    servers = sorted(by_server.keys())
-    indices = {sid: 0 for sid in servers}
-    current = {sid: 0 for sid in servers}
-    out: list[UserTrafficByDayRow] = []
-    for d in sorted(day_markers):
-        for sid in servers:
-            series = by_server[sid]
-            i = indices[sid]
-            while i < len(series) and series[i][0] <= d:
-                current[sid] = series[i][1]
-                i += 1
-            indices[sid] = i
-        cumulative = sum(current.values())
-        out.append(UserTrafficByDayRow(traffic_date=d, cumulative_bytes=cumulative))
-    return out
+    pairs = cumulative_traffic_by_calendar_days(by_server)
+    return [
+        UserTrafficByDayRow(traffic_date=d, cumulative_bytes=cumulative)
+        for d, cumulative in pairs
+    ]
 
 
 async def user_traffic_by_servers_bundle(

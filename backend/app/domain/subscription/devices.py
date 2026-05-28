@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,7 +53,7 @@ def effective_subscription_device_limit(settings: Settings) -> int | None:
 
 def _device_row_fields(request: Request) -> dict:
     headers = request.headers
-    now = datetime.now(timezone.utc)
+    now = utc_now()
     return {
         "user_agent": _norm_header(headers, "user-agent"),
         "os": _norm_header(headers, "x-device-os"),
@@ -117,7 +117,7 @@ async def register_or_touch_subscription_device(
             ).scalar_one()
             if int(cnt or 0) >= limit:
                 return False
-        now = datetime.now(timezone.utc)
+        now = utc_now()
         session.add(
             SubscriptionDevice(
                 user_id=user.id,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -10,6 +10,7 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
+from app.core.time import utc_now
 from app.domain.models.staff_ledger import (
     StaffCreatableTaskType,
     StaffCreateTributePaymentResponse,
@@ -234,7 +235,7 @@ async def update_staff_task(
         if st == "pending":
             task.done_at = None
         else:
-            task.done_at = datetime.now(timezone.utc)
+            task.done_at = utc_now()
 
     await session.flush()
     await session.refresh(task)

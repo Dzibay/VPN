@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
 
 from typing import Any
@@ -7,11 +7,8 @@ from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, Numeric, Text,
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.time import utc_now
 from app.infrastructure.database.base import Base
-
-
-def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 class Payment(Base):
@@ -41,5 +38,5 @@ class Payment(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=_utc_now,
+        default=utc_now,
     )

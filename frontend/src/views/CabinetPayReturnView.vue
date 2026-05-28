@@ -16,6 +16,7 @@ import {
 import AppActionButton from '../components/AppActionButton.vue'
 import { fetchJson } from '../api/client.js'
 import { formatTrafficWithLimit } from '../utils/formatTraffic.js'
+import { formatMskCalendarDayLong } from '../utils/mskDate.js'
 
 const route = useRoute()
 const meLoading = ref(true)
@@ -31,19 +32,9 @@ const statusHint = computed(() => {
 const isCanceled = computed(() => statusHint.value === 'canceled')
 const subscriptionActive = computed(() => Boolean(me.value?.subscription_active))
 
-const subscriptionUntilLabel = computed(() => {
-  const d = me.value?.subscription_until
-  if (!d) return '—'
-  try {
-    return new Date(String(d)).toLocaleDateString('ru-RU', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    })
-  } catch {
-    return String(d)
-  }
-})
+const subscriptionUntilLabel = computed(() =>
+  formatMskCalendarDayLong(me.value?.subscription_until),
+)
 
 const devicesLabel = computed(() => {
   const n = Number(me.value?.subscription_connections_count) || 0

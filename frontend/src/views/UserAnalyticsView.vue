@@ -18,12 +18,16 @@ import {
   isTrafficOverLimit,
 } from '../utils/formatTraffic.js'
 import { useTableSort } from '../utils/adminTableSort.js'
-import { formatLocaleDateRu } from '../utils/formatLocaleDate.js'
 import {
   formatSubscriptionConnectionOs,
   formatSubscriptionConnectionUserAgent,
-} from '../util/subscriptionConnectionFormat.js'
-import { formatDayShort } from '../composables/useUsersDailyStatsChart.js'
+} from '../utils/subscription/subscriptionConnectionFormat.js'
+import {
+  formatLocaleDateRu,
+  formatMskApiDateTime,
+  formatMskCalendarDayShort,
+  formatUtcCalendarDayShort,
+} from '../utils/mskDate.js'
 
 const MIB = 1024 * 1024
 
@@ -138,15 +142,7 @@ const userAnalyticsBackLabel = computed(() =>
 )
 
 function formatDateTime(d) {
-  if (d == null || d === '') return '—'
-  try {
-    return new Date(d).toLocaleString('ru-RU', {
-      dateStyle: 'short',
-      timeStyle: 'short',
-    })
-  } catch {
-    return String(d)
-  }
+  return formatMskApiDateTime(d, { dateStyle: 'short', timeStyle: 'short' })
 }
 
 function telegramUsername(p) {
@@ -178,7 +174,7 @@ function refereeTelegramCell(u) {
 }
 
 const trafficDayLabels = computed(() =>
-  trafficByDay.value.map((r) => formatDayShort(r.traffic_date)),
+  trafficByDay.value.map((r) => formatUtcCalendarDayShort(r.traffic_date)),
 )
 
 const trafficDayDatasets = computed(() => {
@@ -203,7 +199,7 @@ function trafficDayFormatYTick(mib) {
 
 function trafficDayTooltipTitle(i) {
   const iso = trafficByDay.value[i]?.traffic_date
-  return iso ? formatDayShort(iso) : ''
+  return iso ? formatUtcCalendarDayShort(iso) : ''
 }
 
 function trafficDayTooltipLabel(ctx) {
@@ -235,15 +231,7 @@ function paymentKindLabel(k) {
 }
 
 function formatRefTableDate(iso) {
-  if (!iso) return '—'
-  try {
-    return new Date(iso).toLocaleString('ru-RU', {
-      dateStyle: 'short',
-      timeStyle: 'medium',
-    })
-  } catch {
-    return String(iso)
-  }
+  return formatMskApiDateTime(iso, { dateStyle: 'short', timeStyle: 'medium' })
 }
 
 function referralRowToken(r) {

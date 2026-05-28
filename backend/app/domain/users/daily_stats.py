@@ -7,115 +7,33 @@
 from __future__ import annotations
 
 from collections import defaultdict
-import bisect
-import calendar
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime
 from typing import Literal
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time import as_calendar_date, moscow_date_period_start_utc, moscow_today
+from app.core.time import (
+    as_calendar_date,
+    ensure_utc,
+    iter_calendar_days,
+    moscow_date_period_start_utc,
+    moscow_today,
+    msk_month_bounds,
+)
 from app.domain.models.users import (
     DailyPaymentsExpiryStatsRow,
     UserStatsByDateRow,
     UsersDailyStatsResponse,
 )
+from app.domain.traffic_daily import (
+    active_users_count_by_traffic_day,
+    fetch_user_traffic_series,
+    user_has_traffic_ever,
+    user_traffic_growth_days,
+)
 from app.infrastructure.persistence.models.subscription_device import SubscriptionDevice
 from app.infrastructure.persistence.models.user import User
-from app.infrastructure.persistence.models.user_server_traffic import UserServerTraffic
-
-
-async def _traffic_active_count_by_date(
-    session: AsyncSession,
-    *,
-    user_ids_filter: set[int] | None = None,
-) -> dict[date, int]:
-    """День → число «активных» пользователей.
-
-    Активный = в этот день суммарный трафик пользователя по всем узлам стал больше, чем
-    был вчера (на стыке между концом вчерашнего дня и концом сегодняшнего).
-    """
-    stmt = (
-        select(
-            UserServerTraffic.user_id,
-            UserServerTraffic.server_id,
-            UserServerTraffic.traffic_date,
-            UserServerTraffic.up_bytes + UserServerTraffic.down_bytes,
-        )
-        .order_by(
-            UserServerTraffic.user_id.asc(),
-            UserServerTraffic.server_id.asc(),
-            UserServerTraffic.traffic_date.asc(),
-        )
-    )
-    raw = (await session.execute(stmt)).all()
-    by_user: dict[int, dict[int, list[tuple[date, int]]]] = defaultdict(
-        lambda: defaultdict(list),
-    )
-    all_dates: set[date] = set()
-    for uid_raw, sid_raw, td_raw, tot_raw in raw:
-        cal = as_calendar_date(td_raw)
-        if cal is None:
-            continue
-        tot = int(tot_raw or 0)
-        if tot < 0:
-            tot = 0
-        uid = int(uid_raw)
-        if user_ids_filter is not None and uid not in user_ids_filter:
-            continue
-        sid = int(sid_raw)
-        by_user[uid][sid].append((cal, tot))
-        all_dates.add(cal)
-    if not all_dates:
-        return {}
-    min_d = min(all_dates)
-    max_d = max(all_dates)
-    day_list: list[date] = []
-    d = min_d
-    while d <= max_d:
-        day_list.append(d)
-        d += timedelta(days=1)
-
-    user_states: dict[int, dict[str, object]] = {}
-    for uid, servers_map in by_user.items():
-        for sid in servers_map:
-            servers_map[sid].sort(key=lambda x: x[0])
-        user_states[uid] = {
-            "idx": {sid: 0 for sid in servers_map},
-            "cur": {sid: 0 for sid in servers_map},
-            "prev_total": 0,
-        }
-
-    result: dict[date, int] = {}
-    for cal_day in day_list:
-        active = 0
-        for uid, st in user_states.items():
-            servers_map = by_user[uid]
-            idx_map = st["idx"]
-            cur_map = st["cur"]
-            assert isinstance(idx_map, dict)
-            assert isinstance(cur_map, dict)
-            for sid, series in servers_map.items():
-                i = int(idx_map[sid])
-                while i < len(series) and series[i][0] <= cal_day:
-                    cur_map[sid] = series[i][1]
-                    i += 1
-                idx_map[sid] = i
-            total = int(sum(int(cur_map[sid]) for sid in servers_map))
-            prev_total = int(st["prev_total"])
-            if total > prev_total:
-                active += 1
-            st["prev_total"] = total
-        result[cal_day] = active
-    return result
-
-
-def _naive_utc(dt: datetime) -> datetime:
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
-
 
 def _with_day_period_start(rows: list[UserStatsByDateRow]) -> list[UserStatsByDateRow]:
     """Для дневного режима задаёт ``period_start_utc`` — полночь ``stats_date`` по Europe/Moscow (UTC instant)."""
@@ -206,7 +124,7 @@ async def users_daily_stats(
         for row in raw_rows:
             ps = row[0]
             if ps is not None:
-                ps = _naive_utc(ps)
+                ps = ensure_utc(ps)
             stats_rows.append(
                 UserStatsByDateRow(
                     stats_date=None,
@@ -239,119 +157,29 @@ async def users_daily_stats(
     )
 
 
-def _msk_month_bounds(month: str) -> tuple[date, date]:
-    """Первый и последний календарный день месяца Europe/Moscow (YYYY-MM)."""
-    s = month.strip()
-    parts = s.split("-")
-    if len(parts) != 2:
-        raise ValueError("month: ожидается формат YYYY-MM")
-    try:
-        y = int(parts[0], 10)
-        mo = int(parts[1], 10)
-    except ValueError as e:
-        raise ValueError("month: неверные числа в YYYY-MM") from e
-    if y < 1970 or y > 2100 or mo < 1 or mo > 12:
-        raise ValueError("month: недопустимый год или месяц")
-    first = date(y, mo, 1)
-    last = date(y, mo, calendar.monthrange(y, mo)[1])
-    return first, last
-
-
-def _iter_calendar_days(d0: date, d1: date) -> list[date]:
-    out: list[date] = []
-    d = d0
-    while d <= d1:
-        out.append(d)
-        d += timedelta(days=1)
-    return out
-
-
-def _subscription_until_as_date(val: object) -> date | None:
-    if val is None:
-        return None
-    if isinstance(val, datetime):
-        return val.astimezone(timezone.utc).date() if val.tzinfo else val.date()
-    if isinstance(val, date):
-        return val
-    return as_calendar_date(val)
-
-
-def _bytes_at_or_before(series: list[tuple[date, int]], end: date) -> int:
-    if not series:
-        return 0
-    dates = [t[0] for t in series]
-    i = bisect.bisect_right(dates, end) - 1
-    if i < 0:
-        return 0
-    return int(series[i][1] or 0)
-
-
-def _user_bytes_totals_at(
-    servers_map: dict[int, list[tuple[date, int]]],
-    end: date,
-) -> int:
-    return sum(_bytes_at_or_before(series, end) for series in servers_map.values())
-
-
-def _user_active_on_expiry_day(
-    servers_map: dict[int, list[tuple[date, int]]],
-    expiry_day: date,
-) -> bool:
-    prev_day = expiry_day - timedelta(days=1)
-    return _user_bytes_totals_at(servers_map, expiry_day) > _user_bytes_totals_at(
-        servers_map,
-        prev_day,
-    )
-
-
-def _user_has_traffic_ever(servers_map: dict[int, list[tuple[date, int]]]) -> bool:
-    for series in servers_map.values():
-        if series and int(series[-1][1] or 0) > 0:
-            return True
-    return False
-
-
 async def daily_payments_expiry_stats(
     session: AsyncSession,
     *,
     month: str | None = None,
 ) -> list[DailyPaymentsExpiryStatsRow]:
-    """Столбчатый график: оплаты (день МСК) и разбивка по ``subscription_until`` (календарь Москвы).
-
-    Для каждого ``stats_date`` считаются только пользователи с
-    ``subscription_until = stats_date`` (и ``registered_at`` задан).
-    Каждый такой пользователь попадает ровно в одну из четырёх групп (приоритет сверху вниз):
-
-    1. «Активные сегодня» — в **текущий** календарный день Europe/Moscow вырос суммарный трафик
-       (снимки ``traffic_date`` — UTC), независимо от дня окончания подписки на оси.
-    2. «Активные в день окончания» — иначе, рост трафика в календарный день ``stats_date``.
-    3. «С трафиком» — иначе, если когда-либо был ненулевой суммарный трафик.
-    4. «Без трафика» — иначе.
-
-    При ``month=YYYY-MM`` — все календарные дни этого месяца по Москве.
-    Без ``month`` — плотный ряд от min(оплаты, окончания) до max и сегодня МСК.
-    """
+    """Столбчатый график: оплаты (день МСК) и разбивка по ``subscription_until`` (календарь Москвы)."""
 
     msk_td = moscow_today()
 
     elig_raw = (
         await session.execute(
             select(User.id, User.subscription_until).where(
-                User.registered_at.isnot(None),
+                User.registered_at.is_not(None),
                 User.subscription_until.isnot(None),
             ),
         )
     ).all()
-    eligible: list[tuple[int, date]] = []
+    by_su: dict[date, list[int]] = defaultdict(list)
     for uid_raw, su_raw in elig_raw:
-        su = _subscription_until_as_date(su_raw)
+        su = as_calendar_date(su_raw)
         if su is None:
             continue
-        eligible.append((int(uid_raw), su))
-
-    by_su: dict[date, list[int]] = defaultdict(list)
-    for uid, su in eligible:
-        by_su[su].append(uid)
+        by_su[su].append(int(uid_raw))
 
     pay_stmt = text(
         """
@@ -366,96 +194,49 @@ async def daily_payments_expiry_stats(
     pay_rows = (await session.execute(pay_stmt)).all()
     pay_by: dict[date, int] = {row[0]: int(row[1] or 0) for row in pay_rows if row[0] is not None}
 
-    tr_stmt = (
-        select(
-            UserServerTraffic.user_id,
-            UserServerTraffic.server_id,
-            UserServerTraffic.traffic_date,
-            UserServerTraffic.up_bytes + UserServerTraffic.down_bytes,
-        )
-        .select_from(UserServerTraffic)
-        .join(User, User.id == UserServerTraffic.user_id)
-        .where(
-            User.registered_at.isnot(None),
-            User.subscription_until.isnot(None),
-        )
-        .order_by(
-            UserServerTraffic.user_id.asc(),
-            UserServerTraffic.server_id.asc(),
-            UserServerTraffic.traffic_date.asc(),
-        )
-    )
-    tr_raw = (await session.execute(tr_stmt)).all()
-    by_user: dict[int, dict[int, list[tuple[date, int]]]] = defaultdict(
-        lambda: defaultdict(list),
-    )
-    for uid_raw, sid_raw, td_raw, tot_raw in tr_raw:
-        cal = as_calendar_date(td_raw)
-        if cal is None:
-            continue
-        tot = int(tot_raw or 0)
-        if tot < 0:
-            tot = 0
-        uid = int(uid_raw)
-        sid = int(sid_raw)
-        by_user[uid][sid].append((cal, tot))
-    for uid in by_user:
-        for sid in by_user[uid]:
-            series = by_user[uid][sid]
-            series.sort(key=lambda x: x[0])
-            by_day: dict[date, int] = {}
-            for cal, bt in series:
-                b = int(bt or 0)
-                if b < 0:
-                    b = 0
-                prev = by_day.get(cal, 0)
-                if b > prev:
-                    by_day[cal] = b
-            by_user[uid][sid] = sorted(by_day.items(), key=lambda x: x[0])
+    by_user = await fetch_user_traffic_series(session, eligible_users_only=True)
 
-    ever_cache: dict[int, bool] = {}
+    user_flags: dict[int, tuple[bool, frozenset[date]]] = {}
+    bucket_by_day: dict[date, list[int]] = defaultdict(lambda: [0, 0, 0, 0])
 
-    def ever_positive(uid: int, sm: dict[int, list[tuple[date, int]]]) -> bool:
-        if uid not in ever_cache:
-            ever_cache[uid] = _user_has_traffic_ever(sm)
-        return ever_cache[uid]
+    for su_day, uids in by_su.items():
+        for uid in uids:
+            sm = by_user.get(uid)
+            if not sm or not any(series for series in sm.values()):
+                bucket_by_day[su_day][3] += 1
+                continue
+            if uid not in user_flags:
+                user_flags[uid] = (
+                    user_has_traffic_ever(sm),
+                    user_traffic_growth_days(sm),
+                )
+            has_tr, growth = user_flags[uid]
+            if msk_td in growth:
+                bucket_by_day[su_day][0] += 1
+            elif su_day in growth:
+                bucket_by_day[su_day][1] += 1
+            elif has_tr:
+                bucket_by_day[su_day][2] += 1
+            else:
+                bucket_by_day[su_day][3] += 1
 
     expiry_dates = set(by_su.keys())
     pay_dates = set(pay_by.keys())
 
     if month is not None:
-        lo, hi = _msk_month_bounds(month)
-        days = _iter_calendar_days(lo, hi)
+        lo, hi = msk_month_bounds(month)
+        days = iter_calendar_days(lo, hi)
     else:
         if not expiry_dates and not pay_dates:
             return []
         d0 = min(expiry_dates | pay_dates | {msk_td})
         d1 = max(expiry_dates | pay_dates | {msk_td})
-        days = _iter_calendar_days(d0, d1)
-
-    bucket_by_day: dict[date, tuple[int, int, int, int]] = {}
-    for su_day, uids in by_su.items():
-        n_today = n_day = n_traffic = n_none = 0
-        for uid in uids:
-            sm = by_user.get(uid)
-            if not sm or not any(series for series in sm.values()):
-                n_none += 1
-                continue
-            active_on_column_day = _user_active_on_expiry_day(sm, su_day)
-            has_tr = ever_positive(uid, sm)
-            if _user_active_on_expiry_day(sm, msk_td):
-                n_today += 1
-            elif active_on_column_day:
-                n_day += 1
-            elif has_tr:
-                n_traffic += 1
-            else:
-                n_none += 1
-        bucket_by_day[su_day] = (n_today, n_day, n_traffic, n_none)
+        days = iter_calendar_days(d0, d1)
 
     out: list[DailyPaymentsExpiryStatsRow] = []
     for d in days:
-        t, s, o, g = bucket_by_day.get(d, (0, 0, 0, 0))
+        counts = bucket_by_day.get(d)
+        t, s, o, g = tuple(counts) if counts else (0, 0, 0, 0)
         pay_n = int(pay_by.get(d, 0) or 0)
         tot_e = t + s + o + g
         out.append(
@@ -476,10 +257,8 @@ async def count_users_with_subscription_device(
     session: AsyncSession,
     referral_link_id: int | None,
 ) -> int:
-    """Число пользователей с хотя бы одной записью в ``subscription_devices``.
+    """Число пользователей с хотя бы одной записью в ``subscription_devices``."""
 
-    При ``referral_link_id`` фильтрует по реферальной ссылке (для статистики кампаний).
-    """
     stmt = select(func.count(func.distinct(SubscriptionDevice.user_id))).select_from(
         SubscriptionDevice,
     ).join(User, User.id == SubscriptionDevice.user_id)
@@ -493,11 +272,8 @@ async def active_users_count_for_utc_date(
     cal_day: date,
     referral_link_id: int | None,
 ) -> int:
-    """Сколько «активных» пользователей за конкретный календарный день UTC.
+    """«Активные» за календарный день UTC по ``traffic_date`` (воронка рефералов)."""
 
-    Та же метрика, что в ``users_daily_stats``, но за один день и с возможностью фильтрации
-    по ``referral_link_id``.
-    """
     filt: set[int] | None = None
     if referral_link_id is not None:
         ids_raw = (
@@ -506,5 +282,6 @@ async def active_users_count_for_utc_date(
             )
         ).all()
         filt = {int(i) for i in ids_raw}
-    m = await _traffic_active_count_by_date(session, user_ids_filter=filt)
-    return int(m.get(cal_day, 0) or 0)
+    series = await fetch_user_traffic_series(session, user_ids_filter=filt)
+    counts = active_users_count_by_traffic_day(series, day_list=[cal_day])
+    return int(counts.get(cal_day, 0) or 0)

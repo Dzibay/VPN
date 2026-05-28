@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from app.core.time import utc_now
 from app.domain.models.telegram_notification_tasks import (
     TelegramNotificationTaskItem,
     TelegramNotificationTasksListResponse,
@@ -85,7 +86,7 @@ async def acknowledge_notification_tasks_with_statuses(
     completed_ids = _unique_positive(completed_task_ids)
     failed_ids = _unique_positive(failed_task_ids)
     failed_ids = [x for x in failed_ids if x not in set(completed_ids)]
-    now = datetime.now(timezone.utc)
+    now = utc_now()
 
     async def _update(ids: list[int], status: str) -> list[int]:
         if not ids:

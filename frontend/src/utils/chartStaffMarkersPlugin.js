@@ -3,33 +3,14 @@
  * Данные: options.plugins.staffChartMarkers.markers = [{ index, title, color }]
  */
 
+import {
+  mskDayKeyFromIso,
+  mskTodayIso,
+  utcHourIsoKeyFromInstant,
+} from './mskDate.js'
+import { chartSeriesRgb } from './adminChartTheme.js'
+
 /** @typedef {{ index: number; title: string; color: string; kind?: string }} ChartEventMarker */
-
-function utcHourFloorMs(ms) {
-  const d = new Date(ms)
-  return Date.UTC(
-    d.getUTCFullYear(),
-    d.getUTCMonth(),
-    d.getUTCDate(),
-    d.getUTCHours(),
-    0,
-    0,
-    0,
-  )
-}
-
-function mskDayKeyFromEventIso(evIso) {
-  const t = Date.parse(evIso)
-  if (Number.isNaN(t)) return null
-  return new Date(t).toLocaleDateString('sv-SE', { timeZone: 'Europe/Moscow' })
-}
-
-function utcHourIsoKeyFromEventIso(evIso) {
-  const t = Date.parse(evIso)
-  if (!Number.isFinite(t)) return null
-  const ms = utcHourFloorMs(t)
-  return new Date(ms).toISOString()
-}
 
 /**
  * X-пиксель центра точки данных по индексу (устойчиво при autoSkip на оси категорий).
@@ -44,10 +25,6 @@ function dataPointCenterX(chart, dataIndex) {
   return typeof x === 'number' && Number.isFinite(x) ? x : null
 }
 
-function mskCalendarTodayYmd() {
-  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Moscow' })
-}
-
 /**
  * Вертикальная отметка «сегодня» на линейном графике: день МСК в режиме по дням;
  * в почасовом — только если выбран сегодняшний календарный день по МСК, тогда текущий час.
@@ -59,10 +36,10 @@ function mskCalendarTodayYmd() {
 export function makeTodayLineChartMarker(chartPoints, granularity, hourDayMsk) {
   if (!Array.isArray(chartPoints) || chartPoints.length === 0) return null
   /** @type {ChartEventMarker} */
-  const base = { title: '', color: '#34d399' }
+  const base = { title: '', color: chartSeriesRgb.todayMarker }
 
   if (granularity === 'day') {
-    const key = mskCalendarTodayYmd()
+    const key = mskTodayIso()
     const idx = chartPoints.findIndex(
       (p) => String(p?.iso ?? '').slice(0, 10) === key,
     )
@@ -72,8 +49,8 @@ export function makeTodayLineChartMarker(chartPoints, granularity, hourDayMsk) {
 
   if (granularity === 'hour') {
     const sel = String(hourDayMsk ?? '').trim().slice(0, 10)
-    if (!sel || sel !== mskCalendarTodayYmd()) return null
-    const nowKey = utcHourIsoKeyFromEventIso(new Date().toISOString())
+    if (!sel || sel !== mskTodayIso()) return null
+    const nowKey = utcHourIsoKeyFromInstant(new Date().toISOString())
     if (!nowKey) return null
     const idx = chartPoints.findIndex((p) => String(p?.iso ?? '') === nowKey)
     if (idx < 0) return null
@@ -84,8 +61,7 @@ export function makeTodayLineChartMarker(chartPoints, granularity, hourDayMsk) {
 }
 
 /**
- * Сопоставляет события индексам точек графика (день или час по Москве — как у данных RPC).
- * event_at в ответе API приходит в московском ISO; сравнение через абсолютный момент (UTC).
+ * Сопоставляет события индексам точек графика (день или час — как у данных API).
  * @param {Array<{ iso: string }>} chartPoints
  * @param {'day'|'hour'} granularity
  * @param {Array<{ event_at: string; title: string; color: string }>} events
@@ -101,11 +77,11 @@ export function mapStaffChartEventsToMarkers(chartPoints, granularity, events) {
     let idx = -1
 
     if (granularity === 'hour') {
-      const key = utcHourIsoKeyFromEventIso(ev.event_at)
+      const key = utcHourIsoKeyFromInstant(ev.event_at)
       if (!key) continue
       idx = chartPoints.findIndex((p) => p.iso === key)
     } else {
-      const key = mskDayKeyFromEventIso(ev.event_at)
+      const key = mskDayKeyFromIso(ev.event_at)
       if (!key) continue
       idx = chartPoints.findIndex((p) => String(p.iso).slice(0, 10) === key)
     }

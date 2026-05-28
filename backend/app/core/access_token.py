@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Literal
 
 import jwt
 
 from app.config import Settings
+from app.core.time import utc_now
 from app.constants import JWT_TOKEN_TTL_DAYS
 
 _JWT_ALG = "HS256"
@@ -47,7 +48,7 @@ def create_access_token(
     user_id: int | None = None,
 ) -> str:
     secret = jwt_signing_secret(settings)
-    now = datetime.now(timezone.utc)
+    now = utc_now()
     if user_id is None:
         raise ValueError("user_id обязателен для всех ролей JWT")
     sub = str(user_id)

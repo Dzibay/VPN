@@ -12,16 +12,15 @@ import {
 } from '../api/client.js'
 import AppTooltip from '../components/AppTooltip.vue'
 import { formatTrafficBytes } from '../utils/formatTraffic.js'
-import { isMobileDevice, openTelegramDeepLink } from '../util/openDeepLink.js'
-import { payRequiresTelegramBinding } from '../util/payRequiresTelegram.js'
+import { isMobileDevice, openTelegramDeepLink } from '../utils/subscription/openDeepLink.js'
 import {
   formatSubscriptionConnectionOs,
   formatSubscriptionConnectionUserAgent,
-} from '../util/subscriptionConnectionFormat.js'
+} from '../utils/subscription/subscriptionConnectionFormat.js'
 import {
   hideClientLogoOnError,
   openClientLogoUrl,
-} from '../util/subscriptionOpenClientLogo.js'
+} from '../utils/subscription/subscriptionOpenClientLogo.js'
 import { Check, CreditCard, Link2, Loader2, Send } from 'lucide-vue-next'
 
 /** Подсказки к строкам исх./вх. в блоке трафика */
@@ -131,11 +130,6 @@ const profileTelegramUsername = computed(() => {
   if (!raw) return ''
   return raw.startsWith('@') ? raw : `@${raw}`
 })
-
-/** Редирект с /cabinet/pay: просим привязать Telegram, если бот настроен на API. */
-const payNeedTelegramBanner = computed(
-  () => payNeedTelegramQuery() && payRequiresTelegramBinding(me.value),
-)
 
 /** @type {import('vue').Ref<null | Record<string, unknown>>} */
 const myReferralLink = ref(null)
@@ -807,19 +801,6 @@ onMounted(() => {
         aria-labelledby="cabinet-tab-profile"
       >
         <div class="stack">
-          <div
-            v-if="payNeedTelegramBanner"
-            class="card card-pad profile-pay-tg-callout"
-            role="status"
-          >
-            <p class="profile-pay-tg-callout__title">
-              Оплата на сайте доступна после привязки Telegram
-            </p>
-            <p class="hint profile-pay-tg-callout__hint">
-              Так мы сопоставим платёж с вашим аккаунтом. Нажмите кнопку ниже и следуйте
-              инструкциям бота.
-            </p>
-          </div>
           <div v-if="me.role === 'admin'" class="card card-pad">
             <h2 class="block-title">Администратор</h2>
             <p class="hint">

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.core.time import utc_now
 from app.domain.tasks.dedupe import user_ids_with_any_task_type_ever
 from app.domain.tasks.notification_task_types import (
     NOTIFY_REG_1H_HAS_TRAFFIC,
@@ -21,10 +22,6 @@ from app.infrastructure.persistence.models.user import User
 from app.infrastructure.persistence.models.user_server_traffic import UserServerTraffic
 
 log = logging.getLogger("app.users.post_registration_notify")
-
-
-def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _users_with_traffic(session: Session, user_ids: list[int]) -> set[int]:
@@ -48,7 +45,7 @@ def enqueue_post_registration_notification_tasks() -> int:
     есть ``telegram_id``, ещё нет задачи post-reg. Идемпотентно по user_id.
     """
 
-    now = _utc_now()
+    now = utc_now()
     delay = timedelta(hours=float(settings.post_registration_notify_delay_hours))
     lookback = timedelta(minutes=int(settings.post_registration_notify_lookback_minutes))
     cutoff = now - delay

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.core.request_subject import bind_request_subject_user
-from app.core.time import moscow_today
+from app.core.time import ensure_utc, moscow_today, utc_now
 from app.domain.models.payments import PaymentWebhookAck
 from app.domain.referrals.payment_tasks import apply_referral_bonus_on_payment
 from app.domain.referrals.task_bonus_days import sum_referral_bonus_days_pending_activation
@@ -51,16 +51,6 @@ class PaymentIngestParsed:
 
 def amount_from_minor_units(amount_minor: int) -> Decimal:
     return (Decimal(int(amount_minor)) * Decimal("0.01")).quantize(Decimal("0.01"))
-
-
-def ensure_utc(dt: datetime) -> datetime:
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
-
-
-def iso_utc(dt: datetime) -> str:
-    return ensure_utc(dt).isoformat().replace("+00:00", "Z")
 
 
 def extend_subscription_until(base: date | None, *, days: int) -> date:
@@ -216,7 +206,7 @@ async def create_staff_manual_payment(
     if user is None:
         raise LookupError("user_not_found")
 
-    paid_at = ensure_utc(created_at) if created_at is not None else datetime.now(timezone.utc)
+    paid_at = ensure_utc(created_at) if created_at is not None else utc_now()
     amount_q = Decimal(amount).quantize(Decimal("0.01"))
 
     payment = Payment(

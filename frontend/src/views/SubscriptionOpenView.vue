@@ -7,13 +7,13 @@ import { fetchJson, subscriptionPublicUrl } from '../api/client.js'
 import {
   hideClientLogoOnError,
   openClientLogoUrl,
-} from '../util/subscriptionOpenClientLogo.js'
+} from '../utils/subscription/subscriptionOpenClientLogo.js'
 import {
   forcedStoreRefs,
   getMobileStoreRedirectUrl,
   isMobileAppStoreDevice,
   pickStoreRefsAuto,
-} from '../util/subscriptionOpenStores.js'
+} from '../utils/subscription/subscriptionOpenStores.js'
 
 const route = useRoute()
 const router = useRouter()

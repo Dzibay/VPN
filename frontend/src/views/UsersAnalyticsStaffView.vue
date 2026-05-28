@@ -13,7 +13,7 @@ import { formatLocaleDateRu } from '../utils/formatLocaleDate.js'
 import {
   formatSubscriptionConnectionOs,
   formatSubscriptionConnectionUserAgent,
-} from '../util/subscriptionConnectionFormat.js'
+} from '../utils/subscription/subscriptionConnectionFormat.js'
 
 const route = useRoute()
 const router = useRouter()

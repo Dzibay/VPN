@@ -19,7 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
-from app.core.time import moscow_day_bounds_utc, moscow_today, utc_today
+from app.core.time import ensure_utc, moscow_day_bounds_utc, moscow_today, utc_today
 from app.domain.models.auth import SubscriptionConnectionItem
 from app.domain.models.users import (
     ExtendActiveSubscriptionsBody,
@@ -196,13 +196,10 @@ async def users_count(session: AsyncSession) -> UsersCountResponse:
         if t is not None
     ]
     all_times.sort()
-    def _as_utc(dt: datetime) -> datetime:
-        if dt.tzinfo is None:
-            return dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc)
-
     today_times = sorted(
-        _as_utc(t) for t in all_times if start_today <= _as_utc(t) < end_today
+        ut
+        for t in all_times
+        if start_today <= (ut := ensure_utc(t)) < end_today
     )
 
     return UsersCountResponse(

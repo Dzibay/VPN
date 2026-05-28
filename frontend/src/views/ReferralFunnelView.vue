@@ -1,7 +1,10 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
-import { utcTodayIso, formatDayShort } from '../composables/useUsersDailyStatsChart.js'
+import {
+  formatUtcCalendarDayShort,
+  utcTodayIso,
+} from '../utils/mskDate.js'
 import { fetchJson } from '../api/client.js'
 
 const loading = ref(false)
@@ -268,7 +271,7 @@ onMounted(async () => {
             <span class="connector-caption"
               >трафик → активные
               <span class="connector-hint"
-                >({{ formatDayShort(utcTodayIso()) }} UTC)</span
+                >({{ formatUtcCalendarDayShort(utcTodayIso()) }}, UTC-день трафика)</span
               ></span
             >
           </div>

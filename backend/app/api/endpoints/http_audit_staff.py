@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -14,6 +14,7 @@ from app.core.dependencies import (
     require_referrals_staff,
 )
 from app.core.exceptions import BadRequestError
+from app.core.time import ensure_utc
 from app.domain.models.http_audit_staff import (
     HttpRequestTraceBulkDeleteBody,
     HttpRequestTraceBulkDeleteResponse,
@@ -30,12 +31,6 @@ router = APIRouter(
     tags=["admin"],
     dependencies=[Depends(require_referrals_staff)],
 )
-
-
-def _coerce_trace_dt_utc(dt: datetime) -> datetime:
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
 
 
 @router.get(
@@ -104,9 +99,9 @@ async def list_http_request_traces(
     path_filter = path_sub or None
 
     created_from_utc = (
-        _coerce_trace_dt_utc(created_from) if created_from is not None else None
+        ensure_utc(created_from) if created_from is not None else None
     )
-    created_to_utc = _coerce_trace_dt_utc(created_to) if created_to is not None else None
+    created_to_utc = ensure_utc(created_to) if created_to is not None else None
     if (
         created_from_utc is not None
         and created_to_utc is not None
