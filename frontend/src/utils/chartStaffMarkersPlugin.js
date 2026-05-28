@@ -18,14 +18,10 @@ function utcHourFloorMs(ms) {
   )
 }
 
-function utcDayKeyFromEventIso(evIso) {
+function mskDayKeyFromEventIso(evIso) {
   const t = Date.parse(evIso)
   if (Number.isNaN(t)) return null
-  const d = new Date(t)
-  const y = d.getUTCFullYear()
-  const mo = String(d.getUTCMonth() + 1).padStart(2, '0')
-  const day = String(d.getUTCDate()).padStart(2, '0')
-  return `${y}-${mo}-${day}`
+  return new Date(t).toLocaleDateString('sv-SE', { timeZone: 'Europe/Moscow' })
 }
 
 function utcHourIsoKeyFromEventIso(evIso) {
@@ -52,17 +48,9 @@ function mskCalendarTodayYmd() {
   return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Moscow' })
 }
 
-function utcTodayYmd() {
-  const d = new Date()
-  const y = d.getUTCFullYear()
-  const mo = String(d.getUTCMonth() + 1).padStart(2, '0')
-  const day = String(d.getUTCDate()).padStart(2, '0')
-  return `${y}-${mo}-${day}`
-}
-
 /**
- * Вертикальная отметка «сегодня» на линейном графике: UTC-день в режиме по дням;
- * в почасовом — только если выбран сегодняшний календарный день по МСК, тогда текущий час UTC.
+ * Вертикальная отметка «сегодня» на линейном графике: день МСК в режиме по дням;
+ * в почасовом — только если выбран сегодняшний календарный день по МСК, тогда текущий час.
  * @param {Array<{ iso: string }>} chartPoints
  * @param {'day'|'hour'} granularity
  * @param {string} hourDayMsk
@@ -74,12 +62,12 @@ export function makeTodayLineChartMarker(chartPoints, granularity, hourDayMsk) {
   const base = { title: '', color: '#34d399' }
 
   if (granularity === 'day') {
-    const key = utcTodayYmd()
+    const key = mskCalendarTodayYmd()
     const idx = chartPoints.findIndex(
       (p) => String(p?.iso ?? '').slice(0, 10) === key,
     )
     if (idx < 0) return null
-    return { ...base, index: idx, title: 'Сегодня (UTC)', kind: 'today' }
+    return { ...base, index: idx, title: 'Сегодня (МСК)', kind: 'today' }
   }
 
   if (granularity === 'hour') {
@@ -89,14 +77,14 @@ export function makeTodayLineChartMarker(chartPoints, granularity, hourDayMsk) {
     if (!nowKey) return null
     const idx = chartPoints.findIndex((p) => String(p?.iso ?? '') === nowKey)
     if (idx < 0) return null
-    return { ...base, index: idx, title: 'Сейчас (UTC)', kind: 'today' }
+    return { ...base, index: idx, title: 'Сейчас (МСК)', kind: 'today' }
   }
 
   return null
 }
 
 /**
- * Сопоставляет события индексам точек графика (день UTC или час по Москве — как у данных RPC).
+ * Сопоставляет события индексам точек графика (день или час по Москве — как у данных RPC).
  * event_at в ответе API приходит в московском ISO; сравнение через абсолютный момент (UTC).
  * @param {Array<{ iso: string }>} chartPoints
  * @param {'day'|'hour'} granularity
@@ -117,7 +105,7 @@ export function mapStaffChartEventsToMarkers(chartPoints, granularity, events) {
       if (!key) continue
       idx = chartPoints.findIndex((p) => p.iso === key)
     } else {
-      const key = utcDayKeyFromEventIso(ev.event_at)
+      const key = mskDayKeyFromEventIso(ev.event_at)
       if (!key) continue
       idx = chartPoints.findIndex((p) => String(p.iso).slice(0, 10) === key)
     }

@@ -129,7 +129,7 @@ async def staff_search_users(
     "/daily-stats",
     response_model=UsersDailyStatsResponse,
     dependencies=[Depends(require_referrals_staff)],
-    summary="Статистика: по UTC-дням или по часам суток Москвы (granularity); время в JSON — Москва",
+    summary="Статистика: по дням МСК или по часам суток Москвы (granularity); время в JSON — Москва",
 )
 async def users_daily_stats_ep(
     session: ReadonlySessionDep,
@@ -137,7 +137,7 @@ async def users_daily_stats_ep(
         Literal["day", "hour"],
         Query(
             description=(
-                "day — по календарным дням UTC; hour — 24 часа календарного дня Europe/Moscow (hour_day обязателен)"
+                "day — по календарным дням Europe/Moscow; hour — 24 часа календарного дня Europe/Moscow (hour_day обязателен)"
             ),
         ),
     ] = "day",
@@ -167,14 +167,14 @@ async def users_daily_stats_ep(
     "/daily-payments-expiry-bars",
     response_model=DailyPaymentsExpiryStatsResponse,
     dependencies=[Depends(require_referrals_staff)],
-    summary="Оплаты, трафик/активные за день и окончания подписки по UTC-дням (столбчатый график)",
+    summary="Оплаты, трафик/активные за день и окончания подписки по дням МСК (столбчатый график)",
 )
 async def daily_payments_expiry_bars_ep(
     session: ReadonlySessionDep,
     month: Annotated[
         str | None,
         Query(
-            description="Календарный месяц UTC в виде YYYY-MM; если не указан — все дни из RPC",
+            description="Календарный месяц Europe/Moscow в виде YYYY-MM; если не указан — все дни в диапазоне данных",
         ),
     ] = None,
 ) -> DailyPaymentsExpiryStatsResponse:

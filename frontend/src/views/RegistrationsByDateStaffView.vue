@@ -6,9 +6,9 @@ import AdminStaffShell from '../components/AdminStaffShell.vue'
 import { fetchJson } from '../api/client.js'
 import { mapStaffChartEventsToMarkers } from '../utils/chartStaffMarkersPlugin.js'
 import {
-  formatDayShort,
+  formatMskCalendarDayShort,
+  mskMonthInputDefault,
   mskTodayIso,
-  utcTodayIso,
   useUsersDailyStatsChart,
 } from '../composables/useUsersDailyStatsChart.js'
 import { rgba } from '../utils/adminChartTheme.js'
@@ -128,16 +128,8 @@ const {
 
 const { setGranularity, load } = chart
 
-/** Значение для `<input type="month">`: текущий календарный месяц UTC (YYYY-MM). */
-function utcMonthInputDefault() {
-  const d = new Date()
-  const y = d.getUTCFullYear()
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0')
-  return `${y}-${m}`
-}
-
-const payExpMonth = ref(utcMonthInputDefault())
-const payExpMonthMax = computed(() => utcMonthInputDefault())
+const payExpMonth = ref(mskMonthInputDefault())
+const payExpMonthMax = computed(() => mskMonthInputDefault())
 
 const chartEventMarkers = computed(() =>
   mapStaffChartEventsToMarkers(
@@ -164,20 +156,20 @@ const payExpLoading = ref(false)
 const payExpError = ref(null)
 
 const payExpXMarkers = computed(() => {
-  const today = utcTodayIso()
+  const today = mskTodayIso()
   if (String(today).slice(0, 7) !== payExpMonth.value) return []
   const idx = payExpRows.value.findIndex(
     (r) => String(r.stats_date ?? '').slice(0, 10) === today,
   )
   if (idx < 0) return []
-  return [{ index: idx, title: 'Сегодня (UTC)', color: '#34d399', kind: 'today' }]
+  return [{ index: idx, title: 'Сегодня (МСК)', color: '#34d399', kind: 'today' }]
 })
 
 /** Как на линейном графике: «С оплатой» (амбар), не путать с «С трафиком». */
 const PAYMENT_AMBER_RGB = /** @type {const} */ ([245, 158, 11])
-/** «С оплатой активных» на линейном графике — слой «активны по трафику в текущий UTC-день» для столбца даты окончания. */
+/** «С оплатой активных» на линейном графике — слой «активны по трафику сегодня (МСК)» для столбца даты окончания. */
 const ACTIVE_PAY_TEAL_RGB = /** @type {const} */ ([45, 212, 191])
-/** «Активные» на линейном графике — рост трафика в день окончания (не сегодняшний UTC-день). */
+/** «Активные» на линейном графике — рост трафика в день окончания (не сегодняшний день МСК). */
 const ACTIVE_SKY_RGB = /** @type {const} */ ([56, 189, 248])
 /** «С трафиком» на линейном графике. */
 const TRAFFIC_ORANGE_RGB = /** @type {const} */ ([251, 146, 60])
@@ -190,8 +182,13 @@ const PAY_EXP_BAR_STYLE = /** @type {const} */ ({
 })
 
 const payExpLabels = computed(() =>
-  payExpRows.value.map((r) => formatDayShort(String(r.stats_date).slice(0, 10))),
+  payExpRows.value.map((r) =>
+    formatMskCalendarDayShort(String(r.stats_date).slice(0, 10)),
+  ),
 )
+
+const payExpAriaLabel =
+  'По дням МСК: оплаты и окончания подписки (без трафика, с трафиком, активные в день окончания, активные сегодня)'
 
 /** Нижний слой стека → верхний (как на странице «Финансы»). */
 const payExpDatasets = computed(() => {
@@ -231,7 +228,7 @@ const payExpDatasets = computed(() => {
       maxBarThickness,
     },
     {
-      label: 'Окончание: активные сегодня',
+      label: 'Окончание: активные сегодня (МСК)',
       data: rows.map((r) => Number(r.subscription_expiring_active_today_count) || 0),
       rgb: /** @type {[number, number, number]} */ ([...ACTIVE_PAY_TEAL_RGB]),
       borderRadius,
@@ -302,7 +299,7 @@ watch(payExpMonth, () => {
           <div
             class="granularity-toggle"
             role="group"
-            aria-label="Шаг временной шкалы: дни по UTC, часы по Москве"
+            aria-label="Шаг временной шкалы: дни по Москве (регистрации), часы по Москве"
           >
             <button
               type="button"
@@ -374,7 +371,7 @@ watch(payExpMonth, () => {
     </template>
 
     <p v-if="granularity === 'hour'" class="stats-hint">
-      Почасовой график за выбранный календарный день UTC (24 часа); время на оси — Москва (МСК). Накопительные регистрации и
+      Почасовой график за выбранный календарный день по Москве (24 часа); время на оси — МСК. Накопительные регистрации и
       первые подключения устройств. Серии про трафик не показываются.
     </p>
 
@@ -500,13 +497,13 @@ watch(payExpMonth, () => {
         </label>
       </div>
       <AdminBarChartPanel
-        aria-label=""
+        :aria-label="payExpAriaLabel"
         :loading="payExpLoading"
         :error="payExpError"
         :has-data="payExpRows.length > 0"
         title="Оплаты и окончания подписки"
-        unit-label=""
-        hint=""
+        unit-label="МСК"
+        hint="Календарные дни Europe/Moscow; оплаты по created_at, окончание — по subscription_until."
         :labels="payExpLabels"
         :datasets="payExpDatasets"
         :x-markers="payExpXMarkers"

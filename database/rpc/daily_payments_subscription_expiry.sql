@@ -1,4 +1,5 @@
--- По календарным дням UTC: оплаты; окончание подписки (всего = inactive + active);
+-- Оплаты — календарный день Europe/Moscow; subscription_until — календарь Москвы;
+-- активность по traffic_date (UTC на момент сбора).
 -- «active» — тот же день subscription_until и рост суммарного трафика этот день (как active_users в daily_stats).
 drop function if exists rpc_daily_payments_and_subscription_expirations;
 
@@ -87,7 +88,7 @@ expired_active_by_day AS (
 ),
 pay_by_day AS (
     SELECT
-        (p.created_at AT TIME ZONE 'UTC')::date AS d,
+        (p.created_at AT TIME ZONE 'Europe/Moscow')::date AS d,
         COUNT(*)::bigint AS n
     FROM payments p
     INNER JOIN eligible e ON e.id = p.user_id

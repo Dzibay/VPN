@@ -1,7 +1,7 @@
 """Системные дневные метрики: регистрации, активные пользователи, первые подписочные устройства.
 
-Дневной режим — календарные дни UTC (``rpc_users_daily_stats()``). Почасовой — сутки по календарю
-Москвы (``rpc_users_hourly_stats``). Поля ``datetime`` в JSON — Москва (``app.core.moscow_api_time``).
+Дневной режим — календарные дни Europe/Moscow (``rpc_users_daily_stats()``; трафик по ``traffic_date`` UTC).
+Почасовой — сутки по календарю Москвы (``rpc_users_hourly_stats``). Поля ``datetime`` в JSON — Москва.
 """
 
 from __future__ import annotations
@@ -9,13 +9,13 @@ from __future__ import annotations
 from collections import defaultdict
 import bisect
 import calendar
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time import as_calendar_date
+from app.core.time import as_calendar_date, moscow_date_period_start_utc, moscow_today
 from app.domain.models.users import (
     DailyPaymentsExpiryStatsRow,
     UserStatsByDateRow,
@@ -118,14 +118,14 @@ def _naive_utc(dt: datetime) -> datetime:
 
 
 def _with_day_period_start(rows: list[UserStatsByDateRow]) -> list[UserStatsByDateRow]:
-    """Для дневного режима задаёт ``period_start_utc`` полуночью UTC для строк с ``stats_date``."""
+    """Для дневного режима задаёт ``period_start_utc`` — полночь ``stats_date`` по Europe/Moscow (UTC instant)."""
 
     out: list[UserStatsByDateRow] = []
     for r in rows:
         if r.stats_date is None:
             out.append(r)
             continue
-        start = datetime.combine(r.stats_date, time.min, tzinfo=timezone.utc)
+        start = moscow_date_period_start_utc(r.stats_date)
         out.append(r.model_copy(update={"period_start_utc": start}))
     return out
 
@@ -184,7 +184,7 @@ async def users_daily_stats(
     granularity: Literal["day", "hour"] = "day",
     hour_day: date | None = None,
 ) -> UsersDailyStatsResponse:
-    """Сводка для эндпоинта ``/users/daily-stats`` (дни UTC или 24 часа календарного дня МСК)."""
+    """Сводка для эндпоинта ``/users/daily-stats`` (дни МСК или 24 часа календарного дня МСК)."""
 
     if granularity == "hour":
         if hour_day is None:
@@ -239,8 +239,8 @@ async def users_daily_stats(
     )
 
 
-def _utc_month_bounds(month: str) -> tuple[date, date]:
-    """Первый и последний календарный день месяца UTC (YYYY-MM)."""
+def _msk_month_bounds(month: str) -> tuple[date, date]:
+    """Первый и последний календарный день месяца Europe/Moscow (YYYY-MM)."""
     s = month.strip()
     parts = s.split("-")
     if len(parts) != 2:
@@ -255,10 +255,6 @@ def _utc_month_bounds(month: str) -> tuple[date, date]:
     first = date(y, mo, 1)
     last = date(y, mo, calendar.monthrange(y, mo)[1])
     return first, last
-
-
-def _utc_today_date() -> date:
-    return datetime.now(timezone.utc).date()
 
 
 def _iter_calendar_days(d0: date, d1: date) -> list[date]:
@@ -320,25 +316,23 @@ async def daily_payments_expiry_stats(
     *,
     month: str | None = None,
 ) -> list[DailyPaymentsExpiryStatsRow]:
-    """Столбчатый график: оплаты и разбивка пользователей по ``subscription_until`` (UTC-календарь).
+    """Столбчатый график: оплаты (день МСК) и разбивка по ``subscription_until`` (календарь Москвы).
 
     Для каждого ``stats_date`` считаются только пользователи с
     ``subscription_until = stats_date`` (и ``registered_at`` задан).
     Каждый такой пользователь попадает ровно в одну из четырёх групп (приоритет сверху вниз):
 
-    1. «Активные сегодня» — в **текущий** календарный день UTC вырос суммарный трафик (как
-       ``active_users_count`` за сегодня в ``rpc_users_daily_stats``), независимо от того,
-       каким днём в будущем или прошлом является ``stats_date`` (день окончания подписки).
-    2. «Активные в день окончания» — иначе, рост суммарного трафика в календарный день
-       ``stats_date`` (= ``subscription_until``).
-    3. «С трафиком» — иначе, если когда-либо был ненулевой суммарный трафик по данным ``user_server_traffic``.
+    1. «Активные сегодня» — в **текущий** календарный день Europe/Moscow вырос суммарный трафик
+       (снимки ``traffic_date`` — UTC), независимо от дня окончания подписки на оси.
+    2. «Активные в день окончания» — иначе, рост трафика в календарный день ``stats_date``.
+    3. «С трафиком» — иначе, если когда-либо был ненулевой суммарный трафик.
     4. «Без трафика» — иначе.
 
-    При ``month=YYYY-MM`` возвращаются **все** календарные дни этого месяца UTC (в т.ч. без событий).
-    Без ``month`` — плотный ряд от минимальной даты среди окончаний/оплат до максимальной и сегодня UTC.
+    При ``month=YYYY-MM`` — все календарные дни этого месяца по Москве.
+    Без ``month`` — плотный ряд от min(оплаты, окончания) до max и сегодня МСК.
     """
 
-    utc_td = _utc_today_date()
+    msk_td = moscow_today()
 
     elig_raw = (
         await session.execute(
@@ -361,7 +355,7 @@ async def daily_payments_expiry_stats(
 
     pay_stmt = text(
         """
-        SELECT (p.created_at AT TIME ZONE 'UTC')::date AS d, COUNT(*)::bigint AS n
+        SELECT (p.created_at AT TIME ZONE 'Europe/Moscow')::date AS d, COUNT(*)::bigint AS n
         FROM payments p
         INNER JOIN users u ON u.id = p.user_id
         WHERE u.registered_at IS NOT NULL
@@ -430,13 +424,13 @@ async def daily_payments_expiry_stats(
     pay_dates = set(pay_by.keys())
 
     if month is not None:
-        lo, hi = _utc_month_bounds(month)
+        lo, hi = _msk_month_bounds(month)
         days = _iter_calendar_days(lo, hi)
     else:
         if not expiry_dates and not pay_dates:
             return []
-        d0 = min(expiry_dates | pay_dates | {utc_td})
-        d1 = max(expiry_dates | pay_dates | {utc_td})
+        d0 = min(expiry_dates | pay_dates | {msk_td})
+        d1 = max(expiry_dates | pay_dates | {msk_td})
         days = _iter_calendar_days(d0, d1)
 
     bucket_by_day: dict[date, tuple[int, int, int, int]] = {}
@@ -449,7 +443,7 @@ async def daily_payments_expiry_stats(
                 continue
             active_on_column_day = _user_active_on_expiry_day(sm, su_day)
             has_tr = ever_positive(uid, sm)
-            if _user_active_on_expiry_day(sm, utc_td):
+            if _user_active_on_expiry_day(sm, msk_td):
                 n_today += 1
             elif active_on_column_day:
                 n_day += 1

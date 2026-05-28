@@ -21,6 +21,11 @@ export function mskTodayIso() {
   return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Moscow' })
 }
 
+/** Текущий календарный месяц Europe/Moscow (YYYY-MM) для `<input type=\"month\">`. */
+export function mskMonthInputDefault() {
+  return mskTodayIso().slice(0, 7)
+}
+
 /** Подпись календарной даты, интерпретированной как день по Москве (YYYY-MM-DD). */
 export function formatMskCalendarDayShort(iso) {
   if (iso == null || iso === '') return '—'
@@ -117,21 +122,17 @@ function bucketSortKey(r, gran) {
   return String(d).slice(0, 10)
 }
 
-/** Начало календарного дня UTC по строке YYYY-MM-DD (мс). */
-function utcDayStartMs(isoDay) {
+/** Следующий календарный день YYYY-MM-DD (для плотного ряда по МСК). */
+function addCalendarDayIso(isoDay) {
   const s = String(isoDay).slice(0, 10)
   const [y, m, d] = s.split('-').map(Number)
-  if (!y || !m || !d) return NaN
-  return Date.UTC(y, m - 1, d)
-}
-
-/** YYYY-MM-DD для момента UTC (полночь этого календарного дня). */
-function formatUtcDayIso(ms) {
-  const x = new Date(ms)
-  const y = x.getUTCFullYear()
+  if (!y || !m || !d) return s
+  const t = Date.UTC(y, m - 1, d + 1)
+  const x = new Date(t)
+  const yy = x.getUTCFullYear()
   const mo = String(x.getUTCMonth() + 1).padStart(2, '0')
   const day = String(x.getUTCDate()).padStart(2, '0')
-  return `${y}-${mo}-${day}`
+  return `${yy}-${mo}-${day}`
 }
 
 /** Полночь часа UTC для метки времени (мс). */
@@ -149,22 +150,19 @@ function utcHourFloorMs(ms) {
 }
 
 /**
- * Достраивает календарные дни UTC между первым и последним бакетом.
+ * Достраивает календарные дни Europe/Moscow между первым и последним бакетом.
  * @param {Array<{ iso: string; periodStart: string | null; dayUsers: number; dayTraffic: number; dayActive: number; dayDevices: number; dayOver100Mbit: number; dayPersistentTraffic: number; dayPayment: number; dayActiveWithPayment: number; dayActiveSubscription: number }>} sortedRows
  */
-function densifyUtcDays(sortedRows) {
+function densifyMskDays(sortedRows) {
   if (!sortedRows.length) return sortedRows
   const map = new Map(
     sortedRows.map((r) => [String(r.iso).slice(0, 10), r]),
   )
-  const minMs = utcDayStartMs(sortedRows[0].iso)
-  const maxMs = utcDayStartMs(sortedRows[sortedRows.length - 1].iso)
-  if (!Number.isFinite(minMs) || !Number.isFinite(maxMs) || minMs > maxMs) {
-    return sortedRows
-  }
+  let iso = String(sortedRows[0].iso).slice(0, 10)
+  const endIso = String(sortedRows[sortedRows.length - 1].iso).slice(0, 10)
+  if (!iso || !endIso || iso > endIso) return sortedRows
   const out = []
-  for (let ms = minMs; ms <= maxMs; ms += 86400000) {
-    const iso = formatUtcDayIso(ms)
+  while (iso <= endIso) {
     const row = map.get(iso)
     out.push(
       row ?? {
@@ -181,6 +179,8 @@ function densifyUtcDays(sortedRows) {
         dayActiveSubscription: 0,
       },
     )
+    if (iso === endIso) break
+    iso = addCalendarDayIso(iso)
   }
   return out
 }
@@ -265,7 +265,7 @@ export function useUsersDailyStatsChart() {
       .sort((a, b) => String(a.iso).localeCompare(String(b.iso)))
 
     const dense =
-      gran === 'hour' ? sorted : densifyUtcDays(sorted)
+      gran === 'hour' ? sorted : densifyMskDays(sorted)
 
     /* Почасовой API отдаёт уже накопительные итоги на конец часа (все пользователи до этого момента). */
     if (gran === 'hour') {
@@ -380,12 +380,12 @@ export function useUsersDailyStatsChart() {
     )
   })
 
-  /** Значение «активных за день» для текущего календарного дня UTC (только режим по дням). */
+  /** Значение «активных за день» для текущего календарного дня МСК (только режим по дням). */
   const activeUsersWidget = computed(() => {
     if (granularity.value === 'hour' || loading.value || error.value) {
       return { today: '—' }
     }
-    const row = rows.value.find((r) => String(r.stats_date) === utcTodayIso())
+    const row = rows.value.find((r) => String(r.stats_date) === mskTodayIso())
     const todayVal = row ? Number(row.active_users_count) || 0 : 0
     return {
       today: todayVal.toLocaleString('ru-RU'),
@@ -396,7 +396,7 @@ export function useUsersDailyStatsChart() {
     if (granularity.value === 'hour' || loading.value || error.value) {
       return { today: '—' }
     }
-    const row = rows.value.find((r) => String(r.stats_date) === utcTodayIso())
+    const row = rows.value.find((r) => String(r.stats_date) === mskTodayIso())
     const todayVal = row
       ? Number(row.active_users_with_payment_count) || 0
       : 0
@@ -405,12 +405,12 @@ export function useUsersDailyStatsChart() {
     }
   })
 
-  /** Снимок: пользователи с активной подпиской на конец сегодняшнего UTC-дня. */
+  /** Снимок: пользователи с активной подпиской на конец сегодняшнего дня МСК. */
   const activeSubscriptionWidget = computed(() => {
     if (granularity.value === 'hour' || loading.value || error.value) {
       return { today: '—' }
     }
-    const row = rows.value.find((r) => String(r.stats_date) === utcTodayIso())
+    const row = rows.value.find((r) => String(r.stats_date) === mskTodayIso())
     const todayVal = row
       ? Number(row.users_with_active_subscription_count) || 0
       : 0
@@ -450,9 +450,9 @@ export function useUsersDailyStatsChart() {
       return `По часам за ${formatMskCalendarDayShort(hourDayMsk.value)} (МСК): накопление пользователей и первых подключений устройств`
     }
     if (chartPercentMode.value) {
-      return 'По дням UTC: доля от накопленных регистраций — с трафиком, с устройствами, с оплатой, активные, с оплатой активных, >100 Мбит, возвращающиеся активные, с активной подпиской'
+      return 'По дням МСК: доля от накопленных регистраций — с трафиком, с устройствами, с оплатой, активные, с оплатой активных, >100 Мбит, возвращающиеся активные, с активной подпиской'
     }
-    return 'По дням UTC: накопление регистраций и клиентов с устройствами, с оплатой, активные по трафику, активные с оплатой, с активной подпиской (снимок), >100 Мбит накопленного объёма, возвращающиеся активные'
+    return 'По дням МСК: накопление регистраций и клиентов с устройствами, с оплатой, активные по трафику, активные с оплатой, с активной подпиской (снимок), >100 Мбит накопленного объёма, возвращающиеся активные'
   })
 
   const chartYTitle = computed(() =>
@@ -514,7 +514,7 @@ export function useUsersDailyStatsChart() {
     chartPoints.value.map((p) =>
       granularity.value === 'hour'
         ? formatHourAxisMsk(p.periodStart || p.iso)
-        : formatDayShort(p.iso),
+        : formatMskCalendarDayShort(p.iso),
     ),
   )
 
@@ -645,7 +645,7 @@ export function useUsersDailyStatsChart() {
     if (!p) return ''
     return granularity.value === 'hour'
       ? formatHourShortMsk(p.periodStart || p.iso)
-      : formatDayShort(p.iso)
+      : formatMskCalendarDayShort(p.iso)
   }
 
   function registrationTooltipLabel(ctx) {

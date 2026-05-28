@@ -185,7 +185,14 @@ async def users_count(session: AsyncSession) -> UsersCountResponse:
 
     all_times = [
         t
-        for t in (await session.scalars(select(User.registered_at).where(User.registered_at.is_not(None)))).all()
+        for t in (
+            await session.scalars(
+                select(User.registered_at).where(
+                    User.registered_at.is_not(None),
+                    User.subscription_until.is_not(None),
+                ),
+            )
+        ).all()
         if t is not None
     ]
     all_times.sort()

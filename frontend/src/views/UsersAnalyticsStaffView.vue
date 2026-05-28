@@ -347,7 +347,7 @@ onMounted(() => {
             {{ loading ? '…' : error ? '—' : userCountWidget.totalDisplay }}
           </p>
           <p v-if="!loading && !error" class="stat-widget-meta">
-            Сегодня: {{ userCountWidget.todayRegsDisplay }}
+            Сегодня (МСК): {{ userCountWidget.todayRegsDisplay }}
           </p>
           <p
             v-if="!loading && !error && userCountWidget.vsLabel"

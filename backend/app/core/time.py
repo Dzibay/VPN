@@ -5,8 +5,9 @@
 
 * Подписка, продление, Xray-клиенты, ``notify_sub_expire_*`` — ``moscow_today()`` и
   ``seconds_until_next_moscow_time``.
-* Снимки трафика ``traffic_date``, daily_stats по UTC-дням — ``utc_today()`` (не менять без
-  миграции смысла метрик).
+* Снимки трафика ``traffic_date`` и «активные за день» в daily_stats — календарный день UTC
+  (``utc_today()``; не менять без миграции). Регистрации, первые оплаты и устройства в
+  daily_stats — календарный день Europe/Moscow (``moscow_today()``, ``utc_instant_to_moscow_date``).
 * Поля ``datetime`` в JSON API — Москва (``app.core.moscow_api_time``).
 """
 
@@ -48,6 +49,23 @@ def moscow_day_bounds_utc(d: date) -> tuple[datetime, datetime]:
     start_msk = datetime.combine(d, time.min, tzinfo=MOSCOW_TZ)
     end_msk = start_msk + timedelta(days=1)
     return start_msk.astimezone(timezone.utc), end_msk.astimezone(timezone.utc)
+
+
+def utc_instant_to_moscow_date(dt: datetime) -> date:
+    """Календарный день Europe/Moscow для момента ``timestamptz`` из БД (UTC)."""
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.astimezone(MOSCOW_TZ).date()
+
+
+def moscow_date_period_start_utc(d: date) -> datetime:
+    """Начало суток ``d`` по Москве как aware UTC — для ``period_start_utc`` в daily-stats."""
+
+    start, _ = moscow_day_bounds_utc(d)
+    return start
 
 
 def seconds_until_next_moscow_time(hour: int, minute: int) -> float:

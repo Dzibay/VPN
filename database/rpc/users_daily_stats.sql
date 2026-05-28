@@ -1,4 +1,5 @@
--- Дневная сводка по календарным дням UTC (registered_at, traffic_date, subscription_devices).
+-- Дневная сводка: registered_at, payments, devices — календарь Europe/Moscow;
+-- traffic_date (снимки) — календарный день UTC на момент сбора (см. xray_stats_collect).
 -- Все метрики только по пользователям с заполненными registered_at и subscription_until.
 drop function if exists rpc_users_daily_stats;
 
@@ -24,11 +25,11 @@ WITH eligible_users AS (
     WHERE u.registered_at IS NOT NULL
       AND u.subscription_until IS NOT NULL
 ),
--- Первый платёж (UTC-календарный день): накопление «с оплатой» на графике с дня оплаты.
+-- Первый платёж (календарный день Europe/Moscow).
 first_payment AS (
     SELECT
         p.user_id,
-        MIN((p.created_at AT TIME ZONE 'UTC')::date) AS first_pay_day
+        MIN((p.created_at AT TIME ZONE 'Europe/Moscow')::date) AS first_pay_day
     FROM payments p
     INNER JOIN eligible_users eu ON eu.id = p.user_id
     GROUP BY p.user_id
@@ -58,7 +59,7 @@ user_traffic_total AS (
 ),
 reg AS (
     SELECT
-        (u.registered_at AT TIME ZONE 'UTC')::date AS sd,
+        (u.registered_at AT TIME ZONE 'Europe/Moscow')::date AS sd,
         COUNT(*)::bigint AS users_count,
         SUM(
             CASE WHEN COALESCE(utt.total_bytes, 0) > 0 THEN 1 ELSE 0 END
@@ -67,7 +68,7 @@ reg AS (
     LEFT JOIN user_traffic_total utt ON utt.user_id = u.id
     WHERE u.registered_at IS NOT NULL
       AND u.subscription_until IS NOT NULL
-    GROUP BY (u.registered_at AT TIME ZONE 'UTC')::date
+    GROUP BY (u.registered_at AT TIME ZONE 'Europe/Moscow')::date
 ),
 traffic_local AS (
     SELECT
@@ -179,7 +180,7 @@ first_dev AS (
 ),
 dev AS (
     SELECT
-        (fd.first_at AT TIME ZONE 'UTC')::date AS sd,
+        (fd.first_at AT TIME ZONE 'Europe/Moscow')::date AS sd,
         COUNT(*)::bigint AS cnt
     FROM first_dev fd
     GROUP BY 1
@@ -209,7 +210,7 @@ dense_calendar AS (
       AND d1 IS NOT NULL
       AND d0 <= d1
 ),
--- Снимок на конец UTC-дня: подписка активна (subscription_until >= cal_day),
+-- Снимок на конец календарного дня Europe/Moscow: подписка активна (subscription_until >= cal_day),
 -- только пользователи с известными registered_at и subscription_until.
 subscription_active_by_day AS (
     SELECT
@@ -217,7 +218,7 @@ subscription_active_by_day AS (
         COUNT(u.id)::bigint AS users_with_active_subscription_count
     FROM dense_calendar dc
     LEFT JOIN users u
-        ON (u.registered_at AT TIME ZONE 'UTC')::date <= dc.cal_day
+        ON (u.registered_at AT TIME ZONE 'Europe/Moscow')::date <= dc.cal_day
        AND u.subscription_until >= dc.cal_day
        AND u.registered_at IS NOT NULL
        AND u.subscription_until IS NOT NULL

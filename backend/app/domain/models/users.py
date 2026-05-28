@@ -13,11 +13,17 @@ class UsersCountResponse(BaseModel):
     users_count: int = Field(ge=0, description="Число записей в таблице users")
     registrations_today_count: int = Field(
         ge=0,
-        description="Регистрации за текущий календарный день Europe/Moscow",
+        description=(
+            "Регистрации за текущий календарный день Europe/Moscow "
+            "(как на графике daily-stats: registered_at и subscription_until заданы)"
+        ),
     )
     registrations_yesterday_count: int = Field(
         ge=0,
-        description="Регистрации за предыдущий календарный день Europe/Moscow",
+        description=(
+            "Регистрации за предыдущий календарный день Europe/Moscow "
+            "(те же фильтры, что registrations_today_count)"
+        ),
     )
     registration_gap_overall_ms: float | None = Field(
         default=None,
@@ -42,11 +48,11 @@ class StaffUserSearchItem(BaseModel):
 
 
 class UserStatsByDateRow(BaseModel):
-    """День UTC — счётчики за календарный день; почасовой ряд — накопление до конца часа по календарю Москвы."""
+    """День МСК — счётчики за календарный день Europe/Moscow; почасовой ряд — до конца часа по Москве."""
 
     stats_date: date | None = Field(
         description=(
-            "Календарный день UTC при granularity=day (по registered_at); "
+            "Календарный день Europe/Moscow при granularity=day (registered_at, оплаты, устройства); "
             "при granularity=hour — всегда null (используйте period_start_utc). "
             "null также означает агрегат по пользователям без registered_at."
         ),
@@ -55,13 +61,13 @@ class UserStatsByDateRow(BaseModel):
         default=None,
         description=(
             "Момент начала периода (абсолютное время); в JSON сериализуется в московском времени. "
-            "При day — полночь этого календарного дня UTC; при hour — начало часа по календарю Москвы."
+            "При day — полночь этого календарного дня по Москве; при hour — начало часа по Москве."
         ),
     )
     users_count: int = Field(
         ge=0,
         description=(
-            "При granularity=day — пользователей с этим календарным днём регистрации (UTC). "
+            "При granularity=day — пользователей с этим календарным днём регистрации (МСК). "
             "При hour — всего пользователей строго до конца этого часа по Москве "
             "(включая без registered_at)."
         ),
@@ -77,15 +83,15 @@ class UserStatsByDateRow(BaseModel):
     active_users_count: int = Field(
         ge=0,
         description=(
-            "При granularity=day — число пользователей, у которых на этот календарный день UTC "
-            "(по traffic_date) суммарный накопленный трафик вырос относительно предыдущего дня. "
+            "При granularity=day — число пользователей, у которых на этот stats_date "
+            "(по traffic_date, снимки в UTC-календаре) суммарный трафик вырос относительно предыдущего дня. "
             "При granularity=hour всегда 0 (в БД нет почасовых снимков трафика)."
         ),
     )
     subscription_devices_users_count: int = Field(
         ge=0,
         description=(
-            "При day — впервые получили запись subscription_devices в этот календарный день UTC "
+            "При day — впервые получили запись subscription_devices в этот календарный день МСК "
             "(min created_at по пользователю). При hour — пользователей, у кого это минимальное время "
             "строго до конца часа по календарю Москвы."
         ),
@@ -94,7 +100,7 @@ class UserStatsByDateRow(BaseModel):
         default=0,
         ge=0,
         description=(
-            "Только granularity=day: число пользователей, у которых на конец этого UTC-дня суммарный "
+            "Только granularity=day: число пользователей, у которых на конец этого stats_date суммарный "
             "накопленный трафик (последний снимок на узел, как в метрике active_users_count) "
             "строго больше 100 Мбит объёма (100×10⁶ бит → байты). При hour — 0."
         ),
@@ -103,7 +109,7 @@ class UserStatsByDateRow(BaseModel):
         default=0,
         ge=0,
         description=(
-            "Только granularity=day: пользователи с ростом суммарного трафика в этот UTC-день "
+            "Только granularity=day: пользователи с ростом суммарного трафика в этот день "
             "(как active_users_count), для которых это не первый такой «активный» день — "
             "раньше уже был день с ростом. При hour — 0."
         ),
@@ -113,7 +119,7 @@ class UserStatsByDateRow(BaseModel):
         ge=0,
         description=(
             "При granularity=day — число пользователей, у которых первый платёж "
-            "(минимум payments.created_at в календарном дне UTC) приходится на этот stats_date. "
+            "(минимум payments.created_at в календарном дне МСК) приходится на этот stats_date. "
             "При hour — 0."
         ),
     )
@@ -122,7 +128,7 @@ class UserStatsByDateRow(BaseModel):
         ge=0,
         description=(
             "Только granularity=day: как active_users_count, но только пользователи, у которых "
-            "к концу этого UTC-дня уже была хотя бы одна оплата (первая оплата не позже этого дня). "
+            "к концу этого stats_date уже была хотя бы одна оплата (первая оплата не позже этого дня). "
             "При hour — 0."
         ),
     )
@@ -131,19 +137,19 @@ class UserStatsByDateRow(BaseModel):
         ge=0,
         description=(
             "Только granularity=day: число пользователей с активной подпиской на конец "
-            "этого UTC-календарного дня (subscription_until IS NULL или >= дня; учтены только "
+            "этого календарного дня МСК (subscription_until >= дня; учтены только "
             "уже зарегистрированные к этому дню). При hour — 0."
         ),
     )
 
 
 class UsersDailyStatsResponse(BaseModel):
-    """Сводка пользовательской статистики: по UTC-дням или по московским часам (поля времени в JSON — Москва)."""
+    """Сводка пользовательской статистики: по дням МСК или по московским часам (поля времени в JSON — Москва)."""
 
     granularity: StatsGranularity = Field(
         default="day",
         description=(
-            "day — календарные дни UTC; hour — 24 часа календарного дня Europe/Moscow (hour_day)"
+            "day — календарные дни Europe/Moscow; hour — 24 часа календарного дня Europe/Moscow (hour_day)"
         ),
     )
     hour_day: date | None = Field(
@@ -180,33 +186,33 @@ class UsersDailyStatsResponse(BaseModel):
 
 
 class DailyPaymentsExpiryStatsRow(BaseModel):
-    """Одна точка столбчатого графика: оплаты и разбивка по UTC-дню subscription_until."""
+    """Одна точка столбчатого графика: оплаты и разбивка по дню subscription_until (МСК)."""
 
     stats_date: date
-    payments_count: int = Field(ge=0, description="Число строк payments за этот календарный день UTC")
+    payments_count: int = Field(ge=0, description="Число строк payments за этот календарный день Europe/Moscow")
     subscription_expiring_total_count: int = Field(
         ge=0,
-        description="Пользователи с subscription_until = этот UTC-день (сумма четырёх групп ниже)",
+        description="Пользователи с subscription_until = этот день по Москве (сумма четырёх групп ниже)",
     )
     subscription_expiring_active_today_count: int = Field(
         ge=0,
         description=(
             "С subscription_until = этот stats_date: рост суммарного трафика в **текущий** "
-            "календарный день UTC (как «активные сегодня» в daily_stats), в том числе для столбца будущего "
+            "календарный день МСК (как «активные сегодня» в daily_stats), в том числе для столбца будущего "
             "окончания — уже «живые» пользователи по трафику сегодня"
         ),
     )
     subscription_expiring_active_on_day_count: int = Field(
         ge=0,
         description=(
-            "Истекают в этот UTC-день: рост суммарного трафика в день stats_date, "
-            "и при этом нет роста в текущий UTC-день (иначе — в subscription_expiring_active_today_count)"
+            "Истекают в этот день МСК: рост суммарного трафика в день stats_date, "
+            "и при этом нет роста в текущий день МСК (иначе — в subscription_expiring_active_today_count)"
         ),
     )
     subscription_expiring_has_traffic_count: int = Field(
         ge=0,
         description=(
-            "Истекают в этот день: без роста трафика ни в текущий UTC-день, ни в день stats_date, "
+            "Истекают в этот день: без роста трафика ни в текущий день МСК, ни в день stats_date, "
             "но когда-либо был ненулевой суммарный трафик"
         ),
     )
@@ -218,7 +224,7 @@ class DailyPaymentsExpiryStatsRow(BaseModel):
 
 class DailyPaymentsExpiryStatsResponse(BaseModel):
     rows: list[DailyPaymentsExpiryStatsRow] = Field(
-        description="Дни по возрастанию stats_date (UTC); при month=YYYY-MM — все дни месяца; сумма четырёх групп окончания = subscription_expiring_total_count",
+        description="Дни по возрастанию stats_date (МСК); при month=YYYY-MM — все дни месяца по Москве; сумма четырёх групп окончания = subscription_expiring_total_count",
     )
 
 
