@@ -221,7 +221,7 @@ class ServerCreate(BaseModel):
         return s if s else None
 
     @model_validator(mode="after")
-    def validate_vless_grpc_create(self) -> ServerCreate:
+    def validate_vless_grpc_create(self) -> "ServerCreate":
         if self.proxy_kind != "vless_grpc":
             return self
         if not is_domain_host(self.host):
