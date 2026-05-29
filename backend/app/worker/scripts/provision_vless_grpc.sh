@@ -86,7 +86,6 @@ cfg = {
                 "network": "grpc",
                 "security": "tls",
                 "tlsSettings": {
-                    "serverName": domain,
                     "alpn": ["h2"],
                     "certificates": [
                         {
@@ -123,6 +122,42 @@ _tls_cert_paths() {
   echo "/etc/letsencrypt/live/${domain}/privkey.pem"
 }
 
+# Xray (часто User=nobody из install-release.sh) не читает /etc/letsencrypt — копируем в /usr/local/etc/xray/tls/.
+_tls_xray_run_user() {
+  local u
+  u=$(systemctl show -p User --value xray 2>/dev/null || true)
+  u="${u:-}"
+  if [[ -z "$u" || "$u" == "root" ]]; then
+    if [[ -f /etc/systemd/system/xray.service ]]; then
+      u=$(grep -E '^User=' /etc/systemd/system/xray.service 2>/dev/null | head -1 | cut -d= -f2- || true)
+    fi
+  fi
+  echo "${u:-nobody}"
+}
+
+_tls_publish_for_xray() {
+  local domain="$1"
+  local src_cert src_key dest_dir xray_user
+  src_cert="/etc/letsencrypt/live/${domain}/fullchain.pem"
+  src_key="/etc/letsencrypt/live/${domain}/privkey.pem"
+  if [[ ! -s "$src_cert" || ! -s "$src_key" ]]; then
+    echo "[vless_grpc] нет LE-сертификата для ${domain}" >&2
+    return 1
+  fi
+  dest_dir="/usr/local/etc/xray/tls/${domain}"
+  mkdir -p "$dest_dir"
+  cp -L "$src_cert" "${dest_dir}/fullchain.pem"
+  cp -L "$src_key" "${dest_dir}/privkey.pem"
+  xray_user=$(_tls_xray_run_user)
+  chown -R "${xray_user}:${xray_user}" "$dest_dir"
+  chmod 755 "$dest_dir"
+  chmod 644 "${dest_dir}/fullchain.pem"
+  chmod 640 "${dest_dir}/privkey.pem"
+  export VPN_TLS_CERT_FILE="${dest_dir}/fullchain.pem"
+  export VPN_TLS_KEY_FILE="${dest_dir}/privkey.pem"
+  echo "[vless_grpc] TLS для xray (${xray_user}): ${VPN_TLS_CERT_FILE}"
+}
+
 _tls_install_certbot() {
   if command -v certbot >/dev/null 2>&1; then
     return 0
@@ -157,8 +192,7 @@ _tls_ensure_letsencrypt() {
   if [[ -s "$cert_file" && -s "$key_file" ]]; then
     echo "[vless_grpc] TLS-сертификат уже есть: $cert_file"
     certbot renew --quiet --no-self-upgrade 2>/dev/null || true
-    export VPN_TLS_CERT_FILE="$cert_file"
-    export VPN_TLS_KEY_FILE="$key_file"
+    _tls_publish_for_xray "$domain" || return 1
     return 0
   fi
 
@@ -184,8 +218,7 @@ _tls_ensure_letsencrypt() {
     echo "[vless_grpc] certbot не создал файлы сертификата" >&2
     return 1
   fi
-  export VPN_TLS_CERT_FILE="$cert_file"
-  export VPN_TLS_KEY_FILE="$key_file"
+  _tls_publish_for_xray "$domain" || return 1
   echo "[vless_grpc] сертификат получен"
 }
 
