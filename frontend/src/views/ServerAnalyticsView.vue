@@ -112,6 +112,17 @@ const serverParamRows = computed(() => {
       value: s.network_cap_mbps != null ? String(s.network_cap_mbps) : '—',
     },
     { label: 'Протокол', value: t(s.proxy_kind) },
+    ...(s.proxy_kind !== 'hysteria2'
+      ? [
+          {
+            label: 'Google / YouTube',
+            value:
+              s.google_routing_mode === 'entry'
+                ? 'через вход (YouTube без рекламы)'
+                : 'через exit (Gemini / Google)',
+          },
+        ]
+      : []),
     { label: 'VLESS UUID', value: t(s.vless_uuid) },
     ...(s.proxy_kind === 'vless_grpc'
       ? [

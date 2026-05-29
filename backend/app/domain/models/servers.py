@@ -132,6 +132,21 @@ class ServerCreate(BaseModel):
         default=None,
         description="ID внешнего exit-сервера; только вместе с is_cascade_ru_entry (подготовка к каскаду Xray)",
     )
+    google_routing_mode: Literal["exit", "entry"] = Field(
+        default="exit",
+        description=(
+            "Маршрутизация Google/YouTube на каскадном входе: exit — Gemini и geoip:google через exit; "
+            "entry — YouTube/Google через вход (direct, без рекламы на YouTube)"
+        ),
+    )
+
+    @field_validator("google_routing_mode", mode="before")
+    @classmethod
+    def normalize_google_routing_mode_create(cls, v: Any) -> str:
+        s = (str(v).strip().lower() if v is not None else "") or "exit"
+        if s not in ("exit", "entry"):
+            raise ValueError("google_routing_mode: exit или entry")
+        return s
 
     @field_validator("name", mode="before")
     @classmethod
@@ -347,6 +362,22 @@ class ServerUpdate(BaseModel):
         default=None,
         description="Id внешнего exit; null — отвязать. Только у входа is_cascade_ru_entry",
     )
+    google_routing_mode: Literal["exit", "entry"] | None = Field(
+        default=None,
+        description="Маршрутизация Google/YouTube на каскадном входе (exit | entry)",
+    )
+
+    @field_validator("google_routing_mode", mode="before")
+    @classmethod
+    def normalize_google_routing_mode_patch(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip().lower()
+        if not s:
+            return None
+        if s not in ("exit", "entry"):
+            raise ValueError("google_routing_mode: exit или entry")
+        return s
 
     @field_validator("name", mode="before")
     @classmethod
@@ -554,6 +585,10 @@ class ServerRead(BaseModel):
     cascade_egress_client_uuid: str | None = Field(
         default=None,
         description="UUID VLESS: этот (РФ) вход → на внешний exit; должен быть в inbound exit",
+    )
+    google_routing_mode: Literal["exit", "entry"] = Field(
+        default="exit",
+        description="exit: Google/Gemini через exit; entry: YouTube/Google через вход",
     )
 
 

@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS servers (
     is_cascade_ru_entry BOOLEAN NOT NULL DEFAULT FALSE,
     cascade_next_server_id BIGINT REFERENCES servers (id) ON DELETE SET NULL,
     cascade_egress_client_uuid TEXT,
+    google_routing_mode TEXT NOT NULL DEFAULT 'exit' CHECK (google_routing_mode IN ('exit', 'entry')),
     grpc_service_name TEXT NOT NULL DEFAULT 'grpc',
     tls_sni TEXT,
     ws_path TEXT NOT NULL DEFAULT '/vless',

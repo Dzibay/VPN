@@ -109,6 +109,11 @@ cfg["outbounds"] = [
     {"protocol": "blackhole", "tag": "block"},
 ]
 
+google_mode = (os.environ.get("VPN_GOOGLE_ROUTING_MODE") or "exit").strip().lower()
+if google_mode not in ("exit", "entry"):
+    google_mode = "exit"
+google_via_exit = google_mode == "exit"
+
 gemini_domains = [
     "domain:gemini.google.com",
     "domain:aistudio.google.com",
@@ -117,8 +122,19 @@ gemini_domains = [
     "domain:alkalimining-pa.googleapis.com",
     "domain:proactivebackend-pa.googleapis.com",
 ]
-gemini_rule = {"type": "field", "outboundTag": "egress-cascade", "domain": gemini_domains}
-gemini_google_ip_rule = {"type": "field", "outboundTag": "egress-cascade", "ip": ["geoip:google"]}
+_google_geosites = ("geosite:youtube", "geosite:google")
+
+google_egress_rules = []
+if google_via_exit:
+    google_egress_rules = [
+        {"type": "field", "outboundTag": "egress-cascade", "domain": list(gemini_domains)},
+        {"type": "field", "outboundTag": "egress-cascade", "ip": ["geoip:google"]},
+    ]
+
+google_direct_domains = []
+if not google_via_exit:
+    google_direct_domains = [*_google_geosites, *gemini_domains]
+
 dns_outbound_tag = "egress-cascade"
 
 raw_extra_ru = (os.environ.get("VPN_CASCADE_RU_DIRECT_EXTRA_DOMAINS") or "vk.com").strip()
@@ -135,10 +151,20 @@ if raw_extra_ru:
             seen.add(t)
             extra_ru_domains.append(t)
 
+if google_via_exit:
+    extra_ru_domains = [x for x in extra_ru_domains if x.strip().lower() not in _google_geosites]
+else:
+    seen_extra = {x.strip().lower() for x in extra_ru_domains}
+    for g in _google_geosites:
+        if g not in seen_extra:
+            extra_ru_domains.append(g)
+            seen_extra.add(g)
+
 if ru_direct:
     _ru_domains = [
         "geosite:private",
         *extra_ru_domains,
+        *google_direct_domains,
         "geosite:category-ru",
         "regexp:.*\\.ru$",
         "regexp:.*\\.su$",
@@ -147,8 +173,7 @@ if ru_direct:
     cfg["routing"] = {
         "domainStrategy": "IPIfNonMatch",
         "rules": [
-            gemini_rule,
-            gemini_google_ip_rule,
+            *google_egress_rules,
             {"type": "field", "outboundTag": "direct", "domain": _ru_domains},
             {"type": "field", "outboundTag": "direct", "ip": ["geoip:ru", "geoip:private"]},
             {
@@ -159,17 +184,21 @@ if ru_direct:
         ],
     }
 else:
+    routing_rules = [*google_egress_rules]
+    if google_direct_domains:
+        routing_rules.append(
+            {"type": "field", "outboundTag": "direct", "domain": google_direct_domains}
+        )
+    routing_rules.append(
+        {
+            "type": "field",
+            "inboundTag": [inbound_tag],
+            "outboundTag": "egress-cascade",
+        }
+    )
     cfg["routing"] = {
         "domainStrategy": "IPIfNonMatch",
-        "rules": [
-            gemini_rule,
-            gemini_google_ip_rule,
-            {
-                "type": "field",
-                "inboundTag": [inbound_tag],
-                "outboundTag": "egress-cascade",
-            },
-        ],
+        "rules": routing_rules,
     }
 
 dns_ru_domains = [
@@ -180,7 +209,9 @@ dns_ru_domains = [
     "regexp:.*\\.xn--p1ai$",
 ]
 if ru_direct:
-    dns_ru_domains = [*dns_ru_domains, *extra_ru_domains]
+    dns_ru_domains = [*dns_ru_domains, *extra_ru_domains, *google_direct_domains]
+elif google_direct_domains:
+    dns_ru_domains = [*dns_ru_domains, *google_direct_domains]
 
 cfg["dns"] = {
     "servers": [

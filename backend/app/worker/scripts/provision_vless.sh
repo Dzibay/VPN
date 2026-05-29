@@ -189,6 +189,11 @@ cfg["inbounds"][0]["sniffing"] = {
     "routeOnly": True,
 }
 
+google_mode = (os.environ.get("VPN_GOOGLE_ROUTING_MODE") or "exit").strip().lower()
+if google_mode not in ("exit", "entry"):
+    google_mode = "exit"
+google_via_exit = google_mode == "exit"
+
 gemini_domains = [
     "domain:gemini.google.com",
     "domain:aistudio.google.com",
@@ -197,23 +202,28 @@ gemini_domains = [
     "domain:alkalimining-pa.googleapis.com",
     "domain:proactivebackend-pa.googleapis.com",
 ]
+_google_geosites = ("geosite:youtube", "geosite:google")
 gemini_tag = "egress-cascade" if cascade else "direct"
-gemini_rule = {
-    "type": "field",
-    "outboundTag": gemini_tag,
-    "domain": gemini_domains,
-}
-gemini_google_ip_rule = {
-    "type": "field",
-    "outboundTag": gemini_tag,
-    "ip": ["geoip:google"],
-}
+google_rules = []
+if google_via_exit:
+    google_rules = [
+        {"type": "field", "outboundTag": gemini_tag, "domain": gemini_domains},
+        {"type": "field", "outboundTag": gemini_tag, "ip": ["geoip:google"]},
+    ]
+elif not cascade:
+    google_rules = [
+        {
+            "type": "field",
+            "outboundTag": "direct",
+            "domain": [*_google_geosites, *gemini_domains],
+        },
+    ]
 
 if not cascade:
     cfg["outbounds"].append({"protocol": "blackhole", "tag": "block"})
     cfg["routing"] = {
         "domainStrategy": "IPIfNonMatch",
-        "rules": [gemini_rule, gemini_google_ip_rule],
+        "rules": google_rules,
     }
 
 path = os.environ.get("VPN_XRAY_CONFIG_PATH", "/usr/local/etc/xray/config.json")

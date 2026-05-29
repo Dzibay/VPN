@@ -196,6 +196,8 @@ const formWsPath = ref('')
 const formIsCascadeRuEntry = ref(false)
 /** id внешнего сервера; '' = не задано */
 const formCascadeNextServerId = ref('')
+/** exit: Google/Gemini через exit; entry: YouTube/Google через вход */
+const formGoogleRoutingMode = ref('exit')
 /** Вкладки модалки сервера: общие параметры | VLESS+REALITY */
 const serverModalTab = ref('general')
 /** null — создание сервера; иначе id для PATCH */
@@ -495,6 +497,7 @@ function openModal() {
     applyDefaultProxyFields()
     formIsCascadeRuEntry.value = false
     formCascadeNextServerId.value = ''
+    formGoogleRoutingMode.value = 'exit'
   }
   modalOpen.value = true
 }
@@ -551,6 +554,8 @@ function openEditServer(s) {
   formIsCascadeRuEntry.value = Boolean(s.is_cascade_ru_entry)
   formCascadeNextServerId.value =
     s.cascade_next_server_id != null ? String(s.cascade_next_server_id) : ''
+  formGoogleRoutingMode.value =
+    s.google_routing_mode === 'entry' ? 'entry' : 'exit'
   modalOpen.value = true
 }
 
@@ -951,6 +956,9 @@ async function submitSaveServer() {
       const pinst = String(formPrometheusInstance.value ?? '').trim()
       patch.prometheus_instance = pinst || null
       patch.network_cap_mbps = normalizeNetworkCapMbps(formNetworkCapMbps.value)
+      if (formProxyKind.value !== 'hysteria2') {
+        patch.google_routing_mode = formGoogleRoutingMode.value
+      }
       if (proxyKindSupportsCascade(formProxyKind.value)) {
         patch.is_cascade_ru_entry = formIsCascadeRuEntry.value
         const cnx = String(formCascadeNextServerId.value ?? '').trim()
@@ -1007,6 +1015,9 @@ async function submitSaveServer() {
       if (pinst) createBody.prometheus_instance = pinst
       const cap = normalizeNetworkCapMbps(formNetworkCapMbps.value)
       if (cap != null) createBody.network_cap_mbps = cap
+      if (formProxyKind.value !== 'hysteria2') {
+        createBody.google_routing_mode = formGoogleRoutingMode.value
+      }
       if (proxyKindSupportsCascade(formProxyKind.value)) {
         createBody.is_cascade_ru_entry = formIsCascadeRuEntry.value
         const cnx = String(formCascadeNextServerId.value ?? '').trim()
@@ -2475,6 +2486,21 @@ watch(formIsCascadeRuEntry, (v) => {
                   Нет внешних кандидатов (нужен узел без флажка «вход РФ»). Создайте такой
                   сервер и сохраните снова.
                 </p>
+                <label class="field">
+                  <span>Google / YouTube</span>
+                  <select v-model="formGoogleRoutingMode">
+                    <option value="exit">
+                      Через exit (Gemini и Google, по умолчанию)
+                    </option>
+                    <option value="entry">
+                      Через вход (YouTube без рекламы, Google на РФ-узле)
+                    </option>
+                  </select>
+                  <span class="field-hint"
+                    >Применяется при установке/синхронизации Xray на входе каскада. После
+                    смены — переустановите Xray или sync_clients.</span
+                  >
+                </label>
               </div>
               <label class="field">
                 <span>Prometheus instance (node_exporter)</span>

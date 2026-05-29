@@ -5,7 +5,6 @@
 #   domain:youtube.com
 #   regexp:^.*\.tinkoff\.com$
 #   full:example.com
-
-geosite:youtube
-
-
+#
+# YouTube/Google: use server setting google_routing_mode=entry (not this file).
+# With google_routing_mode=exit, geosite:youtube here conflicts with geoip:google → exit.

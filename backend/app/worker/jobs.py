@@ -143,6 +143,15 @@ def _tls_sni_for_server(server: Server) -> str:
     return ((server.tls_sni or server.host or "").strip().rstrip("."))
 
 
+def _google_routing_mode_for_server(server: Server) -> str:
+    mode = (getattr(server, "google_routing_mode", None) or "exit").strip().lower()
+    return mode if mode in ("exit", "entry") else "exit"
+
+
+def _google_routing_env_line(server: Server) -> str:
+    return f"export VPN_GOOGLE_ROUTING_MODE={shlex.quote(_google_routing_mode_for_server(server))}\n"
+
+
 def _vless_grpc_env_lines(db: Session, server: Server, *, cfg: Settings) -> str:
     domain = _tls_sni_for_server(server)
     service_name = (server.grpc_service_name or "grpc").strip() or "grpc"
@@ -164,6 +173,7 @@ def _vless_grpc_env_lines(db: Session, server: Server, *, cfg: Settings) -> str:
     )
     if email:
         remote_env += f"export VPN_TLS_CERTBOT_EMAIL={shlex.quote(email)}\n"
+    remote_env += _google_routing_env_line(server)
     remote_env += _cascade_xray_env_for_ru_entry(db, server)
     return remote_env
 
@@ -191,6 +201,7 @@ def _vless_ws_env_lines(db: Session, server: Server, *, cfg: Settings) -> str:
     )
     if email:
         remote_env += f"export VPN_TLS_CERTBOT_EMAIL={shlex.quote(email)}\n"
+    remote_env += _google_routing_env_line(server)
     remote_env += _cascade_xray_env_for_ru_entry(db, server)
     return remote_env
 
@@ -218,6 +229,7 @@ def _xray_env_lines(db: Session, server: Server) -> str:
     pk = (server.reality_private_key or "").strip()
     if pk:
         remote_env += f"export VPN_REALITY_PRIVATE_KEY={shlex.quote(pk)}\n"
+    remote_env += _google_routing_env_line(server)
     remote_env += _cascade_xray_env_for_ru_entry(db, server)
     return remote_env
 

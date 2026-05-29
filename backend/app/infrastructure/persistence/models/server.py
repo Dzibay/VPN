@@ -73,3 +73,9 @@ class Server(Base):
     cascade_egress_client_uuid: Mapped[str | None] = mapped_column(
         Text, nullable=True, unique=True
     )
+    google_routing_mode: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="exit",
+        doc="exit: Google/Gemini через exit; entry: YouTube/Google через вход (direct).",
+    )
