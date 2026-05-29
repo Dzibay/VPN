@@ -212,6 +212,13 @@ class Settings(BaseSettings):
             "нужен исходящий HTTPS до github.com (при SSL timeout на ВМ используйте прокси или ручную установку xray)."
         ),
     )
+    provision_certbot_email: str = Field(
+        default="",
+        description=(
+            "Email для Let's Encrypt (certbot) при VLESS gRPC+TLS; "
+            "пусто — admin@{домен узла} на удалённом хосте."
+        ),
+    )
     provision_install_node_exporter: bool = Field(
         default=True,
         description="При провижининге ставить node_exporter (systemd) для Prometheus.",

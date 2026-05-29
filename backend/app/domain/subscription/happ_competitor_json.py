@@ -14,6 +14,7 @@ from app.domain.servers.reality_defaults import normalize_reality_spider_x
 from app.domain.subscription.build import (
     _XRAY_VLESS_STREAM_SETTINGS_SOCKOPT,
     _primary_sni,
+    _tls_sni_for_server,
 )
 from app.infrastructure.persistence.models.server import Server
 
@@ -73,6 +74,74 @@ def server_to_competitor_hysteria2_outbound(
 
 
 def server_to_competitor_vless_outbound(
+    s: Server,
+    *,
+    client_uuid: str,
+    tag: str,
+    client_fingerprint: str,
+) -> dict[str, Any] | None:
+    """VLESS outbound: REALITY TCP или gRPC+TLS."""
+    kind = (s.proxy_kind or "vless").strip().lower()
+    if kind == "vless_grpc":
+        return server_to_competitor_vless_grpc_outbound(
+            s,
+            client_uuid=client_uuid,
+            tag=tag,
+        )
+    return server_to_competitor_vless_reality_outbound(
+        s,
+        client_uuid=client_uuid,
+        tag=tag,
+        client_fingerprint=client_fingerprint,
+    )
+
+
+def server_to_competitor_vless_grpc_outbound(
+    s: Server,
+    *,
+    client_uuid: str,
+    tag: str,
+) -> dict[str, Any] | None:
+    host = (s.host or "").strip()
+    uid = (client_uuid or "").strip()
+    sni = _tls_sni_for_server(s)
+    service_name = (s.grpc_service_name or "grpc").strip()
+    if not host or not uid or not sni or not service_name:
+        return None
+    return {
+        "tag": tag,
+        "protocol": "vless",
+        "settings": {
+            "vnext": [
+                {
+                    "address": host,
+                    "port": int(s.port),
+                    "users": [
+                        {
+                            "id": uid,
+                            "encryption": "none",
+                        }
+                    ],
+                }
+            ]
+        },
+        "streamSettings": {
+            "network": "grpc",
+            "security": "tls",
+            "tlsSettings": {
+                "serverName": sni,
+                "allowInsecure": False,
+                "alpn": ["h2"],
+            },
+            "grpcSettings": {
+                "serviceName": service_name,
+                "multiMode": False,
+            },
+        },
+    }
+
+
+def server_to_competitor_vless_reality_outbound(
     s: Server,
     *,
     client_uuid: str,

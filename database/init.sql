@@ -50,7 +50,9 @@ CREATE TABLE IF NOT EXISTS servers (
     is_cascade_ru_entry BOOLEAN NOT NULL DEFAULT FALSE,
     cascade_next_server_id BIGINT REFERENCES servers (id) ON DELETE SET NULL,
     cascade_egress_client_uuid TEXT,
-    proxy_kind TEXT NOT NULL DEFAULT 'vless' CHECK (proxy_kind IN ('vless', 'hysteria2')),
+    grpc_service_name TEXT NOT NULL DEFAULT 'grpc',
+    tls_sni TEXT,
+    proxy_kind TEXT NOT NULL DEFAULT 'vless' CHECK (proxy_kind IN ('vless', 'vless_grpc', 'hysteria2')),
     CONSTRAINT uq_servers_host_port UNIQUE (host, port),
     CONSTRAINT ck_servers_cascade_ru_and_next CHECK (
         cascade_next_server_id IS NULL OR is_cascade_ru_entry = TRUE

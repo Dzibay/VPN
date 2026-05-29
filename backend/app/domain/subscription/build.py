@@ -105,6 +105,7 @@ async def subscription_servers_from_db(session: AsyncSession) -> list[Server]:
             Server.provision_ready.is_(True),
             or_(
                 Server.proxy_kind == "hysteria2",
+                Server.proxy_kind == "vless_grpc",
                 and_(
                     Server.proxy_kind == "vless",
                     Server.reality_public_key.isnot(None),
@@ -126,6 +127,10 @@ def _primary_sni(server_names: str, dest: str) -> str:
     if not d:
         return ""
     return d.rsplit(":", 1)[0] if ":" in d else d
+
+
+def _tls_sni_for_server(s: Server) -> str:
+    return ((s.tls_sni or s.host or "").strip().rstrip("."))
 
 
 def _node_subscription_label(
@@ -199,6 +204,42 @@ def _vless_reality_share_uri(
     return f"vless://{uuid}@{host}:{int(s.port)}?{query}#{fragment}"
 
 
+def _vless_grpc_share_uri(
+    s: Server,
+    *,
+    client_uuid: str,
+    exit_ids_referenced: set[int],
+    fragment_override: str | None = None,
+) -> str | None:
+    service_name = (s.grpc_service_name or "grpc").strip()
+    if not service_name:
+        log.warning("Пропуск узла id=%s: пустой grpc_service_name", s.id)
+        return None
+    sni = _tls_sni_for_server(s)
+    if not sni:
+        log.warning("Пропуск узла id=%s: не удалось вывести TLS SNI", s.id)
+        return None
+    params = {
+        "encryption": "none",
+        "security": "tls",
+        "type": "grpc",
+        "serviceName": service_name,
+        "sni": sni,
+    }
+    query = urlencode(params, quote_via=quote, safe="")
+    remark = (
+        fragment_override
+        if fragment_override is not None
+        else _node_subscription_label(s, exit_ids_referenced=exit_ids_referenced)
+    )
+    fragment = quote(remark, safe="")
+    uuid = (client_uuid or "").strip()
+    host = (s.host or "").strip()
+    if not uuid or not host:
+        return None
+    return f"vless://{uuid}@{host}:{int(s.port)}?{query}#{fragment}"
+
+
 def _hysteria2_password_for_server(s: Server) -> str:
     return ((s.vless_uuid or "").replace("-", "")[:32] or f"hysteria{int(s.id)}")
 
@@ -256,6 +297,23 @@ def _server_to_subscription_dict(
             "sni": host,
             "insecure": True,
             "network": "udp",
+        }
+    if kind == "vless_grpc":
+        host = (s.host or "").strip()
+        sni = _tls_sni_for_server(s)
+        return {
+            "id": s.id,
+            "name": display_name,
+            "country": s.country,
+            "protocol": "vless",
+            "address": host,
+            "port": s.port,
+            "uuid": (client_uuid or "").strip(),
+            "encryption": "none",
+            "network": "grpc",
+            "security": "tls",
+            "sni": sni,
+            "serviceName": (s.grpc_service_name or "grpc").strip(),
         }
     uid = (client_uuid or "").strip()
     return {
@@ -322,6 +380,12 @@ def _subscription_uri_and_fingerprint_by_server_id(
                 s,
                 exit_ids_referenced=ctx.exit_ids_referenced,
             )
+        elif kind == "vless_grpc":
+            uri_by_id[s.id] = _vless_grpc_share_uri(
+                s,
+                client_uuid=client_uuid,
+                exit_ids_referenced=ctx.exit_ids_referenced,
+            )
         else:
             uri_by_id[s.id] = _vless_reality_share_uri(
                 s,
@@ -333,7 +397,7 @@ def _subscription_uri_and_fingerprint_by_server_id(
 
 
 def _is_vless_server(s: Server) -> bool:
-    return (s.proxy_kind or "vless").strip().lower() == "vless"
+    return (s.proxy_kind or "vless").strip().lower() in ("vless", "vless_grpc")
 
 
 def _pool_auto_vless(
@@ -394,6 +458,14 @@ def _auto_best_share_uri(
     best = _best_server_by_load(pool)
     if best is None:
         return None
+    kind = (best.proxy_kind or "vless").strip().lower()
+    if kind == "vless_grpc":
+        return _vless_grpc_share_uri(
+            best,
+            client_uuid=client_uuid,
+            exit_ids_referenced=exit_ids_referenced,
+            fragment_override=remark,
+        )
     return _vless_reality_share_uri(
         best,
         client_uuid=client_uuid,
@@ -424,6 +496,24 @@ def _append_clash_proxy(
                 "sni": host,
                 "skip-cert-verify": True,
                 "udp": True,
+            }
+        )
+        return
+    if kind == "vless_grpc":
+        sni = _tls_sni_for_server(s)
+        service_name = (s.grpc_service_name or "grpc").strip()
+        proxies.append(
+            {
+                "name": clash_name,
+                "type": "vless",
+                "server": host,
+                "port": int(s.port),
+                "uuid": client_uuid,
+                "network": "grpc",
+                "tls": True,
+                "udp": True,
+                "servername": sni,
+                "grpc-opts": {"grpc-service-name": service_name},
             }
         )
         return

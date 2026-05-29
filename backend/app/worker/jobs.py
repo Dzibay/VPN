@@ -19,7 +19,7 @@ from typing import Any, Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.config import settings
+from app.config import Settings, settings
 from app.core.time import utc_now
 from app.domain.servers.reality_defaults import normalize_reality_spider_x
 from app.infrastructure.database.session import SessionLocal
@@ -39,6 +39,7 @@ _REMOTE_SCRIPT = _SCRIPTS_DIR / "install_xray_on_remote.sh"
 _REMOTE_SCRIPT_PARTS = (
     _SCRIPTS_DIR / "provision_common.sh",
     _SCRIPTS_DIR / "provision_vless.sh",
+    _SCRIPTS_DIR / "provision_vless_grpc.sh",
     _SCRIPTS_DIR / "provision_hysteria2.sh",
     _REMOTE_SCRIPT,
 )
@@ -136,6 +137,34 @@ def _node_exporter_env_lines(*, force_install: bool | None) -> str:
     return lines
 
 
+def _tls_sni_for_server(server: Server) -> str:
+    return ((server.tls_sni or server.host or "").strip().rstrip("."))
+
+
+def _vless_grpc_env_lines(db: Session, server: Server, *, cfg: Settings) -> str:
+    domain = _tls_sni_for_server(server)
+    service_name = (server.grpc_service_name or "grpc").strip() or "grpc"
+    uuids_csv = vless_client_uuids_csv_for_server(db, server)
+    clients_b64 = vless_clients_b64_for_server(db, server)
+    inbound_tag = (cfg.xray_vless_inbound_tag or "vpn-vless-in").strip() or "vpn-vless-in"
+    email = (cfg.provision_certbot_email or "").strip()
+    remote_env = (
+        f"export VPN_SERVER_PORT={server.port}\n"
+        f"export VPN_SERVER_ID={server.id}\n"
+        f"export VPN_XRAY_INSTALLER_URL={shlex.quote(cfg.provision_xray_installer_url)}\n"
+        f"export VPN_VLESS_UUID={shlex.quote(server.vless_uuid)}\n"
+        f"export VPN_VLESS_INBOUND_TAG={shlex.quote(inbound_tag)}\n"
+        f"export VPN_VLESS_CLIENT_UUIDS={shlex.quote(uuids_csv)}\n"
+        f"export VPN_VLESS_CLIENTS_B64={shlex.quote(clients_b64)}\n"
+        f"export VPN_XRAY_API_PORT={int(cfg.xray_remote_api_port)}\n"
+        f"export VPN_TLS_DOMAIN={shlex.quote(domain)}\n"
+        f"export VPN_GRPC_SERVICE_NAME={shlex.quote(service_name)}\n"
+    )
+    if email:
+        remote_env += f"export VPN_TLS_CERTBOT_EMAIL={shlex.quote(email)}\n"
+    return remote_env
+
+
 def _xray_env_lines(db: Session, server: Server) -> str:
     uuids_csv = vless_client_uuids_csv_for_server(db, server)
     clients_b64 = vless_clients_b64_for_server(db, server)
@@ -225,7 +254,7 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
     remote_env = 'export TERM="${TERM:-xterm-256color}"\n'
     remote_env += f"export VPN_PROVISION_COMPONENT={shlex.quote(component)}\n"
     proxy_kind = (getattr(server, "proxy_kind", None) or "vless").strip().lower()
-    if proxy_kind not in ("vless", "hysteria2"):
+    if proxy_kind not in ("vless", "vless_grpc", "hysteria2"):
         proxy_kind = "vless"
     remote_env += f"export VPN_PROXY_KIND={shlex.quote(proxy_kind)}\n"
 
@@ -238,11 +267,17 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
     elif component == "fair_egress":
         remote_env += f"export VPN_SERVER_ID={server.id}\n"
     elif component in ("xray", "vless"):
-        remote_env += _xray_env_lines(db, server)
+        if proxy_kind == "vless_grpc":
+            remote_env += _vless_grpc_env_lines(db, server, cfg=settings)
+        else:
+            remote_env += _xray_env_lines(db, server)
         remote_env += _node_exporter_env_lines(force_install=False)
     elif component == "sync_clients":
         remote_env += f"export VPN_SERVER_ID={server.id}\n"
-        remote_env += _xray_env_lines(db, server)
+        if proxy_kind == "vless_grpc":
+            remote_env += _vless_grpc_env_lines(db, server, cfg=settings)
+        else:
+            remote_env += _xray_env_lines(db, server)
     elif component == "hysteria2":
         remote_env += f"export VPN_SERVER_ID={server.id}\n"
         remote_env += _hysteria2_env_lines(server)
@@ -250,6 +285,8 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
     else:
         if proxy_kind == "hysteria2":
             remote_env += _hysteria2_env_lines(server)
+        elif proxy_kind == "vless_grpc":
+            remote_env += _vless_grpc_env_lines(db, server, cfg=settings)
         else:
             remote_env += _xray_env_lines(db, server)
         remote_env += _node_exporter_env_lines(force_install=None)
@@ -404,7 +441,7 @@ def sync_xray_clients_to_server(server_id: int) -> None:
                 server_id,
             )
             return
-        if (server.proxy_kind or "vless") != "vless":
+        if (server.proxy_kind or "vless").strip().lower() not in ("vless", "vless_grpc"):
             log.warning(
                 "sync_xray_clients: пропуск id=%s (proxy_kind=%s)",
                 server_id,
@@ -445,7 +482,7 @@ def sync_xray_clients_all_servers() -> None:
     try:
         stmt = select(Server.id).where(
             Server.provision_ready.is_(True),
-            Server.proxy_kind == "vless",
+            Server.proxy_kind.in_(("vless", "vless_grpc")),
         )
         ids = list(db.scalars(stmt).all())
     finally:
@@ -492,7 +529,7 @@ def collect_xray_user_traffic_all_servers() -> dict[str, Any]:
             .where(
                 Server.provision_ready.is_(True),
                 Server.is_active.is_(True),
-                Server.proxy_kind == "vless",
+                Server.proxy_kind.in_(("vless", "vless_grpc")),
             )
             .order_by(Server.id.asc())
         )

@@ -111,18 +111,29 @@ const serverParamRows = computed(() => {
       label: 'Тариф канала (Мбит/с)',
       value: s.network_cap_mbps != null ? String(s.network_cap_mbps) : '—',
     },
+    { label: 'Протокол', value: t(s.proxy_kind) },
     { label: 'VLESS UUID', value: t(s.vless_uuid) },
-    { label: 'VLESS flow', value: t(s.vless_flow) },
-    { label: 'REALITY dest', value: t(s.reality_dest) },
-    { label: 'REALITY spiderX', value: t(s.reality_spider_x) },
-    { label: 'REALITY serverNames', value: t(s.reality_server_names) },
-    { label: 'REALITY shortId', value: t(s.reality_short_id) },
-    { label: 'REALITY fingerprint', value: t(s.reality_fingerprint) },
-    { label: 'REALITY public key (pbk)', value: t(s.reality_public_key) },
-    {
-      label: 'REALITY private key',
-      value: secret(s.reality_private_key),
-    },
+    ...(s.proxy_kind === 'vless_grpc'
+      ? [
+          { label: 'gRPC serviceName', value: t(s.grpc_service_name) },
+          { label: 'TLS SNI', value: t(s.tls_sni || s.host) },
+        ]
+      : []),
+    ...(s.proxy_kind === 'vless'
+      ? [
+          { label: 'VLESS flow', value: t(s.vless_flow) },
+          { label: 'REALITY dest', value: t(s.reality_dest) },
+          { label: 'REALITY spiderX', value: t(s.reality_spider_x) },
+          { label: 'REALITY serverNames', value: t(s.reality_server_names) },
+          { label: 'REALITY shortId', value: t(s.reality_short_id) },
+          { label: 'REALITY fingerprint', value: t(s.reality_fingerprint) },
+          { label: 'REALITY public key (pbk)', value: t(s.reality_public_key) },
+          {
+            label: 'REALITY private key',
+            value: secret(s.reality_private_key),
+          },
+        ]
+      : []),
   ]
 })
 

@@ -70,6 +70,10 @@ def vless_client_uuids_csv_for_server(session: Session, server: Server) -> str:
     return ",".join(uuids)
 
 
+def _is_xray_proxy_kind(proxy_kind: str | None) -> bool:
+    return (proxy_kind or "vless").strip().lower() in ("vless", "vless_grpc")
+
+
 def vless_client_entries_for_server(session: Session, server: Server) -> list[dict[str, object]]:
     """
     Клиенты VLESS для inbound: активные подписки + UUID каскадных входов на exit + fallback узла.
@@ -77,6 +81,7 @@ def vless_client_entries_for_server(session: Session, server: Server) -> list[di
     Поля совместимы с Xray API ``adu`` / внутренним JSON clients.
     """
     flow = (server.vless_flow or "xtls-rprx-vision").strip() or "xtls-rprx-vision"
+    use_flow = (server.proxy_kind or "vless").strip().lower() == "vless"
     entries: list[dict[str, object]] = []
     seen_ids: set[str] = set()
     for u in active_subscription_users(session):
@@ -86,14 +91,14 @@ def vless_client_entries_for_server(session: Session, server: Server) -> list[di
         if uid in seen_ids:
             continue
         seen_ids.add(uid)
-        entries.append(
-            {
+        entry: dict[str, object] = {
                 "id": uid,
                 "email": f"u{u.id}@vpn",
-                "flow": flow,
                 "level": 0,
             }
-        )
+        if use_flow:
+            entry["flow"] = flow
+        entries.append(entry)
     for ru in session.scalars(
         select(Server).where(
             Server.cascade_next_server_id == server.id,
@@ -104,28 +109,28 @@ def vless_client_entries_for_server(session: Session, server: Server) -> list[di
         if not cuid or cuid in seen_ids:
             continue
         seen_ids.add(cuid)
-        entries.append(
-            {
+        entry = {
                 "id": cuid,
                 "email": f"ru_entry{ru.id}@cascade",
-                "flow": flow,
                 "level": 0,
             }
-        )
+        if use_flow:
+            entry["flow"] = flow
+        entries.append(entry)
     if not entries:
         fb = (server.vless_uuid or "").strip()
         if fb:
             # u0@vpn → в statsquery приходит uid=0, в БД нет User с id=0 — трафик не пишется.
             any_uid = session.scalar(select(User.id).order_by(User.id.asc()).limit(1))
             email = f"u{any_uid}@vpn" if any_uid is not None else "u0@vpn"
-            entries.append(
-                {
+            entry = {
                     "id": fb,
                     "email": email,
-                    "flow": flow,
                     "level": 0,
                 }
-            )
+            if use_flow:
+                entry["flow"] = flow
+            entries.append(entry)
     return entries
 
 

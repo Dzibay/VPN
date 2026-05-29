@@ -20,4 +20,16 @@ WHERE net_amount IS NULL;
 
 ALTER TABLE payments ALTER COLUMN net_amount SET NOT NULL;
 
+-- VLESS gRPC + TLS: новый тип прокси и параметры транспорта.
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS grpc_service_name TEXT NOT NULL DEFAULT 'grpc';
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS tls_sni TEXT;
+
+UPDATE servers
+SET tls_sni = host
+WHERE tls_sni IS NULL
+  AND proxy_kind = 'vless_grpc';
+
+ALTER TABLE servers DROP CONSTRAINT IF EXISTS servers_proxy_kind_check;
+ALTER TABLE servers ADD CONSTRAINT servers_proxy_kind_check
+    CHECK (proxy_kind IN ('vless', 'vless_grpc', 'hysteria2'));
 

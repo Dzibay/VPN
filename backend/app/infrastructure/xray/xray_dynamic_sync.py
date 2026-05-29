@@ -85,14 +85,14 @@ def _adu_json_for_adds(
 ) -> str:
     clients: list[dict[str, object]] = []
     for c in adds:
-        clients.append(
-            {
-                "id": c["id"],
-                "email": c["email"],
-                "flow": c["flow"],
-                "level": int(c.get("level") or 0),
-            }
-        )
+        entry: dict[str, object] = {
+            "id": c["id"],
+            "email": c["email"],
+            "level": int(c.get("level") or 0),
+        }
+        if "flow" in c:
+            entry["flow"] = c["flow"]
+        clients.append(entry)
     doc = {
         "inbounds": [
             {

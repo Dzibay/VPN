@@ -189,6 +189,8 @@ const formRealityShortId = ref('')
 const formVlessUuid = ref('')
 const formRealityPublicKey = ref('')
 const formRealityPrivateKey = ref('')
+const formGrpcServiceName = ref('')
+const formTlsSni = ref('')
 /** Вход (РФ) в каскаде: дальше трафик на внешний exit (подготовка к Xray) */
 const formIsCascadeRuEntry = ref(false)
 /** id внешнего сервера; '' = не задано */
@@ -203,6 +205,7 @@ const DEFAULT_REALITY_SERVER_NAMES = 'www.amazon.com,amazon.com'
 const DEFAULT_REALITY_FINGERPRINT = 'chrome'
 const DEFAULT_REALITY_SPIDER_X = '/'
 const DEFAULT_VLESS_FLOW = 'xtls-rprx-vision'
+const DEFAULT_GRPC_SERVICE_NAME = 'grpc'
 
 function randomShortIdHex() {
   const a = new Uint8Array(4)
@@ -216,6 +219,8 @@ function applyDefaultProxyFields() {
   formRealityFingerprint.value = DEFAULT_REALITY_FINGERPRINT
   formRealitySpiderX.value = DEFAULT_REALITY_SPIDER_X
   formVlessFlow.value = DEFAULT_VLESS_FLOW
+  formGrpcServiceName.value = DEFAULT_GRPC_SERVICE_NAME
+  formTlsSni.value = ''
   formRealityShortId.value = randomShortIdHex()
   formRealityPrivateKey.value = ''
 }
@@ -495,7 +500,12 @@ function openEditServer(s) {
   formPort.value = s.port
   formCountry.value = s.country ?? ''
   formActive.value = Boolean(s.is_active)
-  formProxyKind.value = s.proxy_kind === 'hysteria2' ? 'hysteria2' : 'vless'
+  formProxyKind.value =
+    s.proxy_kind === 'hysteria2'
+      ? 'hysteria2'
+      : s.proxy_kind === 'vless_grpc'
+        ? 'vless_grpc'
+        : 'vless'
   formWhitelist.value = Boolean(s.whitelist)
   formIncludeInAuto.value = s.include_in_auto !== false
   formIsHidden.value = Boolean(s.is_hidden)
@@ -522,6 +532,10 @@ function openEditServer(s) {
   formVlessUuid.value = s.vless_uuid ?? ''
   formRealityPublicKey.value = s.reality_public_key ?? ''
   formRealityPrivateKey.value = s.reality_private_key ?? ''
+  formGrpcServiceName.value =
+    (s.grpc_service_name && String(s.grpc_service_name).trim()) ||
+    DEFAULT_GRPC_SERVICE_NAME
+  formTlsSni.value = (s.tls_sni && String(s.tls_sni).trim()) || ''
   formIsCascadeRuEntry.value = Boolean(s.is_cascade_ru_entry)
   formCascadeNextServerId.value =
     s.cascade_next_server_id != null ? String(s.cascade_next_server_id) : ''
@@ -910,6 +924,12 @@ async function submitSaveServer() {
         const rpk = String(formRealityPrivateKey.value ?? '').trim()
         if (rpk) patch.reality_private_key = rpk
       }
+      if (formProxyKind.value === 'vless_grpc') {
+        const gsn = String(formGrpcServiceName.value ?? '').trim()
+        if (gsn) patch.grpc_service_name = gsn
+        const tls = String(formTlsSni.value ?? '').trim()
+        patch.tls_sni = tls || null
+      }
       const pinst = String(formPrometheusInstance.value ?? '').trim()
       patch.prometheus_instance = pinst || null
       patch.network_cap_mbps = normalizeNetworkCapMbps(formNetworkCapMbps.value)
@@ -947,6 +967,12 @@ async function submitSaveServer() {
         if (vf) createBody.vless_flow = vf
         const rsid = String(formRealityShortId.value ?? '').trim().toLowerCase()
         if (rsid) createBody.reality_short_id = rsid
+      }
+      if (formProxyKind.value === 'vless_grpc') {
+        const gsn = String(formGrpcServiceName.value ?? '').trim()
+        if (gsn) createBody.grpc_service_name = gsn
+        const tls = String(formTlsSni.value ?? '').trim()
+        if (tls) createBody.tls_sni = tls
       }
       const pinst = String(formPrometheusInstance.value ?? '').trim()
       if (pinst) createBody.prometheus_instance = pinst
@@ -1987,7 +2013,7 @@ watch(formIsCascadeRuEntry, (v) => {
             !canEnqueueReconcile(serverMenuTarget) ||
             isServerProvisionBusy(serverMenuTarget)
           "
-          title="Только Xray и конфиг VLESS+REALITY"
+          title="Только Xray и конфиг (VLESS REALITY или gRPC+TLS)"
           @click="withOpenServerMenu(enqueueProvisionXray)"
         >
           {{
@@ -2330,7 +2356,11 @@ watch(formIsCascadeRuEntry, (v) => {
                   autocomplete="off"
                   autocapitalize="none"
                   spellcheck="false"
-                  placeholder="IP или домен VPS"
+                  :placeholder="
+                    formProxyKind === 'vless_grpc'
+                      ? 'Домен с A-записью на VPS'
+                      : 'IP или домен VPS'
+                  "
                 />
               </label>
               <div v-else class="field field-readonly">
@@ -2355,6 +2385,7 @@ watch(formIsCascadeRuEntry, (v) => {
                 <span>Протокол</span>
                 <select v-model="formProxyKind">
                   <option value="vless">VLESS + REALITY</option>
+                  <option value="vless_grpc">VLESS gRPC + TLS</option>
                   <option value="hysteria2">Hysteria2</option>
                 </select>
               </label>
@@ -2370,7 +2401,7 @@ watch(formIsCascadeRuEntry, (v) => {
                 <input v-model="formIsHidden" type="checkbox" />
                 <span>Скрытый узел (не в подписке; в таблице по умолчанию не показывается)</span>
               </label>
-              <div class="field field-cascade">
+              <div class="field field-cascade" v-if="formProxyKind === 'vless'">
                 <label class="field field-check">
                   <input v-model="formIsCascadeRuEntry" type="checkbox" />
                   <span>Вход (РФ) в каскаде — дальше трафик на внешний exit</span>
@@ -2444,12 +2475,16 @@ watch(formIsCascadeRuEntry, (v) => {
                 По умолчанию — маскировка под Amazon (REALITY). После «Установить
                 ПО» ключи попадут в БД.
               </p>
+              <p v-else-if="formProxyKind === 'vless_grpc'" class="field-hint">
+                Нужен домен с A-записью на узел. При установке certbot выпустит Let's Encrypt
+                (порт 80 должен быть свободен), Xray поднимется на gRPC+TLS.
+              </p>
               <p v-else class="field-hint">
                 Для Hysteria2 используется официальный сервер hysteria с password auth и TLS self-signed.
                 Убедитесь, что UDP-порт inbound открыт в firewall провайдера.
               </p>
               <div
-                v-if="formProxyKind === 'vless' && editingServerId != null"
+                v-if="formProxyKind !== 'hysteria2' && editingServerId != null"
                 class="field field-readonly"
               >
                 <span>VLESS UUID</span>
@@ -2464,6 +2499,24 @@ watch(formIsCascadeRuEntry, (v) => {
                   {{ formRealityPublicKey || '—' }}
                 </p>
               </div>
+              <label v-if="formProxyKind === 'vless_grpc'" class="field">
+                <span>gRPC serviceName</span>
+                <input
+                  v-model="formGrpcServiceName"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="grpc"
+                />
+              </label>
+              <label v-if="formProxyKind === 'vless_grpc'" class="field">
+                <span>TLS SNI</span>
+                <input
+                  v-model="formTlsSni"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="Пусто — как host (домен)"
+                />
+              </label>
               <label v-if="formProxyKind === 'vless'" class="field">
                 <span>REALITY dest (маскировка)</span>
                 <input

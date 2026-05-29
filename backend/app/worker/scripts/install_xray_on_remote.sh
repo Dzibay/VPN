@@ -4,6 +4,7 @@
 # Функции компонентов подставляются воркером в SSH payload перед этим dispatcher:
 #   provision_common.sh
 #   provision_vless.sh
+#   provision_vless_grpc.sh
 #   provision_hysteria2.sh
 
 set -euo pipefail
@@ -26,12 +27,20 @@ case "$COMPONENT" in
     echo "[cleanup] готово."
     ;;
   sync_clients)
-    _xray_sync_clients
+    if [[ "$PROXY_KIND" == "vless_grpc" ]]; then
+      _vless_grpc_sync_clients
+    else
+      _xray_sync_clients
+    fi
     ;;
   xray|vless)
-    _xray_install
+    if [[ "$PROXY_KIND" == "vless_grpc" ]]; then
+      _vless_grpc_install
+    else
+      _xray_install
+      _emit_xray_meta
+    fi
     _egress_fairness_install
-    _emit_xray_meta
     ;;
   hysteria2)
     _hysteria2_install
@@ -46,6 +55,8 @@ case "$COMPONENT" in
   all|*)
     if [[ "$PROXY_KIND" == "hysteria2" ]]; then
       _hysteria2_install
+    elif [[ "$PROXY_KIND" == "vless_grpc" ]]; then
+      _vless_grpc_install
     else
       _xray_install
       _emit_xray_meta
