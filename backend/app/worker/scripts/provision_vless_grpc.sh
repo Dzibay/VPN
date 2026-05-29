@@ -149,10 +149,14 @@ _tls_publish_for_xray() {
   cp -L "$src_cert" "${dest_dir}/fullchain.pem"
   cp -L "$src_key" "${dest_dir}/privkey.pem"
   xray_user=$(_tls_xray_run_user)
-  chown -R "${xray_user}:${xray_user}" "$dest_dir"
+  xray_group=$(id -gn "$xray_user" 2>/dev/null || true)
+  if [[ -z "$xray_group" ]]; then
+    xray_group="$xray_user"
+  fi
+  chown -R "${xray_user}:${xray_group}" "$dest_dir"
   chmod 755 "$dest_dir"
   chmod 644 "${dest_dir}/fullchain.pem"
-  chmod 640 "${dest_dir}/privkey.pem"
+  chmod 600 "${dest_dir}/privkey.pem"
   export VPN_TLS_CERT_FILE="${dest_dir}/fullchain.pem"
   export VPN_TLS_KEY_FILE="${dest_dir}/privkey.pem"
   echo "[vless_grpc] TLS для xray (${xray_user}): ${VPN_TLS_CERT_FILE}"
