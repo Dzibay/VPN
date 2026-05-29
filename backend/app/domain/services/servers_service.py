@@ -69,6 +69,25 @@ from app.infrastructure.server_health_check import run_tcp_probes
 
 log = logging.getLogger("app.servers_service")
 
+_CASCADE_ENTRY_KINDS = frozenset({"vless", "vless_grpc", "vless_ws"})
+
+
+def _assert_cascade_proxy_allowed(
+    proxy_kind: str,
+    *,
+    is_ru_entry: bool,
+    cascade_next_id: int | None,
+) -> None:
+    if not is_ru_entry and cascade_next_id is None:
+        return
+    pk = (proxy_kind or "vless").strip().lower()
+    if pk == "hysteria2":
+        raise ConflictError("Hysteria2 не поддерживает каскад")
+    if is_ru_entry and cascade_next_id is not None and pk not in _CASCADE_ENTRY_KINDS:
+        raise ConflictError(
+            "Вход каскада: VLESS+REALITY, gRPC+TLS или WebSocket+TLS",
+        )
+
 
 async def servers_count(session: AsyncSession) -> ServersCountResponse:
     """Общее число записей в таблице ``servers`` (без служебного архива id=0)."""
@@ -138,10 +157,7 @@ async def create_server(
         is_ru = True
     elif not is_ru:
         cnext = None
-    if body.proxy_kind in ("hysteria2", "vless_grpc") and (is_ru or cnext is not None):
-        raise ConflictError(
-            "Hysteria2 и VLESS gRPC пока не поддерживают каскад; используйте VLESS+REALITY",
-        )
+    _assert_cascade_proxy_allowed(body.proxy_kind, is_ru_entry=is_ru, cascade_next_id=cnext)
     await validate_cascade_pair(session, self_id=None, is_ru_entry=is_ru, cascade_next_id=cnext)
     cascade_egress_uuid: str | None = str(uuid_lib.uuid4()) if cnext else None
     server = Server(
@@ -200,7 +216,11 @@ async def enqueue_sync_xray_one(
         raise ConflictError(
             "Узел не готов (provision_ready=false); сначала установите ПО",
         )
-    if (server.proxy_kind or "vless").strip().lower() not in ("vless", "vless_grpc"):
+    if (server.proxy_kind or "vless").strip().lower() not in (
+        "vless",
+        "vless_grpc",
+        "vless_ws",
+    ):
         raise ConflictError("Синхронизация Xray-клиентов доступна только для VLESS-узлов")
     try:
         job_id = ensure_sync_xray_clients_to_server_enqueued(server_id)
@@ -318,7 +338,7 @@ async def patch_server(session: AsyncSession, server_id: int, body: ServerUpdate
         old_priv = (server.reality_private_key or "").strip()
         if new_priv != old_priv:
             server.reality_public_key = None
-    if data.get("proxy_kind") in ("hysteria2", "vless_grpc"):
+    if data.get("proxy_kind") in ("hysteria2", "vless_grpc", "vless_ws"):
         data["reality_public_key"] = None
     cascade_touched = False
     old_cnext: int | None = None
@@ -342,10 +362,11 @@ async def patch_server(session: AsyncSession, server_id: int, body: ServerUpdate
     final_proxy = data.get("proxy_kind", server.proxy_kind or "vless")
     final_is_ru = bool(data.get("is_cascade_ru_entry", server.is_cascade_ru_entry))
     final_cnext = data.get("cascade_next_server_id", server.cascade_next_server_id)
-    if final_proxy in ("hysteria2", "vless_grpc") and (final_is_ru or final_cnext is not None):
-        raise ConflictError(
-            "Hysteria2 и VLESS gRPC пока не поддерживают каскад; используйте VLESS+REALITY",
-        )
+    _assert_cascade_proxy_allowed(
+        str(final_proxy),
+        is_ru_entry=final_is_ru,
+        cascade_next_id=final_cnext,
+    )
     for key, value in data.items():
         setattr(server, key, value)
     await session.flush()

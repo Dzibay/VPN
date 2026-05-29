@@ -5,6 +5,8 @@
 #   provision_common.sh
 #   provision_vless.sh
 #   provision_vless_grpc.sh
+#   provision_vless_ws.sh
+#   provision_cascade.sh
 #   provision_hysteria2.sh
 
 set -euo pipefail
@@ -29,6 +31,8 @@ case "$COMPONENT" in
   sync_clients)
     if [[ "$PROXY_KIND" == "vless_grpc" ]]; then
       _vless_grpc_sync_clients
+    elif [[ "$PROXY_KIND" == "vless_ws" ]]; then
+      _vless_ws_sync_clients
     else
       _xray_sync_clients
     fi
@@ -36,6 +40,8 @@ case "$COMPONENT" in
   xray|vless)
     if [[ "$PROXY_KIND" == "vless_grpc" ]]; then
       _vless_grpc_install
+    elif [[ "$PROXY_KIND" == "vless_ws" ]]; then
+      _vless_ws_install
     else
       _xray_install
       _emit_xray_meta
@@ -57,6 +63,8 @@ case "$COMPONENT" in
       _hysteria2_install
     elif [[ "$PROXY_KIND" == "vless_grpc" ]]; then
       _vless_grpc_install
+    elif [[ "$PROXY_KIND" == "vless_ws" ]]; then
+      _vless_ws_install
     else
       _xray_install
       _emit_xray_meta

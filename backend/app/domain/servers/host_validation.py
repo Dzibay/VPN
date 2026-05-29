@@ -33,3 +33,14 @@ def normalize_grpc_service_name(raw: str | None) -> str:
     if not re.fullmatch(r"[A-Za-z0-9._-]+", s):
         raise ValueError("grpc_service_name: только буквы, цифры, . _ -")
     return s
+
+
+def normalize_ws_path(raw: str | None) -> str:
+    s = (raw or "").strip() or "/vless"
+    if not s.startswith("/"):
+        s = "/" + s
+    if len(s) > 256:
+        raise ValueError("ws_path: максимум 256 символов")
+    if not re.fullmatch(r"/[A-Za-z0-9._/-]*", s):
+        raise ValueError("ws_path: путь должен начинаться с / (буквы, цифры, . _ - /)")
+    return s

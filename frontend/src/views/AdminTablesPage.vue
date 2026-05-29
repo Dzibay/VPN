@@ -191,6 +191,7 @@ const formRealityPublicKey = ref('')
 const formRealityPrivateKey = ref('')
 const formGrpcServiceName = ref('')
 const formTlsSni = ref('')
+const formWsPath = ref('')
 /** Вход (РФ) в каскаде: дальше трафик на внешний exit (подготовка к Xray) */
 const formIsCascadeRuEntry = ref(false)
 /** id внешнего сервера; '' = не задано */
@@ -206,6 +207,12 @@ const DEFAULT_REALITY_FINGERPRINT = 'chrome'
 const DEFAULT_REALITY_SPIDER_X = '/'
 const DEFAULT_VLESS_FLOW = 'xtls-rprx-vision'
 const DEFAULT_GRPC_SERVICE_NAME = 'grpc'
+const DEFAULT_WS_PATH = '/vless'
+
+/** VLESS-типы, для которых доступен каскад (вход РФ → exit). */
+function proxyKindSupportsCascade(kind) {
+  return kind === 'vless' || kind === 'vless_grpc' || kind === 'vless_ws'
+}
 
 function randomShortIdHex() {
   const a = new Uint8Array(4)
@@ -221,6 +228,7 @@ function applyDefaultProxyFields() {
   formVlessFlow.value = DEFAULT_VLESS_FLOW
   formGrpcServiceName.value = DEFAULT_GRPC_SERVICE_NAME
   formTlsSni.value = ''
+  formWsPath.value = DEFAULT_WS_PATH
   formRealityShortId.value = randomShortIdHex()
   formRealityPrivateKey.value = ''
 }
@@ -505,7 +513,9 @@ function openEditServer(s) {
       ? 'hysteria2'
       : s.proxy_kind === 'vless_grpc'
         ? 'vless_grpc'
-        : 'vless'
+        : s.proxy_kind === 'vless_ws'
+          ? 'vless_ws'
+          : 'vless'
   formWhitelist.value = Boolean(s.whitelist)
   formIncludeInAuto.value = s.include_in_auto !== false
   formIsHidden.value = Boolean(s.is_hidden)
@@ -536,6 +546,8 @@ function openEditServer(s) {
     (s.grpc_service_name && String(s.grpc_service_name).trim()) ||
     DEFAULT_GRPC_SERVICE_NAME
   formTlsSni.value = (s.tls_sni && String(s.tls_sni).trim()) || ''
+  formWsPath.value =
+    (s.ws_path && String(s.ws_path).trim()) || DEFAULT_WS_PATH
   formIsCascadeRuEntry.value = Boolean(s.is_cascade_ru_entry)
   formCascadeNextServerId.value =
     s.cascade_next_server_id != null ? String(s.cascade_next_server_id) : ''
@@ -930,14 +942,25 @@ async function submitSaveServer() {
         const tls = String(formTlsSni.value ?? '').trim()
         patch.tls_sni = tls || null
       }
+      if (formProxyKind.value === 'vless_ws') {
+        const wp = String(formWsPath.value ?? '').trim()
+        if (wp) patch.ws_path = wp
+        const tls = String(formTlsSni.value ?? '').trim()
+        patch.tls_sni = tls || null
+      }
       const pinst = String(formPrometheusInstance.value ?? '').trim()
       patch.prometheus_instance = pinst || null
       patch.network_cap_mbps = normalizeNetworkCapMbps(formNetworkCapMbps.value)
-      patch.is_cascade_ru_entry = formIsCascadeRuEntry.value
-      const cnx = String(formCascadeNextServerId.value ?? '').trim()
-      patch.cascade_next_server_id = cnx
-        ? Number.parseInt(cnx, 10)
-        : null
+      if (proxyKindSupportsCascade(formProxyKind.value)) {
+        patch.is_cascade_ru_entry = formIsCascadeRuEntry.value
+        const cnx = String(formCascadeNextServerId.value ?? '').trim()
+        patch.cascade_next_server_id = cnx
+          ? Number.parseInt(cnx, 10)
+          : null
+      } else {
+        patch.is_cascade_ru_entry = false
+        patch.cascade_next_server_id = null
+      }
       await fetchJson(`/api/servers/${editingServerId.value}`, {
         method: 'PATCH',
         body: JSON.stringify(patch),
@@ -974,16 +997,24 @@ async function submitSaveServer() {
         const tls = String(formTlsSni.value ?? '').trim()
         if (tls) createBody.tls_sni = tls
       }
+      if (formProxyKind.value === 'vless_ws') {
+        const wp = String(formWsPath.value ?? '').trim()
+        if (wp) createBody.ws_path = wp
+        const tls = String(formTlsSni.value ?? '').trim()
+        if (tls) createBody.tls_sni = tls
+      }
       const pinst = String(formPrometheusInstance.value ?? '').trim()
       if (pinst) createBody.prometheus_instance = pinst
       const cap = normalizeNetworkCapMbps(formNetworkCapMbps.value)
       if (cap != null) createBody.network_cap_mbps = cap
-      createBody.is_cascade_ru_entry = formIsCascadeRuEntry.value
-      const cnx = String(formCascadeNextServerId.value ?? '').trim()
-      if (cnx) {
-        createBody.cascade_next_server_id = Number.parseInt(cnx, 10)
-      } else {
-        createBody.cascade_next_server_id = null
+      if (proxyKindSupportsCascade(formProxyKind.value)) {
+        createBody.is_cascade_ru_entry = formIsCascadeRuEntry.value
+        const cnx = String(formCascadeNextServerId.value ?? '').trim()
+        if (cnx) {
+          createBody.cascade_next_server_id = Number.parseInt(cnx, 10)
+        } else {
+          createBody.cascade_next_server_id = null
+        }
       }
       await fetchJson('/api/servers', {
         method: 'POST',
@@ -1661,9 +1692,10 @@ watch(formIsCascadeRuEntry, (v) => {
         <div class="cascade-overview" aria-label="Каскадные пары">
           <h3 class="cascade-overview-title">Каскад (вход РФ → внешний exit)</h3>
           <p class="cascade-muted cascade-provision-hint">
-            Установка: сначала полный прогон на <strong>внешнем</strong> exit (Xray с REALITY). Затем на
-            <strong>РФ-входе</strong> — «Xray» или полная установка: трафик пользователей уйдёт на exit по
-            отдельному UUID. При смене пары в БД exit обновится в очереди sync Xray (если Redis доступен).
+            Сначала установите <strong>exit</strong> (REALITY, gRPC+TLS или WebSocket+TLS). Затем
+            <strong>РФ-вход</strong> того же семейства VLESS — Xray или полная установка: клиенты
+            подключаются ко входу, магистраль на exit — по типу exit и отдельному UUID. При смене пары
+            exit получит sync Xray (если Redis доступен).
           </p>
           <p v-if="!serverCascadePairs.length && !ruEntryAwaitingCascade.length && !externalServersUnpaired.length" class="cascade-muted">
             Каскадов нет. Добавьте внешний сервер, при необходимости — отметьте вход (РФ) и привяжите exit.
@@ -2357,7 +2389,7 @@ watch(formIsCascadeRuEntry, (v) => {
                   autocapitalize="none"
                   spellcheck="false"
                   :placeholder="
-                    formProxyKind === 'vless_grpc'
+                    formProxyKind === 'vless_grpc' || formProxyKind === 'vless_ws'
                       ? 'Домен с A-записью на VPS'
                       : 'IP или домен VPS'
                   "
@@ -2386,6 +2418,7 @@ watch(formIsCascadeRuEntry, (v) => {
                 <select v-model="formProxyKind">
                   <option value="vless">VLESS + REALITY</option>
                   <option value="vless_grpc">VLESS gRPC + TLS</option>
+                  <option value="vless_ws">VLESS WebSocket + TLS</option>
                   <option value="hysteria2">Hysteria2</option>
                 </select>
               </label>
@@ -2401,7 +2434,10 @@ watch(formIsCascadeRuEntry, (v) => {
                 <input v-model="formIsHidden" type="checkbox" />
                 <span>Скрытый узел (не в подписке; в таблице по умолчанию не показывается)</span>
               </label>
-              <div class="field field-cascade" v-if="formProxyKind === 'vless'">
+              <div
+                class="field field-cascade"
+                v-if="proxyKindSupportsCascade(formProxyKind)"
+              >
                 <label class="field field-check">
                   <input v-model="formIsCascadeRuEntry" type="checkbox" />
                   <span>Вход (РФ) в каскаде — дальше трафик на внешний exit</span>
@@ -2476,8 +2512,12 @@ watch(formIsCascadeRuEntry, (v) => {
                 ПО» ключи попадут в БД.
               </p>
               <p v-else-if="formProxyKind === 'vless_grpc'" class="field-hint">
-                Нужен домен с A-записью на узел. При установке certbot выпустит Let's Encrypt
-                (порт 80 должен быть свободен), Xray поднимется на gRPC+TLS.
+                Домен с A-записью на узел, Let's Encrypt (порт 80 свободен), gRPC+TLS. Подходит
+                для входа каскада (РФ) и для exit — магистраль на exit по его proxy_kind.
+              </p>
+              <p v-else-if="formProxyKind === 'vless_ws'" class="field-hint">
+                Домен с A-записью на узел, Let's Encrypt и VLESS поверх WebSocket+TLS. Может быть
+                и входом каскада (РФ), и exit — транспорт магистрали задаётся типом exit.
               </p>
               <p v-else class="field-hint">
                 Для Hysteria2 используется официальный сервер hysteria с password auth и TLS self-signed.
@@ -2508,13 +2548,25 @@ watch(formIsCascadeRuEntry, (v) => {
                   placeholder="grpc"
                 />
               </label>
-              <label v-if="formProxyKind === 'vless_grpc'" class="field">
+              <label
+                v-if="formProxyKind === 'vless_grpc' || formProxyKind === 'vless_ws'"
+                class="field"
+              >
                 <span>TLS SNI</span>
                 <input
                   v-model="formTlsSni"
                   type="text"
                   autocomplete="off"
                   placeholder="Пусто — как host (домен)"
+                />
+              </label>
+              <label v-if="formProxyKind === 'vless_ws'" class="field">
+                <span>WebSocket path</span>
+                <input
+                  v-model="formWsPath"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="/vless"
                 />
               </label>
               <label v-if="formProxyKind === 'vless'" class="field">

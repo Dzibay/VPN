@@ -181,7 +181,6 @@ cfg = {
 }
 
 cascade = (os.environ.get("VPN_CASCADE_ENABLED") or "").strip() == "1"
-ru_direct = cascade and (os.environ.get("VPN_CASCADE_RU_DIRECT") or "1").strip() == "1"
 # routeOnly=True: домен из sniff только для routing (RU/не-RU, Gemini); целевой адрес пакета не подменяется —
 # меньше поломок push/банков при обращении по IP или чувствительных TLS. Каскаду нужен стабильный match по домену.
 cfg["inbounds"][0]["sniffing"] = {
@@ -193,220 +192,37 @@ cfg["inbounds"][0]["sniffing"] = {
 gemini_domains = [
     "domain:gemini.google.com",
     "domain:aistudio.google.com",
-    "domain:clients6.google.com",  # grpc-web: ogads-pa / waa-pa → AsyncDataService, и т.д.
+    "domain:clients6.google.com",
     "domain:generativelanguage.googleapis.com",
     "domain:alkalimining-pa.googleapis.com",
     "domain:proactivebackend-pa.googleapis.com",
 ]
 gemini_tag = "egress-cascade" if cascade else "direct"
-dns_outbound_tag = "egress-cascade" if cascade else "direct"
 gemini_rule = {
     "type": "field",
     "outboundTag": gemini_tag,
     "domain": gemini_domains,
 }
-# Трафик на IP из списка google в geoip.dat (QUIC/без домена). Нужен geoip с тегом google (стандартный geoip.dat от install-release).
 gemini_google_ip_rule = {
     "type": "field",
     "outboundTag": gemini_tag,
     "ip": ["geoip:google"],
 }
 
-# Каскад: РФ-вход — user traffic VLESS+REALITY inbound → VLESS+REALITY outbound на внешний exit
-if cascade:
-    raw_extra_ru = (os.environ.get("VPN_CASCADE_RU_DIRECT_EXTRA_DOMAINS") or "vk.com").strip()
-    extra_ru_domains = []
-    if raw_extra_ru:
-        seen = set()
-        for token in re.split(r"[\s,;]+", raw_extra_ru):
-            t = token.strip()
-            if not t:
-                continue
-            # Xray domain rule items may be prefixed (domain:, full:, regexp:, geosite:, keyword:).
-            if ":" not in t:
-                t = "domain:%s" % t.lstrip(".")
-            if t not in seen:
-                seen.add(t)
-                extra_ru_domains.append(t)
-
-    eg_sni_list = [
-        x.strip()
-        for x in os.environ.get("VPN_CASCADE_EGRESS_SERVER_NAMES", "").split(",")
-        if x.strip()
-    ]
-    sn0 = eg_sni_list[0] if eg_sni_list else "www.amazon.com"
-    eaddr = os.environ["VPN_CASCADE_EGRESS_ADDRESS"].strip()
-    eport = int(os.environ.get("VPN_CASCADE_EGRESS_PORT", "443"))
-    ecid = os.environ["VPN_CASCADE_EGRESS_CLIENT_UUID"].strip()
-    epbk = os.environ["VPN_CASCADE_EGRESS_PBK"].strip()
-    esid = os.environ.get("VPN_CASCADE_EGRESS_SHORT_ID", "").strip() or "ab"
-    efp = os.environ.get("VPN_CASCADE_EGRESS_FINGERPRINT", "chrome").strip() or "chrome"
-    eflow = os.environ.get("VPN_CASCADE_EGRESS_FLOW", "xtls-rprx-vision").strip() or "xtls-rprx-vision"
-    _eg_spider = (os.environ.get("VPN_CASCADE_EGRESS_SPIDER_X") or "/").strip() or "/"
-    if not _eg_spider.startswith("/"):
-        _eg_spider = "/" + _eg_spider.lstrip("/")
-    _eg_spider = _eg_spider[:256]
-    vless_to_exit = {
-        "tag": "egress-cascade",
-        "protocol": "vless",
-        "settings": {
-            "vnext": [
-                {
-                    "address": eaddr,
-                    "port": eport,
-                    "users": [
-                        {
-                            "id": ecid,
-                            "encryption": "none",
-                            "flow": eflow,
-                        }
-                    ],
-                }
-            ]
-        },
-        "streamSettings": {
-            "network": "tcp",
-            "security": "reality",
-            "realitySettings": {
-                "show": False,
-                "fingerprint": efp,
-                "serverName": sn0,
-                "publicKey": epbk,
-                "shortId": esid,
-                "spiderX": _eg_spider,
-            },
-            "sockopt": {
-                "tcpFastOpen": True,
-                "tcpcongestion": "bbr",
-                "happyEyeballs": {
-                    "interleave": 1,
-                    "tryDelayMs": 250,
-                    "prioritizeIPv6": False,
-                    "maxConcurrentTry": 4,
-                },
-            },
-        },
-    }
-    direct_out = {
-        "protocol": "freedom",
-        "tag": "direct",
-        "settings": {"domainStrategy": "UseIPv4"},
-    }
-    blackhole_out = {"protocol": "blackhole", "tag": "block"}
-    cfg["outbounds"] = [vless_to_exit, direct_out, blackhole_out]
-    cfg["inbounds"][0]["tag"] = "vless-in"
-    # РФ-ресурсы: прямой выход; остальное (иностранные) — через VLESS к exit
-    if ru_direct:
-        # geosite:category-ru — список CATEGORY-RU в geosite.dat (не geosite:ru: в стандартном dat нет кода RU).
-        # regexp по TLD — домены .ru вне списка; geoip:ru — IP РФ без домена.
-        _ru_domains = [
-            "geosite:private",
-            *extra_ru_domains,
-            "geosite:category-ru",
-            "regexp:.*\\.ru$",
-            "regexp:.*\\.su$",
-            "regexp:.*\\.xn--p1ai$",  # .рф
-        ]
-        cfg["routing"] = {
-            # routing.domainStrategy только AsIs | IPIfNonMatch | IPOnDemand — не UseIPv4 (см. xtls.github.io routing). IPv4: dns.queryStrategy + freedom.
-            "domainStrategy": "IPIfNonMatch",
-            "rules": [
-                gemini_rule,
-                gemini_google_ip_rule,
-                {
-                    "type": "field",
-                    "outboundTag": "direct",
-                    "domain": _ru_domains,
-                },
-                {
-                    "type": "field",
-                    "outboundTag": "direct",
-                    "ip": ["geoip:ru", "geoip:private"],
-                },
-                {
-                    "type": "field",
-                    "inboundTag": ["vless-in"],
-                    "outboundTag": "egress-cascade",
-                },
-            ],
-        }
-    else:
-        cfg["routing"] = {
-            "domainStrategy": "IPIfNonMatch",
-            "rules": [
-                gemini_rule,
-                gemini_google_ip_rule,
-                {
-                    "type": "field",
-                    "inboundTag": ["vless-in"],
-                    "outboundTag": "egress-cascade",
-                },
-            ],
-        }
-else:
+if not cascade:
     cfg["outbounds"].append({"protocol": "blackhole", "tag": "block"})
     cfg["routing"] = {
         "domainStrategy": "IPIfNonMatch",
         "rules": [gemini_rule, gemini_google_ip_rule],
     }
 
-dns_ru_domains = [
-    "geosite:private",
-    "geosite:category-ru",
-    "regexp:.*\\.ru$",
-    "regexp:.*\\.su$",
-    "regexp:.*\\.xn--p1ai$",
-]
-if cascade and ru_direct:
-    dns_ru_domains = [*dns_ru_domains, *extra_ru_domains]
-
-cfg["dns"] = {
-    "servers": [
-        {
-            "address": "https://1.1.1.1/dns-query",
-            "domains": ["geosite:geolocation-!cn"],
-            "skipFallback": True,
-            "clientIP": "1.1.1.1",
-        },
-        {
-            "address": "77.88.8.8",
-            "domains": dns_ru_domains,
-            "expectIPs": ["geoip:ru"],
-            "skipFallback": True,
-        },
-        "8.8.8.8",
-    ],
-    "queryStrategy": "UseIPv4",
-    "tag": "dns-inbound",
-}
-
-dns_rules = [
-    {
-        "type": "field",
-        "inboundTag": ["dns-inbound"],
-        "outboundTag": dns_outbound_tag,
-        "domain": ["geosite:geolocation-!cn"],
-    },
-    {
-        "type": "field",
-        "inboundTag": ["dns-inbound"],
-        "outboundTag": "direct",
-        "domain": dns_ru_domains,
-    },
-]
-quic_block_rule = {
-    "type": "field",
-    "outboundTag": "block",
-    "network": "udp",
-    "port": "443",
-    "domain": ["geosite:geolocation-!cn"],
-}
-cfg["routing"]["rules"] = [*dns_rules, *cfg["routing"]["rules"], quic_block_rule]
-
 path = os.environ.get("VPN_XRAY_CONFIG_PATH", "/usr/local/etc/xray/config.json")
 with open(path, "w", encoding="utf-8") as f:
     json.dump(cfg, f, indent=2)
 PY
+  if [[ "${VPN_CASCADE_ENABLED:-0}" == "1" ]]; then
+    _apply_xray_cascade_to_file "${VPN_XRAY_CONFIG_PATH:-/usr/local/etc/xray/config.json}"
+  fi
 }
 
 # Каталог для dat (install-release). Списки: geosite:private, geosite:category-ru, regexp TLD, geoip:ru — см. backend/app/geo/geosite.dat

@@ -119,6 +119,12 @@ const serverParamRows = computed(() => {
           { label: 'TLS SNI', value: t(s.tls_sni || s.host) },
         ]
       : []),
+    ...(s.proxy_kind === 'vless_ws'
+      ? [
+          { label: 'WebSocket path', value: t(s.ws_path) },
+          { label: 'TLS SNI', value: t(s.tls_sni || s.host) },
+        ]
+      : []),
     ...(s.proxy_kind === 'vless'
       ? [
           { label: 'VLESS flow', value: t(s.vless_flow) },

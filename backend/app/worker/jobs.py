@@ -38,8 +38,10 @@ _SCRIPTS_DIR = Path(__file__).resolve().parent / "scripts"
 _REMOTE_SCRIPT = _SCRIPTS_DIR / "install_xray_on_remote.sh"
 _REMOTE_SCRIPT_PARTS = (
     _SCRIPTS_DIR / "provision_common.sh",
+    _SCRIPTS_DIR / "provision_cascade.sh",
     _SCRIPTS_DIR / "provision_vless.sh",
     _SCRIPTS_DIR / "provision_vless_grpc.sh",
+    _SCRIPTS_DIR / "provision_vless_ws.sh",
     _SCRIPTS_DIR / "provision_hysteria2.sh",
     _REMOTE_SCRIPT,
 )
@@ -162,6 +164,34 @@ def _vless_grpc_env_lines(db: Session, server: Server, *, cfg: Settings) -> str:
     )
     if email:
         remote_env += f"export VPN_TLS_CERTBOT_EMAIL={shlex.quote(email)}\n"
+    remote_env += _cascade_xray_env_for_ru_entry(db, server)
+    return remote_env
+
+
+def _vless_ws_env_lines(db: Session, server: Server, *, cfg: Settings) -> str:
+    domain = _tls_sni_for_server(server)
+    ws_path = (server.ws_path or "/vless").strip() or "/vless"
+    if not ws_path.startswith("/"):
+        ws_path = "/" + ws_path
+    uuids_csv = vless_client_uuids_csv_for_server(db, server)
+    clients_b64 = vless_clients_b64_for_server(db, server)
+    inbound_tag = (cfg.xray_vless_inbound_tag or "vpn-vless-in").strip() or "vpn-vless-in"
+    email = (cfg.provision_certbot_email or "").strip()
+    remote_env = (
+        f"export VPN_SERVER_PORT={server.port}\n"
+        f"export VPN_SERVER_ID={server.id}\n"
+        f"export VPN_XRAY_INSTALLER_URL={shlex.quote(cfg.provision_xray_installer_url)}\n"
+        f"export VPN_VLESS_UUID={shlex.quote(server.vless_uuid)}\n"
+        f"export VPN_VLESS_INBOUND_TAG={shlex.quote(inbound_tag)}\n"
+        f"export VPN_VLESS_CLIENT_UUIDS={shlex.quote(uuids_csv)}\n"
+        f"export VPN_VLESS_CLIENTS_B64={shlex.quote(clients_b64)}\n"
+        f"export VPN_XRAY_API_PORT={int(cfg.xray_remote_api_port)}\n"
+        f"export VPN_TLS_DOMAIN={shlex.quote(domain)}\n"
+        f"export VPN_WS_PATH={shlex.quote(ws_path)}\n"
+    )
+    if email:
+        remote_env += f"export VPN_TLS_CERTBOT_EMAIL={shlex.quote(email)}\n"
+    remote_env += _cascade_xray_env_for_ru_entry(db, server)
     return remote_env
 
 
@@ -204,9 +234,7 @@ def _hysteria2_env_lines(server: Server) -> str:
 
 
 def _cascade_xray_env_for_ru_entry(db: Session, server: Server) -> str:
-    """
-    РФ-вход: VLESS+REALITY outbound на внешний exit (тот же протокол, что у клиентов к exit).
-    """
+    """РФ-вход → exit: транспорт магистрали по proxy_kind exit (vless / vless_grpc / vless_ws)."""
     if not server.is_cascade_ru_entry or not server.cascade_next_server_id:
         return "export VPN_CASCADE_ENABLED=0\n"
     eid = int(server.cascade_next_server_id)
@@ -219,33 +247,57 @@ def _cascade_xray_env_for_ru_entry(db: Session, server: Server) -> str:
     ex = db.get(Server, eid)
     if ex is None:
         raise RuntimeError("Каскад: внешний сервер id=%s не найден" % eid)
-    pbk = (ex.reality_public_key or "").strip()
-    if not pbk:
+    ekind = (ex.proxy_kind or "vless").strip().lower()
+    if ekind not in ("vless", "vless_grpc", "vless_ws"):
         raise RuntimeError(
-            "Каскад: на внешнем узле id=%s (host=%s) нет reality_public_key — "
-            "сначала установите Xray на exit" % (ex.id, ex.host)
+            "Каскад: exit id=%s proxy_kind=%s не поддерживается (vless, vless_grpc, vless_ws)"
+            % (ex.id, ekind)
         )
     ehost = (ex.host or "").strip() or "127.0.0.1"
     eport = int(ex.port)
-    eflow = (ex.vless_flow or "xtls-rprx-vision").strip() or "xtls-rprx-vision"
-    efp = (ex.reality_fingerprint or "chrome").strip() or "chrome"
-    e_short = (ex.reality_short_id or "").strip() or "0123456789abcdef"
-    e_names = (ex.reality_server_names or "").strip() or "www.amazon.com,amazon.com"
-    e_spider = normalize_reality_spider_x(ex.reality_spider_x)
     ru_direct = "1" if settings.cascade_ru_split_routing else "0"
-    return (
-        "export VPN_CASCADE_ENABLED=1\n"
-        f"export VPN_CASCADE_RU_DIRECT={ru_direct}\n"
-        f"export VPN_CASCADE_EGRESS_ADDRESS={shlex.quote(ehost)}\n"
-        f"export VPN_CASCADE_EGRESS_PORT={eport}\n"
-        f"export VPN_CASCADE_EGRESS_CLIENT_UUID={shlex.quote(cu)}\n"
-        f"export VPN_CASCADE_EGRESS_PBK={shlex.quote(pbk)}\n"
-        f"export VPN_CASCADE_EGRESS_SERVER_NAMES={shlex.quote(e_names)}\n"
-        f"export VPN_CASCADE_EGRESS_SHORT_ID={shlex.quote(e_short)}\n"
-        f"export VPN_CASCADE_EGRESS_FINGERPRINT={shlex.quote(efp)}\n"
-        f"export VPN_CASCADE_EGRESS_FLOW={shlex.quote(eflow)}\n"
-        f"export VPN_CASCADE_EGRESS_SPIDER_X={shlex.quote(e_spider)}\n"
-    )
+    lines = [
+        "export VPN_CASCADE_ENABLED=1\n",
+        f"export VPN_CASCADE_RU_DIRECT={ru_direct}\n",
+        f"export VPN_CASCADE_EGRESS_TRANSPORT={shlex.quote(ekind)}\n",
+        f"export VPN_CASCADE_EGRESS_ADDRESS={shlex.quote(ehost)}\n",
+        f"export VPN_CASCADE_EGRESS_PORT={eport}\n",
+        f"export VPN_CASCADE_EGRESS_CLIENT_UUID={shlex.quote(cu)}\n",
+    ]
+    if ekind == "vless":
+        pbk = (ex.reality_public_key or "").strip()
+        if not pbk:
+            raise RuntimeError(
+                "Каскад: на exit id=%s (REALITY) нет reality_public_key — сначала установите Xray"
+                % ex.id
+            )
+        eflow = (ex.vless_flow or "xtls-rprx-vision").strip() or "xtls-rprx-vision"
+        efp = (ex.reality_fingerprint or "chrome").strip() or "chrome"
+        e_short = (ex.reality_short_id or "").strip() or "0123456789abcdef"
+        e_names = (ex.reality_server_names or "").strip() or "www.amazon.com,amazon.com"
+        e_spider = normalize_reality_spider_x(ex.reality_spider_x)
+        lines.extend(
+            [
+                f"export VPN_CASCADE_EGRESS_PBK={shlex.quote(pbk)}\n",
+                f"export VPN_CASCADE_EGRESS_SERVER_NAMES={shlex.quote(e_names)}\n",
+                f"export VPN_CASCADE_EGRESS_SHORT_ID={shlex.quote(e_short)}\n",
+                f"export VPN_CASCADE_EGRESS_FINGERPRINT={shlex.quote(efp)}\n",
+                f"export VPN_CASCADE_EGRESS_FLOW={shlex.quote(eflow)}\n",
+                f"export VPN_CASCADE_EGRESS_SPIDER_X={shlex.quote(e_spider)}\n",
+            ]
+        )
+    else:
+        sni = _tls_sni_for_server(ex)
+        lines.append(f"export VPN_CASCADE_EGRESS_TLS_SNI={shlex.quote(sni)}\n")
+        if ekind == "vless_grpc":
+            svc = (ex.grpc_service_name or "grpc").strip() or "grpc"
+            lines.append(f"export VPN_CASCADE_EGRESS_GRPC_SERVICE={shlex.quote(svc)}\n")
+        elif ekind == "vless_ws":
+            wpath = (ex.ws_path or "/vless").strip() or "/vless"
+            if not wpath.startswith("/"):
+                wpath = "/" + wpath
+            lines.append(f"export VPN_CASCADE_EGRESS_WS_PATH={shlex.quote(wpath)}\n")
+    return "".join(lines)
 
 
 def _run_ssh_remote_provision(db: Session, server: Server, *, component: ProvisionComponent) -> None:
@@ -254,7 +306,7 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
     remote_env = 'export TERM="${TERM:-xterm-256color}"\n'
     remote_env += f"export VPN_PROVISION_COMPONENT={shlex.quote(component)}\n"
     proxy_kind = (getattr(server, "proxy_kind", None) or "vless").strip().lower()
-    if proxy_kind not in ("vless", "vless_grpc", "hysteria2"):
+    if proxy_kind not in ("vless", "vless_grpc", "vless_ws", "hysteria2"):
         proxy_kind = "vless"
     remote_env += f"export VPN_PROXY_KIND={shlex.quote(proxy_kind)}\n"
 
@@ -269,6 +321,8 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
     elif component in ("xray", "vless"):
         if proxy_kind == "vless_grpc":
             remote_env += _vless_grpc_env_lines(db, server, cfg=settings)
+        elif proxy_kind == "vless_ws":
+            remote_env += _vless_ws_env_lines(db, server, cfg=settings)
         else:
             remote_env += _xray_env_lines(db, server)
         remote_env += _node_exporter_env_lines(force_install=False)
@@ -276,6 +330,8 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
         remote_env += f"export VPN_SERVER_ID={server.id}\n"
         if proxy_kind == "vless_grpc":
             remote_env += _vless_grpc_env_lines(db, server, cfg=settings)
+        elif proxy_kind == "vless_ws":
+            remote_env += _vless_ws_env_lines(db, server, cfg=settings)
         else:
             remote_env += _xray_env_lines(db, server)
     elif component == "hysteria2":
@@ -287,6 +343,8 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
             remote_env += _hysteria2_env_lines(server)
         elif proxy_kind == "vless_grpc":
             remote_env += _vless_grpc_env_lines(db, server, cfg=settings)
+        elif proxy_kind == "vless_ws":
+            remote_env += _vless_ws_env_lines(db, server, cfg=settings)
         else:
             remote_env += _xray_env_lines(db, server)
         remote_env += _node_exporter_env_lines(force_install=None)
@@ -441,7 +499,11 @@ def sync_xray_clients_to_server(server_id: int) -> None:
                 server_id,
             )
             return
-        if (server.proxy_kind or "vless").strip().lower() not in ("vless", "vless_grpc"):
+        if (server.proxy_kind or "vless").strip().lower() not in (
+            "vless",
+            "vless_grpc",
+            "vless_ws",
+        ):
             log.warning(
                 "sync_xray_clients: пропуск id=%s (proxy_kind=%s)",
                 server_id,
@@ -482,7 +544,7 @@ def sync_xray_clients_all_servers() -> None:
     try:
         stmt = select(Server.id).where(
             Server.provision_ready.is_(True),
-            Server.proxy_kind.in_(("vless", "vless_grpc")),
+            Server.proxy_kind.in_(("vless", "vless_grpc", "vless_ws")),
         )
         ids = list(db.scalars(stmt).all())
     finally:
@@ -529,7 +591,7 @@ def collect_xray_user_traffic_all_servers() -> dict[str, Any]:
             .where(
                 Server.provision_ready.is_(True),
                 Server.is_active.is_(True),
-                Server.proxy_kind.in_(("vless", "vless_grpc")),
+                Server.proxy_kind.in_(("vless", "vless_grpc", "vless_ws")),
             )
             .order_by(Server.id.asc())
         )

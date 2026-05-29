@@ -29,7 +29,14 @@ SET tls_sni = host
 WHERE tls_sni IS NULL
   AND proxy_kind = 'vless_grpc';
 
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS ws_path TEXT NOT NULL DEFAULT '/vless';
+
+UPDATE servers
+SET tls_sni = host
+WHERE tls_sni IS NULL
+  AND proxy_kind IN ('vless_grpc', 'vless_ws');
+
 ALTER TABLE servers DROP CONSTRAINT IF EXISTS servers_proxy_kind_check;
 ALTER TABLE servers ADD CONSTRAINT servers_proxy_kind_check
-    CHECK (proxy_kind IN ('vless', 'vless_grpc', 'hysteria2'));
+    CHECK (proxy_kind IN ('vless', 'vless_grpc', 'vless_ws', 'hysteria2'));
 

@@ -88,6 +88,12 @@ def server_to_competitor_vless_outbound(
             client_uuid=client_uuid,
             tag=tag,
         )
+    if kind == "vless_ws":
+        return server_to_competitor_vless_ws_outbound(
+            s,
+            client_uuid=client_uuid,
+            tag=tag,
+        )
     return server_to_competitor_vless_reality_outbound(
         s,
         client_uuid=client_uuid,
@@ -137,6 +143,45 @@ def server_to_competitor_vless_grpc_outbound(
                 "serviceName": service_name,
                 "multiMode": False,
             },
+        },
+    }
+
+
+def server_to_competitor_vless_ws_outbound(
+    s: Server,
+    *,
+    client_uuid: str,
+    tag: str,
+) -> dict[str, Any] | None:
+    host = (s.host or "").strip()
+    uid = (client_uuid or "").strip()
+    sni = _tls_sni_for_server(s)
+    wpath = (s.ws_path or "/vless").strip() or "/vless"
+    if not wpath.startswith("/"):
+        wpath = "/" + wpath
+    if not host or not uid or not sni:
+        return None
+    return {
+        "tag": tag,
+        "protocol": "vless",
+        "settings": {
+            "vnext": [
+                {
+                    "address": host,
+                    "port": int(s.port),
+                    "users": [{"id": uid, "encryption": "none"}],
+                }
+            ]
+        },
+        "streamSettings": {
+            "network": "ws",
+            "security": "tls",
+            "tlsSettings": {
+                "serverName": sni,
+                "allowInsecure": False,
+                "alpn": ["http/1.1"],
+            },
+            "wsSettings": {"path": wpath},
         },
     }
 

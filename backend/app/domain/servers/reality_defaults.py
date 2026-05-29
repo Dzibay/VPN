@@ -11,7 +11,7 @@ import secrets
 import uuid as uuid_lib
 
 from app.domain.models.servers import ServerCreate
-from app.domain.servers.host_validation import normalize_grpc_service_name
+from app.domain.servers.host_validation import normalize_grpc_service_name, normalize_ws_path
 
 REALITY_DEFAULT_DEST = "www.amazon.com:443"
 REALITY_DEFAULT_SERVER_NAMES = "www.amazon.com,amazon.com"
@@ -20,6 +20,7 @@ REALITY_DEFAULT_SPIDER_X = "/"
 VLESS_DEFAULT_FLOW = "xtls-rprx-vision"
 REALITY_SHORT_ID_BYTES = 4
 GRPC_DEFAULT_SERVICE_NAME = "grpc"
+WS_DEFAULT_PATH = "/vless"
 
 
 def normalize_reality_spider_x(raw: str | None) -> str:
@@ -41,11 +42,14 @@ def reality_defaults_for_create(body: ServerCreate) -> dict[str, str]:
         "reality_spider_x": normalize_reality_spider_x(body.reality_spider_x),
         "vless_flow": body.vless_flow or VLESS_DEFAULT_FLOW,
     }
-    if body.proxy_kind == "vless_grpc":
+    if body.proxy_kind in ("vless_grpc", "vless_ws"):
         host = (body.host or "").strip()
+        tls_sni = (body.tls_sni or host).strip()
+        out["tls_sni"] = tls_sni or host
+    if body.proxy_kind == "vless_grpc":
         out["grpc_service_name"] = normalize_grpc_service_name(
             body.grpc_service_name or GRPC_DEFAULT_SERVICE_NAME
         )
-        tls_sni = (body.tls_sni or host).strip()
-        out["tls_sni"] = tls_sni or host
+    if body.proxy_kind == "vless_ws":
+        out["ws_path"] = normalize_ws_path(body.ws_path or WS_DEFAULT_PATH)
     return out

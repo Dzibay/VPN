@@ -105,7 +105,7 @@ async def subscription_servers_from_db(session: AsyncSession) -> list[Server]:
             Server.provision_ready.is_(True),
             or_(
                 Server.proxy_kind == "hysteria2",
-                Server.proxy_kind == "vless_grpc",
+                Server.proxy_kind.in_(("vless_grpc", "vless_ws")),
                 and_(
                     Server.proxy_kind == "vless",
                     Server.reality_public_key.isnot(None),
@@ -240,6 +240,41 @@ def _vless_grpc_share_uri(
     return f"vless://{uuid}@{host}:{int(s.port)}?{query}#{fragment}"
 
 
+def _vless_ws_share_uri(
+    s: Server,
+    *,
+    client_uuid: str,
+    exit_ids_referenced: set[int],
+    fragment_override: str | None = None,
+) -> str | None:
+    sni = _tls_sni_for_server(s)
+    if not sni:
+        log.warning("Пропуск узла id=%s: не удалось вывести TLS SNI", s.id)
+        return None
+    wpath = (s.ws_path or "/vless").strip() or "/vless"
+    if not wpath.startswith("/"):
+        wpath = "/" + wpath
+    params = {
+        "encryption": "none",
+        "security": "tls",
+        "type": "ws",
+        "path": wpath,
+        "sni": sni,
+    }
+    query = urlencode(params, quote_via=quote, safe="")
+    remark = (
+        fragment_override
+        if fragment_override is not None
+        else _node_subscription_label(s, exit_ids_referenced=exit_ids_referenced)
+    )
+    fragment = quote(remark, safe="")
+    uuid = (client_uuid or "").strip()
+    host = (s.host or "").strip()
+    if not uuid or not host:
+        return None
+    return f"vless://{uuid}@{host}:{int(s.port)}?{query}#{fragment}"
+
+
 def _hysteria2_password_for_server(s: Server) -> str:
     return ((s.vless_uuid or "").replace("-", "")[:32] or f"hysteria{int(s.id)}")
 
@@ -315,6 +350,26 @@ def _server_to_subscription_dict(
             "sni": sni,
             "serviceName": (s.grpc_service_name or "grpc").strip(),
         }
+    if kind == "vless_ws":
+        host = (s.host or "").strip()
+        sni = _tls_sni_for_server(s)
+        wpath = (s.ws_path or "/vless").strip() or "/vless"
+        if not wpath.startswith("/"):
+            wpath = "/" + wpath
+        return {
+            "id": s.id,
+            "name": display_name,
+            "country": s.country,
+            "protocol": "vless",
+            "address": host,
+            "port": s.port,
+            "uuid": (client_uuid or "").strip(),
+            "encryption": "none",
+            "network": "ws",
+            "security": "tls",
+            "sni": sni,
+            "path": wpath,
+        }
     uid = (client_uuid or "").strip()
     return {
         "id": s.id,
@@ -386,6 +441,12 @@ def _subscription_uri_and_fingerprint_by_server_id(
                 client_uuid=client_uuid,
                 exit_ids_referenced=ctx.exit_ids_referenced,
             )
+        elif kind == "vless_ws":
+            uri_by_id[s.id] = _vless_ws_share_uri(
+                s,
+                client_uuid=client_uuid,
+                exit_ids_referenced=ctx.exit_ids_referenced,
+            )
         else:
             uri_by_id[s.id] = _vless_reality_share_uri(
                 s,
@@ -397,7 +458,11 @@ def _subscription_uri_and_fingerprint_by_server_id(
 
 
 def _is_vless_server(s: Server) -> bool:
-    return (s.proxy_kind or "vless").strip().lower() in ("vless", "vless_grpc")
+    return (s.proxy_kind or "vless").strip().lower() in (
+        "vless",
+        "vless_grpc",
+        "vless_ws",
+    )
 
 
 def _pool_auto_vless(
@@ -466,6 +531,13 @@ def _auto_best_share_uri(
             exit_ids_referenced=exit_ids_referenced,
             fragment_override=remark,
         )
+    if kind == "vless_ws":
+        return _vless_ws_share_uri(
+            best,
+            client_uuid=client_uuid,
+            exit_ids_referenced=exit_ids_referenced,
+            fragment_override=remark,
+        )
     return _vless_reality_share_uri(
         best,
         client_uuid=client_uuid,
@@ -514,6 +586,26 @@ def _append_clash_proxy(
                 "udp": True,
                 "servername": sni,
                 "grpc-opts": {"grpc-service-name": service_name},
+            }
+        )
+        return
+    if kind == "vless_ws":
+        sni = _tls_sni_for_server(s)
+        wpath = (s.ws_path or "/vless").strip() or "/vless"
+        if not wpath.startswith("/"):
+            wpath = "/" + wpath
+        proxies.append(
+            {
+                "name": clash_name,
+                "type": "vless",
+                "server": host,
+                "port": int(s.port),
+                "uuid": client_uuid,
+                "network": "ws",
+                "tls": True,
+                "udp": True,
+                "servername": sni,
+                "ws-opts": {"path": wpath},
             }
         )
         return

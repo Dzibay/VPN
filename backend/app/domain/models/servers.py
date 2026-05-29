@@ -4,7 +4,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.domain.servers.host_validation import is_domain_host, normalize_grpc_service_name
+from app.domain.servers.host_validation import (
+    is_domain_host,
+    normalize_grpc_service_name,
+    normalize_ws_path,
+)
 
 
 class ServersCountResponse(BaseModel):
@@ -52,9 +56,9 @@ class ServerCreate(BaseModel):
         default=False,
         description="Скрытый узел: не выдаётся в подписке; в админке скрыт из таблицы, пока не включён показ",
     )
-    proxy_kind: Literal["vless", "vless_grpc", "hysteria2"] = Field(
+    proxy_kind: Literal["vless", "vless_grpc", "vless_ws", "hysteria2"] = Field(
         default="vless",
-        description="Тип прокси: vless (REALITY TCP), vless_grpc (gRPC+TLS) или hysteria2",
+        description="Тип прокси: vless (REALITY), vless_grpc (gRPC+TLS), vless_ws (WS+TLS) или hysteria2",
     )
     vless_uuid: str | None = Field(
         default=None,
@@ -99,7 +103,12 @@ class ServerCreate(BaseModel):
     tls_sni: str | None = Field(
         default=None,
         max_length=256,
-        description="SNI для TLS (VLESS gRPC); по умолчанию host",
+        description="SNI для TLS (gRPC/WS); по умолчанию host",
+    )
+    ws_path: str | None = Field(
+        default=None,
+        max_length=256,
+        description="Путь WebSocket (VLESS WS+TLS); по умолчанию /vless",
     )
     prometheus_instance: str | None = Field(
         default=None,
@@ -212,6 +221,16 @@ class ServerCreate(BaseModel):
             return None
         return normalize_grpc_service_name(s)
 
+    @field_validator("ws_path", mode="before")
+    @classmethod
+    def normalize_ws_path_create(cls, v: Any) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip()
+        if not s:
+            return None
+        return normalize_ws_path(s)
+
     @field_validator("tls_sni", mode="before")
     @classmethod
     def normalize_tls_sni_create(cls, v: Any) -> str | None:
@@ -221,11 +240,13 @@ class ServerCreate(BaseModel):
         return s if s else None
 
     @model_validator(mode="after")
-    def validate_vless_grpc_create(self) -> "ServerCreate":
-        if self.proxy_kind != "vless_grpc":
+    def validate_tls_transport_create(self) -> "ServerCreate":
+        if self.proxy_kind not in ("vless_grpc", "vless_ws"):
             return self
         if not is_domain_host(self.host):
-            raise ValueError("host: для VLESS gRPC+TLS нужен домен (A-запись на узел)")
+            raise ValueError(
+                "host: для VLESS gRPC/WebSocket+TLS нужен домен (A-запись на узел)",
+            )
         sni = (self.tls_sni or self.host).strip()
         if not is_domain_host(sni):
             raise ValueError("tls_sni: укажите валидный домен для TLS")
@@ -285,7 +306,7 @@ class ServerUpdate(BaseModel):
         default=None,
         description="Скрытый узел (не в подписке; в админке по умолчанию не в таблице)",
     )
-    proxy_kind: Literal["vless", "vless_grpc", "hysteria2"] | None = Field(
+    proxy_kind: Literal["vless", "vless_grpc", "vless_ws", "hysteria2"] | None = Field(
         default=None,
         description="Тип прокси на узле",
     )
@@ -300,6 +321,7 @@ class ServerUpdate(BaseModel):
     vless_flow: str | None = Field(default=None, max_length=64)
     grpc_service_name: str | None = Field(default=None, max_length=64)
     tls_sni: str | None = Field(default=None, max_length=256)
+    ws_path: str | None = Field(default=None, max_length=256)
     reality_short_id: str | None = Field(default=None, max_length=32)
     reality_private_key: str | None = Field(
         default=None,
@@ -388,6 +410,16 @@ class ServerUpdate(BaseModel):
         s = str(v).strip().rstrip(".")
         return s if s else None
 
+    @field_validator("ws_path", mode="before")
+    @classmethod
+    def normalize_ws_path_patch(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip()
+        if not s:
+            return None
+        return normalize_ws_path(s)
+
     @field_validator("reality_short_id", mode="before")
     @classmethod
     def normalize_short_id_patch(cls, v: object) -> str | None:
@@ -475,7 +507,7 @@ class ServerRead(BaseModel):
     )
     provision_error: str | None = Field(description="Текст ошибки при failed")
     provision_job_id: str | None = Field(description="ID последней задачи RQ")
-    proxy_kind: Literal["vless", "vless_grpc", "hysteria2"] = Field(
+    proxy_kind: Literal["vless", "vless_grpc", "vless_ws", "hysteria2"] = Field(
         default="vless",
         description="Тип прокси на узле",
     )
@@ -486,6 +518,10 @@ class ServerRead(BaseModel):
     tls_sni: str | None = Field(
         default=None,
         description="SNI для TLS; null — host",
+    )
+    ws_path: str = Field(
+        default="/vless",
+        description="Путь WebSocket (VLESS WS+TLS)",
     )
     vless_uuid: str
     reality_private_key: str | None

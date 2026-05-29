@@ -274,6 +274,12 @@ _vless_grpc_install() {
   mkdir -p "$(dirname "$CFG")"
   echo "[vless_grpc] запись $CFG (gRPC+TLS, service=${service_name})…"
   _write_xray_grpc_config > "$CFG"
+  if [[ "${VPN_CASCADE_ENABLED:-0}" == "1" ]]; then
+    if [[ "${VPN_CASCADE_RU_DIRECT:-1}" != "0" ]]; then
+      _xray_ensure_geo_dats || exit 1
+    fi
+    _apply_xray_cascade_to_file "$CFG"
+  fi
   if command -v systemctl >/dev/null 2>&1; then
     systemctl enable xray 2>/dev/null || true
   fi
@@ -292,6 +298,12 @@ _vless_grpc_sync_clients() {
   local CFG="${VPN_XRAY_CONFIG_PATH:-/usr/local/etc/xray/config.json}"
   echo "[vless_grpc] sync_clients: запись $CFG…"
   _write_xray_grpc_config > "$CFG"
+  if [[ "${VPN_CASCADE_ENABLED:-0}" == "1" ]]; then
+    if [[ "${VPN_CASCADE_RU_DIRECT:-1}" != "0" ]]; then
+      _xray_ensure_geo_dats || exit 1
+    fi
+    _apply_xray_cascade_to_file "$CFG"
+  fi
   local XBIN="${XRAY_BIN:-}"
   if [[ -z "$XBIN" || ! -x "$XBIN" ]]; then
     XBIN=$(command -v xray 2>/dev/null) || true

@@ -71,7 +71,11 @@ def vless_client_uuids_csv_for_server(session: Session, server: Server) -> str:
 
 
 def _is_xray_proxy_kind(proxy_kind: str | None) -> bool:
-    return (proxy_kind or "vless").strip().lower() in ("vless", "vless_grpc")
+    return (proxy_kind or "vless").strip().lower() in (
+        "vless",
+        "vless_grpc",
+        "vless_ws",
+    )
 
 
 def vless_client_entries_for_server(session: Session, server: Server) -> list[dict[str, object]]:

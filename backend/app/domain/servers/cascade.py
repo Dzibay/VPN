@@ -9,6 +9,9 @@
 
 При изменении cascade-поля на РФ-входе нужно прокачать sync Xray-клиентов на exit, чтобы
 inbound на нём учитывал нового арендатора (``cascade_egress_client_uuid``).
+
+Вход (РФ): ``vless``, ``vless_grpc``, ``vless_ws``. Exit: те же три типа; магистраль
+по ``proxy_kind`` exit (см. ``provision_cascade.sh``).
 """
 
 from __future__ import annotations
@@ -61,6 +64,12 @@ async def validate_cascade_pair(
     if target.cascade_next_server_id is not None:
         raise BadRequestError(
             "Каскад: внешний узел не должен иметь собственного cascade_next (один уровень)",
+        )
+    ekind = (target.proxy_kind or "vless").strip().lower()
+    if ekind not in ("vless", "vless_grpc", "vless_ws"):
+        raise BadRequestError(
+            "Каскад: внешний exit должен быть VLESS+REALITY, gRPC+TLS или WebSocket+TLS "
+            f"(сейчас proxy_kind={ekind})",
         )
 
 

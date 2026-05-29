@@ -35,6 +35,7 @@ class Server(Base):
     proxy_kind: Mapped[str] = mapped_column(Text, nullable=False, default="vless")
     grpc_service_name: Mapped[str] = mapped_column(Text, nullable=False, default="grpc")
     tls_sni: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ws_path: Mapped[str] = mapped_column(Text, nullable=False, default="/vless")
     vless_uuid: Mapped[str] = mapped_column(Text, nullable=False)
     reality_private_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     reality_public_key: Mapped[str | None] = mapped_column(Text, nullable=True)
