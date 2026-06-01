@@ -269,17 +269,17 @@ defineExpose({ reload: load })
         <article class="mp-card mp-card--received">
           <p class="mp-label">Поступило (после комиссии)</p>
           <p class="mp-value">{{ money(moneyPosition.received) }}&nbsp;<span class="mp-cur">₽</span></p>
-          <p class="mp-sub">Все платежи, кэш на счетах</p>
+          <p class="mp-sub">За всё время · кэш на счетах</p>
         </article>
         <article class="mp-card mp-card--free">
           <p class="mp-label">Свободно от обязательств</p>
           <p class="mp-value">{{ money(moneyPosition.free) }}&nbsp;<span class="mp-cur">₽</span></p>
-          <p class="mp-sub">Заработано по факту оказанных дней</p>
+          <p class="mp-sub">За всё время · по дням оказанной услуги</p>
         </article>
         <article class="mp-card mp-card--frozen">
           <p class="mp-label">Заморожено (обязательства)</p>
           <p class="mp-value">{{ money(moneyPosition.frozen) }}&nbsp;<span class="mp-cur">₽</span></p>
-          <p class="mp-sub">{{ moneyPosition.frozenPct }}% от поступлений · {{ moneyPosition.active }} активных подписок</p>
+          <p class="mp-sub">{{ moneyPosition.frozenPct }}% от поступлений · {{ moneyPosition.active }} с оплаченной подпиской · за всё время</p>
         </article>
       </div>
       <div class="mp-bar" :title="`Заморожено ${moneyPosition.frozenPct}%`">

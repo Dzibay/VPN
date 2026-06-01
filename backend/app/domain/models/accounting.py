@@ -219,7 +219,10 @@ class FinanceDeferredSnapshot(BaseModel):
     #: Неисполненные обязательства перед клиентами (предоплата за непоставленные дни).
     deferred_net: str
     deferred_gross: str
-    active_obligations: int = Field(ge=0, description="Число действующих подписок с остатком обязательств")
+    active_obligations: int = Field(
+        ge=0,
+        description="Число пользователей с действующей подпиской, оплаченной хотя бы раз",
+    )
 
 
 class FinanceCategoryTotal(BaseModel):
