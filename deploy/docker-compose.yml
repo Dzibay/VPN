@@ -5,6 +5,11 @@
 #   mkdir -p secrets/ssh  # положите ключ для PROVISION_SSH_KEY_PATH
 #   docker compose up -d --build
 #
+# Перенос только PostgreSQL на новый сервер:
+#   Старый: ./scripts/db-dump.sh && scp vpn-db-*.sql.gz user@new:/path/VPN/deploy/
+#   Новый:  cp env.production.example .env, docker volume create …, compose up postgres,
+#           ./scripts/db-restore.sh vpn-db-*.sql.gz && docker compose up -d --build
+#
 # Ежедневный бэкап БД на Яндекс Диск через WebDAV (профиль backup, см. сервис db-backup):
 #   docker compose --profile backup up -d --build db-backup
 # В .env: логин Яндекса и пароль приложения (https://id.yandex.ru/security → пароли приложений → для WebDAV/Диска).
