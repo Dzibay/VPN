@@ -246,6 +246,10 @@ def server_to_competitor_vless_reality_outbound(
 
 
 def _competitor_dns() -> dict[str, Any]:
+    # DoH 1.1.1.1 для общих доменов (идёт через прокси по routing); Яндекс DNS через
+    # udp+local для direct/RU-доменов резолвится всегда напрямую (минуя прокси) — это
+    # продолжает работать в режиме «белых списков», когда зарубежные адреса недоступны.
+    # Совпадает с эталонной конфигурацией конкурента.
     return {
         "disableCache": False,
         "disableFallback": False,
@@ -254,7 +258,14 @@ def _competitor_dns() -> dict[str, Any]:
         "queryStrategy": "UseIPv4",
         "serveExpiredTTL": 0,
         "serveStale": True,
-        "servers": ["1.1.1.1", "8.8.8.8"],
+        "servers": [
+            {"address": "https://1.1.1.1/dns-query", "timeoutMs": 1000},
+            {
+                "domain": ["geosite:category-direct"],
+                "address": "udp+local://77.88.8.8",
+                "timeoutMs": 1000,
+            },
+        ],
         "tag": _COMPETITOR_DNS_TAG,
         "useSystemHosts": False,
     }
@@ -380,13 +391,25 @@ def _first_valid_vless_in_pool(
     return None
 
 
-def _fallback_tag_prefer_rec(pool: list[Server], member_tags: list[str]) -> str:
+def _fallback_tag_prefer_wl(pool: list[Server], member_tags: list[str]) -> str:
+    """
+    fallbackTag балансировщика: предпочитаем WL-узел (РФ, доступен и при белых списках).
+
+    Для leastLoad узлы без данных observatory исключаются, и до первого замера (или когда
+    все зарубежные узлы недоступны) балансировщик использует fallbackTag — он обязан вести
+    на доступный узел. WL-узел работает и в обычном режиме, и при белых списках, поэтому
+    он безопаснее зарубежного как «последний резерв».
+    """
     for s in pool:
         if s.whitelist:
-            continue
-        tag = competitor_outbound_tag(s.id, whitelist=False)
-        if tag in member_tags:
-            return tag
+            tag = competitor_outbound_tag(s.id, whitelist=True)
+            if tag in member_tags:
+                return tag
+    for s in pool:
+        if not s.whitelist:
+            tag = competitor_outbound_tag(s.id, whitelist=False)
+            if tag in member_tags:
+                return tag
     return member_tags[0]
 
 
@@ -414,11 +437,6 @@ def _competitor_routing(
         }
 
     rules: list[dict[str, Any]] = [
-        {
-            "type": "field",
-            "inboundTag": [_COMPETITOR_DNS_TAG],
-            "balancerTag": balancer_tag,
-        },
         {
             "type": "field",
             "outboundTag": "direct",
@@ -559,7 +577,7 @@ def build_happ_auto_group_balanced_profile(
         member_tags=member_tags,
         proxy_outbounds=proxy_outbounds,
         observatory_tags=list(member_tags),
-        fallback_tag=_fallback_tag_prefer_rec(pool, member_tags),
+        fallback_tag=_fallback_tag_prefer_wl(pool, member_tags),
         balancer_tag=balancer_tag,
         tiered_costs=_auto_mixed_pool_costs(pool),
         pool_for_costs=None,
@@ -600,7 +618,6 @@ def build_happ_tiered_wl_balanced_profile(
         member_tags.append(tag)
         proxy_outbounds.append(ob)
 
-    # WL outbound (резерв)
     ob_wl = server_to_competitor_vless_outbound(
         wl,
         client_uuid=client_uuid,
@@ -622,7 +639,7 @@ def build_happ_tiered_wl_balanced_profile(
         member_tags=member_tags,
         proxy_outbounds=proxy_outbounds,
         observatory_tags=list(member_tags),
-        fallback_tag=_fallback_tag_prefer_rec(pool_rec, member_tags),
+        fallback_tag=_fallback_tag_prefer_wl([*pool_rec, wl], member_tags),
         balancer_tag=balancer_tag,
         tiered_costs=_tiered_rec_wl_costs(pool_rec, wl),
         pool_for_costs=None,
@@ -642,11 +659,6 @@ def _happ_plain_profile_doc(proxy: dict[str, Any], remark: str) -> dict[str, Any
             "domainMatcher": "hybrid",
             "domainStrategy": "IPIfNonMatch",
             "rules": [
-                {
-                    "type": "field",
-                    "inboundTag": [_COMPETITOR_DNS_TAG],
-                    "outboundTag": "proxy",
-                },
                 {
                     "type": "field",
                     "protocol": ["bittorrent"],
