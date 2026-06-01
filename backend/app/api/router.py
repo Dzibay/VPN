@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from app.core.dependencies import apply_request_subject_from_bearer_optional
 
 from app.api.endpoints import (
+    accounting,
     auth,
     client_app_public,
     health,
@@ -40,4 +41,5 @@ api_router.include_router(server_metrics.router)
 api_router.include_router(subscription_device_stats.router)
 api_router.include_router(staff_ledger.payments_staff_router)
 api_router.include_router(staff_ledger.tasks_staff_router)
+api_router.include_router(accounting.accounting_router)
 api_router.include_router(prometheus_sd.router)

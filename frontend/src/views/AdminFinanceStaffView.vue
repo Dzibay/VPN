@@ -1,377 +1,269 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import AdminBarChart from '../components/AdminBarChart.vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
-import { fetchJson } from '../api/client.js'
-import { adminChartTheme } from '../utils/adminChartTheme.js'
+import FinanceOverviewTab from './finance/FinanceOverviewTab.vue'
+import FinanceIncomeTab from './finance/FinanceIncomeTab.vue'
+import FinanceExpensesTab from './finance/FinanceExpensesTab.vue'
+import FinanceSettingsTab from './finance/FinanceSettingsTab.vue'
 
-/** @typedef {{ subscription: string[]; one_time: string[] }} FinanceBuckets */
+const TABS = [
+  { key: 'overview', label: 'Обзор' },
+  { key: 'income', label: 'Доходы' },
+  { key: 'expenses', label: 'Расходы' },
+  { key: 'settings', label: 'Налоги и настройки' },
+]
+const TAB_KEYS = TABS.map((t) => t.key)
 
-const loading = ref(false)
-const error = ref(null)
-/**
- * @type {import('vue').Ref<null | {
- *   months: string[]
- *   cash: FinanceBuckets
- *   cash_gross: FinanceBuckets
- *   spread: FinanceBuckets
- *   spread_gross: FinanceBuckets
- *   grand_total: string
- *   grand_total_gross: string
- *   payment_count: number
- * }>}
- */
-const summary = ref(null)
+const route = useRoute()
+const router = useRouter()
 
-/** «cash» — вся сумма в месяце платежа; «spread» — net_amount/months по месяцам подписки вперёд (UTC). */
-const chartDistribution = ref(/** @type {'cash' | 'spread'} */ ('cash'))
+const activeTab = computed(() => {
+  const t = String(route.query.tab || '')
+  return TAB_KEYS.includes(t) ? t : 'overview'
+})
 
-/** По умолчанию — чистый доход после комиссии PSP. */
-const useNetAmount = ref(true)
+function selectTab(key) {
+  if (key === activeTab.value) return
+  router.replace({ query: { ...route.query, tab: key } })
+}
 
-/** Нижний слой стека → верхний (порядок важен для stacked bar). */
-const KIND_ORDER = /** @type {const} */ ([
-  { field: 'subscription', label: 'Подписка' },
-  { field: 'one_time', label: 'Разовая' },
-])
+// --- период (для вкладки «Обзор») ---
+const PERIOD_PRESETS = [
+  { key: 'month', label: 'Этот месяц' },
+  { key: 'prev_month', label: 'Прошлый месяц' },
+  { key: 'quarter', label: 'Квартал' },
+  { key: 'year', label: 'Этот год' },
+  { key: 'all', label: 'Всё время' },
+  { key: 'custom', label: 'Период' },
+]
 
-const activeBuckets = computed(() => {
-  const s = summary.value
-  if (!s) return null
-  const useNet = useNetAmount.value
-  const raw =
-    chartDistribution.value === 'spread'
-      ? useNet
-        ? s.spread
-        : s.spread_gross ?? s.spread
-      : useNet
-        ? s.cash
-        : s.cash_gross ?? s.cash
-  if (!raw || typeof raw !== 'object') {
-    return { subscription: [], one_time: [] }
+const periodPreset = ref('year')
+const customFrom = ref('')
+const customTo = ref('')
+
+function ymd(d) {
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+const computedRange = computed(() => {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = now.getMonth()
+  const today = ymd(now)
+  switch (periodPreset.value) {
+    case 'month':
+      return { from: ymd(new Date(y, m, 1)), to: today }
+    case 'prev_month':
+      return { from: ymd(new Date(y, m - 1, 1)), to: ymd(new Date(y, m, 0)) }
+    case 'quarter': {
+      const qStart = Math.floor(m / 3) * 3
+      return { from: ymd(new Date(y, qStart, 1)), to: today }
+    }
+    case 'all':
+      return { from: '2020-01-01', to: today }
+    case 'custom':
+      return {
+        from: customFrom.value || ymd(new Date(y, 0, 1)),
+        to: customTo.value || today,
+      }
+    case 'year':
+    default:
+      return { from: ymd(new Date(y, 0, 1)), to: today }
   }
-  return {
-    subscription: Array.isArray(raw.subscription) ? raw.subscription : [],
-    one_time: Array.isArray(raw.one_time) ? raw.one_time : [],
+})
+
+const rangeFrom = computed(() => computedRange.value.from)
+const rangeTo = computed(() => computedRange.value.to)
+
+watch(periodPreset, (p) => {
+  if (p === 'custom') {
+    const now = new Date()
+    if (!customFrom.value) customFrom.value = ymd(new Date(now.getFullYear(), 0, 1))
+    if (!customTo.value) customTo.value = ymd(now)
   }
 })
 
-const totalLabel = computed(() =>
-  useNetAmount.value ? 'Чистый доход (после комиссии)' : 'Валовая сумма платежей',
-)
-
-function formatMonthLabel(ym) {
-  const [ys, ms] = String(ym).split('-')
-  const y = Number(ys)
-  const m = Number(ms)
-  if (!y || !m || m < 1 || m > 12) return String(ym)
-  const d = new Date(Date.UTC(y, m - 1, 1))
-  return d.toLocaleDateString('ru-RU', {
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'UTC',
-  })
-}
-
-function parseAmounts(arr) {
-  if (!Array.isArray(arr)) return []
-  return arr.map((x) => {
-    const n = Number(String(x).replace(',', '.'))
-    return Number.isFinite(n) ? n : 0
-  })
-}
-
-const totalFormatted = computed(() => {
-  const rawTotal = useNetAmount.value
-    ? summary.value?.grand_total
-    : summary.value?.grand_total_gross ?? summary.value?.grand_total
-  const n = rawTotal != null ? Number(String(rawTotal).replace(',', '.')) : 0
-  if (!Number.isFinite(n)) return '0,00'
-  return n.toLocaleString('ru-RU', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
-})
-
-const paymentCountLabel = computed(() => {
-  const n = summary.value?.payment_count
-  if (n == null || !Number.isFinite(Number(n))) return '0'
-  return Number(n).toLocaleString('ru-RU')
-})
-
-const financeChartLabels = computed(() => {
-  const s = summary.value
-  if (!s?.months?.length) return []
-  return s.months.map(formatMonthLabel)
-})
-
-const financeChartDatasets = computed(() => {
-  const s = summary.value
-  const buckets = activeBuckets.value
-  if (!s?.months?.length || !buckets) return []
-  const theme = adminChartTheme()
-  /** @type {Record<string, [number, number, number]>} */
-  const rgbByField = {
-    subscription: theme.accent,
-    one_time: theme.trafficOrange,
-  }
-  return KIND_ORDER.map(({ field, label }) => ({
-    label,
-    data: parseAmounts(buckets[field]),
-    rgb: rgbByField[field] ?? theme.accent,
-    borderRadius: 4,
-    maxBarThickness: 48,
-  }))
-})
-
-function financeFormatValueTick(v) {
-  const n = Number(v)
-  if (!Number.isFinite(n)) return ''
-  return n.toLocaleString('ru-RU', { maximumFractionDigits: 0 })
-}
-
-/** @param {import('chart.js').TooltipItem<'bar'>[]} items */
-function financeTooltipFooter(items) {
-  const first = items?.[0]
-  if (!first) return ''
-  const idx = first.dataIndex
-  const chart = first.chart
-  let sum = 0
-  for (const ds of chart.data.datasets) {
-    const v = Number(ds.data[idx])
-    if (Number.isFinite(v)) sum += v
-  }
-  return `Всего: ${sum.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽`
-}
-
-/** @param {import('chart.js').TooltipItem<'bar'>} item */
-function financeTooltipFilter(item) {
-  return Number(item.raw) > 0
-}
-
-async function load() {
-  loading.value = true
-  error.value = null
-  summary.value = null
-  try {
-    summary.value = await fetchJson('/api/admin/payments/finance-summary')
-  } catch (e) {
-    error.value = e.message || String(e)
-    summary.value = null
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(() => {
-  void load()
-})
+const showPeriod = computed(() => activeTab.value === 'overview')
 </script>
 
 <template>
   <AdminStaffShell title="Финансы">
     <template #headerExtras>
-      <div class="head-row">
-        <h2 class="section-heading">Доходы по месяцам</h2>
-        <div class="head-actions">
-          <div
-            class="dist-toggle"
-            role="group"
-            aria-label="Как считать суммы по месяцам на графике"
+      <nav class="subtabs" aria-label="Разделы финансов">
+        <button
+          v-for="t in TABS"
+          :key="t.key"
+          type="button"
+          class="subtab"
+          :class="{ 'subtab--active': activeTab === t.key }"
+          @click="selectTab(t.key)"
+        >
+          {{ t.label }}
+        </button>
+      </nav>
+
+      <div v-if="showPeriod" class="period-row">
+        <div class="period-presets" role="group" aria-label="Период">
+          <button
+            v-for="p in PERIOD_PRESETS"
+            :key="p.key"
+            type="button"
+            class="period-btn"
+            :class="{ 'period-btn--active': periodPreset === p.key }"
+            @click="periodPreset = p.key"
           >
-            <button
-              type="button"
-              class="dist-btn"
-              :class="{ 'dist-btn--active': chartDistribution === 'cash' }"
-              :disabled="loading"
-              @click="chartDistribution = 'cash'"
-            >
-              По дате платежа
-            </button>
-            <button
-              type="button"
-              class="dist-btn"
-              :class="{ 'dist-btn--active': chartDistribution === 'spread' }"
-              :disabled="loading"
-              @click="chartDistribution = 'spread'"
-            >
-              По месяцам оплаты
-            </button>
-          </div>
-          <button type="button" class="btn-secondary" :disabled="loading" @click="load">
-            {{ loading ? 'Обновление…' : 'Обновить' }}
+            {{ p.label }}
           </button>
+        </div>
+        <div v-if="periodPreset === 'custom'" class="period-custom">
+          <input v-model="customFrom" type="date" class="period-date" aria-label="С" />
+          <span class="period-sep">—</span>
+          <input v-model="customTo" type="date" class="period-date" aria-label="По" />
         </div>
       </div>
     </template>
 
-    <p v-if="loading && summary == null" class="muted">Загрузка сводки…</p>
-    <p v-else-if="error" class="msg-err">{{ error }}</p>
-
-    <template v-else-if="summary">
-      <section class="total-card" aria-live="polite">
-        <p class="total-label">{{ totalLabel }}</p>
-        <p class="total-value">{{ totalFormatted }}&nbsp;₽</p>
-        <label class="fee-row">
-          <input v-model="useNetAmount" type="checkbox" class="fee-input" />
-          <span class="fee-label">Учитывать комиссию</span>
-        </label>
-        <p class="total-meta">
-          {{ paymentCountLabel }} записей
-        </p>
-      </section>
-
-      <div v-if="!summary.months.length" class="empty-box">
-        <p class="muted">Платежей пока нет — график появится после первых оплат.</p>
-      </div>
-      <AdminBarChart
-        v-else
-        preset="finance"
-        aria-label="Доходы по месяцам (UTC), ₽"
-        :has-data="summary.months.length > 0"
-        :labels="financeChartLabels"
-        :datasets="financeChartDatasets"
-        stacked
-        value-axis-title="₽"
-        :format-value-tick="financeFormatValueTick"
-        :get-tooltip-footer="financeTooltipFooter"
-        :tooltip-filter="financeTooltipFilter"
-      />
-    </template>
+    <FinanceOverviewTab v-if="activeTab === 'overview'" :from="rangeFrom" :to="rangeTo" />
+    <FinanceIncomeTab v-else-if="activeTab === 'income'" />
+    <FinanceExpensesTab v-else-if="activeTab === 'expenses'" />
+    <FinanceSettingsTab v-else-if="activeTab === 'settings'" />
   </AdminStaffShell>
 </template>
 
 <style scoped>
-.head-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.35rem;
+/* Сегментированная панель — на всю ширину, без скруглений и зазоров (не как pill admin-tabs). */
+.subtabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: 100%;
+  gap: 0;
+  margin: 0 0 0.85rem;
+  padding: 0;
+  border: 1px solid var(--card-border);
+  border-radius: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--surface) 92%, black);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-h) 6%, transparent);
 }
-
-.section-heading {
+.subtab {
   margin: 0;
-  font-size: 1.05rem;
+  padding: 0.7rem 0.5rem;
+  border: none;
+  border-radius: 0;
+  border-right: 1px solid var(--card-border);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  cursor: pointer;
+  color: var(--muted);
+  background: transparent;
+  min-height: 2.75rem;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.subtab:last-child {
+  border-right: none;
+}
+.subtab:hover:not(.subtab--active) {
   color: var(--text-h);
+  background: color-mix(in srgb, var(--text-h) 5%, transparent);
+}
+.subtab--active {
+  color: var(--text-h);
+  background: var(--card-bg, var(--surface));
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+.subtab:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent);
+  z-index: 1;
+}
+.subtab--active:focus-visible {
+  box-shadow:
+    inset 0 -3px 0 var(--accent),
+    inset 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
-.head-actions {
+@media (max-width: 720px) {
+  .subtabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .subtab {
+    font-size: 0.72rem;
+    padding: 0.65rem 0.35rem;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .subtab:nth-child(2) {
+    border-right: none;
+  }
+  .subtab:nth-child(1),
+  .subtab:nth-child(2) {
+    border-bottom: 1px solid var(--card-border);
+  }
+}
+
+.period-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.65rem;
+  margin-bottom: 1.1rem;
 }
-
-.dist-toggle {
+.period-presets {
   display: inline-flex;
+  flex-wrap: wrap;
   border-radius: 10px;
   border: 1px solid var(--card-border);
   overflow: hidden;
   background: var(--surface);
 }
-
-.dist-btn {
+.period-btn {
   margin: 0;
-  padding: 0.45rem 0.75rem;
+  padding: 0.4rem 0.7rem;
   border: none;
   background: transparent;
   font: inherit;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 600;
   color: var(--muted);
   cursor: pointer;
   white-space: nowrap;
+  border-right: 1px solid var(--card-border);
 }
-
-.dist-btn:hover:not(:disabled) {
+.period-btn:last-child {
+  border-right: none;
+}
+.period-btn:hover {
   color: var(--text-h);
   background: rgba(127, 127, 127, 0.08);
 }
-
-.dist-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.dist-btn--active {
+.period-btn--active {
   color: var(--text-h);
   background: rgba(88, 214, 141, 0.14);
 }
-
-.total-card {
-  margin: 0 0 1.25rem;
-  padding: 1rem 1.1rem;
-  border-radius: 12px;
+.period-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.period-date {
+  font: inherit;
+  padding: 0.4rem 0.55rem;
+  border-radius: 10px;
   border: 1px solid var(--card-border);
-  background: var(--surface-glass);
-  max-width: 36rem;
-}
-
-.total-label {
-  margin: 0 0 0.35rem;
-  font-size: 0.82rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-
-.total-value {
-  margin: 0;
-  font-size: 1.65rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
+  background: var(--surface);
   color: var(--text-h);
-  letter-spacing: -0.02em;
 }
-
-.fee-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  margin: 0.65rem 0 0;
-  cursor: pointer;
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--text-h);
-  user-select: none;
-}
-
-.fee-input {
-  margin: 0.15rem 0 0;
-  width: 1rem;
-  height: 1rem;
-  accent-color: var(--accent, #58d68d);
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.fee-label {
-  line-height: 1.35;
-}
-
-.total-meta {
-  margin: 0.5rem 0 0;
-  font-size: 0.82rem;
+.period-sep {
   color: var(--muted);
-  line-height: 1.45;
-}
-
-.empty-box {
-  padding: 1.5rem 1rem;
-  border-radius: 12px;
-  border: 1px dashed var(--card-border);
-  text-align: center;
-}
-
-.muted {
-  color: var(--muted);
-}
-
-.msg-err {
-  color: var(--danger);
-  margin-bottom: 0.75rem;
 }
 </style>

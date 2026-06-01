@@ -280,3 +280,84 @@ CREATE INDEX IF NOT EXISTS idx_tasks_pending
 
 CREATE INDEX IF NOT EXISTS idx_tasks_status
     ON tasks (status);
+
+-- =====================================================================
+-- Бухгалтерия (P&L): расходы, повторяющиеся шаблоны, категории, настройки.
+-- =====================================================================
+
+-- Категории расходов (для графиков и группировки P&L).
+CREATE TABLE IF NOT EXISTS expense_categories (
+    id BIGSERIAL PRIMARY KEY,
+    slug TEXT NOT NULL,
+    title TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#94a3b8',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    archived BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_expense_categories_slug UNIQUE (slug)
+);
+
+-- Повторяющиеся (ежемесячные) расходы — шаблоны. В сводку разворачиваются виртуально
+-- по месяцам диапазона (см. rpc_finance_accounting_summary), отдельные строки не материализуются.
+CREATE TABLE IF NOT EXISTS recurring_expenses (
+    id BIGSERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    amount NUMERIC(14, 2) NOT NULL CHECK (amount >= 0),
+    category_id BIGINT REFERENCES expense_categories (id) ON DELETE SET NULL,
+    note TEXT,
+    day_of_month SMALLINT NOT NULL DEFAULT 1 CHECK (day_of_month BETWEEN 1 AND 28),
+    start_month DATE NOT NULL,
+    end_month DATE,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    CONSTRAINT ck_recurring_expenses_month_range CHECK (
+        end_month IS NULL OR end_month >= start_month
+    )
+);
+
+-- Разовые расходы.
+CREATE TABLE IF NOT EXISTS expenses (
+    id BIGSERIAL PRIMARY KEY,
+    incurred_on DATE NOT NULL,
+    amount NUMERIC(14, 2) NOT NULL CHECK (amount >= 0),
+    category_id BIGINT REFERENCES expense_categories (id) ON DELETE SET NULL,
+    title TEXT NOT NULL,
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by BIGINT REFERENCES users (id) ON DELETE SET NULL
+);
+
+-- Универсальные staff-редактируемые настройки (ключ → JSONB). Строка 'finance' — налог и валюта.
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value JSONB NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by BIGINT REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_expenses_incurred_on ON expenses (incurred_on DESC);
+
+CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses (category_id)
+    WHERE category_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_recurring_expenses_active ON recurring_expenses (active);
+
+-- Сиды категорий по умолчанию (идемпотентно).
+INSERT INTO expense_categories (slug, title, color, sort_order)
+VALUES
+    ('servers', 'Серверы и хостинг', '#38bdf8', 10),
+    ('marketing', 'Маркетинг и реклама', '#f59e0b', 20),
+    ('salary', 'Зарплаты и подрядчики', '#a78bfa', 30),
+    ('software', 'ПО и сервисы', '#34d399', 40),
+    ('support', 'Поддержка', '#f472b6', 50),
+    ('other', 'Прочее', '#94a3b8', 60)
+ON CONFLICT (slug) DO NOTHING;
+
+-- Налог по умолчанию: НПД 4% с валовой выручки (можно изменить в админке).
+INSERT INTO app_settings (key, value)
+VALUES (
+    'finance',
+    '{"tax_mode": "npd", "tax_rate": 0.04, "tax_base": "gross", "currency": "RUB"}'::jsonb
+)
+ON CONFLICT (key) DO NOTHING;
