@@ -325,12 +325,17 @@ defineExpose({ reload: load })
         <article class="mp-card mp-card--free">
           <p class="mp-label">Свободно от обязательств</p>
           <p class="mp-value">{{ money(moneyPosition.free) }}&nbsp;<span class="mp-cur">₽</span></p>
-          <p class="mp-sub">За всё время · годовщина даты оплаты (+1 мес.)</p>
+          <p class="mp-sub">За всё время · по меясяцам</p>
         </article>
         <article class="mp-card mp-card--frozen">
           <p class="mp-label">Заморожено (обязательства)</p>
           <p class="mp-value">{{ money(moneyPosition.frozen) }}&nbsp;<span class="mp-cur">₽</span></p>
-          <p class="mp-sub">{{ moneyPosition.frozenPct }}% от поступлений · {{ moneyPosition.active }} с оплаченной подпиской · за всё время</p>
+          <p
+            class="mp-sub"
+            :title="'Только клиенты с оплатой подписки. На графике «с активной подпиской» также триал и продление без платежа.'"
+          >
+            {{ moneyPosition.frozenPct }}% от поступлений · {{ moneyPosition.active }} платящих с подпиской
+          </p>
         </article>
       </div>
       <div class="mp-bar" :title="`Заморожено ${moneyPosition.frozenPct}%`">

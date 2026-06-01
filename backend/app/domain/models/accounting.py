@@ -221,7 +221,10 @@ class FinanceDeferredSnapshot(BaseModel):
     deferred_gross: str
     active_obligations: int = Field(
         ge=0,
-        description="Число пользователей с действующей подпиской, оплаченной хотя бы раз",
+        description=(
+            "Пользователи с subscription_until >= as_of (как снимок на графике), "
+            "у которых была хотя бы одна оплата подписки (months > 0)"
+        ),
     )
 
 

@@ -124,11 +124,15 @@ snap AS (
         LEAST(earned_gross_raw, received_gross)::numeric(14, 2) AS earned_gross
     FROM snap_raw
 ),
+-- Как users_daily_stats.subscription_active_by_day, но только с хотя бы одной оплатой (months > 0).
+-- На графике «с активной подпиской» триал и продление без платежа тоже входят — число может быть выше.
 active_paid AS (
     SELECT COUNT(DISTINCT u.id)::bigint AS cnt
     FROM users u
     CROSS JOIN params pr
-    WHERE (u.subscription_until IS NULL OR u.subscription_until >= pr.as_of)
+    WHERE u.registered_at IS NOT NULL
+      AND u.subscription_until IS NOT NULL
+      AND u.subscription_until >= pr.as_of
       AND EXISTS (
           SELECT 1
           FROM payments p
