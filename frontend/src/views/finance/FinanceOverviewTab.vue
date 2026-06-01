@@ -74,6 +74,64 @@ const series = computed(() => data.value?.series ?? {})
 const trendRevenue = computed(() => (series.value.revenue_net ?? []).map(num))
 const trendExpenses = computed(() => (series.value.expenses_total ?? []).map(num))
 const trendProfit = computed(() => (series.value.profit_net ?? []).map(num))
+const trendEarned = computed(() => (series.value.earned_net ?? []).map(num))
+const trendDeferred = computed(() => (series.value.deferred_net_end ?? []).map(num))
+
+const REVENUE_RGB = [56, 214, 141]
+const EXPENSE_RGB = [239, 68, 68]
+const PROFIT_RGB = [56, 189, 248]
+const EARNED_RGB = [45, 212, 191]
+const FROZEN_RGB = [167, 139, 250]
+
+// «cash» — по дате платежа (вся сумма сразу); «accrual» — признание по дням + остаток обязательств.
+const chartMode = ref('cash')
+
+const chartBars = computed(() => {
+  if (chartMode.value === 'accrual') {
+    return [
+      { label: 'Заработано (по дням)', data: trendEarned.value, rgb: EARNED_RGB },
+      { label: 'Расходы', data: trendExpenses.value, rgb: EXPENSE_RGB },
+    ]
+  }
+  return [
+    { label: 'Чистая выручка', data: trendRevenue.value, rgb: REVENUE_RGB },
+    { label: 'Расходы', data: trendExpenses.value, rgb: EXPENSE_RGB },
+  ]
+})
+const chartLine = computed(() =>
+  chartMode.value === 'accrual'
+    ? null
+    : { label: 'Чистая прибыль', data: trendProfit.value, rgb: PROFIT_RGB },
+)
+const chartSecondary = computed(() =>
+  chartMode.value === 'accrual'
+    ? { label: 'Заморожено (обязательства)', data: trendDeferred.value, rgb: FROZEN_RGB }
+    : null,
+)
+const chartAria = computed(() =>
+  chartMode.value === 'accrual'
+    ? 'Динамика: заработано по дням, расходы и остаток обязательств по месяцам'
+    : 'Динамика: чистая выручка, расходы и прибыль по месяцам',
+)
+
+// Денежная позиция на дату snapshot: поступило / свободно (заработано) / заморожено.
+const deferred = computed(() => data.value?.deferred ?? null)
+const moneyPosition = computed(() => {
+  const d = deferred.value
+  if (!d) return null
+  const received = num(d.received_net)
+  const frozen = num(d.deferred_net)
+  const free = num(d.earned_net)
+  const frozenPct = received > 0 ? ((frozen / received) * 100).toFixed(1) : '0'
+  return { received, frozen, free, frozenPct, asOf: d.as_of, active: d.active_obligations }
+})
+
+function fmtAsOf(iso) {
+  if (!iso) return ''
+  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`)
+  if (Number.isNaN(d.getTime())) return String(iso)
+  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' })
+}
 
 const categorySlices = computed(() => {
   const cats = data.value?.category_totals ?? []
@@ -110,7 +168,17 @@ function exportCsv() {
   const months = d.months || []
   const s = d.series || {}
   const rows = [
-    ['Месяц', 'Валовая выручка', 'Чистая выручка', 'Комиссии PSP', 'Расходы', 'Налог', 'Чистая прибыль'],
+    [
+      'Месяц',
+      'Валовая выручка',
+      'Чистая выручка',
+      'Комиссии PSP',
+      'Расходы',
+      'Налог',
+      'Чистая прибыль',
+      'Заработано (по дням)',
+      'Заморожено на конец месяца',
+    ],
   ]
   for (let i = 0; i < months.length; i += 1) {
     rows.push([
@@ -121,6 +189,8 @@ function exportCsv() {
       s.expenses_total?.[i] ?? '0',
       s.tax?.[i] ?? '0',
       s.profit_net?.[i] ?? '0',
+      s.earned_net?.[i] ?? '0',
+      s.deferred_net_end?.[i] ?? '0',
     ])
   }
   const t = d.totals
@@ -132,6 +202,8 @@ function exportCsv() {
     t.expenses_total,
     t.tax,
     t.profit_net,
+    '',
+    '',
   ])
   downloadCsv(`pl_${d.range_from}_${d.range_to}.csv`, rows)
 }
@@ -182,6 +254,41 @@ defineExpose({ reload: load })
         <p class="kpi-value">{{ c.value }}&nbsp;<span class="kpi-cur">₽</span></p>
         <p class="kpi-sub">{{ c.sub }}</p>
       </article>
+    </section>
+
+    <section
+      v-if="moneyPosition"
+      class="money-position"
+      aria-label="Денежная позиция: свободные и замороженные деньги"
+    >
+      <div class="mp-head">
+        <h3 class="mp-title">Денежная позиция</h3>
+        <span class="mp-asof">на {{ fmtAsOf(moneyPosition.asOf) }}</span>
+      </div>
+      <div class="mp-cards">
+        <article class="mp-card mp-card--received">
+          <p class="mp-label">Поступило (после комиссии)</p>
+          <p class="mp-value">{{ money(moneyPosition.received) }}&nbsp;<span class="mp-cur">₽</span></p>
+          <p class="mp-sub">Все платежи, кэш на счетах</p>
+        </article>
+        <article class="mp-card mp-card--free">
+          <p class="mp-label">Свободно от обязательств</p>
+          <p class="mp-value">{{ money(moneyPosition.free) }}&nbsp;<span class="mp-cur">₽</span></p>
+          <p class="mp-sub">Заработано по факту оказанных дней</p>
+        </article>
+        <article class="mp-card mp-card--frozen">
+          <p class="mp-label">Заморожено (обязательства)</p>
+          <p class="mp-value">{{ money(moneyPosition.frozen) }}&nbsp;<span class="mp-cur">₽</span></p>
+          <p class="mp-sub">{{ moneyPosition.frozenPct }}% от поступлений · {{ moneyPosition.active }} активных подписок</p>
+        </article>
+      </div>
+      <div class="mp-bar" :title="`Заморожено ${moneyPosition.frozenPct}%`">
+        <div
+          class="mp-bar-free"
+          :style="{ width: `${100 - Number(moneyPosition.frozenPct)}%` }"
+        />
+        <div class="mp-bar-frozen" :style="{ width: `${moneyPosition.frozenPct}%` }" />
+      </div>
     </section>
 
     <div class="grid-2">
@@ -257,15 +364,35 @@ defineExpose({ reload: load })
     </div>
 
     <section class="panel" aria-label="Динамика доходов и расходов">
-      <h3 class="panel-title">Динамика по месяцам</h3>
+      <div class="dyn-head">
+        <h3 class="panel-title dyn-title">Динамика по месяцам</h3>
+        <div class="mode-toggle" role="group" aria-label="Режим признания выручки">
+          <button
+            type="button"
+            class="mode-btn"
+            :class="{ 'mode-btn--active': chartMode === 'cash' }"
+            @click="chartMode = 'cash'"
+          >
+            Кассовый
+          </button>
+          <button
+            type="button"
+            class="mode-btn"
+            :class="{ 'mode-btn--active': chartMode === 'accrual' }"
+            @click="chartMode = 'accrual'"
+          >
+            Начисление по дням
+          </button>
+        </div>
+      </div>
       <FinanceTrendChart
         v-if="hasMonths"
-        aria-label="Динамика: чистая выручка, расходы и прибыль по месяцам"
+        :aria-label="chartAria"
         :has-data="hasMonths"
         :labels="monthLabels"
-        :revenue-net="trendRevenue"
-        :expenses="trendExpenses"
-        :profit="trendProfit"
+        :bars="chartBars"
+        :line="chartLine"
+        :secondary="chartSecondary"
       />
       <p v-else class="muted empty-line">Нет данных за выбранный период.</p>
     </section>
@@ -353,6 +480,157 @@ defineExpose({ reload: load })
 }
 .kpi-card--expense .kpi-value {
   color: #e08a4a;
+}
+
+/* Денежная позиция */
+.money-position {
+  padding: 1rem 1.15rem 1.15rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--card-border);
+  background: var(--surface-glass, var(--surface));
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 1rem;
+}
+.mp-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+.mp-title {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 800;
+  font-family: var(--heading, inherit);
+  color: var(--text-h);
+}
+.mp-asof {
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.mp-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+}
+.mp-card {
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+}
+.mp-label {
+  margin: 0 0 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.mp-value {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-h);
+  letter-spacing: -0.01em;
+}
+.mp-cur {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+.mp-sub {
+  margin: 0.3rem 0 0;
+  font-size: 0.74rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+.mp-card--free {
+  border-color: color-mix(in srgb, #2dd4bf 45%, var(--card-border));
+  background: color-mix(in srgb, #2dd4bf 8%, var(--surface));
+}
+.mp-card--free .mp-value {
+  color: #14b8a6;
+}
+.mp-card--frozen {
+  border-color: color-mix(in srgb, #a78bfa 45%, var(--card-border));
+  background: color-mix(in srgb, #a78bfa 8%, var(--surface));
+}
+.mp-card--frozen .mp-value {
+  color: #8b5cf6;
+}
+.mp-bar {
+  display: flex;
+  height: 12px;
+  margin-top: 0.9rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--card-border);
+}
+.mp-bar-free {
+  background: #2dd4bf;
+  transition: width 0.4s ease;
+}
+.mp-bar-frozen {
+  background: #a78bfa;
+  transition: width 0.4s ease;
+}
+.mp-hint {
+  margin: 0.75rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.5;
+  max-width: 56rem;
+}
+
+/* Переключатель режима графика */
+.dyn-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+.dyn-title {
+  margin: 0;
+}
+.dyn-hint {
+  margin: 0.4rem 0 0.85rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.45;
+  max-width: 56rem;
+}
+.mode-toggle {
+  display: inline-flex;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  overflow: hidden;
+  background: var(--surface);
+}
+.mode-btn {
+  margin: 0;
+  padding: 0.4rem 0.8rem;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mode-btn:hover:not(.mode-btn--active) {
+  color: var(--text-h);
+  background: rgba(127, 127, 127, 0.08);
+}
+.mode-btn--active {
+  color: var(--text-h);
+  background: rgba(88, 214, 141, 0.14);
 }
 
 .grid-2 {

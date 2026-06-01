@@ -19,6 +19,7 @@ from app.domain.models.accounting import (
     ExpensePatchBody,
     FinanceAccountingSummaryResponse,
     FinanceCategoryTotal,
+    FinanceDeferredSnapshot,
     FinanceSeries,
     FinanceSettings,
     FinanceSettingsPatch,
@@ -132,6 +133,10 @@ async def get_accounting_summary(
     row = (await session.execute(stmt, {"p_from": date_from, "p_to": date_to})).one()
     raw = row.payload if isinstance(row.payload, dict) else {}
 
+    def_stmt = text("SELECT rpc_finance_deferred_summary(:p_from, :p_to) AS payload")
+    def_row = (await session.execute(def_stmt, {"p_from": date_from, "p_to": date_to})).one()
+    def_raw = def_row.payload if isinstance(def_row.payload, dict) else {}
+
     months = [str(m) for m in (raw.get("months") or [])]
     n = len(months)
 
@@ -141,6 +146,11 @@ async def get_accounting_summary(
     gross_sub = _decimal_list(raw.get("revenue_gross_subscription"), n)
     gross_one = _decimal_list(raw.get("revenue_gross_one_time"), n)
     expenses = _decimal_list(raw.get("expenses_total"), n)
+
+    earned_net = _decimal_list(def_raw.get("earned_net"), n)
+    earned_gross = _decimal_list(def_raw.get("earned_gross"), n)
+    deferred_net_end = _decimal_list(def_raw.get("deferred_net_end"), n)
+    deferred_gross_end = _decimal_list(def_raw.get("deferred_gross_end"), n)
 
     rate = settings.tax_rate
     tax_zero = settings.tax_mode == "none" or rate == 0
@@ -201,6 +211,22 @@ async def get_accounting_summary(
         expenses_total=[_money_str(v) for v in expenses],
         tax=[_money_str(v) for v in tax],
         profit_net=[_money_str(v) for v in profit],
+        earned_net=[_money_str(v) for v in earned_net],
+        earned_gross=[_money_str(v) for v in earned_gross],
+        deferred_net_end=[_money_str(v) for v in deferred_net_end],
+        deferred_gross_end=[_money_str(v) for v in deferred_gross_end],
+    )
+
+    snap = def_raw.get("snapshot") if isinstance(def_raw.get("snapshot"), dict) else {}
+    deferred = FinanceDeferredSnapshot(
+        as_of=snap.get("as_of") or date_to,
+        received_net=_money_str(_to_decimal(snap.get("received_net"))),
+        received_gross=_money_str(_to_decimal(snap.get("received_gross"))),
+        earned_net=_money_str(_to_decimal(snap.get("earned_net"))),
+        earned_gross=_money_str(_to_decimal(snap.get("earned_gross"))),
+        deferred_net=_money_str(_to_decimal(snap.get("deferred_net"))),
+        deferred_gross=_money_str(_to_decimal(snap.get("deferred_gross"))),
+        active_obligations=int(_to_decimal(snap.get("active_obligations"))),
     )
 
     return FinanceAccountingSummaryResponse(
@@ -222,6 +248,7 @@ async def get_accounting_summary(
             payment_count=payment_count,
         ),
         tax=FinanceTaxInfo(mode=settings.tax_mode, rate=str(rate), base=settings.tax_base),
+        deferred=deferred,
     )
 
 

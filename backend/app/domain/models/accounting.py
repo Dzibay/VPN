@@ -199,6 +199,27 @@ class FinanceSeries(BaseModel):
     expenses_total: list[str] = Field(default_factory=list)
     tax: list[str] = Field(default_factory=list)
     profit_net: list[str] = Field(default_factory=list)
+    #: День-точное признание выручки (заработано за месяц по факту прошедших дней подписки).
+    earned_net: list[str] = Field(default_factory=list)
+    earned_gross: list[str] = Field(default_factory=list)
+    #: Остаток неисполненных обязательств («замороженные деньги») на конец месяца.
+    deferred_net_end: list[str] = Field(default_factory=list)
+    deferred_gross_end: list[str] = Field(default_factory=list)
+
+
+class FinanceDeferredSnapshot(BaseModel):
+    """Денежная позиция на момент ``as_of``: поступило / заработано (свободно) / заморожено."""
+
+    as_of: date
+    received_net: str
+    received_gross: str
+    #: Заработано = свободно от обязательств (поступило − заморожено).
+    earned_net: str
+    earned_gross: str
+    #: Неисполненные обязательства перед клиентами (предоплата за непоставленные дни).
+    deferred_net: str
+    deferred_gross: str
+    active_obligations: int = Field(ge=0, description="Число действующих подписок с остатком обязательств")
 
 
 class FinanceCategoryTotal(BaseModel):
@@ -235,3 +256,4 @@ class FinanceAccountingSummaryResponse(BaseModel):
     category_totals: list[FinanceCategoryTotal] = Field(default_factory=list)
     totals: FinanceTotals
     tax: FinanceTaxInfo
+    deferred: FinanceDeferredSnapshot

@@ -1,7 +1,11 @@
 <script setup>
 /**
- * Динамика по месяцам: сгруппированные столбцы «Чистая выручка» и «Расходы»
- * плюс линия «Чистая прибыль» (mixed bar+line Chart.js).
+ * Динамика по месяцам: сгруппированные столбцы + линия на левой оси и опциональная
+ * линия на правой оси (mixed bar+line Chart.js). Используется в двух режимах:
+ *  - кассовый: бары «Чистая выручка»/«Расходы» + линия «Чистая прибыль»;
+ *  - начисление: бары «Заработано»/«Расходы» + правая линия «Заморожено» (остаток обязательств).
+ *
+ * @typedef {{ label: string; data: number[]; rgb: [number, number, number] }} Series
  */
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import Chart from '../../utils/chartSetup.js'
@@ -18,14 +22,13 @@ const props = defineProps({
   ariaLabel: { type: String, required: true },
   hasData: { type: Boolean, default: true },
   labels: { type: Array, default: () => [] },
-  revenueNet: { type: Array, default: () => [] },
-  expenses: { type: Array, default: () => [] },
-  profit: { type: Array, default: () => [] },
+  /** @type {import('vue').PropType<Series[]>} Столбцы (1–2). */
+  bars: { type: Array, default: () => [] },
+  /** @type {import('vue').PropType<Series | null>} Линия на левой оси (та же шкала, что и столбцы). */
+  line: { type: Object, default: null },
+  /** @type {import('vue').PropType<Series | null>} Линия на правой оси (отдельная шкала, напр. остаток обязательств). */
+  secondary: { type: Object, default: null },
 })
-
-const REVENUE_RGB = [56, 214, 141]
-const EXPENSE_RGB = [239, 68, 68]
-const PROFIT_RGB = [56, 189, 248]
 
 const canvasEl = ref(null)
 /** @type {Chart | null} */
@@ -59,56 +62,127 @@ function drawChart() {
   const grid = financeBarGridColor()
   const tipBgResolved = resolveBackgroundCss(theme.tooltipBg, theme.tooltipBg)
   const tipColors = chartTooltipColors(tipBgResolved, theme)
+  const n = props.labels.length
+
+  const datasets = []
+  for (const b of props.bars) {
+    datasets.push({
+      type: 'bar',
+      label: b.label,
+      data: [...b.data],
+      backgroundColor: rgba(b.rgb, 0.78),
+      borderColor: rgba(b.rgb, 0.92),
+      borderWidth: 0,
+      borderRadius: 4,
+      maxBarThickness: 38,
+      categoryPercentage: 0.7,
+      barPercentage: 0.92,
+      yAxisID: 'y',
+      order: 2,
+    })
+  }
+  if (props.line) {
+    datasets.push({
+      type: 'line',
+      label: props.line.label,
+      data: [...props.line.data],
+      borderColor: rgba(props.line.rgb, 0.98),
+      borderWidth: 2.75,
+      tension: 0.35,
+      cubicInterpolationMode: 'monotone',
+      fill: false,
+      pointRadius: n > 24 ? 0 : 3.5,
+      pointHoverRadius: 6,
+      pointBackgroundColor: theme.surfaceBg,
+      pointBorderColor: rgba(props.line.rgb, 0.95),
+      pointBorderWidth: 2,
+      yAxisID: 'y',
+      order: 0,
+    })
+  }
+  if (props.secondary) {
+    datasets.push({
+      type: 'line',
+      label: props.secondary.label,
+      data: [...props.secondary.data],
+      borderColor: rgba(props.secondary.rgb, 0.98),
+      borderWidth: 2.5,
+      borderDash: [6, 4],
+      tension: 0.35,
+      cubicInterpolationMode: 'monotone',
+      fill: true,
+      backgroundColor: (c) => {
+        const chart = c.chart
+        const { ctx: cctx, chartArea } = chart
+        if (!chartArea) return rgba(props.secondary.rgb, 0.08)
+        const g = cctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom)
+        g.addColorStop(0, rgba(props.secondary.rgb, 0.18))
+        g.addColorStop(1, rgba(props.secondary.rgb, 0))
+        return g
+      },
+      pointRadius: n > 24 ? 0 : 3,
+      pointHoverRadius: 6,
+      pointBackgroundColor: theme.surfaceBg,
+      pointBorderColor: rgba(props.secondary.rgb, 0.95),
+      pointBorderWidth: 2,
+      yAxisID: 'y1',
+      order: 1,
+    })
+  }
+
+  const scales = {
+    x: {
+      ticks: {
+        color: tick,
+        font: { family: 'var(--sans)', size: 11 },
+        maxRotation: 45,
+        autoSkip: true,
+        maxTicksLimit: 18,
+      },
+      grid: { color: grid, drawBorder: false, tickLength: 0 },
+    },
+    y: {
+      beginAtZero: true,
+      grace: '8%',
+      ticks: {
+        color: tick,
+        font: { family: 'var(--mono)', size: 11 },
+        padding: 8,
+        callback: (v) => fmtMoney(v),
+      },
+      grid: { color: grid, drawBorder: false },
+      title: {
+        display: true,
+        text: '₽',
+        color: tick,
+        font: { family: 'var(--sans)', size: 11, weight: '600' },
+      },
+    },
+  }
+  if (props.secondary) {
+    scales.y1 = {
+      position: 'right',
+      beginAtZero: true,
+      grace: '8%',
+      ticks: {
+        color: rgba(props.secondary.rgb, 0.95),
+        font: { family: 'var(--mono)', size: 11 },
+        padding: 8,
+        callback: (v) => fmtMoney(v),
+      },
+      grid: { drawOnChartArea: false, drawBorder: false },
+      title: {
+        display: true,
+        text: props.secondary.label,
+        color: rgba(props.secondary.rgb, 0.95),
+        font: { family: 'var(--sans)', size: 11, weight: '600' },
+      },
+    }
+  }
 
   chartInstance = new Chart(el, {
     type: 'bar',
-    data: {
-      labels: [...props.labels],
-      datasets: [
-        {
-          type: 'bar',
-          label: 'Чистая выручка',
-          data: [...props.revenueNet],
-          backgroundColor: rgba(REVENUE_RGB, 0.82),
-          borderColor: rgba(REVENUE_RGB, 0.95),
-          borderWidth: 0,
-          borderRadius: 4,
-          maxBarThickness: 38,
-          categoryPercentage: 0.7,
-          barPercentage: 0.92,
-          order: 2,
-        },
-        {
-          type: 'bar',
-          label: 'Расходы',
-          data: [...props.expenses],
-          backgroundColor: rgba(EXPENSE_RGB, 0.72),
-          borderColor: rgba(EXPENSE_RGB, 0.9),
-          borderWidth: 0,
-          borderRadius: 4,
-          maxBarThickness: 38,
-          categoryPercentage: 0.7,
-          barPercentage: 0.92,
-          order: 2,
-        },
-        {
-          type: 'line',
-          label: 'Чистая прибыль',
-          data: [...props.profit],
-          borderColor: rgba(PROFIT_RGB, 0.98),
-          borderWidth: 2.75,
-          tension: 0.35,
-          cubicInterpolationMode: 'monotone',
-          fill: false,
-          pointRadius: props.labels.length > 24 ? 0 : 3.5,
-          pointHoverRadius: 6,
-          pointBackgroundColor: theme.surfaceBg,
-          pointBorderColor: rgba(PROFIT_RGB, 0.95),
-          pointBorderWidth: 2,
-          order: 0,
-        },
-      ],
-    },
+    data: { labels: [...props.labels], datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -146,41 +220,13 @@ function drawChart() {
           },
         },
       },
-      scales: {
-        x: {
-          ticks: {
-            color: tick,
-            font: { family: 'var(--sans)', size: 11 },
-            maxRotation: 45,
-            autoSkip: true,
-            maxTicksLimit: 18,
-          },
-          grid: { color: grid, drawBorder: false, tickLength: 0 },
-        },
-        y: {
-          beginAtZero: true,
-          grace: '8%',
-          ticks: {
-            color: tick,
-            font: { family: 'var(--mono)', size: 11 },
-            padding: 8,
-            callback: (v) => fmtMoney(v),
-          },
-          grid: { color: grid, drawBorder: false },
-          title: {
-            display: true,
-            text: '₽',
-            color: tick,
-            font: { family: 'var(--sans)', size: 11, weight: '600' },
-          },
-        },
-      },
+      scales,
     },
   })
 }
 
 watch(
-  () => [props.labels, props.revenueNet, props.expenses, props.profit, props.hasData],
+  () => [props.labels, props.bars, props.line, props.secondary, props.hasData],
   async () => {
     await nextTick()
     drawChart()
