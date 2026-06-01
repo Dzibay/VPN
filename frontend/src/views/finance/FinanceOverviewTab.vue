@@ -82,14 +82,17 @@ const EXPENSE_RGB = [239, 68, 68]
 const PROFIT_RGB = [56, 189, 248]
 const EARNED_RGB = [45, 212, 191]
 const FROZEN_RGB = [167, 139, 250]
+const UNLOCK_RGB = [34, 197, 94]
+const UNLOCK_CUM_RGB = [56, 189, 248]
 
-// «cash» — по дате платежа (вся сумма сразу); «accrual» — признание по дням + остаток обязательств.
+// «cash» — по дате платежа (вся сумма сразу); «accrual» — признание по месяцам оплаты + остаток обязательств.
 const chartMode = ref('cash')
+const unlockMode = ref('day')
 
 const chartBars = computed(() => {
   if (chartMode.value === 'accrual') {
     return [
-      { label: 'Заработано (по дням)', data: trendEarned.value, rgb: EARNED_RGB },
+      { label: 'Заработано (по месяцам)', data: trendEarned.value, rgb: EARNED_RGB },
       { label: 'Расходы', data: trendExpenses.value, rgb: EXPENSE_RGB },
     ]
   }
@@ -110,7 +113,7 @@ const chartSecondary = computed(() =>
 )
 const chartAria = computed(() =>
   chartMode.value === 'accrual'
-    ? 'Динамика: заработано по дням, расходы и остаток обязательств по месяцам'
+    ? 'Динамика: заработано по месяцам оплаты, расходы и остаток обязательств'
     : 'Динамика: чистая выручка, расходы и прибыль по месяцам',
 )
 
@@ -125,6 +128,54 @@ const moneyPosition = computed(() => {
   const frozenPct = received > 0 ? ((frozen / received) * 100).toFixed(1) : '0'
   return { received, frozen, free, frozenPct, asOf: d.as_of, active: d.active_obligations }
 })
+
+const unlock = computed(() => data.value?.unlock ?? null)
+const unlockAmounts = computed(() => {
+  const u = unlock.value
+  if (!u) return []
+  const raw = unlockMode.value === 'day' ? u.amounts_net : u.amounts_net_monthly
+  return (raw ?? []).map(num)
+})
+const unlockLabels = computed(() => {
+  const u = unlock.value
+  if (!u) return []
+  if (unlockMode.value === 'day') {
+    return (u.days ?? []).map(formatDayLabel)
+  }
+  return (u.months ?? []).map(formatMonthLabel)
+})
+const unlockCumulative = computed(() => {
+  let sum = 0
+  return unlockAmounts.value.map((v) => {
+    sum += v
+    return sum
+  })
+})
+const hasUnlockData = computed(() => unlockLabels.value.length > 0)
+const unlockBars = computed(() => [
+  { label: 'Разблокировка за период', data: unlockAmounts.value, rgb: UNLOCK_RGB },
+])
+const unlockLine = computed(() => ({
+  label: 'Накопительно разблокировано',
+  data: unlockCumulative.value,
+  rgb: UNLOCK_CUM_RGB,
+}))
+const unlockAria = computed(() =>
+  unlockMode.value === 'day'
+    ? 'График разблокировки денег по дням'
+    : 'График разблокировки денег по месяцам',
+)
+
+function formatDayLabel(iso) {
+  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`)
+  if (Number.isNaN(d.getTime())) return String(iso)
+  return d.toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
+}
 
 function fmtAsOf(iso) {
   if (!iso) return ''
@@ -176,7 +227,7 @@ function exportCsv() {
       'Расходы',
       'Налог',
       'Чистая прибыль',
-      'Заработано (по дням)',
+      'Заработано (по месяцам)',
       'Заморожено на конец месяца',
     ],
   ]
@@ -274,7 +325,7 @@ defineExpose({ reload: load })
         <article class="mp-card mp-card--free">
           <p class="mp-label">Свободно от обязательств</p>
           <p class="mp-value">{{ money(moneyPosition.free) }}&nbsp;<span class="mp-cur">₽</span></p>
-          <p class="mp-sub">За всё время · по дням оказанной услуги</p>
+          <p class="mp-sub">За всё время · годовщина даты оплаты (+1 мес.)</p>
         </article>
         <article class="mp-card mp-card--frozen">
           <p class="mp-label">Заморожено (обязательства)</p>
@@ -381,7 +432,7 @@ defineExpose({ reload: load })
             :class="{ 'mode-btn--active': chartMode === 'accrual' }"
             @click="chartMode = 'accrual'"
           >
-            Начисление по дням
+            Начисление по месяцам
           </button>
         </div>
       </div>
@@ -395,6 +446,41 @@ defineExpose({ reload: load })
         :secondary="chartSecondary"
       />
       <p v-else class="muted empty-line">Нет данных за выбранный период.</p>
+    </section>
+
+    <section class="panel" aria-label="График разблокировки денег">
+      <div class="dyn-head">
+        <div>
+          <h3 class="panel-title dyn-title">Разблокировка денег</h3>
+        </div>
+        <div class="mode-toggle" role="group" aria-label="Детализация графика разблокировки">
+          <button
+            type="button"
+            class="mode-btn"
+            :class="{ 'mode-btn--active': unlockMode === 'day' }"
+            @click="unlockMode = 'day'"
+          >
+            По дням
+          </button>
+          <button
+            type="button"
+            class="mode-btn"
+            :class="{ 'mode-btn--active': unlockMode === 'month' }"
+            @click="unlockMode = 'month'"
+          >
+            По месяцам
+          </button>
+        </div>
+      </div>
+      <FinanceTrendChart
+        v-if="hasUnlockData"
+        :aria-label="unlockAria"
+        :has-data="hasUnlockData"
+        :labels="unlockLabels"
+        :bars="unlockBars"
+        :line="unlockLine"
+      />
+      <p v-else class="muted empty-line">Нет запланированных разблокировок в выбранном диапазоне.</p>
     </section>
   </template>
 </template>
@@ -597,6 +683,10 @@ defineExpose({ reload: load })
 }
 .dyn-title {
   margin: 0;
+}
+.dyn-sub {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
 }
 .dyn-hint {
   margin: 0.4rem 0 0.85rem;

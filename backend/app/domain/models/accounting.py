@@ -225,6 +225,15 @@ class FinanceDeferredSnapshot(BaseModel):
     )
 
 
+class FinanceUnlockSchedule(BaseModel):
+    """График разблокировки: суммы по датам годовщин платежей (день и месяц)."""
+
+    days: list[str] = Field(default_factory=list, description="Даты разблокировки YYYY-MM-DD")
+    amounts_net: list[str] = Field(default_factory=list, description="Сумма за день, net")
+    months: list[str] = Field(default_factory=list, description="Месяцы YYYY-MM")
+    amounts_net_monthly: list[str] = Field(default_factory=list, description="Сумма за месяц, net")
+
+
 class FinanceCategoryTotal(BaseModel):
     slug: str
     title: str
@@ -260,3 +269,4 @@ class FinanceAccountingSummaryResponse(BaseModel):
     totals: FinanceTotals
     tax: FinanceTaxInfo
     deferred: FinanceDeferredSnapshot
+    unlock: FinanceUnlockSchedule = Field(default_factory=FinanceUnlockSchedule)

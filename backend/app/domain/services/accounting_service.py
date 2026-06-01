@@ -20,6 +20,7 @@ from app.domain.models.accounting import (
     FinanceAccountingSummaryResponse,
     FinanceCategoryTotal,
     FinanceDeferredSnapshot,
+    FinanceUnlockSchedule,
     FinanceSeries,
     FinanceSettings,
     FinanceSettingsPatch,
@@ -229,6 +230,18 @@ async def get_accounting_summary(
         active_obligations=int(_to_decimal(snap.get("active_obligations"))),
     )
 
+    unlock_raw = def_raw.get("unlock") if isinstance(def_raw.get("unlock"), dict) else {}
+    unlock_days = [str(d) for d in (unlock_raw.get("days") or [])]
+    unlock_months = [str(m) for m in (unlock_raw.get("months") or [])]
+    unlock = FinanceUnlockSchedule(
+        days=unlock_days,
+        amounts_net=[_money_str(_to_decimal(v)) for v in (unlock_raw.get("amounts_net") or [])],
+        months=unlock_months,
+        amounts_net_monthly=[
+            _money_str(_to_decimal(v)) for v in (unlock_raw.get("amounts_net_monthly") or [])
+        ],
+    )
+
     return FinanceAccountingSummaryResponse(
         range_from=date_from,
         range_to=date_to,
@@ -249,6 +262,7 @@ async def get_accounting_summary(
         ),
         tax=FinanceTaxInfo(mode=settings.tax_mode, rate=str(rate), base=settings.tax_base),
         deferred=deferred,
+        unlock=unlock,
     )
 
 
