@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import AppActionButton from '../components/AppActionButton.vue'
 import SitePageLayout from '../components/SitePageLayout.vue'
@@ -459,6 +459,14 @@ onMounted(() => {
     router.replace({ path: '/cabinet' })
   }
   load()
+})
+
+onBeforeUnmount(() => {
+  // Чистим таймеры «скопировано/сохранено», чтобы коллбэк не сработал после ухода со страницы.
+  clearTimeout(referralCopySiteTimer)
+  clearTimeout(referralCopyTgTimer)
+  clearTimeout(pwdOkTimer)
+  clearTimeout(subscriptionCopiedTimer)
 })
 </script>
 

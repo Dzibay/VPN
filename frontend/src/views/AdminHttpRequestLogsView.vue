@@ -4,7 +4,9 @@ import { useRoute, useRouter } from 'vue-router'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
+import AppPager from '../components/AppPager.vue'
 import MultiSelectDropdown from '../components/MultiSelectDropdown.vue'
+import StateNote from '../components/StateNote.vue'
 import { fetchJson } from '../api/client.js'
 import { getSessionRole } from '../auth/session.js'
 import { useTableSort } from '../utils/adminTableSort.js'
@@ -482,14 +484,19 @@ watch(
       </div>
     </template>
 
-    <p v-if="loading" class="muted">Загрузка…</p>
+    <StateNote v-if="loading" loading />
     <p v-else-if="error" class="msg-err">{{ error }}</p>
 
-    <div v-if="!loading && !error" class="pager-top">
-      <span class="muted">{{ rangeLabel }}</span>
-      <div class="pager-btns">
+    <AppPager
+      v-if="!loading && !error"
+      :range-label="rangeLabel"
+      :can-prev="offset > 0"
+      :can-next="canNext"
+      @prev="goPrev"
+      @next="goNext"
+    >
+      <template v-if="canDeleteLogs" #actions>
         <button
-          v-if="canDeleteLogs"
           type="button"
           class="btn-danger"
           :disabled="selectedIds.length === 0 || deleting"
@@ -497,19 +504,8 @@ watch(
         >
           {{ deleting ? 'Удаление…' : `Удалить выбранные (${selectedIds.length})` }}
         </button>
-        <button
-          type="button"
-          class="btn-secondary"
-          :disabled="offset <= 0"
-          @click="goPrev"
-        >
-          Назад
-        </button>
-        <button type="button" class="btn-secondary" :disabled="!canNext" @click="goNext">
-          Вперёд
-        </button>
-      </div>
-    </div>
+      </template>
+    </AppPager>
 
     <AdminTableWrap aria-label="Таблица журнала HTTP">
       <table class="admin-table http-trace-table" :class="{ 'http-trace-table--no-select': !canDeleteLogs }">
@@ -678,72 +674,6 @@ watch(
   opacity: 0.55;
 }
 
-.pager-top {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.65rem;
-}
-
-.pager-btns {
-  display: flex;
-  gap: 0.35rem;
-}
-
-.btn-danger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  padding: 0.55rem 1.15rem;
-  border-radius: var(--radius-lg);
-  border: none;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, #ef4444 92%, white) 0%,
-    color-mix(in srgb, #dc2626 94%, black) 100%
-  );
-  color: #fff;
-  box-shadow: var(--shadow-sm);
-  transition:
-    filter 0.2s ease,
-    transform 0.15s ease,
-    box-shadow 0.2s ease;
-}
-
-.btn-danger:hover:not(:disabled) {
-  filter: brightness(1.06);
-  box-shadow: var(--shadow-md);
-}
-
-.btn-danger:active:not(:disabled) {
-  transform: translateY(1px);
-}
-
-.btn-danger:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring), var(--shadow-sm);
-}
-
-.btn-danger:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.muted {
-  color: var(--muted);
-}
-
-.msg-err {
-  color: #f87171;
-  margin-bottom: 0.75rem;
-}
-
 .http-trace-table {
   font-size: 0.82rem;
   width: 100%;
@@ -780,13 +710,6 @@ watch(
 
 .http-trace-table--no-select :is(th, td):nth-child(5) {
   width: 100%;
-}
-
-.th-select,
-.td-select {
-  width: 1%;
-  text-align: center;
-  white-space: nowrap;
 }
 
 .path-cell-inner {

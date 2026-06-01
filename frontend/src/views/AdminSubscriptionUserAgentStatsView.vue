@@ -3,6 +3,8 @@ import { onMounted, ref } from 'vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
+import AppRefreshButton from '../components/AppRefreshButton.vue'
+import StateNote from '../components/StateNote.vue'
 import { fetchJson } from '../api/client.js'
 import { useTableSort } from '../utils/adminTableSort.js'
 
@@ -57,14 +59,12 @@ onMounted(() => {
     <template #headerExtras>
       <div class="head-row">
         <div class="head-actions">
-          <button type="button" class="btn-secondary" :disabled="loading" @click="load">
-            {{ loading ? 'Обновление…' : 'Обновить' }}
-          </button>
+          <AppRefreshButton :busy="loading" @click="load" />
         </div>
       </div>
     </template>
 
-    <p v-if="loading" class="muted">Загрузка…</p>
+    <StateNote v-if="loading" loading />
     <p v-else-if="error" class="msg-err">{{ error }}</p>
 
     <template v-else>

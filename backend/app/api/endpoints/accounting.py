@@ -18,7 +18,7 @@ from app.core.dependencies import (
     require_referrals_staff,
 )
 from app.core.exceptions import BadRequestError
-from app.core.time import utc_now
+from app.core.time import moscow_today
 from app.domain.models.accounting import (
     ExpenseCategoriesListResponse,
     ExpenseCategoryCreateBody,
@@ -64,7 +64,7 @@ accounting_router = APIRouter(
 
 
 def _default_range() -> tuple[date, date]:
-    today = utc_now().date()
+    today = moscow_today()
     return date(today.year, 1, 1), today
 
 
@@ -77,7 +77,7 @@ def _default_range() -> tuple[date, date]:
     summary="Сводка бухгалтерии (P&L) по месяцам в диапазоне",
     description="Помесячно: выручка (валовая/чистая), комиссии PSP, расходы по категориям, "
     "налог и чистая прибыль. Расходы — разовые + развёрнутые повторяющиеся шаблоны. "
-    "По умолчанию диапазон — с 1 января текущего года по сегодня (UTC).",
+    "По умолчанию диапазон — с 1 января текущего года по сегодня (Москва).",
 )
 async def accounting_summary(
     session: ReadonlySessionDep,

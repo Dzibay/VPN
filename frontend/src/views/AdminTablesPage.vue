@@ -10,6 +10,7 @@ import {
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
+import AppModal from '../components/AppModal.vue'
 import UserRolePill from '../components/UserRolePill.vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { fetchJson, subscriptionPublicUrl } from '../api/client.js'
@@ -2165,19 +2166,13 @@ watch(formIsCascadeRuEntry, (v) => {
       </div>
     </Teleport>
 
-    <Teleport to="body">
-      <div
-        v-if="modalOpen"
-        class="modal-backdrop"
-        role="dialog"
-        aria-modal="true"
-        :aria-labelledby="
-          section === 'users' ? 'modal-user-title' : 'modal-server-title'
-        "
-        @click.self="closeModal"
-      >
-        <div v-if="section === 'users'" class="modal">
-          <h2 id="modal-user-title">{{ userModalTitle }}</h2>
+    <AppModal
+      v-if="modalOpen && section === 'users'"
+      :title="userModalTitle"
+      :max-width="420"
+      :busy="creating || deletingUserId != null || clearTelegramBusy"
+      @close="closeModal"
+    >
           <form class="form" @submit.prevent="submitSaveUser">
             <label v-if="editingUserId == null" class="field">
               <span>Telegram ID (необязательно)</span>
@@ -2290,7 +2285,7 @@ watch(formIsCascadeRuEntry, (v) => {
               <button
                 v-if="editingUserId != null"
                 type="button"
-                class="btn-danger-modal"
+                class="btn-danger"
                 :disabled="
                   creating ||
                   deletingUserId === editingUserId ||
@@ -2337,9 +2332,15 @@ watch(formIsCascadeRuEntry, (v) => {
               </div>
             </div>
           </form>
-        </div>
-        <div v-else class="modal modal-server">
-          <h2 id="modal-server-title">{{ serverModalTitle }}</h2>
+    </AppModal>
+
+    <AppModal
+      v-else-if="modalOpen"
+      :title="serverModalTitle"
+      :max-width="460"
+      :busy="creating || deletingServerId != null"
+      @close="closeModal"
+    >
           <div
             class="modal-tabs"
             role="tablist"
@@ -2668,7 +2669,7 @@ watch(formIsCascadeRuEntry, (v) => {
               <button
                 v-if="editingServerId != null"
                 type="button"
-                class="btn-danger-modal"
+                class="btn-danger"
                 :disabled="creating || deletingServerId === editingServerId"
                 @click="deleteServerFromModal"
               >
@@ -2703,9 +2704,7 @@ watch(formIsCascadeRuEntry, (v) => {
               </div>
             </div>
           </form>
-        </div>
-      </div>
-    </Teleport>
+    </AppModal>
   </AdminStaffShell>
 </template>
 
@@ -2813,26 +2812,6 @@ watch(formIsCascadeRuEntry, (v) => {
 .row-actions {
   vertical-align: middle;
   white-space: nowrap;
-}
-
-.btn-danger-modal {
-  font: inherit;
-  font-weight: 700;
-  font-size: 0.88rem;
-  padding: 0.5rem 0.95rem;
-  border-radius: 10px;
-  border: 1px solid rgba(220, 38, 38, 0.45);
-  color: var(--danger);
-  background: var(--danger-soft);
-  cursor: pointer;
-}
-.btn-danger-modal:hover:not(:disabled) {
-  border-color: var(--danger);
-  filter: brightness(1.02);
-}
-.btn-danger-modal:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
 }
 
 .server-row-dropdown {
@@ -3134,49 +3113,6 @@ watch(formIsCascadeRuEntry, (v) => {
   text-decoration: underline;
   color: var(--accent-hover);
 }
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(4, 12, 9, 0.55);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: clamp(1rem, 4vh, 2.5rem) 1rem;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-  z-index: 50;
-  box-sizing: border-box;
-}
-
-@media (prefers-color-scheme: dark) {
-  .modal-backdrop {
-    background: rgba(8, 6, 12, 0.72);
-  }
-}
-
-.modal {
-  width: 100%;
-  max-width: 420px;
-  max-height: min(90vh, calc(100dvh - 2 * clamp(1rem, 4vh, 2.5rem)));
-  padding: 1.35rem 1.45rem;
-  border-radius: 16px;
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  box-shadow: var(--shadow-lg);
-  overflow-x: hidden;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  flex-shrink: 0;
-  box-sizing: border-box;
-}
-
-.modal-server {
-  max-width: 460px;
-}
-
 .modal-tabs {
   display: flex;
   gap: 0.35rem;
@@ -3227,10 +3163,6 @@ watch(formIsCascadeRuEntry, (v) => {
   min-height: 0;
 }
 
-.modal h2 {
-  margin: 0 0 0.85rem;
-  font-size: 1.15rem;
-}
 .form {
   display: flex;
   flex-direction: column;

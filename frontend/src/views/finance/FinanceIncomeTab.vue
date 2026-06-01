@@ -1,6 +1,8 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import AdminBarChart from '../../components/AdminBarChart.vue'
+import AppRefreshButton from '../../components/AppRefreshButton.vue'
+import StateNote from '../../components/StateNote.vue'
 import { fetchJson } from '../../api/client.js'
 import { adminChartTheme } from '../../utils/adminChartTheme.js'
 
@@ -195,13 +197,11 @@ onMounted(() => {
           По месяцам оплаты
         </button>
       </div>
-      <button type="button" class="btn-secondary" :disabled="loading" @click="load">
-        {{ loading ? 'Обновление…' : 'Обновить' }}
-      </button>
+      <AppRefreshButton :busy="loading" @click="load" />
     </div>
   </div>
 
-  <p v-if="loading && summary == null" class="muted">Загрузка сводки…</p>
+  <StateNote v-if="loading && summary == null" loading text="Загрузка сводки…" />
   <p v-else-if="error" class="msg-err">{{ error }}</p>
 
   <template v-else-if="summary">

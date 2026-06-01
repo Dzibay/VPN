@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import AdminDoughnutChart from '../../components/AdminDoughnutChart.vue'
 import FinanceTrendChart from './FinanceTrendChart.vue'
+import StateNote from '../../components/StateNote.vue'
 import { fetchJson } from '../../api/client.js'
 import { downloadCsv } from '../../utils/csv.js'
 
@@ -162,7 +163,7 @@ defineExpose({ reload: load })
 </script>
 
 <template>
-  <p v-if="loading && data == null" class="muted">Загрузка сводки…</p>
+  <StateNote v-if="loading && data == null" loading text="Загрузка сводки…" />
   <p v-else-if="error" class="msg-err">{{ error }}</p>
 
   <template v-else-if="totals">

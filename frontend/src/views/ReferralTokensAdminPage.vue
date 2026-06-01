@@ -5,7 +5,10 @@ import AdminHighlightListLink from '../components/AdminHighlightListLink.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
+import AppModal from '../components/AppModal.vue'
+import AppRefreshButton from '../components/AppRefreshButton.vue'
 import RowActionsDropdown from '../components/RowActionsDropdown.vue'
+import StatWidget from '../components/StatWidget.vue'
 import { fetchJson, sitePublicUrl } from '../api/client.js'
 import { useTableSort } from '../utils/adminTableSort.js'
 import { formatMskApiDateTime } from '../utils/mskDate.js'
@@ -279,14 +282,7 @@ onMounted(() => {
       <div class="head-row">
         <h2 class="section-heading">Конверсия по токенам</h2>
         <div class="head-actions">
-          <button
-            type="button"
-            class="btn-secondary"
-            :disabled="loading || directTrafficLoading"
-            @click="reloadAll"
-          >
-            {{ loading || directTrafficLoading ? 'Обновление…' : 'Обновить' }}
-          </button>
+          <AppRefreshButton :busy="loading || directTrafficLoading" @click="reloadAll" />
           <button type="button" class="btn-primary" @click="openModal">
             Новый токен
           </button>
@@ -296,8 +292,7 @@ onMounted(() => {
 
     <section class="stats widgets-row" aria-live="polite">
       <div class="widgets-grid">
-        <div class="stat-widget" aria-label="Прямой трафик без реферальной ссылки">
-          <h3 class="stat-widget-title">Прямой трафик</h3>
+        <StatWidget title="Прямой трафик" aria-label="Прямой трафик без реферальной ссылки">
           <p class="stat-widget-value">
             {{
               directTrafficLoading
@@ -324,14 +319,13 @@ onMounted(() => {
             </div>
           </dl>
           <p v-else-if="directTrafficError" class="stat-widget-err">{{ directTrafficError }}</p>
-        </div>
-        <div class="stat-widget" aria-label="Число реферальных токенов">
-          <h3 class="stat-widget-title">Токены</h3>
+        </StatWidget>
+        <StatWidget title="Токены" aria-label="Число реферальных токенов">
           <p class="stat-widget-value">
             {{ loading ? '…' : error ? '—' : rows.length }}
           </p>
           <p v-if="!loading && !error" class="stat-widget-meta">Записей в таблице</p>
-        </div>
+        </StatWidget>
       </div>
       <p v-if="copyHint" class="copy-hint">{{ copyHint }}</p>
     </section>
@@ -512,96 +506,92 @@ onMounted(() => {
       </table>
     </AdminTableWrap>
 
-    <Teleport to="body">
-      <div
-        v-if="modalOpen"
-        class="modal-backdrop"
-        role="presentation"
-        @click.self="closeModal"
-      >
-        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ref-modal-title">
-          <h2 id="ref-modal-title" class="modal-title">{{ modalTitle }}</h2>
-          <form class="modal-form" @submit.prevent="submitModal">
-            <label class="field">
-              <span>Как задать источник</span>
-              <select v-model="formLinkKind" class="input-like">
-                <option value="channel">Именованный источник (свой ярлык)</option>
-                <option value="user">Пользователь из БД (owner_kind = user)</option>
-              </select>
-            </label>
-            <label v-if="formLinkKind === 'channel'" class="field">
-              <span>Название источника (owner_kind)</span>
-              <input
-                v-model="formChannelKind"
-                type="text"
-                class="input-like mono"
-                placeholder="github, bot1, campaign…"
-                maxlength="64"
-                autocomplete="off"
-                spellcheck="false"
-              />
-            </label>
-            <p v-if="formLinkKind === 'channel'" class="field-hint">
-              Латиница, цифры, <code class="inline-code">_</code> и <code class="inline-code">-</code>,
-              длина до 64. Не используйте ярлык <code class="inline-code">user</code> — для этого второй режим.
-            </p>
-            <label v-if="formLinkKind === 'user'" class="field">
-              <span>ID пользователя</span>
-              <input
-                v-model="formOwnerUserId"
-                type="number"
-                min="1"
-                step="1"
-                class="input-like"
-                placeholder="Например 42"
-                autocomplete="off"
-              />
-            </label>
-            <label class="field">
-              <span>Токен{{ editingId ? '' : ' (необязательно)' }}</span>
-              <input
-                v-model="formToken"
-                type="text"
-                class="input-like mono"
-                :placeholder="editingId ? 'Обязательно при редактировании' : 'Пусто — сгенерировать автоматически'"
-                maxlength="64"
-                autocomplete="off"
-                spellcheck="false"
-              />
-            </label>
-            <p v-if="editingId" class="field-hint">
-              После смены токена ссылки с прежним <code class="inline-code">ref</code> / <code class="inline-code">start</code> больше не относятся к этой записи.
-            </p>
-            <p v-else class="field-hint">
-              Если задаёте токен вручную: только A–Z, a–z, 0–9 и _, длина 4–64 (Telegram
-              <code class="inline-code">start</code>).
-            </p>
-            <p v-if="createError" class="form-err">{{ createError }}</p>
-            <div class="modal-actions">
-              <button
-                type="button"
-                class="btn-secondary"
-                :disabled="creating"
-                @click="closeModal"
-              >
-                Отмена
-              </button>
-              <button type="submit" class="btn-primary" :disabled="creating">
-                {{
-                  creating
-                    ? editingId
-                      ? 'Сохранение…'
-                      : 'Создание…'
-                    : editingId
-                      ? 'Сохранить'
-                      : 'Создать'
-                }}
-              </button>
-            </div>
-          </form>
+    <AppModal
+      v-if="modalOpen"
+      :title="modalTitle"
+      :max-width="420"
+      :busy="creating"
+      @close="closeModal"
+    >
+      <form class="modal-form" @submit.prevent="submitModal">
+        <label class="field">
+          <span>Как задать источник</span>
+          <select v-model="formLinkKind" class="input-like">
+            <option value="channel">Именованный источник (свой ярлык)</option>
+            <option value="user">Пользователь из БД (owner_kind = user)</option>
+          </select>
+        </label>
+        <label v-if="formLinkKind === 'channel'" class="field">
+          <span>Название источника (owner_kind)</span>
+          <input
+            v-model="formChannelKind"
+            type="text"
+            class="input-like mono"
+            placeholder="github, bot1, campaign…"
+            maxlength="64"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </label>
+        <p v-if="formLinkKind === 'channel'" class="field-hint">
+          Латиница, цифры, <code class="inline-code">_</code> и <code class="inline-code">-</code>,
+          длина до 64. Не используйте ярлык <code class="inline-code">user</code> — для этого второй режим.
+        </p>
+        <label v-if="formLinkKind === 'user'" class="field">
+          <span>ID пользователя</span>
+          <input
+            v-model="formOwnerUserId"
+            type="number"
+            min="1"
+            step="1"
+            class="input-like"
+            placeholder="Например 42"
+            autocomplete="off"
+          />
+        </label>
+        <label class="field">
+          <span>Токен{{ editingId ? '' : ' (необязательно)' }}</span>
+          <input
+            v-model="formToken"
+            type="text"
+            class="input-like mono"
+            :placeholder="editingId ? 'Обязательно при редактировании' : 'Пусто — сгенерировать автоматически'"
+            maxlength="64"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </label>
+        <p v-if="editingId" class="field-hint">
+          После смены токена ссылки с прежним <code class="inline-code">ref</code> / <code class="inline-code">start</code> больше не относятся к этой записи.
+        </p>
+        <p v-else class="field-hint">
+          Если задаёте токен вручную: только A–Z, a–z, 0–9 и _, длина 4–64 (Telegram
+          <code class="inline-code">start</code>).
+        </p>
+        <p v-if="createError" class="form-err">{{ createError }}</p>
+        <div class="modal-actions">
+          <button
+            type="button"
+            class="btn-secondary"
+            :disabled="creating"
+            @click="closeModal"
+          >
+            Отмена
+          </button>
+          <button type="submit" class="btn-primary" :disabled="creating">
+            {{
+              creating
+                ? editingId
+                  ? 'Сохранение…'
+                  : 'Создание…'
+                : editingId
+                  ? 'Сохранить'
+                  : 'Создать'
+            }}
+          </button>
         </div>
-      </div>
-    </Teleport>
+      </form>
+    </AppModal>
   </AdminStaffShell>
 </template>
 
@@ -624,13 +614,6 @@ onMounted(() => {
   flex-wrap: wrap;
   gap: 0.5rem;
 }
-.sub {
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--muted);
-  line-height: 1.45;
-  max-width: 52rem;
-}
 .inline-code {
   font-family: ui-monospace, monospace;
   font-size: 0.88em;
@@ -651,76 +634,20 @@ onMounted(() => {
     grid-template-columns: 1fr;
   }
 }
-.stat-widget {
-  padding: 1rem 1.1rem;
-  border-radius: 10px;
-  border: 1px solid var(--nav-border);
-  background: var(--surface, color-mix(in srgb, var(--bg) 92%, var(--text) 8%));
-}
-.stat-widget-title {
-  margin: 0 0 0.65rem;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  font-weight: 600;
-}
-.stat-widget-value {
-  margin: 0;
-  font-size: 1.6rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.15;
-  color: var(--text-h);
-}
-.stat-widget-meta {
-  margin: 0.4rem 0 0;
-  font-size: 0.86rem;
-  color: var(--muted);
-}
+/* Здесь split идёт после meta-текста — нужен верхний отступ (в admin-ui.css он 0). */
 .stat-widget-split {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem 1rem;
-  margin: 0.75rem 0 0;
-}
-.stat-widget-split div {
-  margin: 0;
-  min-width: 0;
-}
-.stat-widget-split dt {
-  margin: 0 0 0.2rem;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  font-weight: 600;
-}
-.stat-widget-split dd {
-  margin: 0;
-  font-size: 1.1rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-h);
+  margin-top: 0.75rem;
 }
 .stat-widget-err {
   margin: 0.5rem 0 0;
   font-size: 0.82rem;
   color: var(--danger);
 }
-.stats-value {
-  margin: 0;
-  font-size: 0.95rem;
-  color: var(--text-h);
-}
 .copy-hint {
   margin: 0.35rem 0 0;
   font-size: 0.82rem;
   color: var(--accent);
   font-weight: 600;
-}
-.muted {
-  color: var(--muted);
 }
 .error-cell {
   color: var(--danger);
@@ -753,19 +680,11 @@ onMounted(() => {
   font-size: 0.75rem;
   padding: 0.25rem 0.45rem;
 }
-.pill {
-  display: inline-block;
-  padding: 0.15rem 0.45rem;
-  border-radius: 8px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+/* Нейтральный pill: фон/границу базовый .pill (admin-ui.css) не задаёт. */
+.pill-mono {
   background: var(--surface);
   border: 1px solid var(--card-border);
   color: var(--muted);
-}
-.pill-mono {
   font-family: ui-monospace, monospace;
   font-size: 0.78rem;
   font-weight: 600;
@@ -774,67 +693,5 @@ onMounted(() => {
   max-width: 12rem;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(4, 12, 9, 0.55);
-  backdrop-filter: blur(6px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: clamp(1rem, 4vh, 2.5rem) 1rem;
-  z-index: 50;
-}
-.modal {
-  width: 100%;
-  max-width: 420px;
-  padding: 1.35rem 1.45rem;
-  border-radius: 16px;
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  box-shadow: var(--shadow-lg);
-}
-.modal-title {
-  margin: 0 0 1rem;
-  font-size: 1.1rem;
-  color: var(--text-h);
-}
-.modal-form .field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  margin-bottom: 0.85rem;
-}
-.modal-form .field > span {
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--muted);
-}
-.input-like {
-  font: inherit;
-  padding: 0.5rem 0.65rem;
-  border-radius: 10px;
-  border: 1px solid var(--card-border);
-  background: var(--surface);
-  color: var(--text-h);
-}
-.field-hint {
-  margin: -0.35rem 0 0.65rem;
-  font-size: 0.78rem;
-  color: var(--muted);
-  line-height: 1.4;
-}
-.form-err {
-  margin: 0 0 0.65rem;
-  font-size: 0.85rem;
-  color: var(--danger);
-}
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.6rem;
-  margin-top: 0.5rem;
 }
 </style>

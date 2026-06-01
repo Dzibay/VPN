@@ -3,11 +3,14 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import AdminHighlightListLink from '../components/AdminHighlightListLink.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
+import AppPager from '../components/AppPager.vue'
 import StaffUserIdSuggestInput from '../components/StaffUserIdSuggestInput.vue'
+import StatWidget from '../components/StatWidget.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
 import { fetchJson } from '../api/client.js'
 import { formatTrafficWithLimit, isTrafficOverLimit } from '../utils/formatTraffic.js'
+import { useOffsetPagination } from '../composables/useOffsetPagination.js'
 import { useTableSort } from '../utils/adminTableSort.js'
 import { formatLocaleDateRu } from '../utils/formatLocaleDate.js'
 import {
@@ -22,8 +25,6 @@ const userSearchQuery = ref('')
 
 const rows = ref([])
 const rowsTotal = ref(0)
-const pageLimit = 50
-const offset = ref(0)
 const usersCountSummary = ref(null)
 const loading = ref(false)
 const error = ref(null)
@@ -132,26 +133,18 @@ const registrationGapStats = computed(() => {
   }
 })
 
+const { offset, limit, canPrev, canNext, prev, next } = useOffsetPagination({
+  limit: 50,
+  total: () => rowsTotal.value,
+  count: () => rows.value.length,
+  onChange: () => load(),
+})
+
 const rangeLabel = computed(() => {
   const n = rows.value.length
   if (rowsTotal.value === 0) return '0 пользователей'
-  const from = offset.value + 1
-  const to = offset.value + n
-  return `${from}–${to} из ${rowsTotal.value}`
+  return `${offset.value + 1}–${offset.value + n} из ${rowsTotal.value}`
 })
-
-const canPrev = computed(() => offset.value > 0)
-const canNext = computed(() => offset.value + rows.value.length < rowsTotal.value)
-
-function prevPage() {
-  offset.value = Math.max(0, offset.value - pageLimit)
-  void load()
-}
-
-function nextPage() {
-  offset.value = offset.value + pageLimit
-  void load()
-}
 
 function telegramCell(u) {
   if (u.telegram_id != null && u.telegram_id !== '') {
@@ -285,7 +278,7 @@ async function load() {
   error.value = null
   try {
     const params = new URLSearchParams({
-      limit: String(pageLimit),
+      limit: String(limit.value),
       offset: String(offset.value),
     })
     const [data] = await Promise.all([
@@ -341,8 +334,7 @@ onMounted(() => {
   <AdminStaffShell title="Аналитика пользователей">
     <section class="stats widgets-row" aria-live="polite">
       <div class="widgets-grid">
-        <div class="stat-widget" aria-label="Число пользователей">
-          <h3 class="stat-widget-title">Пользователи</h3>
+        <StatWidget title="Пользователи" aria-label="Число пользователей">
           <p class="stat-widget-value">
             {{ loading ? '…' : error ? '—' : userCountWidget.totalDisplay }}
           </p>
@@ -356,9 +348,8 @@ onMounted(() => {
           >
             {{ userCountWidget.vsLabel }}
           </p>
-        </div>
-        <div class="stat-widget" aria-label="Интервал между регистрациями">
-          <h3 class="stat-widget-title">Интервал регистраций</h3>
+        </StatWidget>
+        <StatWidget title="Интервал регистраций" aria-label="Интервал между регистрациями">
           <dl v-if="!loading && !error" class="stat-widget-split">
             <div>
               <dt>Всего</dt>
@@ -372,7 +363,7 @@ onMounted(() => {
           <p v-else class="stat-widget-value stat-widget-value--muted">
             {{ loading ? '…' : '—' }}
           </p>
-        </div>
+        </StatWidget>
       </div>
     </section>
 
@@ -388,29 +379,15 @@ onMounted(() => {
       />
     </section>
 
-    <section v-if="!loading && !error" class="stats stats--pager" aria-live="polite">
-      <p class="stats-value">{{ rangeLabel }}</p>
-      <div class="pager-top">
-        <div class="pager-btns">
-          <button
-            type="button"
-            class="btn-secondary"
-            :disabled="loading || !canPrev"
-            @click="prevPage"
-          >
-            Назад
-          </button>
-          <button
-            type="button"
-            class="btn-secondary"
-            :disabled="loading || !canNext"
-            @click="nextPage"
-          >
-            Вперёд
-          </button>
-        </div>
-      </div>
-    </section>
+    <AppPager
+      v-if="!loading && !error"
+      :range-label="rangeLabel"
+      :can-prev="canPrev"
+      :can-next="canNext"
+      :loading="loading"
+      @prev="prev"
+      @next="next"
+    />
 
     <div
       class="analytics-main"
@@ -758,33 +735,6 @@ onMounted(() => {
   color: var(--muted);
 }
 
-.stats--pager {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem 1rem;
-}
-
-.stats-value {
-  margin: 0;
-  font-size: 0.95rem;
-  color: var(--text-h);
-}
-
-.pager-top {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.pager-btns {
-  display: flex;
-  gap: 0.35rem;
-}
-
 .widgets-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -794,83 +744,6 @@ onMounted(() => {
   .widgets-grid {
     grid-template-columns: 1fr;
   }
-}
-.stat-widget {
-  padding: 1rem 1.1rem;
-  border-radius: 10px;
-  border: 1px solid var(--nav-border);
-  background: var(--surface, color-mix(in srgb, var(--bg) 92%, var(--text) 8%));
-}
-.stat-widget-title {
-  margin: 0 0 0.65rem;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  font-weight: 600;
-}
-.stat-widget-value {
-  margin: 0;
-  font-size: 1.6rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.15;
-  color: var(--text-h);
-}
-.stat-widget-value--muted {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--muted);
-}
-.stat-widget-meta {
-  margin: 0.4rem 0 0;
-  font-size: 0.86rem;
-  color: var(--muted);
-}
-.stat-widget-delta {
-  margin: 0.2rem 0 0;
-  font-size: 0.86rem;
-  font-weight: 600;
-}
-.stat-delta--up {
-  color: var(--success, #2e7d32);
-}
-.stat-delta--down {
-  color: var(--danger, #c62828);
-}
-.stat-delta--neutral {
-  color: var(--muted);
-}
-.stat-delta--muted {
-  color: var(--muted);
-  font-weight: 500;
-}
-.stat-widget-split {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem 1rem;
-  margin: 0;
-}
-.stat-widget-split div {
-  margin: 0;
-  min-width: 0;
-}
-.stat-widget-split dt {
-  margin: 0 0 0.2rem;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  font-weight: 600;
-}
-.stat-widget-split dd {
-  margin: 0;
-  font-size: 1.1rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.2;
-  color: var(--text-h);
-  word-break: break-word;
 }
 
 .ref-id-cell {
@@ -1240,9 +1113,6 @@ tr.client-row-has-payments.client-row-active-today.user-row--selected {
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: middle;
-}
-.muted {
-  color: var(--muted);
 }
 .error-cell {
   color: var(--danger, #c62828);

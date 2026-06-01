@@ -4,9 +4,14 @@ import AdminHighlightListLink from '../components/AdminHighlightListLink.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
+import AppModal from '../components/AppModal.vue'
+import AppPager from '../components/AppPager.vue'
+import AppRefreshButton from '../components/AppRefreshButton.vue'
 import StaffUserIdSuggestInput from '../components/StaffUserIdSuggestInput.vue'
+import StateNote from '../components/StateNote.vue'
 import { fetchJson } from '../api/client.js'
 import { getSessionRole } from '../auth/session.js'
+import { useOffsetPagination } from '../composables/useOffsetPagination.js'
 import { useTableSort } from '../utils/adminTableSort.js'
 import { formatMskApiDateTime } from '../utils/mskDate.js'
 
@@ -25,9 +30,14 @@ const formCreatedAt = ref('')
 /** @type {import('vue').Ref<Array<{ id: number, user_id: number | null, amount: string | number, net_amount: string | number, months: number, provider: string, payment_kind: string, provider_webhook: Record<string, unknown> | null, created_at: string }>>} */
 const items = ref([])
 const total = ref(0)
-const limit = 200
-const offset = ref(0)
 const expandedPaymentId = ref(null)
+
+const { offset, limit, canPrev, canNext, rangeLabel, prev, next, reset } = useOffsetPagination({
+  limit: 200,
+  total: () => total.value,
+  count: () => items.value.length,
+  onChange: () => load(),
+})
 
 const sortAccessors = {
   id: (r) => Number(r.id) || 0,
@@ -59,17 +69,6 @@ function toggleSelectAllOnPage() {
     new Set([...selectedIds.value, ...rowIdsOnPage.value]),
   )
 }
-
-const rangeLabel = computed(() => {
-  const n = items.value.length
-  if (total.value === 0) return '0 записей'
-  const from = offset.value + 1
-  const to = offset.value + n
-  return `${from}–${to} из ${total.value}`
-})
-
-const canPrev = computed(() => offset.value > 0)
-const canNext = computed(() => offset.value + items.value.length < total.value)
 
 function formatAmount(v) {
   const n = Number(v)
@@ -123,7 +122,7 @@ async function load() {
   error.value = null
   try {
     const params = new URLSearchParams({
-      limit: String(limit),
+      limit: String(limit.value),
       offset: String(offset.value),
     })
     const data = await fetchJson(`/api/admin/payments?${params.toString()}`)
@@ -137,16 +136,6 @@ async function load() {
   } finally {
     loading.value = false
   }
-}
-
-function prevPage() {
-  offset.value = Math.max(0, offset.value - limit)
-  void load()
-}
-
-function nextPage() {
-  offset.value = offset.value + limit
-  void load()
 }
 
 function openCreateModal() {
@@ -242,7 +231,7 @@ async function submitCreatePayment() {
       return
     }
     modalOpen.value = false
-    offset.value = 0
+    reset()
     await load()
   } catch (e) {
     createError.value = e.message || String(e)
@@ -273,25 +262,25 @@ onMounted(() => {
           <button type="button" class="btn-primary" @click="openCreateModal">
             Создать платёж
           </button>
-          <button type="button" class="btn-secondary" :disabled="loading" @click="load">
-            {{ loading ? 'Обновление…' : 'Обновить' }}
-          </button>
+          <AppRefreshButton :busy="loading" @click="load" />
         </div>
       </div>
     </template>
 
-    <p v-if="loading && items.length === 0" class="muted">Загрузка…</p>
+    <StateNote v-if="loading && items.length === 0" loading />
     <p v-else-if="error" class="msg-err">{{ error }}</p>
 
     <template v-else>
-      <section class="stats" aria-live="polite">
-        <p class="stats-value">{{ rangeLabel }}</p>
-      </section>
-
-      <div class="pager-top">
-        <div class="pager-btns">
+      <AppPager
+        :range-label="rangeLabel"
+        :can-prev="canPrev"
+        :can-next="canNext"
+        :loading="loading"
+        @prev="prev"
+        @next="next"
+      >
+        <template v-if="canDeletePayments" #actions>
           <button
-            v-if="canDeletePayments"
             type="button"
             class="btn-danger"
             :disabled="selectedIds.length === 0 || deleting"
@@ -299,24 +288,8 @@ onMounted(() => {
           >
             {{ deleting ? 'Удаление…' : `Удалить выбранные (${selectedIds.length})` }}
           </button>
-          <button
-            type="button"
-            class="btn-secondary"
-            :disabled="loading || !canPrev"
-            @click="prevPage"
-          >
-            Назад
-          </button>
-          <button
-            type="button"
-            class="btn-secondary"
-            :disabled="loading || !canNext"
-            @click="nextPage"
-          >
-            Вперёд
-          </button>
-        </div>
-      </div>
+        </template>
+      </AppPager>
 
       <AdminTableWrap aria-label="Платежи">
         <table class="admin-table payments-table" :class="{ 'payments-table--no-select': !canDeletePayments }">
@@ -449,87 +422,71 @@ onMounted(() => {
       </AdminTableWrap>
     </template>
 
-    <Teleport to="body">
-      <div
-        v-if="modalOpen"
-        class="modal-backdrop"
-        role="presentation"
-        @click.self="closeCreateModal"
-      >
-        <div
-          class="modal"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="payments-create-modal-title"
-          @click.stop
-        >
-          <h2 id="payments-create-modal-title" class="modal-title">Новый платёж</h2>
-          <form class="modal-form" @submit.prevent="submitCreatePayment">
-            <label class="field field-user">
-              <span>User ID</span>
-              <StaffUserIdSuggestInput
-                v-model="formUserId"
-                input-id="payments-create-user-id"
-                placeholder="Поиск от 3 символов (email, @username, tg id)"
-              />
-            </label>
-            <label class="field">
-              <span>Тип оплаты</span>
-              <select v-model="formPaymentKind" class="input-like">
-                <option value="one_time">Разовая (one_time)</option>
-                <option value="subscription">Подписка (subscription)</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Месяцев</span>
-              <input
-                v-model="formMonths"
-                type="text"
-                inputmode="numeric"
-                class="input-like"
-                placeholder="1–120"
-                autocomplete="off"
-              />
-            </label>
-            <label class="field">
-              <span>Сумма, ₽</span>
-              <input
-                v-model="formAmountRub"
-                type="text"
-                inputmode="decimal"
-                class="input-like"
-                placeholder="Например 199"
-                autocomplete="off"
-              />
-            </label>
-            <label class="field">
-              <span>Дата и время платежа</span>
-              <input
-                v-model="formCreatedAt"
-                type="datetime-local"
-                class="input-like"
-                required
-              />
-              <span class="field-hint">Локальное время браузера; в БД сохраняется как UTC.</span>
-            </label>
-            <p v-if="createError" class="form-err">{{ createError }}</p>
-            <div class="modal-actions">
-              <button
-                type="button"
-                class="btn-secondary"
-                :disabled="createLoading"
-                @click="closeCreateModal"
-              >
-                Отмена
-              </button>
-              <button type="submit" class="btn-primary" :disabled="createLoading">
-                {{ createLoading ? 'Создание…' : 'Создать' }}
-              </button>
-            </div>
-          </form>
+    <AppModal v-if="modalOpen" title="Новый платёж" :busy="createLoading" @close="closeCreateModal">
+      <form class="modal-form" @submit.prevent="submitCreatePayment">
+        <label class="field">
+          <span>User ID</span>
+          <StaffUserIdSuggestInput
+            v-model="formUserId"
+            input-id="payments-create-user-id"
+            placeholder="Поиск от 3 символов (email, @username, tg id)"
+          />
+        </label>
+        <label class="field">
+          <span>Тип оплаты</span>
+          <select v-model="formPaymentKind" class="input-like">
+            <option value="one_time">Разовая (one_time)</option>
+            <option value="subscription">Подписка (subscription)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Месяцев</span>
+          <input
+            v-model="formMonths"
+            type="text"
+            inputmode="numeric"
+            class="input-like"
+            placeholder="1–120"
+            autocomplete="off"
+          />
+        </label>
+        <label class="field">
+          <span>Сумма, ₽</span>
+          <input
+            v-model="formAmountRub"
+            type="text"
+            inputmode="decimal"
+            class="input-like"
+            placeholder="Например 199"
+            autocomplete="off"
+          />
+        </label>
+        <label class="field">
+          <span>Дата и время платежа</span>
+          <input
+            v-model="formCreatedAt"
+            type="datetime-local"
+            class="input-like"
+            required
+          />
+          <span class="field-hint">Локальное время браузера; в БД сохраняется как UTC.</span>
+        </label>
+        <p v-if="createError" class="form-err">{{ createError }}</p>
+        <div class="modal-actions">
+          <button
+            type="button"
+            class="btn-secondary"
+            :disabled="createLoading"
+            @click="closeCreateModal"
+          >
+            Отмена
+          </button>
+          <button type="submit" class="btn-primary" :disabled="createLoading">
+            {{ createLoading ? 'Создание…' : 'Создать' }}
+          </button>
         </div>
-      </div>
-    </Teleport>
+      </form>
+    </AppModal>
   </AdminStaffShell>
 </template>
 
@@ -551,89 +508,6 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-}
-.sub {
-  margin: 0 0 0.75rem;
-  font-size: 0.85rem;
-  color: var(--muted);
-  line-height: 1.45;
-  max-width: 52rem;
-}
-.inline-code {
-  font-family: ui-monospace, monospace;
-  font-size: 0.88em;
-  padding: 0.05rem 0.25rem;
-  border-radius: 4px;
-  background: var(--surface);
-}
-.stats {
-  margin-bottom: 1rem;
-}
-.stats-value {
-  margin: 0;
-  font-size: 0.95rem;
-  color: var(--text-h);
-}
-.pager-top {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.65rem;
-}
-.pager-btns {
-  display: flex;
-  gap: 0.35rem;
-}
-.btn-danger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  padding: 0.55rem 1.15rem;
-  border-radius: var(--radius-lg);
-  border: none;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, #ef4444 92%, white) 0%,
-    color-mix(in srgb, #dc2626 94%, black) 100%
-  );
-  color: #fff;
-  box-shadow: var(--shadow-sm);
-  transition:
-    filter 0.2s ease,
-    transform 0.15s ease,
-    box-shadow 0.2s ease;
-}
-.btn-danger:hover:not(:disabled) {
-  filter: brightness(1.06);
-  box-shadow: var(--shadow-md);
-}
-.btn-danger:active:not(:disabled) {
-  transform: translateY(1px);
-}
-.btn-danger:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring), var(--shadow-sm);
-}
-.btn-danger:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-.muted {
-  color: var(--muted);
-}
-.msg-err {
-  color: var(--danger);
-  margin-bottom: 0.75rem;
-}
-.num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
 }
 .payment-row {
   cursor: pointer;
@@ -679,19 +553,11 @@ onMounted(() => {
   font-size: 0.8rem;
   color: var(--muted);
 }
-.pill {
-  display: inline-block;
-  padding: 0.15rem 0.45rem;
-  border-radius: 8px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+/* Нейтральный pill: фон/границу базовый .pill (admin-ui.css) не задаёт. */
+.pill-mono {
   background: var(--surface);
   border: 1px solid var(--card-border);
   color: var(--muted);
-}
-.pill-mono {
   font-family: ui-monospace, monospace;
   font-size: 0.78rem;
   font-weight: 600;
@@ -701,74 +567,16 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(4, 12, 9, 0.55);
-  backdrop-filter: blur(6px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: clamp(1rem, 4vh, 2.5rem) 1rem;
-  z-index: 50;
+.owner-user-id-cell {
+  text-align: right;
 }
-.modal {
-  width: 100%;
-  max-width: 520px;
-  max-height: min(90dvh, 720px);
-  overflow-y: auto;
-  padding: 1.35rem 1.45rem;
-  border-radius: 16px;
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  box-shadow: var(--shadow-lg);
-}
-.modal-title {
-  margin: 0 0 0.5rem;
-  font-size: 1.1rem;
-  color: var(--text-h);
-}
-.modal-lead {
-  margin: 0 0 1rem;
-  font-size: 0.8rem;
-  color: var(--muted);
-  line-height: 1.45;
-}
-.modal-form .field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  margin-bottom: 0.85rem;
-}
-.modal-form .field > span:first-child {
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--muted);
-}
-.field-user {
-  margin-bottom: 1rem;
-}
+/* Подсказка под полем даты внутри label (свой отступ, не как у глобального .field-hint). */
 .field-hint {
   margin: 0.15rem 0 0;
   font-size: 0.76rem;
   font-weight: 400;
   color: var(--muted);
   line-height: 1.35;
-}
-.input-like {
-  font: inherit;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 0.5rem 0.65rem;
-  border-radius: 10px;
-  border: 1px solid var(--card-border);
-  background: var(--surface);
-  color: var(--text-h);
-}
-.input-like:focus {
-  outline: none;
-  border-color: color-mix(in srgb, var(--text-h) 38%, var(--card-border));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-h) 14%, transparent);
 }
 .modal-form :deep(.staff-user-suggest-input) {
   min-height: auto;
@@ -785,25 +593,5 @@ onMounted(() => {
 }
 .modal-form :deep(.suggest-panel) {
   z-index: 60;
-}
-.form-err {
-  margin: 0 0 0.65rem;
-  font-size: 0.85rem;
-  color: var(--danger);
-}
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.6rem;
-  margin-top: 0.5rem;
-}
-.th-select,
-.td-select {
-  width: 1%;
-  text-align: center;
-  white-space: nowrap;
-}
-.owner-user-id-cell {
-  text-align: right;
 }
 </style>

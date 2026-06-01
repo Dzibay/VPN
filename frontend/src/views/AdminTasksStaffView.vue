@@ -5,9 +5,14 @@ import AdminHighlightListLink from '../components/AdminHighlightListLink.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
+import AppModal from '../components/AppModal.vue'
+import AppPager from '../components/AppPager.vue'
+import AppRefreshButton from '../components/AppRefreshButton.vue'
 import StaffUserIdSuggestInput from '../components/StaffUserIdSuggestInput.vue'
+import StateNote from '../components/StateNote.vue'
 import { fetchJson } from '../api/client.js'
 import { getSessionRole } from '../auth/session.js'
+import { useOffsetPagination } from '../composables/useOffsetPagination.js'
 import { useTableSort } from '../utils/adminTableSort.js'
 import { formatMskApiDateTime } from '../utils/mskDate.js'
 
@@ -64,8 +69,13 @@ const error = ref(null)
 /** @type {import('vue').Ref<Array<{ id: number, type: string, user_id: number, referee_id: number | null, bonus_days: number | null, paid_months: number | null, status: string, created_at: string, done_at: string | null }>>} */
 const items = ref([])
 const total = ref(0)
-const limit = 200
-const offset = ref(0)
+
+const { offset, limit, canPrev, canNext, rangeLabel, prev, next } = useOffsetPagination({
+  limit: 200,
+  total: () => total.value,
+  count: () => items.value.length,
+  onChange: () => load(),
+})
 
 const modalOpen = ref(false)
 const formUserId = ref('')
@@ -103,16 +113,6 @@ const sortAccessors = {
 
 const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(items, sortAccessors)
 
-const rangeLabel = computed(() => {
-  const n = items.value.length
-  if (total.value === 0) return '0 записей'
-  const from = offset.value + 1
-  const to = offset.value + n
-  return `${from}–${to} из ${total.value}`
-})
-
-const canPrev = computed(() => offset.value > 0)
-const canNext = computed(() => offset.value + items.value.length < total.value)
 const canDeleteTask = computed(() => getSessionRole() === 'admin')
 
 function fmtDate(iso) {
@@ -133,7 +133,7 @@ async function load() {
   error.value = null
   try {
     const params = new URLSearchParams({
-      limit: String(limit),
+      limit: String(limit.value),
       offset: String(offset.value),
     })
     const data = await fetchJson(`/api/admin/tasks?${params.toString()}`)
@@ -146,16 +146,6 @@ async function load() {
   } finally {
     loading.value = false
   }
-}
-
-function prevPage() {
-  offset.value = Math.max(0, offset.value - limit)
-  void load()
-}
-
-function nextPage() {
-  offset.value = offset.value + limit
-  void load()
 }
 
 function openCreateModal() {
@@ -391,41 +381,23 @@ onMounted(() => {
           <button type="button" class="btn-primary" @click="openCreateModal">
             Создать задачу
           </button>
-          <button type="button" class="btn-secondary" :disabled="loading" @click="load">
-            {{ loading ? 'Обновление…' : 'Обновить' }}
-          </button>
+          <AppRefreshButton :busy="loading" @click="load" />
         </div>
       </div>
     </template>
 
-    <p v-if="loading && items.length === 0" class="muted">Загрузка…</p>
+    <StateNote v-if="loading && items.length === 0" loading />
     <p v-else-if="error" class="msg-err">{{ error }}</p>
 
     <template v-else>
-      <section class="stats" aria-live="polite">
-        <p class="stats-value">{{ rangeLabel }}</p>
-      </section>
-
-      <div class="pager-top">
-        <div class="pager-btns">
-          <button
-            type="button"
-            class="btn-secondary"
-            :disabled="loading || !canPrev"
-            @click="prevPage"
-          >
-            Назад
-          </button>
-          <button
-            type="button"
-            class="btn-secondary"
-            :disabled="loading || !canNext"
-            @click="nextPage"
-          >
-            Вперёд
-          </button>
-        </div>
-      </div>
+      <AppPager
+        :range-label="rangeLabel"
+        :can-prev="canPrev"
+        :can-next="canNext"
+        :loading="loading"
+        @prev="prev"
+        @next="next"
+      />
 
       <AdminTableWrap aria-label="Задачи">
         <table class="admin-table">
@@ -548,195 +520,166 @@ onMounted(() => {
       </AdminTableWrap>
     </template>
 
-    <Teleport to="body">
-      <div
-        v-if="modalOpen"
-        class="modal-backdrop"
-        role="presentation"
-        @click.self="closeCreateModal"
-      >
-        <div
-          class="modal"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="tasks-create-modal-title"
-          @click.stop
-        >
-          <h2 id="tasks-create-modal-title" class="modal-title">Новая задача</h2>
-          <form class="modal-form" @submit.prevent="submitCreateTask">
-            <label class="field">
-              <span>User ID</span>
-              <StaffUserIdSuggestInput
-                v-model="formUserId"
-                input-id="tasks-create-user-id"
-                placeholder="Поиск от 3 символов (email, @username, tg id)"
-              />
-            </label>
-            <label class="field">
-              <span>Тип задачи</span>
-              <select v-model="formTaskType" class="input-like">
-                <option v-for="opt in TASK_TYPE_OPTIONS" :key="opt.value" :value="opt.value">
-                  {{ opt.label }}
-                </option>
-              </select>
-            </label>
-            <label class="field">
-              <span>referee_id (необязательно)</span>
-              <StaffUserIdSuggestInput
-                v-model="formRefereeId"
-                input-id="tasks-create-referee-id"
-                placeholder="Поиск от 3 символов (email, @username, tg id)"
-              />
-            </label>
-            <p class="field-hint">Для notify_ref_reg / notify_ref_pay — второй пользователь в сценарии.</p>
-            <label class="field">
-              <span>bonus_days (необязательно)</span>
-              <input
-                v-model="formBonusDays"
-                type="text"
-                inputmode="numeric"
-                class="input-like"
-                placeholder="Пусто — NULL, целое ≥ 0"
-                autocomplete="off"
-              />
-            </label>
-            <label class="field">
-              <span>paid_months (необязательно)</span>
-              <input
-                v-model="formPaidMonths"
-                type="text"
-                inputmode="numeric"
-                class="input-like"
-                placeholder="Пусто — NULL; для notify_payment ≥ 1"
-                autocomplete="off"
-              />
-            </label>
-            <p v-if="createError" class="form-err">{{ createError }}</p>
-            <div class="modal-actions">
-              <button
-                type="button"
-                class="btn-secondary"
-                :disabled="createLoading"
-                @click="closeCreateModal"
-              >
-                Отмена
-              </button>
-              <button type="submit" class="btn-primary" :disabled="createLoading">
-                {{ createLoading ? 'Создание…' : 'Создать' }}
-              </button>
-            </div>
-          </form>
+    <AppModal v-if="modalOpen" title="Новая задача" :busy="createLoading" @close="closeCreateModal">
+      <form class="modal-form" @submit.prevent="submitCreateTask">
+        <label class="field">
+          <span>User ID</span>
+          <StaffUserIdSuggestInput
+            v-model="formUserId"
+            input-id="tasks-create-user-id"
+            placeholder="Поиск от 3 символов (email, @username, tg id)"
+          />
+        </label>
+        <label class="field">
+          <span>Тип задачи</span>
+          <select v-model="formTaskType" class="input-like">
+            <option v-for="opt in TASK_TYPE_OPTIONS" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </option>
+          </select>
+        </label>
+        <label class="field">
+          <span>referee_id (необязательно)</span>
+          <StaffUserIdSuggestInput
+            v-model="formRefereeId"
+            input-id="tasks-create-referee-id"
+            placeholder="Поиск от 3 символов (email, @username, tg id)"
+          />
+        </label>
+        <p class="field-hint">Для notify_ref_reg / notify_ref_pay — второй пользователь в сценарии.</p>
+        <label class="field">
+          <span>bonus_days (необязательно)</span>
+          <input
+            v-model="formBonusDays"
+            type="text"
+            inputmode="numeric"
+            class="input-like"
+            placeholder="Пусто — NULL, целое ≥ 0"
+            autocomplete="off"
+          />
+        </label>
+        <label class="field">
+          <span>paid_months (необязательно)</span>
+          <input
+            v-model="formPaidMonths"
+            type="text"
+            inputmode="numeric"
+            class="input-like"
+            placeholder="Пусто — NULL; для notify_payment ≥ 1"
+            autocomplete="off"
+          />
+        </label>
+        <p v-if="createError" class="form-err">{{ createError }}</p>
+        <div class="modal-actions">
+          <button
+            type="button"
+            class="btn-secondary"
+            :disabled="createLoading"
+            @click="closeCreateModal"
+          >
+            Отмена
+          </button>
+          <button type="submit" class="btn-primary" :disabled="createLoading">
+            {{ createLoading ? 'Создание…' : 'Создать' }}
+          </button>
         </div>
-      </div>
-    </Teleport>
+      </form>
+    </AppModal>
 
-    <Teleport to="body">
-      <div
-        v-if="editModalOpen"
-        class="modal-backdrop modal-backdrop-top"
-        role="presentation"
-        @click.self="closeEditModal"
-      >
-        <div
-          class="modal"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="tasks-edit-modal-title"
-          @click.stop
-        >
-          <h2 id="tasks-edit-modal-title" class="modal-title">
-            Задача #{{ editTaskId }}
-          </h2>
-          <form class="modal-form" @submit.prevent="submitEditTask">
-            <label class="field">
-              <span>Тип задачи</span>
-              <select v-model="editFormTaskType" class="input-like">
-                <option v-for="opt in TASK_TYPE_OPTIONS" :key="opt.value" :value="opt.value">
-                  {{ opt.label }}
-                </option>
-              </select>
-            </label>
-            <label class="field">
-              <span>User ID</span>
-              <StaffUserIdSuggestInput
-                v-model="editFormUserId"
-                input-id="tasks-edit-user-id"
-                placeholder="Поиск от 3 символов (email, @username, tg id)"
-              />
-            </label>
-            <label class="field">
-              <span>referee_id</span>
-              <StaffUserIdSuggestInput
-                v-model="editFormRefereeId"
-                input-id="tasks-edit-referee-id"
-                placeholder="Поиск от 3 символов (email, @username, tg id)"
-              />
-            </label>
-            <label class="field">
-              <span>bonus_days</span>
-              <input
-                v-model="editFormBonusDays"
-                type="text"
-                inputmode="numeric"
-                class="input-like"
-                placeholder="Пусто — NULL"
-                autocomplete="off"
-              />
-            </label>
-            <label class="field">
-              <span>paid_months</span>
-              <input
-                v-model="editFormPaidMonths"
-                type="text"
-                inputmode="numeric"
-                class="input-like"
-                placeholder="Пусто — NULL"
-                autocomplete="off"
-              />
-            </label>
-            <label class="field">
-              <span>Статус</span>
-              <select v-model="editFormStatus" class="input-like">
-                <option v-for="opt in TASK_STATUS_OPTIONS" :key="opt.value" :value="opt.value">
-                  {{ opt.label }}
-                </option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Завершена (локальное время)</span>
-              <input v-model="editFormDoneAt" type="datetime-local" class="input-like" />
-            </label>
-            <p v-if="editError" class="form-err">{{ editError }}</p>
-            <div class="modal-actions modal-actions-split">
-              <div class="modal-actions-left">
-                <button
-                  v-if="canDeleteTask"
-                  type="button"
-                  class="btn-danger-modal"
-                  :disabled="editLoading || editDeleteLoading"
-                  @click="deleteEditTask"
-                >
-                  {{ editDeleteLoading ? 'Удаление…' : 'Удалить' }}
-                </button>
-              </div>
-              <div class="modal-actions-right">
-                <button
-                  type="button"
-                  class="btn-secondary"
-                  :disabled="editLoading || editDeleteLoading"
-                  @click="closeEditModal"
-                >
-                  Отмена
-                </button>
-                <button type="submit" class="btn-primary" :disabled="editLoading || editDeleteLoading">
-                  {{ editLoading ? 'Сохранение…' : 'Сохранить' }}
-                </button>
-              </div>
-            </div>
-          </form>
+    <AppModal
+      v-if="editModalOpen"
+      :title="`Задача #${editTaskId}`"
+      :busy="editLoading || editDeleteLoading"
+      @close="closeEditModal"
+    >
+      <form class="modal-form" @submit.prevent="submitEditTask">
+        <label class="field">
+          <span>Тип задачи</span>
+          <select v-model="editFormTaskType" class="input-like">
+            <option v-for="opt in TASK_TYPE_OPTIONS" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </option>
+          </select>
+        </label>
+        <label class="field">
+          <span>User ID</span>
+          <StaffUserIdSuggestInput
+            v-model="editFormUserId"
+            input-id="tasks-edit-user-id"
+            placeholder="Поиск от 3 символов (email, @username, tg id)"
+          />
+        </label>
+        <label class="field">
+          <span>referee_id</span>
+          <StaffUserIdSuggestInput
+            v-model="editFormRefereeId"
+            input-id="tasks-edit-referee-id"
+            placeholder="Поиск от 3 символов (email, @username, tg id)"
+          />
+        </label>
+        <label class="field">
+          <span>bonus_days</span>
+          <input
+            v-model="editFormBonusDays"
+            type="text"
+            inputmode="numeric"
+            class="input-like"
+            placeholder="Пусто — NULL"
+            autocomplete="off"
+          />
+        </label>
+        <label class="field">
+          <span>paid_months</span>
+          <input
+            v-model="editFormPaidMonths"
+            type="text"
+            inputmode="numeric"
+            class="input-like"
+            placeholder="Пусто — NULL"
+            autocomplete="off"
+          />
+        </label>
+        <label class="field">
+          <span>Статус</span>
+          <select v-model="editFormStatus" class="input-like">
+            <option v-for="opt in TASK_STATUS_OPTIONS" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Завершена (локальное время)</span>
+          <input v-model="editFormDoneAt" type="datetime-local" class="input-like" />
+        </label>
+        <p v-if="editError" class="form-err">{{ editError }}</p>
+        <div class="modal-actions modal-actions-split">
+          <div class="modal-actions-left">
+            <button
+              v-if="canDeleteTask"
+              type="button"
+              class="btn-danger"
+              :disabled="editLoading || editDeleteLoading"
+              @click="deleteEditTask"
+            >
+              {{ editDeleteLoading ? 'Удаление…' : 'Удалить' }}
+            </button>
+          </div>
+          <div class="modal-actions-right">
+            <button
+              type="button"
+              class="btn-secondary"
+              :disabled="editLoading || editDeleteLoading"
+              @click="closeEditModal"
+            >
+              Отмена
+            </button>
+            <button type="submit" class="btn-primary" :disabled="editLoading || editDeleteLoading">
+              {{ editLoading ? 'Сохранение…' : 'Сохранить' }}
+            </button>
+          </div>
         </div>
-      </div>
-    </Teleport>
+      </form>
+    </AppModal>
   </AdminStaffShell>
 </template>
 
@@ -759,37 +702,6 @@ onMounted(() => {
   flex-wrap: wrap;
   gap: 0.5rem;
 }
-.stats {
-  margin-bottom: 1rem;
-}
-.stats-value {
-  margin: 0;
-  font-size: 0.95rem;
-  color: var(--text-h);
-}
-.pager-top {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.65rem;
-}
-.pager-btns {
-  display: flex;
-  gap: 0.35rem;
-}
-.muted {
-  color: var(--muted);
-}
-.msg-err {
-  color: var(--danger);
-  margin-bottom: 0.75rem;
-}
-.num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
 .mono-cell {
   font-family: ui-monospace, monospace;
   font-size: 0.78rem;
@@ -801,19 +713,11 @@ onMounted(() => {
   font-size: 0.8rem;
   color: var(--muted);
 }
-.pill {
-  display: inline-block;
-  padding: 0.15rem 0.45rem;
-  border-radius: 8px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+/* Нейтральный pill для статуса задачи: фон/границу базовый .pill (admin-ui.css) не задаёт. */
+.pill-mono {
   background: var(--surface);
   border: 1px solid var(--card-border);
   color: var(--muted);
-}
-.pill-mono {
   font-family: ui-monospace, monospace;
   font-size: 0.78rem;
   font-weight: 600;
@@ -823,133 +727,8 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.th-actions {
-  width: 1%;
-  text-align: right;
-  white-space: nowrap;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--muted);
-}
-.td-actions {
-  text-align: right;
-  vertical-align: middle;
-}
 .btn-compact {
   padding: 0.35rem 0.65rem;
   font-size: 0.8rem;
-}
-
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(4, 12, 9, 0.55);
-  backdrop-filter: blur(6px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: clamp(1rem, 4vh, 2.5rem) 1rem;
-  z-index: 50;
-}
-.modal-backdrop-top {
-  z-index: 55;
-}
-.modal {
-  width: 100%;
-  max-width: 520px;
-  max-height: min(90dvh, 720px);
-  overflow-y: auto;
-  padding: 1.35rem 1.45rem;
-  border-radius: 16px;
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  box-shadow: var(--shadow-lg);
-}
-.modal-title {
-  margin: 0 0 0.5rem;
-  font-size: 1.1rem;
-  color: var(--text-h);
-}
-.modal-lead {
-  margin: 0 0 1rem;
-  font-size: 0.8rem;
-  color: var(--muted);
-  line-height: 1.45;
-}
-.mono-inline {
-  font-family: ui-monospace, monospace;
-  font-size: 0.88em;
-}
-.field-hint {
-  margin: -0.55rem 0 0.65rem;
-  font-size: 0.76rem;
-  color: var(--muted);
-  line-height: 1.35;
-}
-.modal-form .field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  margin-bottom: 0.85rem;
-}
-.modal-form .field > span {
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--muted);
-}
-.input-like {
-  font: inherit;
-  padding: 0.5rem 0.65rem;
-  border-radius: 10px;
-  border: 1px solid var(--card-border);
-  background: var(--surface);
-  color: var(--text-h);
-}
-.form-err {
-  margin: 0 0 0.65rem;
-  font-size: 0.85rem;
-  color: var(--danger);
-}
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.6rem;
-  margin-top: 0.5rem;
-}
-.modal-actions-split {
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-.modal-actions-right {
-  display: flex;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-}
-.btn-danger-modal {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.5rem 1rem;
-  border-radius: var(--radius-lg, 10px);
-  border: none;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, #ef4444 92%, white) 0%,
-    color-mix(in srgb, #dc2626 94%, black) 100%
-  );
-  color: #fff;
-  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.08));
-}
-.btn-danger-modal:hover:not(:disabled) {
-  filter: brightness(1.06);
-}
-.btn-danger-modal:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
 }
 </style>

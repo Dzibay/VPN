@@ -7,3 +7,87 @@ ALTER TABLE servers DROP CONSTRAINT IF EXISTS servers_google_routing_mode_check;
 ALTER TABLE servers ADD CONSTRAINT servers_google_routing_mode_check
     CHECK (google_routing_mode IN ('exit', 'entry'));
 
+-- ---------------------------------------------------------------------------
+-- Идемпотентность платежей: защита от двойного зачисления при гонке webhook.
+--
+-- Уникальный ключ провайдера лежит внутри provider_webhook (JSONB), поэтому
+-- используются частичные уникальные индексы по выражению. App-level dedup в
+-- payment_service.find_duplicate_payment_id остаётся как быстрый путь; эти
+-- индексы ловят гонку (два webhook одновременно проходят проверку до INSERT)
+-- через IntegrityError в ingest_provider_payment.
+--
+-- Если в БД уже есть дубликаты — индекс НЕ создаётся (RAISE WARNING вместо
+-- ошибки), чтобы не падал старт приложения; дубликаты нужно почистить вручную.
+-- ---------------------------------------------------------------------------
+
+-- ЮKassa: object.id уникален в рамках провайдера.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM payments
+        WHERE provider = 'yookassa'
+          AND provider_webhook -> 'object' ->> 'id' IS NOT NULL
+        GROUP BY provider_webhook -> 'object' ->> 'id'
+        HAVING COUNT(*) > 1
+    ) THEN
+        RAISE WARNING 'uq_payments_yookassa_object_id: найдены дубликаты, индекс не создан (почистите payments)';
+    ELSE
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_yookassa_object_id
+            ON payments ((provider_webhook -> 'object' ->> 'id'))
+            WHERE provider = 'yookassa'
+              AND provider_webhook -> 'object' ->> 'id' IS NOT NULL;
+    END IF;
+END $$;
+
+-- Tribute: цифровой товар (new_digital_product) — purchase_id.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM payments
+        WHERE provider = 'tribute'
+          AND provider_webhook ->> 'name' = 'new_digital_product'
+          AND provider_webhook -> 'payload' ->> 'purchase_id' IS NOT NULL
+        GROUP BY provider_webhook -> 'payload' ->> 'purchase_id'
+        HAVING COUNT(*) > 1
+    ) THEN
+        RAISE WARNING 'uq_payments_tribute_purchase_id: найдены дубликаты, индекс не создан (почистите payments)';
+    ELSE
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_tribute_purchase_id
+            ON payments ((provider_webhook -> 'payload' ->> 'purchase_id'))
+            WHERE provider = 'tribute'
+              AND provider_webhook ->> 'name' = 'new_digital_product'
+              AND provider_webhook -> 'payload' ->> 'purchase_id' IS NOT NULL;
+    END IF;
+END $$;
+
+-- Tribute: подписка (new_subscription / renewed_subscription) — subscription_id + expires_at.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM payments
+        WHERE provider = 'tribute'
+          AND provider_webhook ->> 'name' IN ('new_subscription', 'renewed_subscription')
+          AND provider_webhook -> 'payload' ->> 'subscription_id' IS NOT NULL
+          AND provider_webhook -> 'payload' ->> 'expires_at' IS NOT NULL
+        GROUP BY
+            provider_webhook -> 'payload' ->> 'subscription_id',
+            provider_webhook -> 'payload' ->> 'expires_at'
+        HAVING COUNT(*) > 1
+    ) THEN
+        RAISE WARNING 'uq_payments_tribute_subscription: найдены дубликаты, индекс не создан (почистите payments)';
+    ELSE
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_tribute_subscription
+            ON payments (
+                (provider_webhook -> 'payload' ->> 'subscription_id'),
+                (provider_webhook -> 'payload' ->> 'expires_at')
+            )
+            WHERE provider = 'tribute'
+              AND provider_webhook ->> 'name' IN ('new_subscription', 'renewed_subscription')
+              AND provider_webhook -> 'payload' ->> 'subscription_id' IS NOT NULL
+              AND provider_webhook -> 'payload' ->> 'expires_at' IS NOT NULL;
+    END IF;
+END $$;
+

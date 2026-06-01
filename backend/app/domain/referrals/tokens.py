@@ -12,6 +12,8 @@ import secrets
 import string
 from typing import Literal
 
+from app.domain.referrals.errors import ReferralTokenShapeError
+
 CounterKind = Literal["clicks", "registrations", "payments"]
 
 TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_]{4,64}$")
@@ -24,8 +26,6 @@ def generate_referral_token(length: int = 12) -> str:
 
 
 def validate_token_shape(token: str) -> None:
-    """Проверка формата; бросает ``ValueError`` с пользовательским сообщением."""
+    """Проверка формата; бросает :class:`ReferralTokenShapeError` (HTTP 422) при несоответствии."""
     if not TOKEN_PATTERN.fullmatch(token):
-        raise ValueError(
-            "token: допустимы латиница, цифры и подчёркивание, длина 4–64 (формат Telegram start)",
-        )
+        raise ReferralTokenShapeError

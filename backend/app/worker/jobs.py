@@ -590,11 +590,24 @@ def sync_xray_clients_all_servers() -> None:
         raise RuntimeError("; ".join(errors[:24]))
 
 
-def collect_xray_user_traffic_all_servers() -> dict[str, Any]:
+def collect_xray_user_traffic_all_servers(schedule_lock_token: str | None = None) -> dict[str, Any]:
     """
-    RQ: последовательный сбор трафика Xray по всем активным provision_ready узлам.
-    Результат компактный — без полного дампа по каждому серверу (хранится в RQ).
+    RQ-вход батча сбора трафика Xray по всем активным provision_ready узлам.
+
+    Расписательный lock (см. ``xray_traffic_scheduler``) держится всё время батча и
+    снимается здесь по завершении (в т.ч. при ошибке) — поэтому периодический
+    планировщик не запускает второй батч параллельно (нет дублей в ``user_server_traffic``).
     """
+    from app.infrastructure.xray.xray_traffic_scheduler import release_schedule_lock
+
+    try:
+        return _collect_xray_user_traffic_all_servers_impl()
+    finally:
+        release_schedule_lock(schedule_lock_token)
+
+
+def _collect_xray_user_traffic_all_servers_impl() -> dict[str, Any]:
+    """Последовательный сбор трафика по узлам; компактный результат (хранится в RQ)."""
     log.info("collect_xray_user_traffic_all_servers: старт батча")
     db: Session = SessionLocal()
     try:

@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
+from fastapi import APIRouter, Depends, Path, Query, Response
 
 from app.config import settings
 from app.core.dependencies import (
@@ -107,22 +107,13 @@ async def post_referral_link(
     body: ReferralLinkCreate,
     session: SessionDep,
 ) -> ReferralLinkOut:
-    try:
-        row = await create_referral_link(
-            session,
-            owner_kind=body.owner_kind,
-            owner_user_id=body.owner_user_id,
-            token=body.token,
-        )
-        return referral_link_to_response(row, settings)
-    except ValueError as e:
-        detail = str(e)
-        status = (
-            409
-            if "уже занят" in detail or "уже есть персональная" in detail or "уже создана" in detail
-            else 422
-        )
-        raise HTTPException(status_code=status, detail=detail) from e
+    row = await create_referral_link(
+        session,
+        owner_kind=body.owner_kind,
+        owner_user_id=body.owner_user_id,
+        token=body.token,
+    )
+    return referral_link_to_response(row, settings)
 
 
 @staff_router.patch(
@@ -135,25 +126,14 @@ async def patch_referral_link(
     session: SessionDep,
     link_id: Annotated[int, Path(ge=1, description="Первичный ключ referral_links.id")],
 ) -> ReferralLinkOut:
-    try:
-        row = await update_referral_link(
-            session,
-            link_id,
-            owner_kind=body.owner_kind,
-            owner_user_id=body.owner_user_id,
-            token=body.token,
-        )
-        return referral_link_to_response(row, settings)
-    except ValueError as e:
-        detail = str(e)
-        if detail == "Запись не найдена":
-            raise HTTPException(status_code=404, detail=detail) from e
-        status = (
-            409
-            if "уже занят" in detail or "уже есть персональная" in detail or "уже создана" in detail
-            else 422
-        )
-        raise HTTPException(status_code=status, detail=detail) from e
+    row = await update_referral_link(
+        session,
+        link_id,
+        owner_kind=body.owner_kind,
+        owner_user_id=body.owner_user_id,
+        token=body.token,
+    )
+    return referral_link_to_response(row, settings)
 
 
 @staff_router.delete(

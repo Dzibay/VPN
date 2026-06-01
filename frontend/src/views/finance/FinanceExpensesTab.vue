@@ -1,9 +1,14 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import AdminTableWrap from '../../components/AdminTableWrap.vue'
+import AppModal from '../../components/AppModal.vue'
+import AppPager from '../../components/AppPager.vue'
+import AppRefreshButton from '../../components/AppRefreshButton.vue'
+import { useOffsetPagination } from '../../composables/useOffsetPagination.js'
 import { fetchJson } from '../../api/client.js'
 import { getSessionRole } from '../../auth/session.js'
 import { downloadCsv } from '../../utils/csv.js'
+import { mskMonthInputDefault, mskTodayIso } from '../../utils/mskDate.js'
 
 const isAdmin = computed(() => getSessionRole() === 'admin')
 
@@ -23,9 +28,23 @@ const activeCategories = computed(() => categories.value.filter((c) => !c.archiv
 const expenses = ref([])
 const expTotal = ref(0)
 const expLimit = 100
-const expOffset = ref(0)
 const selectedIds = ref([])
 const deleting = ref(false)
+
+const {
+  offset: expOffset,
+  canPrev,
+  canNext,
+  rangeLabel: expRangeLabel,
+  prev: expPrev,
+  next: expNext,
+  reset: resetExpPaging,
+} = useOffsetPagination({
+  limit: expLimit,
+  total: () => expTotal.value,
+  count: () => expenses.value.length,
+  onChange: () => loadExpenses(),
+})
 
 // --- повторяющиеся ---
 const recurring = ref([])
@@ -41,19 +60,8 @@ const recSaving = ref(false)
 const recFormError = ref(null)
 const recForm = ref(blankRecurringForm())
 
-function todayDate() {
-  const d = new Date()
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
-function thisMonth() {
-  const d = new Date()
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
-}
-
 function blankExpenseForm() {
-  return { id: null, incurred_on: todayDate(), amount: '', category_id: '', title: '', note: '' }
+  return { id: null, incurred_on: mskTodayIso(), amount: '', category_id: '', title: '', note: '' }
 }
 function blankRecurringForm() {
   return {
@@ -62,7 +70,7 @@ function blankRecurringForm() {
     amount: '',
     category_id: '',
     day_of_month: '1',
-    start_month: thisMonth(),
+    start_month: mskMonthInputDefault(),
     end_month: '',
     active: true,
     note: '',
@@ -97,15 +105,6 @@ function categoryColor(id) {
   if (id == null) return '#94a3b8'
   return categoriesById.value.get(id)?.color ?? '#94a3b8'
 }
-
-const expRangeLabel = computed(() => {
-  if (expTotal.value === 0) return '0 записей'
-  const from = expOffset.value + 1
-  const to = expOffset.value + expenses.value.length
-  return `${from}–${to} из ${expTotal.value}`
-})
-const canPrev = computed(() => expOffset.value > 0)
-const canNext = computed(() => expOffset.value + expenses.value.length < expTotal.value)
 
 const allSelectedOnPage = computed(() => {
   const ids = expenses.value.map((r) => r.id)
@@ -146,15 +145,6 @@ async function loadAll() {
   } finally {
     loading.value = false
   }
-}
-
-function expPrev() {
-  expOffset.value = Math.max(0, expOffset.value - expLimit)
-  void loadExpenses()
-}
-function expNext() {
-  expOffset.value += expLimit
-  void loadExpenses()
 }
 
 // --- expense modal ---
@@ -215,7 +205,7 @@ async function submitExpense() {
         method: 'POST',
         body: JSON.stringify(body),
       })
-      expOffset.value = 0
+      resetExpPaging()
     }
     expModalOpen.value = false
     await loadExpenses()
@@ -383,15 +373,19 @@ defineExpose({ reload: loadAll })
       <div class="head-actions">
         <button type="button" class="btn-primary" @click="openExpenseCreate">Добавить расход</button>
         <button type="button" class="btn-secondary" @click="exportExpensesCsv">Экспорт CSV</button>
-        <button type="button" class="btn-secondary" :disabled="loading" @click="loadAll">
-          {{ loading ? 'Обновление…' : 'Обновить' }}
-        </button>
+        <AppRefreshButton :busy="loading" @click="loadAll" />
       </div>
     </div>
 
-    <div class="toolbar">
-      <span class="muted">{{ expRangeLabel }}</span>
-      <div class="toolbar-btns">
+    <AppPager
+      :range-label="expRangeLabel"
+      :can-prev="canPrev"
+      :can-next="canNext"
+      :loading="loading"
+      @prev="expPrev"
+      @next="expNext"
+    >
+      <template #actions>
         <button
           v-if="isAdmin"
           type="button"
@@ -401,10 +395,8 @@ defineExpose({ reload: loadAll })
         >
           {{ deleting ? 'Удаление…' : `Удалить выбранные (${selectedIds.length})` }}
         </button>
-        <button type="button" class="btn-secondary" :disabled="loading || !canPrev" @click="expPrev">Назад</button>
-        <button type="button" class="btn-secondary" :disabled="loading || !canNext" @click="expNext">Вперёд</button>
-      </div>
-    </div>
+      </template>
+    </AppPager>
 
     <AdminTableWrap aria-label="Разовые расходы">
       <table class="admin-table">
@@ -522,101 +514,102 @@ defineExpose({ reload: loadAll })
   </section>
 
   <!-- Модалка разового расхода -->
-  <Teleport to="body">
-    <div v-if="expModalOpen" class="modal-backdrop" role="presentation" @click.self="closeExpenseModal">
-      <div class="modal" role="dialog" aria-modal="true" @click.stop>
-        <h2 class="modal-title">{{ expForm.id ? 'Изменить расход' : 'Новый расход' }}</h2>
-        <form class="modal-form" @submit.prevent="submitExpense">
-          <label class="field">
-            <span>Дата</span>
-            <input v-model="expForm.incurred_on" type="date" class="input-like" required />
-          </label>
-          <label class="field">
-            <span>Категория</span>
-            <select v-model="expForm.category_id" class="input-like">
-              <option value="">Без категории</option>
-              <option v-for="c in activeCategories" :key="c.id" :value="c.id">{{ c.title }}</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Название</span>
-            <input v-model="expForm.title" type="text" class="input-like" placeholder="Напр. Аренда сервера Hetzner" />
-          </label>
-          <label class="field">
-            <span>Сумма, ₽</span>
-            <input v-model="expForm.amount" type="text" inputmode="decimal" class="input-like" placeholder="Например 1500" />
-          </label>
-          <label class="field">
-            <span>Комментарий (необязательно)</span>
-            <input v-model="expForm.note" type="text" class="input-like" />
-          </label>
-          <p v-if="expFormError" class="form-err">{{ expFormError }}</p>
-          <div class="modal-actions">
-            <button type="button" class="btn-secondary" :disabled="expSaving" @click="closeExpenseModal">Отмена</button>
-            <button type="submit" class="btn-primary" :disabled="expSaving">{{ expSaving ? 'Сохранение…' : 'Сохранить' }}</button>
-          </div>
-        </form>
+  <AppModal
+    v-if="expModalOpen"
+    :title="expForm.id ? 'Изменить расход' : 'Новый расход'"
+    :busy="expSaving"
+    @close="closeExpenseModal"
+  >
+    <form class="modal-form" @submit.prevent="submitExpense">
+      <label class="field">
+        <span>Дата</span>
+        <input v-model="expForm.incurred_on" type="date" class="input-like" required />
+      </label>
+      <label class="field">
+        <span>Категория</span>
+        <select v-model="expForm.category_id" class="input-like">
+          <option value="">Без категории</option>
+          <option v-for="c in activeCategories" :key="c.id" :value="c.id">{{ c.title }}</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Название</span>
+        <input v-model="expForm.title" type="text" class="input-like" placeholder="Напр. Аренда сервера Hetzner" />
+      </label>
+      <label class="field">
+        <span>Сумма, ₽</span>
+        <input v-model="expForm.amount" type="text" inputmode="decimal" class="input-like" placeholder="Например 1500" />
+      </label>
+      <label class="field">
+        <span>Комментарий (необязательно)</span>
+        <input v-model="expForm.note" type="text" class="input-like" />
+      </label>
+      <p v-if="expFormError" class="form-err">{{ expFormError }}</p>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" :disabled="expSaving" @click="closeExpenseModal">Отмена</button>
+        <button type="submit" class="btn-primary" :disabled="expSaving">{{ expSaving ? 'Сохранение…' : 'Сохранить' }}</button>
       </div>
-    </div>
-  </Teleport>
+    </form>
+  </AppModal>
 
   <!-- Модалка повторяющегося расхода -->
-  <Teleport to="body">
-    <div v-if="recModalOpen" class="modal-backdrop" role="presentation" @click.self="closeRecurringModal">
-      <div class="modal" role="dialog" aria-modal="true" @click.stop>
-        <h2 class="modal-title">{{ recForm.id ? 'Изменить шаблон' : 'Новый повторяющийся расход' }}</h2>
-        <form class="modal-form" @submit.prevent="submitRecurring">
-          <label class="field">
-            <span>Название</span>
-            <input v-model="recForm.title" type="text" class="input-like" placeholder="Напр. Аренда серверов" />
-          </label>
-          <label class="field">
-            <span>Категория</span>
-            <select v-model="recForm.category_id" class="input-like">
-              <option value="">Без категории</option>
-              <option v-for="c in activeCategories" :key="c.id" :value="c.id">{{ c.title }}</option>
-            </select>
-          </label>
-          <div class="field-row">
-            <label class="field">
-              <span>Сумма в месяц, ₽</span>
-              <input v-model="recForm.amount" type="text" inputmode="decimal" class="input-like" placeholder="Например 5000" />
-            </label>
-            <label class="field field-narrow">
-              <span>День</span>
-              <input v-model="recForm.day_of_month" type="text" inputmode="numeric" class="input-like" placeholder="1–28" />
-            </label>
-          </div>
-          <div class="field-row">
-            <label class="field">
-              <span>Начало (месяц)</span>
-              <input v-model="recForm.start_month" type="month" class="input-like" required />
-            </label>
-            <label class="field">
-              <span>Окончание (необязательно)</span>
-              <input v-model="recForm.end_month" type="month" class="input-like" />
-            </label>
-          </div>
-          <label class="field">
-            <span>Комментарий (необязательно)</span>
-            <input v-model="recForm.note" type="text" class="input-like" />
-          </label>
-          <label class="field-check">
-            <input v-model="recForm.active" type="checkbox" />
-            <span>Активен (учитывать в сводке)</span>
-          </label>
-          <p v-if="recFormError" class="form-err">{{ recFormError }}</p>
-          <div class="modal-actions">
-            <button type="button" class="btn-secondary" :disabled="recSaving" @click="closeRecurringModal">Отмена</button>
-            <button type="submit" class="btn-primary" :disabled="recSaving">{{ recSaving ? 'Сохранение…' : 'Сохранить' }}</button>
-          </div>
-        </form>
+  <AppModal
+    v-if="recModalOpen"
+    :title="recForm.id ? 'Изменить шаблон' : 'Новый повторяющийся расход'"
+    :busy="recSaving"
+    @close="closeRecurringModal"
+  >
+    <form class="modal-form" @submit.prevent="submitRecurring">
+      <label class="field">
+        <span>Название</span>
+        <input v-model="recForm.title" type="text" class="input-like" placeholder="Напр. Аренда серверов" />
+      </label>
+      <label class="field">
+        <span>Категория</span>
+        <select v-model="recForm.category_id" class="input-like">
+          <option value="">Без категории</option>
+          <option v-for="c in activeCategories" :key="c.id" :value="c.id">{{ c.title }}</option>
+        </select>
+      </label>
+      <div class="field-row">
+        <label class="field">
+          <span>Сумма в месяц, ₽</span>
+          <input v-model="recForm.amount" type="text" inputmode="decimal" class="input-like" placeholder="Например 5000" />
+        </label>
+        <label class="field field-narrow">
+          <span>День</span>
+          <input v-model="recForm.day_of_month" type="text" inputmode="numeric" class="input-like" placeholder="1–28" />
+        </label>
       </div>
-    </div>
-  </Teleport>
+      <div class="field-row">
+        <label class="field">
+          <span>Начало (месяц)</span>
+          <input v-model="recForm.start_month" type="month" class="input-like" required />
+        </label>
+        <label class="field">
+          <span>Окончание (необязательно)</span>
+          <input v-model="recForm.end_month" type="month" class="input-like" />
+        </label>
+      </div>
+      <label class="field">
+        <span>Комментарий (необязательно)</span>
+        <input v-model="recForm.note" type="text" class="input-like" />
+      </label>
+      <label class="field-check">
+        <input v-model="recForm.active" type="checkbox" />
+        <span>Активен (учитывать в сводке)</span>
+      </label>
+      <p v-if="recFormError" class="form-err">{{ recFormError }}</p>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" :disabled="recSaving" @click="closeRecurringModal">Отмена</button>
+        <button type="submit" class="btn-primary" :disabled="recSaving">{{ recSaving ? 'Сохранение…' : 'Сохранить' }}</button>
+      </div>
+    </form>
+  </AppModal>
 </template>
 
 <style scoped>
+/* Общие .field/.input-like/.btn-danger/.btn-icon/.pill/.modal-* — в styles/admin-ui.css */
 .block {
   margin-bottom: 1.75rem;
 }
@@ -638,52 +631,10 @@ defineExpose({ reload: loadAll })
   flex-wrap: wrap;
   gap: 0.5rem;
 }
-.hint {
-  margin: 0 0 0.75rem;
-  font-size: 0.82rem;
-  color: var(--muted);
-  line-height: 1.45;
-  max-width: 52rem;
-}
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-bottom: 0.6rem;
-}
-.toolbar-btns {
-  display: flex;
-  gap: 0.35rem;
-}
-.muted {
-  color: var(--muted);
-}
-.msg-err {
-  color: var(--danger);
-  margin-bottom: 0.75rem;
-}
-.num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
 .date-cell {
   white-space: nowrap;
   color: var(--muted);
   font-size: 0.85rem;
-}
-.th-select,
-.td-select {
-  width: 1%;
-  text-align: center;
-  white-space: nowrap;
-}
-.th-actions,
-.td-actions {
-  text-align: right;
-  white-space: nowrap;
-  width: 1%;
 }
 .cat-chip {
   display: inline-flex;
@@ -710,146 +661,8 @@ defineExpose({ reload: loadAll })
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.row-inactive {
-  opacity: 0.55;
-}
-.pill {
-  display: inline-block;
-  padding: 0.12rem 0.45rem;
-  border-radius: 8px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.pill--on {
-  background: color-mix(in srgb, #34d399 18%, transparent);
-  color: #2bb673;
-}
-.pill--off {
-  background: var(--surface);
-  color: var(--muted);
-  border: 1px solid var(--card-border);
-}
-.btn-icon {
-  font: inherit;
-  cursor: pointer;
-  background: var(--surface);
-  border: 1px solid var(--card-border);
-  border-radius: 8px;
-  padding: 0.25rem 0.5rem;
-  color: var(--text-h);
-  margin-left: 0.25rem;
-  line-height: 1;
-}
-.btn-icon:hover {
-  border-color: var(--accent-border);
-  color: var(--accent);
-}
-.btn-icon--danger:hover {
-  border-color: var(--danger);
-  color: var(--danger);
-}
-.btn-danger {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.5rem 1rem;
-  border-radius: var(--radius-lg);
-  border: none;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-  color: #fff;
-}
-.btn-danger:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-/* модалка */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(4, 12, 9, 0.55);
-  backdrop-filter: blur(6px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: clamp(1rem, 4vh, 2.5rem) 1rem;
-  z-index: 50;
-}
-.modal {
-  width: 100%;
-  max-width: 520px;
-  max-height: min(90dvh, 760px);
-  overflow-y: auto;
-  padding: 1.35rem 1.45rem;
-  border-radius: 16px;
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  box-shadow: var(--shadow-lg);
-}
-.modal-title {
-  margin: 0 0 0.85rem;
-  font-size: 1.1rem;
-  color: var(--text-h);
-}
-.modal-form .field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  margin-bottom: 0.85rem;
-}
-.modal-form .field > span:first-child {
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--muted);
-}
-.field-row {
-  display: flex;
-  gap: 0.75rem;
-}
-.field-row .field {
-  flex: 1;
-}
+/* Узкие поля расходов уже глобального .field-narrow (9rem) */
 .field-narrow {
   max-width: 6.5rem;
-}
-.field-check {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.85rem;
-  font-size: 0.88rem;
-  color: var(--text-h);
-  cursor: pointer;
-}
-.input-like {
-  font: inherit;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 0.5rem 0.65rem;
-  border-radius: 10px;
-  border: 1px solid var(--card-border);
-  background: var(--surface);
-  color: var(--text-h);
-}
-.input-like:focus {
-  outline: none;
-  border-color: color-mix(in srgb, var(--text-h) 38%, var(--card-border));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-h) 14%, transparent);
-}
-.form-err {
-  margin: 0 0 0.65rem;
-  font-size: 0.85rem;
-  color: var(--danger);
-}
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.6rem;
-  margin-top: 0.5rem;
 }
 </style>

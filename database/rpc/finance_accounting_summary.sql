@@ -1,7 +1,8 @@
 -- Сводка бухгалтерии (P&L) по месяцам в диапазоне [p_from, p_to] (по началу месяца).
--- Выручка — из payments (месяц created_at в UTC). Расходы — разовые (expenses) плюс
--- развёрнутые помесячно повторяющиеся шаблоны (recurring_expenses). Налог и прибыль
--- считаются в Python-сервисе по настройкам (app_settings.finance). Все суммы — text (decimal).
+-- Выручка — из payments (месяц created_at по календарю Москвы, как остальная stats-аналитика).
+-- Расходы — разовые (expenses) плюс развёрнутые помесячно повторяющиеся шаблоны
+-- (recurring_expenses). Налог и прибыль считаются в Python-сервисе по настройкам
+-- (app_settings.finance). Все суммы — text (decimal).
 DROP FUNCTION IF EXISTS rpc_finance_accounting_summary (date, date);
 
 CREATE OR REPLACE FUNCTION rpc_finance_accounting_summary (p_from date, p_to date)
@@ -27,13 +28,13 @@ months AS (
 ),
 pay AS (
     SELECT
-        date_trunc('month', p.created_at AT TIME ZONE 'UTC')::date AS m_start,
+        date_trunc('month', p.created_at AT TIME ZONE 'Europe/Moscow')::date AS m_start,
         p.payment_kind,
         SUM(p.amount)::numeric(14, 2) AS gross,
         SUM(p.net_amount)::numeric(14, 2) AS net,
         COUNT(*)::bigint AS cnt
     FROM payments p
-    WHERE date_trunc('month', p.created_at AT TIME ZONE 'UTC')::date
+    WHERE date_trunc('month', p.created_at AT TIME ZONE 'Europe/Moscow')::date
           BETWEEN (SELECT m_from FROM bounds) AND (SELECT m_to FROM bounds)
     GROUP BY 1, 2
 ),

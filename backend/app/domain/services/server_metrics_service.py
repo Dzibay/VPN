@@ -13,6 +13,7 @@ from rq.exceptions import NoSuchJobError
 from rq.job import Job, JobStatus
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from app.config import Settings, settings
 from app.core.exceptions import (
@@ -37,7 +38,7 @@ from app.domain.models.server_traffic import (
     UserTrafficCollectPollResponse,
 )
 from app.infrastructure.cache import get_install_queue, get_redis
-from app.infrastructure.database.session import SessionLocal
+from app.infrastructure.database.blocking import run_blocking_with_session
 from app.infrastructure.persistence.models.server import Server
 from app.infrastructure.persistence.models.user_server_traffic import UserServerTraffic
 from app.infrastructure.prometheus.bottleneck_metrics import enrich_bottleneck_metrics
@@ -226,26 +227,24 @@ async def enqueue_user_traffic_collect_one(
     return UserTrafficCollectEnqueueResponse(server_id=server_id, job_id=job.id)
 
 
-def _bundle_from_result_blocking(server_id: int, result: dict | None) -> ServerUserTrafficBundle:
-    """Sync: открывает свою сессию, делает SQL — вызывать только из threadpool."""
-    db = SessionLocal()
-    try:
-        detail = None
-        if result and result.get("detail"):
-            detail = UserTrafficCollectDetail.model_validate(result["detail"])
-        collected_at = None
-        raw_ca = (result or {}).get("collected_at")
-        if raw_ca:
-            collected_at = datetime.fromisoformat(str(raw_ca).replace("Z", "+00:00"))
-        return load_user_traffic_bundle_rows(
-            db,
-            server_id,
-            collected_at=collected_at,
-            collect_error=(result or {}).get("error"),
-            collect_detail=detail,
-        )
-    finally:
-        db.close()
+def _bundle_from_result_blocking(
+    db: Session, server_id: int, result: dict | None,
+) -> ServerUserTrafficBundle:
+    """Sync SQL поверх переданной сессии — вызывать только из ``run_blocking_with_session``."""
+    detail = None
+    if result and result.get("detail"):
+        detail = UserTrafficCollectDetail.model_validate(result["detail"])
+    collected_at = None
+    raw_ca = (result or {}).get("collected_at")
+    if raw_ca:
+        collected_at = datetime.fromisoformat(str(raw_ca).replace("Z", "+00:00"))
+    return load_user_traffic_bundle_rows(
+        db,
+        server_id,
+        collected_at=collected_at,
+        collect_error=(result or {}).get("error"),
+        collect_detail=detail,
+    )
 
 
 async def poll_user_traffic_collect_job_sync(
@@ -279,7 +278,7 @@ async def poll_user_traffic_collect_job_sync(
             err_txt = (job.exc_info or str(job.result) or "Задача завершилась с ошибкой")[:8000]
         except Exception:
             err_txt = "Задача завершилась с ошибкой"
-        bundle = await run_in_threadpool(_bundle_from_result_blocking, server_id, None)
+        bundle = await run_blocking_with_session(_bundle_from_result_blocking, server_id, None)
         return UserTrafficCollectPollResponse(
             server_id=server_id,
             job_id=job_id,
@@ -290,7 +289,7 @@ async def poll_user_traffic_collect_job_sync(
 
     result = job.result
     if not isinstance(result, dict):
-        bundle = await run_in_threadpool(_bundle_from_result_blocking, server_id, None)
+        bundle = await run_blocking_with_session(_bundle_from_result_blocking, server_id, None)
         return UserTrafficCollectPollResponse(
             server_id=server_id,
             job_id=job_id,
@@ -300,7 +299,7 @@ async def poll_user_traffic_collect_job_sync(
             ),
             job_error=None,
         )
-    bundle = await run_in_threadpool(_bundle_from_result_blocking, server_id, result)
+    bundle = await run_blocking_with_session(_bundle_from_result_blocking, server_id, result)
     return UserTrafficCollectPollResponse(
         server_id=server_id,
         job_id=job_id,
@@ -310,16 +309,14 @@ async def poll_user_traffic_collect_job_sync(
     )
 
 
-def _server_user_traffic_bundle_db_only_blocking(server_id: int) -> ServerUserTrafficBundle:
-    """Sync: своя сессия, SQL-запросы. Вызывать из threadpool."""
-    db = SessionLocal()
-    try:
-        srv = db.get(Server, server_id)
-        if srv is None:
-            raise NotFoundError("Сервер не найден")
-        return load_user_traffic_bundle_rows(db, server_id)
-    finally:
-        db.close()
+def _server_user_traffic_bundle_db_only_blocking(
+    db: Session, server_id: int,
+) -> ServerUserTrafficBundle:
+    """Sync SQL поверх переданной сессии. Вызывать из ``run_blocking_with_session``."""
+    srv = db.get(Server, server_id)
+    if srv is None:
+        raise NotFoundError("Сервер не найден")
+    return load_user_traffic_bundle_rows(db, server_id)
 
 
 async def server_user_traffic_bundle_db_only(
@@ -331,7 +328,7 @@ async def server_user_traffic_bundle_db_only(
             "POST /api/servers/{id}/user-traffic/collect, затем GET "
             "/api/servers/{id}/user-traffic/collect-jobs/{job_id}",
         )
-    return await run_in_threadpool(_server_user_traffic_bundle_db_only_blocking, server_id)
+    return await run_blocking_with_session(_server_user_traffic_bundle_db_only_blocking, server_id)
 
 
 def _inclusive_date_range(a: date, b: date) -> list[date]:
@@ -361,67 +358,65 @@ def _forward_fill_totals_on_grid(
     return out
 
 
-def _server_traffic_daily_summary_blocking(server_id: int, days: int) -> ServerTrafficDailySummary:
+def _server_traffic_daily_summary_blocking(
+    db: Session, server_id: int, days: int,
+) -> ServerTrafficDailySummary:
     """Суточные дельты по переносу снимков на календарную сетку, сумма по пользователям, накопление и все дни подряд."""
-    db = SessionLocal()
-    try:
-        if db.get(Server, server_id) is None:
-            raise NotFoundError("Сервер не найден")
-        span = max(1, min(int(days), 366))
-        today = utc_today()
-        start = today - timedelta(days=span - 1)
-        day_before_start = start - timedelta(days=1)
+    if db.get(Server, server_id) is None:
+        raise NotFoundError("Сервер не найден")
+    span = max(1, min(int(days), 366))
+    today = utc_today()
+    start = today - timedelta(days=span - 1)
+    day_before_start = start - timedelta(days=1)
 
-        stmt = (
-            select(
-                UserServerTraffic.user_id,
-                UserServerTraffic.traffic_date,
-                (UserServerTraffic.up_bytes + UserServerTraffic.down_bytes).label("tot"),
-            )
-            .where(UserServerTraffic.server_id == server_id)
-            .order_by(UserServerTraffic.user_id.asc(), UserServerTraffic.traffic_date.asc())
+    stmt = (
+        select(
+            UserServerTraffic.user_id,
+            UserServerTraffic.traffic_date,
+            (UserServerTraffic.up_bytes + UserServerTraffic.down_bytes).label("tot"),
         )
-        raw_rows = db.execute(stmt).all()
+        .where(UserServerTraffic.server_id == server_id)
+        .order_by(UserServerTraffic.user_id.asc(), UserServerTraffic.traffic_date.asc())
+    )
+    raw_rows = db.execute(stmt).all()
 
-        by_user: dict[int, list[tuple[date, int]]] = defaultdict(list)
-        for uid, traffic_d, tot in raw_rows:
-            by_user[int(uid)].append((traffic_d, int(tot or 0)))
+    by_user: dict[int, list[tuple[date, int]]] = defaultdict(list)
+    for uid, traffic_d, tot in raw_rows:
+        by_user[int(uid)].append((traffic_d, int(tot or 0)))
 
-        grid = _inclusive_date_range(day_before_start, today)
-        if not grid:
-            return ServerTrafficDailySummary(server_id=server_id, points=[])
+    grid = _inclusive_date_range(day_before_start, today)
+    if not grid:
+        return ServerTrafficDailySummary(server_id=server_id, points=[])
 
-        if not by_user:
-            points = [
-                ServerTrafficDailyPoint(traffic_date=D, delta_sum_bytes=0, total_sum_bytes=0)
-                for D in _inclusive_date_range(start, today)
-            ]
-            return ServerTrafficDailySummary(server_id=server_id, points=points)
-
-        day_delta: dict[date, int] = defaultdict(int)
-        for _uid, series in by_user.items():
-            vals = _forward_fill_totals_on_grid(series, grid)
-            for i in range(1, len(grid)):
-                d = grid[i]
-                if d < start:
-                    continue
-                day_delta[d] += max(0, vals[i] - vals[i - 1])
-
-        run = 0
-        points: list[ServerTrafficDailyPoint] = []
-        for d in _inclusive_date_range(start, today):
-            dd = int(day_delta[d])
-            run += dd
-            points.append(
-                ServerTrafficDailyPoint(
-                    traffic_date=d,
-                    delta_sum_bytes=dd,
-                    total_sum_bytes=run,
-                ),
-            )
+    if not by_user:
+        points = [
+            ServerTrafficDailyPoint(traffic_date=D, delta_sum_bytes=0, total_sum_bytes=0)
+            for D in _inclusive_date_range(start, today)
+        ]
         return ServerTrafficDailySummary(server_id=server_id, points=points)
-    finally:
-        db.close()
+
+    day_delta: dict[date, int] = defaultdict(int)
+    for _uid, series in by_user.items():
+        vals = _forward_fill_totals_on_grid(series, grid)
+        for i in range(1, len(grid)):
+            d = grid[i]
+            if d < start:
+                continue
+            day_delta[d] += max(0, vals[i] - vals[i - 1])
+
+    run = 0
+    points: list[ServerTrafficDailyPoint] = []
+    for d in _inclusive_date_range(start, today):
+        dd = int(day_delta[d])
+        run += dd
+        points.append(
+            ServerTrafficDailyPoint(
+                traffic_date=d,
+                delta_sum_bytes=dd,
+                total_sum_bytes=run,
+            ),
+        )
+    return ServerTrafficDailySummary(server_id=server_id, points=points)
 
 
 async def server_traffic_daily_summary_db_only(
@@ -429,4 +424,4 @@ async def server_traffic_daily_summary_db_only(
     *,
     days: int = 90,
 ) -> ServerTrafficDailySummary:
-    return await run_in_threadpool(_server_traffic_daily_summary_blocking, server_id, days)
+    return await run_blocking_with_session(_server_traffic_daily_summary_blocking, server_id, days)

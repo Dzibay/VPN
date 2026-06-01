@@ -17,10 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import BearerPrincipal
 from app.core.exceptions import (
-    InternalServerError,
     NotFoundError,
     UnauthorizedError,
-    UnprocessableEntityError,
 )
 from app.domain.referrals.public_links import referral_link_to_response
 from app.domain.referrals.repository import (
@@ -85,18 +83,14 @@ def referral_me_user_id_from_bearer(principal: BearerPrincipal) -> int:
 
 
 async def referral_me_for_user(session: AsyncSession, user_id: int, cfg: object):
-    """Получить (или создать) персональную ссылку пользователя и вернуть её для /me."""
+    """Получить (или создать) персональную ссылку пользователя и вернуть её для /me.
+
+    Доменные ошибки (пользователь не найден, не удалось сгенерировать токен) — это
+    подклассы :class:`AppError`, которые поднимаются как есть и маппятся глобальным обработчиком.
+    """
     from app.domain.models.referral_links import ReferralMeResponse
 
-    try:
-        row = await get_or_create_user_owned_referral_link(session, user_id)
-    except ValueError as e:
-        msg = str(e)
-        if msg == "Пользователь не найден":
-            raise NotFoundError(msg) from e
-        raise UnprocessableEntityError(msg) from e
-    except RuntimeError as e:
-        raise InternalServerError(str(e)) from e
+    row = await get_or_create_user_owned_referral_link(session, user_id)
 
     pending, received = await asyncio.gather(
         sum_referral_bonus_days_pending_activation(session, user_id=user_id),

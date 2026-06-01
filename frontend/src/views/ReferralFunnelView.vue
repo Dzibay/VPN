@@ -1,6 +1,8 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
+import AppRefreshButton from '../components/AppRefreshButton.vue'
+import StateNote from '../components/StateNote.vue'
 import {
   formatUtcCalendarDayShort,
   utcTodayIso,
@@ -137,14 +139,7 @@ onMounted(async () => {
                   : 'Пользователи → активность'
               }}
             </h2>
-            <button
-              type="button"
-              class="btn-secondary"
-              :disabled="loading"
-              @click="loadFunnel"
-            >
-              {{ loading ? 'Обновление…' : 'Обновить' }}
-            </button>
+            <AppRefreshButton :busy="loading" @click="loadFunnel" />
           </div>
         </div>
         <div class="head-filter-row">
@@ -172,7 +167,7 @@ onMounted(async () => {
     </template>
 
     <section class="panel" aria-live="polite">
-      <p v-if="loading && !data" class="muted">Загрузка…</p>
+      <StateNote v-if="loading && !data" loading />
       <p v-else-if="error" class="err">{{ error }}</p>
       <template v-else-if="data">
         <div class="funnel-wrap">

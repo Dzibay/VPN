@@ -1,6 +1,7 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import AdminTableWrap from '../../components/AdminTableWrap.vue'
+import AppModal from '../../components/AppModal.vue'
 import { fetchJson } from '../../api/client.js'
 import { getSessionRole } from '../../auth/session.js'
 
@@ -36,6 +37,7 @@ const currency = ref('RUB')
 const savingTax = ref(false)
 const taxError = ref(null)
 const taxSaved = ref(false)
+let taxSavedTimer = null
 
 function onModeChange() {
   const preset = MODE_PRESETS[taxMode.value]
@@ -77,7 +79,8 @@ async function saveTax() {
       body: JSON.stringify(body),
     })
     taxSaved.value = true
-    setTimeout(() => {
+    clearTimeout(taxSavedTimer)
+    taxSavedTimer = setTimeout(() => {
       taxSaved.value = false
     }, 2500)
   } catch (e) {
@@ -201,6 +204,10 @@ async function loadAll() {
 onMounted(() => {
   void loadAll()
 })
+
+onBeforeUnmount(() => {
+  clearTimeout(taxSavedTimer)
+})
 </script>
 
 <template>
@@ -298,45 +305,47 @@ onMounted(() => {
     </AdminTableWrap>
   </section>
 
-  <Teleport to="body">
-    <div v-if="catModalOpen" class="modal-backdrop" role="presentation" @click.self="closeCategoryModal">
-      <div class="modal" role="dialog" aria-modal="true" @click.stop>
-        <h2 class="modal-title">{{ catForm.id ? 'Изменить категорию' : 'Новая категория' }}</h2>
-        <form class="modal-form" @submit.prevent="submitCategory">
-          <label v-if="!catForm.id" class="field">
-            <span>Slug (латиница)</span>
-            <input v-model="catForm.slug" type="text" class="input-like" placeholder="напр. ads" />
-          </label>
-          <label class="field">
-            <span>Название</span>
-            <input v-model="catForm.title" type="text" class="input-like" placeholder="напр. Реклама" />
-          </label>
-          <div class="field-row">
-            <label class="field field-narrow">
-              <span>Цвет</span>
-              <input v-model="catForm.color" type="color" class="input-color" />
-            </label>
-            <label class="field field-narrow">
-              <span>Порядок</span>
-              <input v-model="catForm.sort_order" type="text" inputmode="numeric" class="input-like" />
-            </label>
-          </div>
-          <label v-if="catForm.id" class="field-check">
-            <input v-model="catForm.archived" type="checkbox" />
-            <span>В архив (скрыть из выбора)</span>
-          </label>
-          <p v-if="catError" class="form-err">{{ catError }}</p>
-          <div class="modal-actions">
-            <button type="button" class="btn-secondary" :disabled="catSaving" @click="closeCategoryModal">Отмена</button>
-            <button type="submit" class="btn-primary" :disabled="catSaving">{{ catSaving ? 'Сохранение…' : 'Сохранить' }}</button>
-          </div>
-        </form>
+  <AppModal
+    v-if="catModalOpen"
+    :title="catForm.id ? 'Изменить категорию' : 'Новая категория'"
+    :max-width="480"
+    :busy="catSaving"
+    @close="closeCategoryModal"
+  >
+    <form class="modal-form" @submit.prevent="submitCategory">
+      <label v-if="!catForm.id" class="field">
+        <span>Slug (латиница)</span>
+        <input v-model="catForm.slug" type="text" class="input-like" placeholder="напр. ads" />
+      </label>
+      <label class="field">
+        <span>Название</span>
+        <input v-model="catForm.title" type="text" class="input-like" placeholder="напр. Реклама" />
+      </label>
+      <div class="field-row">
+        <label class="field field-narrow">
+          <span>Цвет</span>
+          <input v-model="catForm.color" type="color" class="input-color" />
+        </label>
+        <label class="field field-narrow">
+          <span>Порядок</span>
+          <input v-model="catForm.sort_order" type="text" inputmode="numeric" class="input-like" />
+        </label>
       </div>
-    </div>
-  </Teleport>
+      <label v-if="catForm.id" class="field-check">
+        <input v-model="catForm.archived" type="checkbox" />
+        <span>В архив (скрыть из выбора)</span>
+      </label>
+      <p v-if="catError" class="form-err">{{ catError }}</p>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" :disabled="catSaving" @click="closeCategoryModal">Отмена</button>
+        <button type="submit" class="btn-primary" :disabled="catSaving">{{ catSaving ? 'Сохранение…' : 'Сохранить' }}</button>
+      </div>
+    </form>
+  </AppModal>
 </template>
 
 <style scoped>
+/* Общие .field/.input-like/.pill/.btn-icon/.modal-* — в styles/admin-ui.css */
 .block {
   margin-bottom: 1.75rem;
 }
@@ -353,20 +362,6 @@ onMounted(() => {
   font-size: 1.05rem;
   color: var(--text-h);
 }
-.hint {
-  margin: 0 0 0.85rem;
-  font-size: 0.82rem;
-  color: var(--muted);
-  line-height: 1.45;
-  max-width: 52rem;
-}
-.muted {
-  color: var(--muted);
-}
-.msg-err {
-  color: var(--danger);
-  margin-bottom: 0.75rem;
-}
 .form-card {
   padding: 1rem 1.15rem;
   border-radius: var(--radius-lg);
@@ -379,19 +374,6 @@ onMounted(() => {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 0.85rem;
 }
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-.field > span:first-child {
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--muted);
-}
-.field-narrow {
-  max-width: 9rem;
-}
 .form-foot {
   display: flex;
   align-items: center;
@@ -403,16 +385,6 @@ onMounted(() => {
   font-weight: 600;
   color: #2bb673;
 }
-.num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.th-actions,
-.td-actions {
-  text-align: right;
-  white-space: nowrap;
-  width: 1%;
-}
 .cat-dot {
   display: inline-block;
   width: 16px;
@@ -423,129 +395,5 @@ onMounted(() => {
   font-family: ui-monospace, monospace;
   font-size: 0.8rem;
   color: var(--muted);
-}
-.row-inactive {
-  opacity: 0.55;
-}
-.pill {
-  display: inline-block;
-  padding: 0.12rem 0.45rem;
-  border-radius: 8px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.pill--on {
-  background: color-mix(in srgb, #34d399 18%, transparent);
-  color: #2bb673;
-}
-.pill--off {
-  background: var(--surface);
-  color: var(--muted);
-  border: 1px solid var(--card-border);
-}
-.btn-icon {
-  font: inherit;
-  cursor: pointer;
-  background: var(--surface);
-  border: 1px solid var(--card-border);
-  border-radius: 8px;
-  padding: 0.25rem 0.5rem;
-  color: var(--text-h);
-  margin-left: 0.25rem;
-  line-height: 1;
-}
-.btn-icon:hover {
-  border-color: var(--accent-border);
-  color: var(--accent);
-}
-.btn-icon--danger:hover {
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
-/* модалка */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(4, 12, 9, 0.55);
-  backdrop-filter: blur(6px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: clamp(1rem, 4vh, 2.5rem) 1rem;
-  z-index: 50;
-}
-.modal {
-  width: 100%;
-  max-width: 480px;
-  max-height: min(90dvh, 720px);
-  overflow-y: auto;
-  padding: 1.35rem 1.45rem;
-  border-radius: 16px;
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  box-shadow: var(--shadow-lg);
-}
-.modal-title {
-  margin: 0 0 0.85rem;
-  font-size: 1.1rem;
-  color: var(--text-h);
-}
-.modal-form .field {
-  margin-bottom: 0.85rem;
-}
-.field-row {
-  display: flex;
-  gap: 0.75rem;
-}
-.field-check {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.85rem;
-  font-size: 0.88rem;
-  color: var(--text-h);
-  cursor: pointer;
-}
-.input-like {
-  font: inherit;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 0.5rem 0.65rem;
-  border-radius: 10px;
-  border: 1px solid var(--card-border);
-  background: var(--surface);
-  color: var(--text-h);
-}
-.input-like:focus {
-  outline: none;
-  border-color: color-mix(in srgb, var(--text-h) 38%, var(--card-border));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-h) 14%, transparent);
-}
-.input-like:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-.input-color {
-  width: 100%;
-  height: 2.5rem;
-  padding: 0.15rem;
-  border-radius: 10px;
-  border: 1px solid var(--card-border);
-  background: var(--surface);
-  cursor: pointer;
-}
-.form-err {
-  margin: 0.5rem 0 0;
-  font-size: 0.85rem;
-  color: var(--danger);
-}
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.6rem;
-  margin-top: 0.5rem;
 }
 </style>

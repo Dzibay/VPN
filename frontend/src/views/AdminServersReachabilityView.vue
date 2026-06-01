@@ -4,6 +4,8 @@ import { RouterLink } from 'vue-router'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
+import AppRefreshButton from '../components/AppRefreshButton.vue'
+import StateNote from '../components/StateNote.vue'
 import { fetchJson } from '../api/client.js'
 import { useTableSort } from '../utils/adminTableSort.js'
 import { formatMskApiDateTime } from '../utils/mskDate.js'
@@ -121,14 +123,12 @@ onBeforeUnmount(() => {
               </option>
             </select>
           </label>
-          <button type="button" class="btn-secondary" :disabled="loading" @click="load(true)">
-            {{ loading ? 'Обновление…' : 'Обновить' }}
-          </button>
+          <AppRefreshButton :busy="loading" @click="load(true)" />
         </div>
       </div>
     </template>
 
-    <p v-if="loading && !sortedRows.length" class="muted">Загрузка…</p>
+    <StateNote v-if="loading && !sortedRows.length" loading />
     <p v-else-if="error" class="msg-err">{{ error }}</p>
 
     <template v-else>

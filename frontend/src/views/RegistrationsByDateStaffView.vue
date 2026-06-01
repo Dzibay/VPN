@@ -3,6 +3,7 @@ import { computed, onMounted, ref, toRefs, watch } from 'vue'
 import AdminBarChartPanel from '../components/AdminBarChartPanel.vue'
 import AdminLineChartPanel from '../components/AdminLineChartPanel.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
+import AppRefreshButton from '../components/AppRefreshButton.vue'
 import { fetchJson } from '../api/client.js'
 import { mapStaffChartEventsToMarkers } from '../utils/chartStaffMarkersPlugin.js'
 import { useUsersDailyStatsChart } from '../composables/useUsersDailyStatsChart.js'
@@ -335,16 +336,7 @@ watch(payExpMonth, () => {
               required
             />
           </label>
-          <button
-            type="button"
-            class="btn-secondary"
-            :disabled="loading || payExpLoading"
-            @click="refreshAllCharts"
-          >
-            {{
-              loading || payExpLoading ? 'Обновление…' : 'Обновить'
-            }}
-          </button>
+          <AppRefreshButton :busy="loading || payExpLoading" @click="refreshAllCharts" />
         </div>
       </div>
     </template>

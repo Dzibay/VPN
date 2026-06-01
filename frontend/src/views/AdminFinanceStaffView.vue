@@ -6,6 +6,7 @@ import FinanceOverviewTab from './finance/FinanceOverviewTab.vue'
 import FinanceIncomeTab from './finance/FinanceIncomeTab.vue'
 import FinanceExpensesTab from './finance/FinanceExpensesTab.vue'
 import FinanceSettingsTab from './finance/FinanceSettingsTab.vue'
+import { mskTodayIso } from '../utils/mskDate.js'
 
 const TABS = [
   { key: 'overview', label: 'Обзор' },
@@ -42,35 +43,48 @@ const periodPreset = ref('year')
 const customFrom = ref('')
 const customTo = ref('')
 
-function ymd(d) {
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+// Период считается по календарю Москвы (как RPC выручки и staff-аналитика),
+// а не по TZ браузера: иначе у клиента в другом поясе «этот месяц» съезжает.
+const pad2 = (n) => String(n).padStart(2, '0')
+
+function mskParts() {
+  const [y, m, d] = mskTodayIso().split('-').map(Number)
+  return { y, m, d }
+}
+function monthStart(y, m) {
+  return `${y}-${pad2(m)}-01`
+}
+function lastDayOfPrevMonth(y, m) {
+  // m — 1-based текущий месяц; день 0 текущего месяца = последний день предыдущего.
+  const dt = new Date(Date.UTC(y, m - 1, 0))
+  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`
 }
 
 const computedRange = computed(() => {
-  const now = new Date()
-  const y = now.getFullYear()
-  const m = now.getMonth()
-  const today = ymd(now)
+  const { y, m } = mskParts()
+  const today = mskTodayIso()
   switch (periodPreset.value) {
     case 'month':
-      return { from: ymd(new Date(y, m, 1)), to: today }
-    case 'prev_month':
-      return { from: ymd(new Date(y, m - 1, 1)), to: ymd(new Date(y, m, 0)) }
+      return { from: monthStart(y, m), to: today }
+    case 'prev_month': {
+      const py = m === 1 ? y - 1 : y
+      const pm = m === 1 ? 12 : m - 1
+      return { from: monthStart(py, pm), to: lastDayOfPrevMonth(y, m) }
+    }
     case 'quarter': {
-      const qStart = Math.floor(m / 3) * 3
-      return { from: ymd(new Date(y, qStart, 1)), to: today }
+      const qStart = Math.floor((m - 1) / 3) * 3 + 1
+      return { from: monthStart(y, qStart), to: today }
     }
     case 'all':
       return { from: '2020-01-01', to: today }
     case 'custom':
       return {
-        from: customFrom.value || ymd(new Date(y, 0, 1)),
+        from: customFrom.value || monthStart(y, 1),
         to: customTo.value || today,
       }
     case 'year':
     default:
-      return { from: ymd(new Date(y, 0, 1)), to: today }
+      return { from: monthStart(y, 1), to: today }
   }
 })
 
@@ -79,9 +93,9 @@ const rangeTo = computed(() => computedRange.value.to)
 
 watch(periodPreset, (p) => {
   if (p === 'custom') {
-    const now = new Date()
-    if (!customFrom.value) customFrom.value = ymd(new Date(now.getFullYear(), 0, 1))
-    if (!customTo.value) customTo.value = ymd(now)
+    const { y } = mskParts()
+    if (!customFrom.value) customFrom.value = monthStart(y, 1)
+    if (!customTo.value) customTo.value = mskTodayIso()
   }
 })
 
