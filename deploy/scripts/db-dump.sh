@@ -8,29 +8,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-if [[ -f .env ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source .env
-  set +a
-fi
-
-POSTGRES_USER="${POSTGRES_USER:-vpn}"
-POSTGRES_DB="${POSTGRES_DB:-vpn}"
-: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required (set in deploy/.env)}"
+# shellcheck disable=SC1091
+source "${ROOT}/scripts/load-postgres-env.sh"
+load_postgres_env
 
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT="${1:-${ROOT}/vpn-db-${TIMESTAMP}.sql.gz}"
 
-if ! docker compose ps --status running postgres 2>/dev/null | grep -q postgres; then
-  echo "Postgres не запущен. Поднимите стек или только postgres:"
-  echo "  docker compose up -d postgres"
-  exit 1
-fi
-
 echo "Дамп ${POSTGRES_DB}@${POSTGRES_USER} → ${OUT}"
 
-docker compose exec -T postgres env PGPASSWORD="${POSTGRES_PASSWORD}" \
+docker compose exec -T postgres \
   pg_dump -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
   --no-owner --no-acl | gzip -9 -c >"${OUT}"
 
