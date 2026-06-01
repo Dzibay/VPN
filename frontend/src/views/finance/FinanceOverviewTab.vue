@@ -325,7 +325,7 @@ defineExpose({ reload: load })
         <article class="mp-card mp-card--free">
           <p class="mp-label">Свободно от обязательств</p>
           <p class="mp-value">{{ money(moneyPosition.free) }}&nbsp;<span class="mp-cur">₽</span></p>
-          <p class="mp-sub">За всё время · по меясяцам</p>
+          <p class="mp-sub">За всё время · по месяцам</p>
         </article>
         <article class="mp-card mp-card--frozen">
           <p class="mp-label">Заморожено (обязательства)</p>

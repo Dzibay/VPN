@@ -15,6 +15,7 @@ from typing import Any
 import httpx
 
 from app.config import settings
+from app.core.time import utc_now
 
 log = logging.getLogger("app.prometheus")
 
