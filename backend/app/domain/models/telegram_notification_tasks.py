@@ -21,6 +21,11 @@ class TelegramNotificationTaskItem(BaseModel):
     user_id: int
     referee_id: int | None = None
     bonus_days: int | None = None
+    early_payment_bonus_days: int | None = Field(
+        default=None,
+        ge=0,
+        description="Для type=notify_payment: бонус за досрочную оплату.",
+    )
     paid_months: int | None = Field(
         default=None,
         ge=1,

@@ -142,6 +142,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     referee_id BIGINT REFERENCES users (id) ON DELETE SET NULL,
     bonus_days INTEGER CHECK (bonus_days IS NULL OR bonus_days >= 0),
+    early_payment_bonus_days INTEGER CHECK (early_payment_bonus_days IS NULL OR early_payment_bonus_days >= 0),
     paid_months INTEGER,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     done_at TIMESTAMPTZ,

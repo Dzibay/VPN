@@ -15,7 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import constants
 from app.config import Settings
 from app.core.request_subject import bind_request_subject_user
-from app.core.time import ensure_utc, moscow_today, utc_now
+from app.core.time import ensure_utc, moscow_today, utc_instant_to_moscow_date, utc_now
+from app.domain.subscription.early_payment_bonus import compute_early_payment_bonus_days
 from app.domain.models.payments import PaymentWebhookAck
 from app.domain.referrals.payment_tasks import apply_referral_bonus_on_payment
 from app.domain.referrals.task_bonus_days import sum_referral_bonus_days_pending_activation
@@ -94,13 +95,25 @@ async def fulfill_subscription_payment(
         enqueue_xray_clients_sync_for_access_change,
     )
 
+    subscription_until_before = user.subscription_until
+    payment_date = (
+        utc_instant_to_moscow_date(paid_at) if paid_at is not None else moscow_today()
+    )
+    early_payment_bonus_days = compute_early_payment_bonus_days(
+        subscription_until_before,
+        payment_date,
+    )
+
     paid_days = int(months) * DAYS_PER_MONTH
     accumulated_bonus_days = await sum_referral_bonus_days_pending_activation(
         session,
         user_id=int(user.id),
     )
-    total_days = paid_days + accumulated_bonus_days
-    user.subscription_until = extend_subscription_until(user.subscription_until, days=total_days)
+    total_days = paid_days + accumulated_bonus_days + early_payment_bonus_days
+    user.subscription_until = extend_subscription_until(
+        subscription_until_before,
+        days=total_days,
+    )
 
     if user.telegram_id is not None:
         session.add(
@@ -109,6 +122,9 @@ async def fulfill_subscription_payment(
                 user_id=int(user.id),
                 referee_id=None,
                 bonus_days=accumulated_bonus_days if accumulated_bonus_days > 0 else None,
+                early_payment_bonus_days=(
+                    early_payment_bonus_days if early_payment_bonus_days > 0 else None
+                ),
                 paid_months=months,
                 **({"created_at": paid_at} if paid_at is not None else {}),
             ),

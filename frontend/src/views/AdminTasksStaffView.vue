@@ -66,7 +66,7 @@ const router = useRouter()
 
 const loading = ref(false)
 const error = ref(null)
-/** @type {import('vue').Ref<Array<{ id: number, type: string, user_id: number, referee_id: number | null, bonus_days: number | null, paid_months: number | null, status: string, created_at: string, done_at: string | null }>>} */
+/** @type {import('vue').Ref<Array<{ id: number, type: string, user_id: number, referee_id: number | null, bonus_days: number | null, early_payment_bonus_days: number | null, paid_months: number | null, status: string, created_at: string, done_at: string | null }>>} */
 const items = ref([])
 const total = ref(0)
 
@@ -82,6 +82,7 @@ const formUserId = ref('')
 const formTaskType = ref('notify_sub_expire_0d')
 const formRefereeId = ref('')
 const formBonusDays = ref('')
+const formEarlyPaymentBonusDays = ref('')
 const formPaidMonths = ref('')
 const createLoading = ref(false)
 const createError = ref(null)
@@ -92,6 +93,7 @@ const editFormTaskType = ref('notify_sub_expire_0d')
 const editFormUserId = ref('')
 const editFormRefereeId = ref('')
 const editFormBonusDays = ref('')
+const editFormEarlyPaymentBonusDays = ref('')
 const editFormPaidMonths = ref('')
 const editFormStatus = ref('pending')
 const editFormDoneAt = ref('')
@@ -105,6 +107,8 @@ const sortAccessors = {
   user_id: (r) => Number(r.user_id) || 0,
   referee_id: (r) => (r.referee_id == null ? -1 : Number(r.referee_id)),
   bonus_days: (r) => (r.bonus_days == null ? -1 : Number(r.bonus_days)),
+  early_payment_bonus_days: (r) =>
+    r.early_payment_bonus_days == null ? -1 : Number(r.early_payment_bonus_days),
   paid_months: (r) => (r.paid_months == null ? -1 : Number(r.paid_months)),
   status: (r) => String(r.status ?? '').toLowerCase(),
   created_at: (r) => String(r.created_at ?? ''),
@@ -154,6 +158,7 @@ function openCreateModal() {
   formTaskType.value = 'notify_sub_expire_0d'
   formRefereeId.value = ''
   formBonusDays.value = ''
+  formEarlyPaymentBonusDays.value = ''
   formPaidMonths.value = ''
   modalOpen.value = true
 }
@@ -204,6 +209,11 @@ async function submitCreateTask() {
     createError.value = 'bonus_days: целое число ≥ 0 или пусто.'
     return
   }
+  const earlyPaymentBonusDays = parseOptionalNonNegInt(formEarlyPaymentBonusDays.value)
+  if (earlyPaymentBonusDays === 'invalid') {
+    createError.value = 'early_payment_bonus_days: целое число ≥ 0 или пусто.'
+    return
+  }
   const paidMonths = parseOptionalPositiveInt(formPaidMonths.value)
   if (paidMonths === 'invalid') {
     createError.value = 'paid_months: целое число ≥ 1 или пусто.'
@@ -216,6 +226,9 @@ async function submitCreateTask() {
   }
   if (refereeId !== undefined) body.referee_id = refereeId
   if (bonusDays !== undefined) body.bonus_days = bonusDays
+  if (earlyPaymentBonusDays !== undefined) {
+    body.early_payment_bonus_days = earlyPaymentBonusDays
+  }
   if (paidMonths !== undefined) body.paid_months = paidMonths
 
   createLoading.value = true
@@ -241,6 +254,8 @@ function openEditModal(row) {
   editFormUserId.value = String(row.user_id)
   editFormRefereeId.value = row.referee_id != null ? String(row.referee_id) : ''
   editFormBonusDays.value = row.bonus_days != null ? String(row.bonus_days) : ''
+  editFormEarlyPaymentBonusDays.value =
+    row.early_payment_bonus_days != null ? String(row.early_payment_bonus_days) : ''
   editFormPaidMonths.value = row.paid_months != null ? String(row.paid_months) : ''
   editFormStatus.value = row.status
   editFormDoneAt.value = toDatetimeLocalValue(row.done_at)
@@ -271,6 +286,11 @@ async function submitEditTask() {
     editError.value = 'bonus_days: целое число ≥ 0 или пусто.'
     return
   }
+  const earlyPaymentBonusDays = parseOptionalNonNegInt(editFormEarlyPaymentBonusDays.value)
+  if (earlyPaymentBonusDays === 'invalid') {
+    editError.value = 'early_payment_bonus_days: целое число ≥ 0 или пусто.'
+    return
+  }
   const paidMonths = parseOptionalPositiveInt(editFormPaidMonths.value)
   if (paidMonths === 'invalid') {
     editError.value = 'paid_months: целое число ≥ 1 или пусто.'
@@ -284,6 +304,8 @@ async function submitEditTask() {
     user_id: uid,
     referee_id: refereeId === undefined ? null : refereeId,
     bonus_days: bonusDays === undefined ? null : bonusDays,
+    early_payment_bonus_days:
+      earlyPaymentBonusDays === undefined ? null : earlyPaymentBonusDays,
     paid_months: paidMonths === undefined ? null : paidMonths,
     status: editFormStatus.value,
   }
@@ -443,6 +465,14 @@ onMounted(() => {
                 @sort="toggleSort"
               />
               <AdminSortTh
+                label="досроч."
+                column-key="early_payment_bonus_days"
+                align="right"
+                :sort-key="sortKey"
+                :sort-dir="sortDir"
+                @sort="toggleSort"
+              />
+              <AdminSortTh
                 label="мес."
                 column-key="paid_months"
                 align="right"
@@ -476,7 +506,7 @@ onMounted(() => {
           </thead>
           <tbody>
             <tr v-if="sortedRows.length === 0">
-              <td colspan="10" class="muted">Нет записей</td>
+              <td colspan="11" class="muted">Нет записей</td>
             </tr>
             <template v-else>
               <tr v-for="row in sortedRows" :key="row.id">
@@ -498,6 +528,7 @@ onMounted(() => {
                   </span>
                 </td>
                 <td class="num">{{ row.bonus_days ?? '—' }}</td>
+                <td class="num">{{ row.early_payment_bonus_days ?? '—' }}</td>
                 <td class="num">{{ row.paid_months ?? '—' }}</td>
                 <td>
                   <span class="pill pill-mono" :title="row.status">{{ row.status }}</span>
@@ -554,7 +585,18 @@ onMounted(() => {
             type="text"
             inputmode="numeric"
             class="input-like"
-            placeholder="Пусто — NULL, целое ≥ 0"
+            placeholder="Пусто — NULL, реферальный бонус ≥ 0"
+            autocomplete="off"
+          />
+        </label>
+        <label class="field">
+          <span>early_payment_bonus_days (необязательно)</span>
+          <input
+            v-model="formEarlyPaymentBonusDays"
+            type="text"
+            inputmode="numeric"
+            class="input-like"
+            placeholder="Пусто — NULL; бонус за досрочную оплату ≥ 0"
             autocomplete="off"
           />
         </label>
@@ -621,6 +663,17 @@ onMounted(() => {
           <span>bonus_days</span>
           <input
             v-model="editFormBonusDays"
+            type="text"
+            inputmode="numeric"
+            class="input-like"
+            placeholder="Пусто — NULL"
+            autocomplete="off"
+          />
+        </label>
+        <label class="field">
+          <span>early_payment_bonus_days</span>
+          <input
+            v-model="editFormEarlyPaymentBonusDays"
             type="text"
             inputmode="numeric"
             class="input-like"

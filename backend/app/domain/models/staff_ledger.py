@@ -114,6 +114,7 @@ class StaffTaskItem(BaseModel):
     user_id: int
     referee_id: int | None = None
     bonus_days: int | None = None
+    early_payment_bonus_days: int | None = None
     paid_months: int | None = None
     status: str
     created_at: datetime
@@ -133,7 +134,12 @@ class StaffCreateTaskBody(BaseModel):
     bonus_days: int | None = Field(
         default=None,
         ge=0,
-        description="Опционально: бонусные дни (notify_ref_pay, часть notify_payment).",
+        description="Опционально: реферальные бонусные дни (notify_ref_pay, notify_payment).",
+    )
+    early_payment_bonus_days: int | None = Field(
+        default=None,
+        ge=0,
+        description="Опционально: бонус за досрочную оплату (notify_payment).",
     )
     paid_months: int | None = Field(
         default=None,
@@ -156,6 +162,7 @@ class StaffPatchTaskBody(BaseModel):
         description="null в JSON — сбросить referee_id.",
     )
     bonus_days: int | None = Field(default=None, ge=0)
+    early_payment_bonus_days: int | None = Field(default=None, ge=0)
     paid_months: int | None = Field(default=None, ge=1)
     status: StaffTaskStatus | None = None
     done_at: datetime | None = Field(

@@ -85,7 +85,8 @@ async def staff_list_payments(
     response_model=StaffCreateTributePaymentResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Создать ручной платёж (provider=manual)",
-    description="Продлевает подписку, пишет payments (provider=manual), notify_payment и реферальные бонусы. "
+    description="Продлевает подписку (включая бонус за досрочную оплату), payments (provider=manual), "
+    "notify_payment и реферальные бонусы. "
     "Telegram не обязателен.",
 )
 async def staff_create_manual_payment(
@@ -182,6 +183,7 @@ async def staff_create_task(
             task_type=body.task_type,
             referee_id=body.referee_id,
             bonus_days=body.bonus_days,
+            early_payment_bonus_days=body.early_payment_bonus_days,
             paid_months=body.paid_months,
         )
     except LookupError as err:

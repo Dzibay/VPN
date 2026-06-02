@@ -153,6 +153,9 @@ def _staff_task_item_from_orm(t: Task) -> StaffTaskItem:
         user_id=int(t.user_id),
         referee_id=int(t.referee_id) if t.referee_id is not None else None,
         bonus_days=int(t.bonus_days) if t.bonus_days is not None else None,
+        early_payment_bonus_days=(
+            int(t.early_payment_bonus_days) if t.early_payment_bonus_days is not None else None
+        ),
         paid_months=int(t.paid_months) if t.paid_months is not None else None,
         status=str(t.status),
         created_at=t.created_at,
@@ -167,6 +170,7 @@ async def create_staff_task(
     task_type: StaffCreatableTaskType,
     referee_id: int | None,
     bonus_days: int | None,
+    early_payment_bonus_days: int | None,
     paid_months: int | None,
 ) -> StaffTaskItem:
     """Создать pending-задачу (разрешённые типы совпадают с CHECK в БД)."""
@@ -184,6 +188,7 @@ async def create_staff_task(
         user_id=user_id,
         referee_id=referee_id,
         bonus_days=bonus_days,
+        early_payment_bonus_days=early_payment_bonus_days,
         paid_months=paid_months,
         status="pending",
     )
@@ -218,6 +223,9 @@ async def update_staff_task(
 
     if "bonus_days" in data:
         task.bonus_days = data["bonus_days"]
+
+    if "early_payment_bonus_days" in data:
+        task.early_payment_bonus_days = data["early_payment_bonus_days"]
 
     if "paid_months" in data:
         task.paid_months = data["paid_months"]

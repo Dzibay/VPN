@@ -1,3 +1,7 @@
+-- Бонус за досрочную оплату подписки (отдельно от реферального bonus_days).
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS early_payment_bonus_days INTEGER
+    CHECK (early_payment_bonus_days IS NULL OR early_payment_bonus_days >= 0);
+
 -- Догонка существующих БД: tribute_webhook → provider_webhook, провайдер yookassa.
 
 -- Маршрутизация Google/YouTube на каскадном входе: exit (через exit, по умолчанию) | entry (через вход).

@@ -97,6 +97,8 @@ const taskLedgerSortAccessors = {
   user_id: (r) => Number(r.user_id) || 0,
   referee_id: (r) => (r.referee_id == null ? -1 : Number(r.referee_id)),
   bonus_days: (r) => (r.bonus_days == null ? -1 : Number(r.bonus_days)),
+  early_payment_bonus_days: (r) =>
+    r.early_payment_bonus_days == null ? -1 : Number(r.early_payment_bonus_days),
   paid_months: (r) => (r.paid_months == null ? -1 : Number(r.paid_months)),
   status: (r) => String(r.status ?? '').toLowerCase(),
   created_at: (r) => String(r.created_at ?? ''),
@@ -1148,6 +1150,14 @@ onMounted(() => {
                 @sort="toggleTaskLedgerSort"
               />
               <AdminSortTh
+                label="досроч."
+                column-key="early_payment_bonus_days"
+                align="right"
+                :sort-key="taskSortKey"
+                :sort-dir="taskSortDir"
+                @sort="toggleTaskLedgerSort"
+              />
+              <AdminSortTh
                 label="мес."
                 column-key="paid_months"
                 align="right"
@@ -1181,7 +1191,7 @@ onMounted(() => {
           </thead>
           <tbody>
             <tr v-if="sortedTaskLedgerRows.length === 0">
-              <td colspan="10" class="muted-cell">Нет записей</td>
+              <td colspan="11" class="muted-cell">Нет записей</td>
             </tr>
             <tr v-for="row in sortedTaskLedgerRows" :key="row.id">
               <td class="num">{{ row.id }}</td>
@@ -1202,6 +1212,7 @@ onMounted(() => {
                 </span>
               </td>
               <td class="num">{{ row.bonus_days ?? '—' }}</td>
+              <td class="num">{{ row.early_payment_bonus_days ?? '—' }}</td>
               <td class="num">{{ row.paid_months ?? '—' }}</td>
               <td>
                 <span class="pill pill-mono" :title="row.status">{{

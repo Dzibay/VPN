@@ -24,6 +24,8 @@ class Task(Base):
         nullable=True,
     )
     bonus_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Для ``notify_payment`` — бонус за досрочную оплату (не реферальный ``bonus_days``).
+    early_payment_bonus_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     #: Для ``notify_payment`` — число оплаченных месяцев (как в ``payments.months``).
     paid_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
