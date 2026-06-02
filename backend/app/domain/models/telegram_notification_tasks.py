@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -30,6 +30,10 @@ class TelegramNotificationTaskItem(BaseModel):
         default=None,
         ge=1,
         description="Для type=notify_payment: оплаченные месяцы (как payments.months).",
+    )
+    subscription_until: date | None = Field(
+        default=None,
+        description="Для type=notify_payment: users.subscription_until плательщика (после продления).",
     )
     created_at: datetime
     recipient_telegram_id: int | None = Field(

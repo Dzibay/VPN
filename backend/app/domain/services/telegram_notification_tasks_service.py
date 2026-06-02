@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +13,7 @@ from app.domain.models.telegram_notification_tasks import (
     TelegramNotificationTaskItem,
     TelegramNotificationTasksListResponse,
 )
-from app.domain.tasks.notification_task_types import NOTIFICATION_TASK_TYPES
+from app.domain.tasks.notification_task_types import NOTIFY_PAYMENT, NOTIFICATION_TASK_TYPES
 from app.infrastructure.persistence.models.task import Task
 from app.infrastructure.persistence.models.user import User
 
@@ -25,7 +25,7 @@ async def list_pending_notification_tasks(
     ur = aliased(User)
     rr = aliased(User)
     stmt = (
-        select(Task, ur.telegram_id, rr.telegram_id)
+        select(Task, ur.telegram_id, rr.telegram_id, ur.subscription_until)
         .join(ur, ur.id == Task.user_id)
         .outerjoin(rr, rr.id == Task.referee_id)
         .where(
@@ -37,10 +37,13 @@ async def list_pending_notification_tasks(
     )
     rows = (await session.execute(stmt)).all()
     items: list[TelegramNotificationTaskItem] = []
-    for task, rec_tid, ref_tid in rows:
+    for task, rec_tid, ref_tid, subscription_until in rows:
         ttype = task.task_type
         if ttype not in NOTIFICATION_TASK_TYPES:
             continue
+        sub_until: date | None = None
+        if ttype == NOTIFY_PAYMENT and subscription_until is not None:
+            sub_until = subscription_until
         items.append(
             TelegramNotificationTaskItem(
                 id=int(task.id),
@@ -54,6 +57,7 @@ async def list_pending_notification_tasks(
                     else None
                 ),
                 paid_months=int(task.paid_months) if task.paid_months is not None else None,
+                subscription_until=sub_until,
                 created_at=task.created_at,
                 recipient_telegram_id=int(rec_tid) if rec_tid is not None else None,
                 referee_telegram_id=int(ref_tid) if ref_tid is not None else None,
