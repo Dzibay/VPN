@@ -61,6 +61,8 @@ SELECT
     server_id,
     traffic_date,
     new_total,
+    up_bytes,
+    down_bytes,
     CASE
         WHEN up_bytes + down_bytes > 0
             THEN FLOOR(
@@ -71,12 +73,14 @@ SELECT
 FROM _apply
 WHERE new_total >= 0;
 
--- Округление могло дать просадку на 1–2 байта — подтянуть до prev (не выше scaled)
+-- Округление могло дать просадку на 1–2 байта — подтянуть до prev
 CREATE TEMP TABLE _apply3 ON COMMIT DROP AS
 SELECT
     user_id,
     server_id,
     traffic_date,
+    up_bytes,
+    down_bytes,
     GREATEST(
         new_total,
         COALESCE(
@@ -87,10 +91,7 @@ SELECT
             ),
             0
         )
-    )::bigint AS new_total,
-    new_up,
-    up_bytes,
-    down_bytes
+    )::bigint AS new_total
 FROM _apply2;
 
 CREATE TEMP TABLE _final ON COMMIT DROP AS
@@ -106,7 +107,8 @@ SELECT
             )::bigint
         ELSE new_total / 2
     END AS new_up
-FROM _apply3;
+FROM _apply3
+WHERE new_total >= 0;
 
 UPDATE user_server_traffic u
 SET
