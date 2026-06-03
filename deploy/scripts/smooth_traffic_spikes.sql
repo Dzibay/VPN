@@ -1,9 +1,9 @@
 -- Сглаживание пиков в user_server_traffic (один проход).
--- Логика: при падении total находим якорь (последний день с total < падения),
--- дни между якорем и падением с total > падения — линейная интерполяция.
+-- Падение: total < предыдущей строки по (user_id, server_id).
+-- Якорь: последняя строка с total < значения в день падения.
+-- Пики между якорем и падением — линейная интерполяция (как 1→10,20,30→5).
+-- Если якоря нет (только 65→50): все дни до падения с total > drop → drop_total.
 -- Запускать несколько раз, пока UPDATE не вернёт 0.
---   docker compose exec -T postgres psql -U vpn -d vpn -v ON_ERROR_STOP=1 -f /scripts/smooth_traffic_spikes.sql
--- Или из stdin (см. README в ответе агента).
 
 SET statement_timeout = '600s';
 
@@ -51,16 +51,15 @@ anchors AS (
         d.server_id,
         d.drop_rn,
         d.drop_total,
-        MAX(a.rn) AS anchor_rn
+        MAX(a.rn) FILTER (WHERE a.total < d.drop_total) AS anchor_rn
     FROM drops d
     INNER JOIN base a
         ON a.user_id = d.user_id
        AND a.server_id = d.server_id
        AND a.rn < d.drop_rn
-       AND a.total < d.drop_total
     GROUP BY d.user_id, d.server_id, d.drop_rn, d.drop_total
 ),
-to_fix AS (
+to_fix_interp AS (
     SELECT
         d.user_id,
         d.server_id,
@@ -71,7 +70,7 @@ to_fix AS (
             a.total::numeric
             + (d.drop_total::numeric - a.total::numeric)
               * (s.rn - d.anchor_rn)::numeric
-              / (d.drop_rn - d.anchor_rn)::numeric
+              / NULLIF(d.drop_rn - d.anchor_rn, 0)::numeric
         )::bigint AS new_total
     FROM anchors d
     INNER JOIN base a
@@ -84,7 +83,29 @@ to_fix AS (
        AND s.rn > d.anchor_rn
        AND s.rn < d.drop_rn
        AND s.total > d.drop_total
-    WHERE d.drop_rn > d.anchor_rn
+    WHERE d.anchor_rn IS NOT NULL
+      AND d.drop_rn > d.anchor_rn
+),
+to_fix_cap AS (
+    SELECT
+        d.user_id,
+        d.server_id,
+        s.traffic_date,
+        s.up_bytes,
+        s.down_bytes,
+        d.drop_total AS new_total
+    FROM anchors d
+    INNER JOIN base s
+        ON s.user_id = d.user_id
+       AND s.server_id = d.server_id
+       AND s.rn < d.drop_rn
+       AND s.total > d.drop_total
+    WHERE d.anchor_rn IS NULL
+),
+to_fix AS (
+    SELECT * FROM to_fix_interp
+    UNION ALL
+    SELECT * FROM to_fix_cap
 ),
 calc AS (
     SELECT
