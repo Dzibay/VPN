@@ -67,8 +67,12 @@ to_fix AS (
         s.traffic_date,
         s.up_bytes,
         s.down_bytes,
-        a.total
-            + ((d.drop_total - a.total) * (s.rn - d.anchor_rn) / (d.drop_rn - d.anchor_rn)) AS new_total
+        FLOOR(
+            a.total::numeric
+            + (d.drop_total::numeric - a.total::numeric)
+              * (s.rn - d.anchor_rn)::numeric
+              / (d.drop_rn - d.anchor_rn)::numeric
+        )::bigint AS new_total
     FROM anchors d
     INNER JOIN base a
         ON a.user_id = d.user_id
@@ -90,7 +94,10 @@ calc AS (
         new_total,
         CASE
             WHEN up_bytes + down_bytes > 0
-                THEN (new_total * up_bytes / (up_bytes + down_bytes))::bigint
+                THEN FLOOR(
+                    new_total::numeric * up_bytes::numeric
+                    / (up_bytes + down_bytes)::numeric
+                )::bigint
             ELSE new_total / 2
         END AS new_up
     FROM to_fix
