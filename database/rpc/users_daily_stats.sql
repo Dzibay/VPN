@@ -1,6 +1,7 @@
 -- Дневная сводка: registered_at, payments, devices — календарь Europe/Moscow;
 -- traffic_date (снимки) — календарный день UTC на момент сбора (см. xray_stats_collect).
 -- Все метрики только по пользователям с заполненными registered_at и subscription_until.
+-- Окно выдачи: 30 последних календарных дней Europe/Moscow (включая сегодня).
 drop function if exists rpc_users_daily_stats;
 
 CREATE OR REPLACE FUNCTION rpc_users_daily_stats ()
@@ -24,6 +25,11 @@ WITH eligible_users AS (
     FROM users u
     WHERE u.registered_at IS NOT NULL
       AND u.subscription_until IS NOT NULL
+),
+msk_window AS (
+    SELECT
+        (NOW() AT TIME ZONE 'Europe/Moscow')::date AS msk_today,
+        ((NOW() AT TIME ZONE 'Europe/Moscow')::date - 29) AS window_start
 ),
 -- Первый платёж (календарный день Europe/Moscow).
 first_payment AS (
@@ -185,30 +191,9 @@ dev AS (
     FROM first_dev fd
     GROUP BY 1
 ),
-dated_keys AS (
-    SELECT sd AS dk FROM reg WHERE sd IS NOT NULL
-    UNION
-    SELECT cal_day FROM active_by_day
-    UNION
-    SELECT sd FROM dev WHERE sd IS NOT NULL
-    UNION
-    SELECT cal_day FROM high_traffic_users_by_day
-    UNION
-    SELECT cal_day FROM persistent_traffic_users_by_day
-    UNION
-    SELECT cal_day FROM active_users_with_payment_by_day
-    UNION
-    SELECT pay_day FROM new_payers_by_day
-),
-day_span AS (
-    SELECT MIN(dk) AS d0, MAX(dk) AS d1 FROM dated_keys
-),
 dense_calendar AS (
-    SELECT generate_series(d0, d1, '1 day'::interval)::date AS cal_day
-    FROM day_span
-    WHERE d0 IS NOT NULL
-      AND d1 IS NOT NULL
-      AND d0 <= d1
+    SELECT generate_series(w.window_start, w.msk_today, '1 day'::interval)::date AS cal_day
+    FROM msk_window w
 ),
 -- Снимок на конец календарного дня Europe/Moscow: подписка активна (subscription_until >= cal_day),
 -- только пользователи с известными registered_at и subscription_until.
