@@ -34,14 +34,6 @@ async def require_user_by_telegram_id(session: AsyncSession, telegram_id: int) -
     return user
 
 
-async def list_telegram_user_ids(session: AsyncSession) -> list[int]:
-    stmt = (
-        select(User.telegram_id)
-        .where(User.telegram_id.is_not(None))
-        .order_by(User.telegram_id.asc())
-    )
-    rows = (await session.scalars(stmt)).all()
-    return [int(tid) for tid in rows]
 
 
 async def get_user_by_topic_id(session: AsyncSession, topic_id: int) -> User:

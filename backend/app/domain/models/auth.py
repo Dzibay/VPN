@@ -155,8 +155,18 @@ class TelegramAuthBody(BaseModel):
 
 
 class TelegramKnownUserIdsResponse(BaseModel):
-    """Ответ GET /api/telegram/users: все непустые telegram_id из таблицы users."""
+    """Ответ GET /api/telegram/users: telegram_id пользователей выбранной группы."""
 
+    group: Literal[
+        "active",
+        "active_pay",
+        "active_free",
+        "no_active",
+        "no_active_pay",
+        "no_active_free",
+        "no_active_free_no_traffic",
+        "no_active_free_no_date",
+    ] = Field(description="Запрошенная группа пользователей")
     telegram_ids: list[int] = Field(
         description="Числовые id в Telegram по возрастанию (только строки с заполненным users.telegram_id).",
     )

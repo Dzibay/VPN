@@ -194,7 +194,7 @@ def require_telegram_bot_api_secret(
     POST /api/payments/tribute/webhook-test,
     POST /api/payments/yookassa/webhook,
     GET /api/telegram/notification-tasks, POST /api/telegram/notification-tasks/completed,
-    GET /api/telegram/users, GET /api/telegram/users/{topic_id} и
+    GET /api/telegram/users?group=..., GET /api/telegram/users/{topic_id} и
     GET /api/telegram/subscription-open-clients (заголовок X-Telegram-Bot-Secret).
     TELEGRAM_BOT_API_SECRET в env; пусто — 503.
     """

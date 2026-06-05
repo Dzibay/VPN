@@ -50,9 +50,13 @@ from app.domain.services.tribute_service import tribute_payments_links_public_re
 from app.domain.services.yookassa_service import create_yookassa_checkout
 from app.domain.services.telegram_service import (
     get_user_by_topic_id,
-    list_telegram_user_ids,
     require_user_by_telegram_id,
     subscription_open_clients_payload,
+)
+from app.domain.services.telegram_user_groups import (
+    TELEGRAM_USER_GROUPS,
+    TelegramUserGroup,
+    list_telegram_user_ids_by_group,
 )
 from app.domain.users.xray_sync_queue import enqueue_sync_xray_clients_all_servers
 from app.infrastructure.cache import get_redis
@@ -152,11 +156,21 @@ async def subscription_open_clients() -> TelegramSubscriptionOpenClientsResponse
     "/users",
     response_model=TelegramKnownUserIdsResponse,
     dependencies=[Depends(require_telegram_bot_api_secret)],
-    summary="Все известные telegram_id пользователей (users.telegram_id IS NOT NULL)",
+    summary="telegram_id пользователей выбранной группы (users.telegram_id IS NOT NULL)",
+    description=(),
 )
-async def list_telegram_users_ep(session: ReadonlySessionDep) -> TelegramKnownUserIdsResponse:
-    ids = await list_telegram_user_ids(session)
-    return TelegramKnownUserIdsResponse(telegram_ids=ids)
+async def list_telegram_users_ep(
+    session: ReadonlySessionDep,
+    group: Annotated[
+        TelegramUserGroup,
+        Query(
+            description="Группа пользователей для выборки telegram_id",
+            examples=["active_pay"],
+        ),
+    ],
+) -> TelegramKnownUserIdsResponse:
+    ids = await list_telegram_user_ids_by_group(session, group)
+    return TelegramKnownUserIdsResponse(group=group, telegram_ids=ids)
 
 
 @router.get(

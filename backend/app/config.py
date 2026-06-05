@@ -82,7 +82,7 @@ class Settings(BaseSettings):
             "POST /api/payments/tribute/webhook-test, "
             "POST /api/payments/yookassa/webhook, "
             "GET /api/telegram/notification-tasks, POST /api/telegram/notification-tasks/completed, "
-            "GET /api/telegram/users, GET /api/telegram/users/{topic_id} и "
+            "GET /api/telegram/users?group=..., GET /api/telegram/users/{topic_id} и "
             "GET /api/telegram/subscription-open-clients: "
             "заголовок X-Telegram-Bot-Secret (вызывает только бэкенд бота, не Telegram-клиент). "
             "Пусто — эндпоинты отвечают 503."
