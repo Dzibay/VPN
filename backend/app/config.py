@@ -367,8 +367,9 @@ class Settings(BaseSettings):
     subscription_expiry_notify_schedule_enabled: bool = Field(
         default=True,
         description=(
-            "Раз в сутки (Europe/Moscow) создавать задачи ``notify_sub_expire_3d`` / "
-            "``notify_sub_expire_1d`` / ``notify_sub_expire_0d`` для пользователей с активной конечной подпиской и telegram_id."
+            "Раз в сутки (Europe/Moscow, по умолчанию 12:00) создавать ``notify_sub_expire_3d`` / "
+            "``notify_sub_expire_1d`` / ``notify_sub_expire_0d`` / ``notify_sub_expired_7d``. "
+            "``notify_sub_expire`` создаётся в полночь вместе с ежедневным sync Xray."
         ),
     )
     subscription_expiry_notify_hour_local: int = Field(

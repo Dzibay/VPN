@@ -1,7 +1,8 @@
 """Планировщик ежедневной синхронизации списка клиентов Xray на узлах.
 
-Перед постановкой RQ sync создаются задачи ``notify_sub_expire`` (подписка уже истекла по Москве,
-см. ``enqueue_subscription_expired_notification_tasks``). Запускается из процесса
+Перед постановкой RQ sync создаётся задача ``notify_sub_expire`` (подписка уже истекла по Москве,
+см. ``enqueue_subscription_expired_notification_tasks``). Остальные ``notify_sub_expire_*`` /
+``notify_sub_expired_7d`` — в ``expiry_notify_scheduler`` (12:00 МСК). Запускается из процесса
 ``python -m app.scheduler.run`` (роль ``periodic`` / ``all``).
 """
 
@@ -15,10 +16,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
 from app.core.time import seconds_until_next_moscow_time
-from app.domain.subscription.expiry_notify_jobs import (
-    enqueue_subscription_expired_7d_notification_tasks,
-    enqueue_subscription_expired_notification_tasks,
-)
+from app.domain.subscription.expiry_notify_jobs import enqueue_subscription_expired_notification_tasks
 from app.domain.users.xray_sync_queue import ensure_sync_xray_clients_all_servers_enqueued
 
 log = logging.getLogger("app.subscription.scheduler")
@@ -27,23 +25,17 @@ log = logging.getLogger("app.subscription.scheduler")
 def run_daily_xray_clients_sync_enqueue(*, include_subscription_notify_tasks: bool = True) -> None:
     """Поставить в очередь sync inbound (идемпотентно, см. coalesce по job_id в users_service).
 
-    При ``include_subscription_notify_tasks`` перед sync создаёт ``notify_sub_expire`` /
-    ``notify_sub_expired_7d`` (только в плановый тик 00:05 МСК, не при старте контейнера).
+    При ``include_subscription_notify_tasks`` перед sync создаёт только ``notify_sub_expire``
+    (плановый тик 00:05 МСК, не при старте контейнера). ``notify_sub_expired_7d`` и
+    ``notify_sub_expire_*`` — в ``subscription_expiry_notify_loop`` (12:00 МСК).
     """
     if include_subscription_notify_tasks:
         try:
             n_expire = enqueue_subscription_expired_notification_tasks()
-            n_expire_7d = enqueue_subscription_expired_7d_notification_tasks()
-            if n_expire or n_expire_7d:
-                log.info(
-                    "Ежедневный sync Xray: notify_sub_expire=%s, notify_sub_expired_7d=%s",
-                    n_expire,
-                    n_expire_7d,
-                )
+            if n_expire:
+                log.info("Ежедневный sync Xray: notify_sub_expire=%s", n_expire)
         except Exception:
-            log.exception(
-                "Ежедневный sync Xray: ошибка при создании notify_sub_expire / notify_sub_expired_7d",
-            )
+            log.exception("Ежедневный sync Xray: ошибка при создании notify_sub_expire")
     try:
         jid = ensure_sync_xray_clients_all_servers_enqueued()
         log.info("Ежедневный sync клиентов Xray на всех серверах: job_id=%s", jid)
