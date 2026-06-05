@@ -108,7 +108,7 @@ async def list_users(
     "/search",
     response_model=list[StaffUserSearchItem],
     dependencies=[Depends(require_referrals_staff)],
-    summary="Поиск пользователей (email, telegram_id, username в telegram_properties)",
+    summary="Поиск пользователей (email, id, telegram_id, все значения telegram_properties)",
 )
 async def staff_search_users(
     session: ReadonlySessionDep,

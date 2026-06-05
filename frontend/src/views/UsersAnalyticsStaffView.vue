@@ -374,7 +374,7 @@ onMounted(() => {
       <StaffUserIdSuggestInput
         v-model="userSearchQuery"
         input-id="clients-user-search"
-        placeholder="Поиск от 3 символов (id, email, @username, tg id)"
+        placeholder="Поиск от 3 символов (id, email, tg id, telegram_properties)"
         @select="goToUserAnalytics"
       />
     </section>

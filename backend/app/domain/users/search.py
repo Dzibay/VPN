@@ -1,8 +1,8 @@
-"""Поиск пользователей для админки (по email, telegram_id и username из telegram_properties)."""
+"""Поиск пользователей для админки (email, id, telegram_id, все значения telegram_properties)."""
 
 from __future__ import annotations
 
-from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy import String, cast, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.models.users import StaffUserSearchItem
@@ -23,20 +23,20 @@ async def search_staff_users(
     q: str,
     limit: int = 30,
 ) -> list[StaffUserSearchItem]:
-    """Поиск по email, telegram_id (подстрока в тексте), telegram_properties.username (ILIKE)."""
+    """Поиск по email, id, telegram_id (подстрока) и любому значению в telegram_properties."""
     raw = q.strip()
     if len(raw) < 3:
         return []
     cap = min(max(1, limit), 50)
     pattern = f"%{_escape_like_pattern(raw)}%"
-    username_ast = User.telegram_properties["username"].astext
     stmt = (
         select(User)
         .where(
             or_(
                 User.email.ilike(pattern, escape="\\"),
+                cast(User.id, String).ilike(pattern, escape="\\"),
                 cast(User.telegram_id, String).ilike(pattern, escape="\\"),
-                func.coalesce(username_ast, "").ilike(pattern, escape="\\"),
+                cast(User.telegram_properties, String).ilike(pattern, escape="\\"),
             ),
         )
         .order_by(User.id.desc())
