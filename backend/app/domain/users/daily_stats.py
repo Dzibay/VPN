@@ -29,6 +29,7 @@ from app.domain.models.users import (
 from app.domain.traffic_daily import (
     active_users_count_by_traffic_day,
     fetch_user_traffic_series,
+    traffic_day_span,
     user_has_traffic_ever,
     user_traffic_growth_days,
 )
@@ -285,5 +286,13 @@ async def active_users_count_for_utc_date(
         ).all()
         filt = {int(i) for i in ids_raw}
     series = await fetch_user_traffic_series(session, user_ids_filter=filt)
-    counts = active_users_count_by_traffic_day(series, day_list=[cal_day])
+    if not series:
+        return 0
+    span = traffic_day_span(series)
+    if not span or cal_day < span[0]:
+        return 0
+    # Алгоритм active_users_count_by_traffic_day сравнивает день с предыдущим в day_list;
+    # один cal_day без истории даёт prev_total=0 и считает всех с трафиком «активными».
+    day_list = iter_calendar_days(span[0], cal_day)
+    counts = active_users_count_by_traffic_day(series, day_list=day_list)
     return int(counts.get(cal_day, 0) or 0)
