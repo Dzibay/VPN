@@ -68,7 +68,8 @@ class UserStatsByDateRow(BaseModel):
     users_count: int = Field(
         ge=0,
         description=(
-            "При granularity=day — пользователей с этим календарным днём регистрации (МСК). "
+            "При granularity=day — прирост по календарному дню регистрации (МСК) для всех с registered_at; "
+            "без registered_at — одна строка stats_date=null. "
             "При hour — всего пользователей строго до конца этого часа по Москве "
             "(включая без registered_at)."
         ),

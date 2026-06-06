@@ -51,7 +51,9 @@ def _with_day_period_start(rows: list[UserStatsByDateRow]) -> list[UserStatsByDa
 async def stats_by_date_merged(session: AsyncSession) -> list[UserStatsByDateRow]:
     """Сводка по датам через PostgreSQL ``rpc_users_daily_stats()`` (см. ``database/rpc/users_daily_stats.sql``).
 
-    Строка без даты регистрации (``stats_date IS NULL``) — в конце набора, если есть такие пользователи.
+    Строка без ``stats_date`` — пользователи без ``registered_at`` (в конце набора).
+    Дневные ``users_count`` — прирост по дню регистрации (МСК) для всех с ``registered_at``,
+    без фильтра по ``subscription_until``.
     """
     stmt = text(
         """

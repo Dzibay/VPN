@@ -1,6 +1,8 @@
 -- Дневная сводка: registered_at, payments, devices — календарь Europe/Moscow;
 -- traffic_date (снимки) — календарный день UTC на момент сбора (см. xray_stats_collect).
--- Все метрики только по пользователям с заполненными registered_at и subscription_until.
+-- Накопление регистраций (users_count): все пользователи; с registered_at — по дню МСК,
+-- без registered_at — отдельная строка stats_date IS NULL.
+-- Прочие метрики (активность, снимок подписки, оплаты) — только с registered_at и subscription_until.
 -- Календарь выдачи: от первой регистрации (МСК) до сегодня по Europe/Moscow.
 -- На графике админки показывают последние 30 дней; накопительные серии считаются на фронте по полному ряду.
 drop function if exists rpc_users_daily_stats;
@@ -35,7 +37,6 @@ msk_bounds AS (
                 SELECT MIN((u.registered_at AT TIME ZONE 'Europe/Moscow')::date)
                 FROM users u
                 WHERE u.registered_at IS NOT NULL
-                  AND u.subscription_until IS NOT NULL
             ),
             (NOW() AT TIME ZONE 'Europe/Moscow')::date
         ) AS window_start
@@ -72,6 +73,21 @@ user_traffic_total AS (
     FROM latest_traffic
     GROUP BY user_id
 ),
+latest_traffic_all AS (
+    SELECT DISTINCT ON (t.user_id, t.server_id)
+        t.user_id,
+        t.server_id,
+        t.up_bytes + t.down_bytes AS bytes
+    FROM user_server_traffic t
+    ORDER BY t.user_id, t.server_id, t.traffic_date DESC
+),
+user_traffic_total_all AS (
+    SELECT
+        user_id,
+        COALESCE(SUM(bytes), 0)::bigint AS total_bytes
+    FROM latest_traffic_all
+    GROUP BY user_id
+),
 reg AS (
     SELECT
         (u.registered_at AT TIME ZONE 'Europe/Moscow')::date AS sd,
@@ -80,9 +96,8 @@ reg AS (
             CASE WHEN COALESCE(utt.total_bytes, 0) > 0 THEN 1 ELSE 0 END
         )::bigint AS users_with_traffic_count
     FROM users u
-    LEFT JOIN user_traffic_total utt ON utt.user_id = u.id
+    LEFT JOIN user_traffic_total_all utt ON utt.user_id = u.id
     WHERE u.registered_at IS NOT NULL
-      AND u.subscription_until IS NOT NULL
     GROUP BY (u.registered_at AT TIME ZONE 'Europe/Moscow')::date
 ),
 traffic_local AS (
@@ -247,8 +262,8 @@ merged AS (
 undated AS (
     SELECT
         NULL::date AS stats_date,
-        r.users_count,
-        r.users_with_traffic_count,
+        cnt.users_count,
+        cnt.users_with_traffic_count,
         0::bigint AS active_users_count,
         0::bigint AS subscription_devices_users_count,
         0::bigint AS users_cumulative_traffic_over_100_mbit_count,
@@ -256,8 +271,17 @@ undated AS (
         0::bigint AS users_with_payment_count,
         0::bigint AS active_users_with_payment_count,
         0::bigint AS users_with_active_subscription_count
-    FROM reg r
-    WHERE r.sd IS NULL
+    FROM (
+        SELECT
+            COUNT(*)::bigint AS users_count,
+            SUM(
+                CASE WHEN COALESCE(utt.total_bytes, 0) > 0 THEN 1 ELSE 0 END
+            )::bigint AS users_with_traffic_count
+        FROM users u
+        LEFT JOIN user_traffic_total_all utt ON utt.user_id = u.id
+        WHERE u.registered_at IS NULL
+    ) cnt
+    WHERE cnt.users_count > 0
 )
 SELECT
     u.stats_date,

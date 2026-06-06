@@ -1,7 +1,8 @@
 -- 24 часа внутри календарного дня ``p_day`` по часовому поясу Europe/Moscow.
 -- period_start_utc — начало каждого часа в Москве (как абсолютный момент времени).
 -- Метрики накопительные на конец часа (все пользователи / данные строго до конца часа).
--- Учитываются только пользователи с registered_at и subscription_until (как в дневной сводке для графика).
+-- Накопление users_count: все пользователи (с registered_at — по моменту регистрации, без — в undated_users_count).
+-- Прочие почасовые метрики устройств/трафика — только с registered_at и subscription_until.
 
 CREATE OR REPLACE FUNCTION rpc_users_hourly_stats (p_day date)
 RETURNS TABLE (
@@ -51,21 +52,35 @@ user_traffic_total AS (
     FROM latest_traffic
     GROUP BY user_id
 ),
+latest_traffic_all AS (
+    SELECT DISTINCT ON (t.user_id, t.server_id)
+        t.user_id,
+        t.server_id,
+        t.up_bytes + t.down_bytes AS bytes
+    FROM user_server_traffic t
+    ORDER BY t.user_id, t.server_id, t.traffic_date DESC
+),
+user_traffic_total_all AS (
+    SELECT
+        user_id,
+        COALESCE(SUM(bytes), 0)::bigint AS total_bytes
+    FROM latest_traffic_all
+    GROUP BY user_id
+),
 baseline AS (
     SELECT
         b.day_start,
         (
             SELECT COUNT(*)::bigint
             FROM users u
-            INNER JOIN eligible_users eu ON eu.id = u.id
-            WHERE u.registered_at < b.day_start
+            WHERE u.registered_at IS NULL
+               OR u.registered_at < b.day_start
         )::bigint AS users_at_start,
         (
             SELECT COUNT(*)::bigint
             FROM users u
-            INNER JOIN eligible_users eu ON eu.id = u.id
-            LEFT JOIN user_traffic_total utt ON utt.user_id = u.id
-            WHERE u.registered_at < b.day_start
+            LEFT JOIN user_traffic_total_all utt ON utt.user_id = u.id
+            WHERE (u.registered_at IS NULL OR u.registered_at < b.day_start)
               AND COALESCE(utt.total_bytes, 0) > 0
         )::bigint AS traffic_at_start,
         (
@@ -78,7 +93,11 @@ baseline AS (
             ) fd
             WHERE fd.first_at < b.day_start
         )::bigint AS devices_at_start,
-        0::bigint AS undated_n
+        (
+            SELECT COUNT(*)::bigint
+            FROM users u
+            WHERE u.registered_at IS NULL
+        )::bigint AS undated_n
     FROM bounds b
 )
 SELECT
@@ -86,15 +105,14 @@ SELECT
     (
         SELECT COUNT(*)::bigint
         FROM users u
-        INNER JOIN eligible_users eu ON eu.id = u.id
-        WHERE u.registered_at < h.period_start_utc + interval '1 hour'
+        WHERE u.registered_at IS NULL
+           OR u.registered_at < h.period_start_utc + interval '1 hour'
     ) AS users_count,
     (
         SELECT COUNT(*)::bigint
         FROM users u
-        INNER JOIN eligible_users eu ON eu.id = u.id
-        LEFT JOIN user_traffic_total utt ON utt.user_id = u.id
-        WHERE u.registered_at < h.period_start_utc + interval '1 hour'
+        LEFT JOIN user_traffic_total_all utt ON utt.user_id = u.id
+        WHERE (u.registered_at IS NULL OR u.registered_at < h.period_start_utc + interval '1 hour')
           AND COALESCE(utt.total_bytes, 0) > 0
     ) AS users_with_traffic_count,
     0::bigint AS active_users_count,
