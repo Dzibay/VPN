@@ -16,6 +16,7 @@
   (3x-ui / community, иначе импорт не срабатывает; не путать с urlencoding в path)
 - Streisand: streisand://import/{subscription}#{profile_title} (Marzban / iOS; не ?url= — ломает https://)
 - v2raytun: v2raytun://import/{subscription} (сырая ссылка в path)
+- v2box: v2box://install-sub?url={urlencode(subscription)}&name={profile_title}
 - incy: incy://import/{subscription} (автоопределение типа данных; см. INCY deep-links)
 
 Имя профиля — ``app.constants.BRAND_NAME``.
@@ -198,6 +199,11 @@ def _v2raytun_deeplink(subscription_https_url: str) -> str:
     return f"v2raytun://import/{u}"
 
 
+def _v2box_deeplink(subscription_https_url: str) -> str:
+    u = _sub_url_trim(subscription_https_url)
+    return f"v2box://install-sub?url={_q(u)}&name={_q(BRAND_NAME)}"
+
+
 def _incy_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
     return "incy://import/" + u.lstrip("/")
@@ -291,6 +297,10 @@ _STORE: dict[str, AppStoreLinks] = {
         windows="https://v2raytun.com",
         macos="https://v2raytun.com",
     ),
+    "v2box": _stores(
+        android="https://play.google.com/store/apps/details?id=dev.hexasoftware.v2box",
+        ios="https://apps.apple.com/app/v2box-v2ray-client/id6446814690",
+    ),
 }
 
 
@@ -315,6 +325,7 @@ SUBSCRIPTION_OPEN_APPS: dict[str, SubscriptionOpenApp] = {
     "incy": _app("incy", "INCY", _incy_deeplink),
     "flclashx": _app("flclashx", "FLClashX", _flclashx_deeplink),
     "v2raytun": _app("v2raytun", "v2RayTun", _v2raytun_deeplink),
+    "v2box": _app("v2box", "V2Box", _v2box_deeplink),
     "koala-clash": _app("koala-clash", "Koala Clash", _koala_clash_deeplink),
     "prizrak-box": _app("prizrak-box", "Prizrak Box", _prizrak_box_deeplink),
     "stash": _app("stash", "Stash", _stash_deeplink),
