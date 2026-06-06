@@ -1,7 +1,8 @@
 -- Дневная сводка: registered_at, payments, devices — календарь Europe/Moscow;
 -- traffic_date (снимки) — календарный день UTC на момент сбора (см. xray_stats_collect).
 -- Все метрики только по пользователям с заполненными registered_at и subscription_until.
--- Окно выдачи: 30 последних календарных дней Europe/Moscow (включая сегодня).
+-- Календарь выдачи: от первой регистрации (МСК) до сегодня по Europe/Moscow.
+-- На графике админки показывают последние 30 дней; накопительные серии считаются на фронте по полному ряду.
 drop function if exists rpc_users_daily_stats;
 
 CREATE OR REPLACE FUNCTION rpc_users_daily_stats ()
@@ -26,10 +27,18 @@ WITH eligible_users AS (
     WHERE u.registered_at IS NOT NULL
       AND u.subscription_until IS NOT NULL
 ),
-msk_window AS (
+msk_bounds AS (
     SELECT
         (NOW() AT TIME ZONE 'Europe/Moscow')::date AS msk_today,
-        ((NOW() AT TIME ZONE 'Europe/Moscow')::date - 29) AS window_start
+        COALESCE(
+            (
+                SELECT MIN((u.registered_at AT TIME ZONE 'Europe/Moscow')::date)
+                FROM users u
+                WHERE u.registered_at IS NOT NULL
+                  AND u.subscription_until IS NOT NULL
+            ),
+            (NOW() AT TIME ZONE 'Europe/Moscow')::date
+        ) AS window_start
 ),
 -- Первый платёж (календарный день Europe/Moscow).
 first_payment AS (
@@ -193,7 +202,7 @@ dev AS (
 ),
 dense_calendar AS (
     SELECT generate_series(w.window_start, w.msk_today, '1 day'::interval)::date AS cal_day
-    FROM msk_window w
+    FROM msk_bounds w
 ),
 -- Снимок на конец календарного дня Europe/Moscow: подписка активна (subscription_until >= cal_day),
 -- только пользователи с известными registered_at и subscription_until.

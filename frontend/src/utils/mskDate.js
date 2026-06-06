@@ -125,6 +125,20 @@ export function formatMskHourAxis(isoOrTs) {
   }
 }
 
+/** Календарный день YYYY-MM-DD на ``days`` суток раньше (``days`` ≥ 1). */
+export function subtractCalendarDaysIso(isoDay, days = 1) {
+  const n = Math.max(1, Math.trunc(Number(days)) || 1)
+  const s = String(isoDay).slice(0, 10)
+  const [y, m, d] = s.split('-').map(Number)
+  if (!y || !m || !d) return s
+  const t = Date.UTC(y, m - 1, d - n)
+  const x = new Date(t)
+  const yy = x.getUTCFullYear()
+  const mo = String(x.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(x.getUTCDate()).padStart(2, '0')
+  return `${yy}-${mo}-${day}`
+}
+
 /** Следующий календарный день YYYY-MM-DD (плотный ряд). */
 export function addCalendarDayIso(isoDay) {
   const s = String(isoDay).slice(0, 10)

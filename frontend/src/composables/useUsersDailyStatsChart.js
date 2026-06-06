@@ -7,8 +7,12 @@ import {
   formatMskDateTimeShort,
   formatMskHourAxis,
   mskTodayIso,
+  subtractCalendarDaysIso,
   utcHourFloorMs,
 } from '../utils/mskDate.js'
+
+/** Сколько последних календарных дней МСК показывать на линейном графике (данные API — за весь срок). */
+const CHART_VISIBLE_MSK_DAYS = 30
 
 /**
  * @typedef {'day' | 'hour'} StatsGranularity
@@ -131,7 +135,7 @@ export function useUsersDailyStatsChart() {
     return row ? Number(row.users_with_payment_count) || 0 : 0
   })
 
-  const chartPoints = computed(() => {
+  const allChartPoints = computed(() => {
     const gran = granularity.value
     const extraUsers = undatedCount.value
     const extraTraffic = undatedTrafficCount.value
@@ -216,6 +220,15 @@ export function useUsersDailyStatsChart() {
         totalPayment: cumDatedPayment + extraPayment,
       }
     })
+  })
+
+  /** Точки для отрисовки: дневной режим — последние 30 суток МСК, накопление уже по полной истории. */
+  const chartPoints = computed(() => {
+    const pts = allChartPoints.value
+    if (granularity.value !== 'day' || !pts.length) return pts
+    const endIso = String(pts[pts.length - 1].iso).slice(0, 10)
+    const startIso = subtractCalendarDaysIso(endIso, CHART_VISIBLE_MSK_DAYS - 1)
+    return pts.filter((p) => String(p.iso).slice(0, 10) >= startIso)
   })
 
   const totalUsers = computed(() => {
