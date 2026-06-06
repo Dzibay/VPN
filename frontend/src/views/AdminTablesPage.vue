@@ -153,6 +153,8 @@ const formRegisteredAt = ref('')
 const editingUserTgUsername = ref('')
 /** Лимит трафика в ГиБ (1024³); пусто — без лимита */
 const formTrafficLimitGib = ref('')
+/** default | fixed_first_payment_instant — условия реферальных бонусов */
+const formReferralBonusPolicy = ref('default')
 
 const usersSyncLoading = ref(false)
 const usersSyncError = ref(null)
@@ -480,6 +482,7 @@ function openModal() {
     formAccountRole.value = 'client'
     formRegisteredAt.value = ''
     formTrafficLimitGib.value = ''
+    formReferralBonusPolicy.value = 'default'
     editingUserTgUsername.value = ''
   } else {
     formName.value = ''
@@ -598,6 +601,10 @@ function openEditUser(u) {
       : 'client'
   formRegisteredAt.value = utcIsoToRuDmy(u.registered_at)
   formTrafficLimitGib.value = trafficLimitBytesToFormGib(u.traffic_limit_bytes)
+  formReferralBonusPolicy.value =
+    u.referral_bonus_policy === 'fixed_first_payment_instant'
+      ? 'fixed_first_payment_instant'
+      : 'default'
   modalOpen.value = true
 }
 
@@ -748,6 +755,7 @@ async function submitSaveUser() {
           account_role: formAccountRole.value,
           registered_at: registrationDateTimeUtcOrNull(formRegisteredAt.value),
           traffic_limit_bytes: trafficLimitBytes,
+          referral_bonus_policy: formReferralBonusPolicy.value,
         }),
       })
     } else {
@@ -2252,6 +2260,21 @@ watch(formIsCascadeRuEntry, (v) => {
                 spellcheck="false"
               />
               <span class="field-hint">Формат: день.месяц.год</span>
+            </label>
+            <label class="field" v-if="editingUserId != null">
+              <span>Реферальные бонусы</span>
+              <select
+                v-model="formReferralBonusPolicy"
+                class="field-select"
+                aria-label="Политика реферальных бонусов"
+              >
+                <option value="default">
+                  Стандарт: месяцы × коэффициент, активация при своей оплате
+                </option>
+                <option value="fixed_first_payment_instant">
+                  +20 дней при первой оплате друга, сразу на подписку
+                </option>
+              </select>
             </label>
             <label v-if="editingUserId != null" class="field">
               <span>Лимит трафика (ГиБ)</span>

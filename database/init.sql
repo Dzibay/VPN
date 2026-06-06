@@ -14,9 +14,13 @@ CREATE TABLE IF NOT EXISTS users (
     traffic_limit_bytes BIGINT CHECK (traffic_limit_bytes IS NULL OR traffic_limit_bytes >= 0),
     -- Цикл с referral_links.owner_user_id: без REFERENCES, целостность на уровне приложения
     referral_link_id BIGINT,
+    referral_bonus_policy TEXT NOT NULL DEFAULT 'default',
     CONSTRAINT users_token_key UNIQUE (token),
     CONSTRAINT users_vless_uuid_key UNIQUE (vless_uuid),
-    CONSTRAINT users_account_role_check CHECK (account_role IN ('client', 'manager', 'admin'))
+    CONSTRAINT users_account_role_check CHECK (account_role IN ('client', 'manager', 'admin')),
+    CONSTRAINT users_referral_bonus_policy_check CHECK (
+        referral_bonus_policy IN ('default', 'fixed_first_payment_instant')
+    )
 );
 
 CREATE TABLE IF NOT EXISTS servers (
@@ -142,6 +146,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     referee_id BIGINT REFERENCES users (id) ON DELETE SET NULL,
     bonus_days INTEGER CHECK (bonus_days IS NULL OR bonus_days >= 0),
+    referral_bonus_applied BOOLEAN NOT NULL DEFAULT FALSE,
     early_payment_bonus_days INTEGER CHECK (early_payment_bonus_days IS NULL OR early_payment_bonus_days >= 0),
     paid_months INTEGER,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

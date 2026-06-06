@@ -9,6 +9,8 @@ from app.constants import BIGINT_MAX
 from app.core.time import ensure_utc
 from app.domain.models.auth import SubscriptionConnectionItem
 
+ReferralBonusPolicy = Literal["default", "fixed_first_payment_instant"]
+
 
 class UsersCountResponse(BaseModel):
     users_count: int = Field(ge=0, description="Число записей в таблице users")
@@ -303,6 +305,14 @@ class UserRead(BaseModel):
         description="Токен для URL /sub/{token} (подписка) и /sub/{token}/clash (YAML)",
     )
     vless_uuid: str = Field(description="UUID клиента VLESS (общий для всех узлов в подписке)")
+    referral_bonus_policy: ReferralBonusPolicy = Field(
+        default="default",
+        description=(
+            "Условия начисления реферальных бонусов: default — месяцы × глобальный коэффициент, "
+            "активация при оплате реферера; fixed_first_payment_instant — +20 дней при первой "
+            "оплате каждого друга, сразу на subscription_until"
+        ),
+    )
 
 
 class UserListItem(BaseModel):
@@ -370,6 +380,10 @@ class UserListItem(BaseModel):
             "null, если запись ещё не создавалась"
         ),
     )
+    referral_bonus_policy: ReferralBonusPolicy = Field(
+        default="default",
+        description="Индивидуальные условия реферальных бонусов для этого пользователя как реферера",
+    )
     token: str | None = Field(
         default=None,
         description="Токен подписки; у менеджера всегда null",
@@ -418,6 +432,13 @@ class UserUpdate(BaseModel):
         default=None,
         ge=0,
         description="Персональный потолок трафика (байты); null — без лимита",
+    )
+    referral_bonus_policy: ReferralBonusPolicy | None = Field(
+        default=None,
+        description=(
+            "Условия реферальных бонусов: default | fixed_first_payment_instant; "
+            "не указывайте поле, если не меняете"
+        ),
     )
 
     @field_validator("registered_at", mode="before")

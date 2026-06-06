@@ -44,6 +44,13 @@ class User(Base):
         ForeignKey("referral_links.id", ondelete="SET NULL"),
         nullable=True,
     )
+    #: Индивидуальные условия начисления реферальных бонусов (см. app.constants REFERRAL_BONUS_*).
+    referral_bonus_policy: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default=text("'default'"),
+        default="default",
+    )
     #: Момент создания записи пользователя (регистрация / создание админом); для старых строк может быть null.
     registered_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),

@@ -152,6 +152,7 @@ const formSubUntil = ref('')
 const formAccountRole = ref('client')
 const formRegisteredAt = ref('')
 const formTrafficLimitGib = ref('')
+const formReferralBonusPolicy = ref('default')
 
 const TRAFFIC_GIB_BYTES = 1024 ** 3
 
@@ -265,6 +266,10 @@ function fillProfileFormFromProfile() {
       : 'client'
   formRegisteredAt.value = utcIsoToRuDmy(p.registered_at)
   formTrafficLimitGib.value = trafficLimitBytesToFormGib(p.traffic_limit_bytes)
+  formReferralBonusPolicy.value =
+    p.referral_bonus_policy === 'fixed_first_payment_instant'
+      ? 'fixed_first_payment_instant'
+      : 'default'
 }
 
 function openProfileEdit() {
@@ -325,6 +330,7 @@ async function saveProfileEdit() {
         account_role: formAccountRole.value,
         registered_at: registrationDateTimeUtcOrNull(formRegisteredAt.value),
         traffic_limit_bytes: trafficLimitBytes,
+        referral_bonus_policy: formReferralBonusPolicy.value,
       }),
     })
     profileEditing.value = false
@@ -907,6 +913,31 @@ onMounted(() => {
             formatLocaleDateRu(profile.subscription_until)
           }}</template>
         </dd>
+        <template v-if="isAdmin">
+          <dt>Реферальные бонусы</dt>
+          <dd>
+            <select
+              v-if="profileEditing"
+              v-model="formReferralBonusPolicy"
+              class="profile-field-input profile-field-select"
+              aria-label="Политика реферальных бонусов"
+            >
+              <option value="default">
+                Стандарт: месяцы × коэффициент, при своей оплате
+              </option>
+              <option value="fixed_first_payment_instant">
+                +20 дней при первой оплате друга, сразу
+              </option>
+            </select>
+            <template v-else>
+              {{
+                profile.referral_bonus_policy === 'fixed_first_payment_instant'
+                  ? '+20 дней при первой оплате друга, сразу'
+                  : 'Стандарт'
+              }}
+            </template>
+          </dd>
+        </template>
         <dt>Трафик</dt>
         <dd
           class="mono"

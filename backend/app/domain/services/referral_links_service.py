@@ -27,6 +27,7 @@ from app.domain.referrals.repository import (
 )
 from app.domain.referrals.task_bonus_days import (
     sum_referral_bonus_days_pending_activation,
+    sum_referral_bonus_days_received_immediately,
     sum_referral_bonus_days_received_via_notify_payment,
 )
 from app.domain.models.referral_links import ReferralDirectTrafficStats
@@ -92,12 +93,13 @@ async def referral_me_for_user(session: AsyncSession, user_id: int, cfg: object)
 
     row = await get_or_create_user_owned_referral_link(session, user_id)
 
-    pending, received = await asyncio.gather(
+    pending, received_from_payments, received_immediately = await asyncio.gather(
         sum_referral_bonus_days_pending_activation(session, user_id=user_id),
         sum_referral_bonus_days_received_via_notify_payment(session, user_id=user_id),
+        sum_referral_bonus_days_received_immediately(session, user_id=user_id),
     )
     return ReferralMeResponse(
         link=referral_link_to_response(row, cfg),
         bonus_days_pending_activation=pending,
-        bonus_days_received=received,
+        bonus_days_received=received_from_payments + received_immediately,
     )

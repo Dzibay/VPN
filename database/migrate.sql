@@ -2,6 +2,17 @@
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS early_payment_bonus_days INTEGER
     CHECK (early_payment_bonus_days IS NULL OR early_payment_bonus_days >= 0);
 
+-- Индивидуальные условия реферальных бонусов для владельца ссылки (реферера).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_bonus_policy TEXT NOT NULL DEFAULT 'default';
+
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_referral_bonus_policy_check;
+ALTER TABLE users ADD CONSTRAINT users_referral_bonus_policy_check CHECK (
+    referral_bonus_policy IN ('default', 'fixed_first_payment_instant')
+);
+
+-- Флаг: бонусные дни из notify_ref_pay уже зачислены на subscription_until (мгновенная политика).
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS referral_bonus_applied BOOLEAN NOT NULL DEFAULT FALSE;
+
 -- Догонка существующих БД: tribute_webhook → provider_webhook, провайдер yookassa.
 
 -- Маршрутизация Google/YouTube на каскадном входе: exit (через exit, по умолчанию) | entry (через вход).

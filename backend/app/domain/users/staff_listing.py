@@ -15,9 +15,11 @@ from app.core.exceptions import NotFoundError
 from app.core.time import utc_today
 from app.domain.models.auth import SubscriptionConnectionItem
 from app.domain.models.users import (
+    ReferralBonusPolicy,
     StaffUsersListResponse,
     UserListItem,
 )
+from app.domain.referrals.referral_bonus_policy import normalize_referral_bonus_policy
 from app.domain.referrals.repository import get_user_owned_referral_link
 from app.domain.subscription.devices import list_subscription_connection_records_for_users
 from app.domain.user_traffic import (
@@ -176,6 +178,10 @@ async def staff_get_user_list_item(
         subscription_devices=subs_devices,
         referral_link_id=user.referral_link_id,
         owned_referral_link_id=owned_referral_link_id,
+        referral_bonus_policy=type_cast(
+            ReferralBonusPolicy,
+            normalize_referral_bonus_policy(user.referral_bonus_policy),
+        ),
         token=(user.token if show_secrets else None),
         vless_uuid=(user.vless_uuid if show_secrets else None),
     )
@@ -240,6 +246,10 @@ async def _staff_user_list_items(
                 subscription_devices=subs_devices,
                 referral_link_id=user.referral_link_id,
                 owned_referral_link_id=None,
+                referral_bonus_policy=type_cast(
+                    ReferralBonusPolicy,
+                    normalize_referral_bonus_policy(user.referral_bonus_policy),
+                ),
                 token=(user.token if show_secrets else None),
                 vless_uuid=(user.vless_uuid if show_secrets else None),
             ),

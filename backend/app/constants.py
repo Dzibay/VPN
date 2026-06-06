@@ -29,4 +29,17 @@ TRIBUTE_DIGITAL_PRODUCT_NAME_1Y: str = "Максимальная выгода (1
 # Комиссия Tribute с валовой суммы (10%). В webhook нет income_amount — считаем сами.
 TRIBUTE_PSP_FEE_RATE = "0.10"
 
+# --- Реферальные бонусы: политики users.referral_bonus_policy ---
+
+REFERRAL_BONUS_POLICY_DEFAULT = "default"
+REFERRAL_BONUS_POLICY_FIXED_FIRST_PAYMENT_INSTANT = "fixed_first_payment_instant"
+REFERRAL_BONUS_POLICIES = frozenset(
+    {
+        REFERRAL_BONUS_POLICY_DEFAULT,
+        REFERRAL_BONUS_POLICY_FIXED_FIRST_PAYMENT_INSTANT,
+    },
+)
+# Фиксированный бонус (дней) при первой оплате каждого приведённого друга (политика fixed_first_payment_instant).
+REFERRAL_BONUS_FIXED_FIRST_PAYMENT_DAYS = 20
+
 

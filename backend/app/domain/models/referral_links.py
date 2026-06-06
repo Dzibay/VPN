@@ -100,7 +100,8 @@ class ReferralMeResponse(BaseModel):
     bonus_days_received: int = Field(
         ge=0,
         description=(
-            "Уже полученные бонусные дни: сумма bonus_days по всем notify_payment этого пользователя"
+            "Уже полученные бонусные дни: сумма bonus_days по notify_payment и notify_ref_pay "
+            "с мгновенным зачислением (referral_bonus_applied)"
         ),
     )
 

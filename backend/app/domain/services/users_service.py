@@ -188,6 +188,12 @@ async def patch_staff_user(session: AsyncSession, user_id: int, body: UserUpdate
     При попытке выставить ``account_role='admin'`` без ``password_hash`` отдаёт 400: вход
     в админку требует пароль на сайте.
     """
+    from app.constants import REFERRAL_BONUS_POLICY_FIXED_FIRST_PAYMENT_INSTANT
+    from app.domain.referrals.referral_bonus_policy import normalize_referral_bonus_policy
+    from app.domain.referrals.task_bonus_days import (
+        apply_pending_referral_bonus_days_to_subscription,
+    )
+
     user = await session.get(User, user_id)
     if user is None:
         raise NotFoundError("Пользователь не найден")
@@ -199,8 +205,19 @@ async def patch_staff_user(session: AsyncSession, user_id: int, body: UserUpdate
         raise BadRequestError(
             "Нельзя назначить роль admin без пароля у пользователя",
         )
+    policy_transition_to_instant = False
+    if "referral_bonus_policy" in data:
+        new_policy = normalize_referral_bonus_policy(data["referral_bonus_policy"])
+        old_policy = normalize_referral_bonus_policy(user.referral_bonus_policy)
+        policy_transition_to_instant = (
+            new_policy == REFERRAL_BONUS_POLICY_FIXED_FIRST_PAYMENT_INSTANT
+            and old_policy != REFERRAL_BONUS_POLICY_FIXED_FIRST_PAYMENT_INSTANT
+        )
+        data["referral_bonus_policy"] = new_policy
     for key, value in data.items():
         setattr(user, key, value)
+    if policy_transition_to_instant:
+        await apply_pending_referral_bonus_days_to_subscription(session, user)
     await session.flush()
     return user
 

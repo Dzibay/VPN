@@ -24,6 +24,8 @@ class Task(Base):
         nullable=True,
     )
     bonus_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Для ``notify_ref_pay``: бонус уже зачислен на ``subscription_until`` (мгновенная политика).
+    referral_bonus_applied: Mapped[bool] = mapped_column(nullable=False, default=False)
     #: Для ``notify_payment`` — бонус за досрочную оплату (не реферальный ``bonus_days``).
     early_payment_bonus_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     #: Для ``notify_payment`` — число оплаченных месяцев (как в ``payments.months``).

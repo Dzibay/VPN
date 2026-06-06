@@ -6,6 +6,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
+from app.domain.referrals.referral_bonus_policy import (
+    compute_referral_bonus_days_for_owner,
+    normalize_referral_bonus_policy,
+    owner_already_rewarded_for_referee_payment,
+    referral_bonus_applies_immediately,
+)
 from app.domain.referrals.repository import increment_referral_counter
 from app.domain.tasks.eligibility import async_user_has_telegram_id
 from app.domain.tasks.notification_task_types import NOTIFY_REF_PAY
@@ -28,15 +34,15 @@ async def apply_referral_bonus_on_payment(
     1. Если у покупателя нет ``users.referral_link_id`` — ничего не делаем.
     2. Иначе всегда инкрементируем ``referral_links.payments_count`` (учёт воронки).
     3. Для ссылок с ``owner_kind='user'`` и владельцем ≠ покупатель:
-       вычисляется ``bonus_days = paid_months × REFERRAL_BONUS_DAYS_PER_PAID_MONTH``;
-       если ``bonus_days > 0`` — ставится задача ``notify_ref_pay`` с этим ``bonus_days``;
-       при ``bonus_days == 0`` — задача не создаётся.
+       бонусные дни зависят от ``users.referral_bonus_policy`` владельца (см.
+       :func:`compute_referral_bonus_days_for_owner`); при ``bonus_days > 0`` —
+       задача ``notify_ref_pay``; при ``bonus_days == 0`` — задача не создаётся.
 
-    ВАЖНО: ``users.subscription_until`` владельца здесь НЕ продлевается. Накопленные
-    бонусные дни применяются к подписке владельца только при его собственной оплате
-    (см. ``_handle_subscription_paid`` в ``tribute_service``): та же граница и сумма, что в
-    :func:`app.domain.referrals.task_bonus_days.sum_referral_bonus_days_pending_activation`,
-    прибавляются к оплаченным дням при продлении ``subscription_until``.
+    Политика ``default``: бонус = ``paid_months × REFERRAL_BONUS_DAYS_PER_PAID_MONTH``,
+    ``subscription_until`` владельца здесь НЕ продлевается — дни копятся до его оплаты.
+
+    Политика ``fixed_first_payment_instant``: фиксированные дни только при первой
+    оплате каждого реферируемого; ``subscription_until`` продлевается сразу.
 
     Возвращает фактически зафиксированные бонусные дни (или ``None``, если задача не создана).
     """
@@ -59,12 +65,40 @@ async def apply_referral_bonus_on_payment(
     if owner_id == int(referee_user_id):
         return None
 
-    per_month = int(settings.referral_bonus_days_per_paid_month)
-    bonus_days = per_month * int(paid_months)
+    owner_stmt = select(User).where(User.id == owner_id).limit(1)
+    owner = (await session.scalars(owner_stmt)).first()
+    if owner is None:
+        return None
+
+    policy = normalize_referral_bonus_policy(owner.referral_bonus_policy)
+    is_first_referee_payment = not await owner_already_rewarded_for_referee_payment(
+        session,
+        owner_user_id=owner_id,
+        referee_user_id=int(referee_user_id),
+    )
+    bonus_days = compute_referral_bonus_days_for_owner(
+        policy=policy,
+        paid_months=int(paid_months),
+        settings=settings,
+        is_first_referee_payment=is_first_referee_payment,
+    )
     if bonus_days <= 0:
         return None
     if not await async_user_has_telegram_id(session, owner_id):
         return None
+
+    apply_immediately = referral_bonus_applies_immediately(policy)
+    if apply_immediately:
+        from app.domain.services.payment_service import extend_subscription_until
+        from app.domain.subscription.traffic_limit import (
+            enqueue_xray_clients_sync_for_access_change,
+        )
+
+        owner.subscription_until = extend_subscription_until(
+            owner.subscription_until,
+            days=bonus_days,
+        )
+        enqueue_xray_clients_sync_for_access_change()
 
     session.add(
         Task(
@@ -72,6 +106,7 @@ async def apply_referral_bonus_on_payment(
             user_id=owner_id,
             referee_id=int(referee_user_id),
             bonus_days=bonus_days,
+            referral_bonus_applied=apply_immediately,
         ),
     )
     return bonus_days
