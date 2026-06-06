@@ -7,8 +7,8 @@ from typing import Literal
 from sqlalchemy import and_, exists, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time import moscow_today
-from app.domain.user_traffic import user_traffic_over_limit_sql, user_traffic_totals_by_user_subquery
+from app.domain.subscription.validity import subscription_active_sql
+from app.domain.user_traffic import user_traffic_over_limit_sql
 from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.user import User
 
@@ -40,26 +40,16 @@ def _telegram_users_base():
 
 
 def _subscription_active_for_group():
-    """Активная подписка для групп бота: задан subscription_until, дата не истекла, трафик ниже лимита."""
-    return and_(
-        User.subscription_until.isnot(None),
-        User.subscription_until >= moscow_today(),
-        not_(User.id.in_(user_traffic_over_limit_sql())),
-    )
+    """Активные: без срока или дата окончания ≥ сегодня (МСК), трафик ниже лимита."""
+    return subscription_active_sql()
+
+
+def _traffic_limit_exhausted():
+    return User.id.in_(user_traffic_over_limit_sql())
 
 
 def _has_payments():
     return exists(select(Payment.id).where(Payment.user_id == User.id))
-
-
-def _has_traffic():
-    totals = user_traffic_totals_by_user_subquery()
-    return exists(
-        select(totals.c.user_id).where(
-            totals.c.user_id == User.id,
-            totals.c.total_bytes > 0,
-        ),
-    )
 
 
 def _not_active():
@@ -77,8 +67,8 @@ _GROUP_CONDITIONS: dict[TelegramUserGroup, object] = {
     "no_active": _not_active(),
     "no_active_pay": and_(_not_active(), _has_payments()),
     "no_active_free": and_(_not_active(), _free()),
-    "no_active_free_no_traffic": and_(_not_active(), _free(), not_(_has_traffic())),
-    "no_active_free_no_date": and_(_not_active(), _free(), User.subscription_until.is_(None)),
+    "no_active_free_no_traffic": and_(_not_active(), _free(), _traffic_limit_exhausted()),
+    "no_active_free_no_date": and_(_not_active(), _free(), not_(_traffic_limit_exhausted())),
 }
 
 
