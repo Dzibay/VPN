@@ -28,7 +28,7 @@ async function submit() {
     const r = route.query.redirect
     if (data.role === 'admin') {
       router.replace(
-        typeof r === 'string' && r.startsWith('/admin') ? r : '/admin/users',
+        typeof r === 'string' && r.startsWith('/admin') ? r : '/admin/users/analytics',
       )
     } else if (data.role === 'manager') {
       const rPath = typeof r === 'string' ? r.split('?')[0] : ''

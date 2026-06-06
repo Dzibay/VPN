@@ -10,7 +10,7 @@ export function canAccessReferralsAdmin(role) {
 
 /** Куда вести после входа по умолчанию (без учёта query.redirect). */
 export function defaultPathAfterLogin(role) {
-  if (role === 'admin') return '/admin/users'
+  if (role === 'admin') return '/admin/users/analytics'
   if (role === 'manager') return '/admin/referrals'
   return '/cabinet'
 }

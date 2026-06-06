@@ -13,7 +13,7 @@ const props = defineProps({
   /** Пусто — из роли (админка / менеджер). */
   tabsAriaLabel: { type: String, default: '' },
   /**
-   * Ссылка «назад». Не задано — для admin: /admin/users, для manager: /cabinet.
+   * Ссылка «назад». Не задано — для admin: /admin/users/analytics, для manager: /cabinet.
    * Для страницы «Управление данными» задайте back-to="/".
    */
   backTo: { type: [String, Object], default: undefined },
@@ -29,7 +29,7 @@ const aria = computed(() => {
 const resolvedBackTo = computed(() => {
   if (props.backTo !== undefined && props.backTo !== null && props.backTo !== '')
     return props.backTo
-  return getSessionRole() === 'admin' ? '/admin/users' : '/cabinet'
+  return getSessionRole() === 'admin' ? '/admin/users/analytics' : '/cabinet'
 })
 
 const resolvedBackLabel = computed(() => {

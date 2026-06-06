@@ -8,9 +8,10 @@ import AdminPageHeader from '../components/AdminPageHeader.vue'
 import AdminPageShell from '../components/AdminPageShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
-import { fetchJson, sitePublicUrl } from '../api/client.js'
+import { fetchJson, sitePublicUrl, subscriptionPublicUrl } from '../api/client.js'
 import { isAdminRole } from '../auth/permissions.js'
 import { getSessionRole } from '../auth/session.js'
+import UserRolePill from '../components/UserRolePill.vue'
 import { rgbTupleFromVar } from '../utils/adminChartTheme.js'
 import {
   formatTrafficBytes as formatBytes,
@@ -135,16 +136,243 @@ const userId = computed(() => {
   return Number.isFinite(n) ? n : null
 })
 
-const userAnalyticsBackTo = computed(() =>
-  isAdminRole(getSessionRole()) ? '/admin/users' : '/admin/users/analytics',
-)
+const userAnalyticsBackTo = computed(() => '/admin/users/analytics')
 
-const userAnalyticsBackLabel = computed(() =>
-  isAdminRole(getSessionRole()) ? '← Пользователи' : '← Аналитика клиентов',
-)
+const userAnalyticsBackLabel = computed(() => '← Клиенты')
+
+const isAdmin = computed(() => isAdminRole(getSessionRole()))
+
+const profileEditing = ref(false)
+const profileSaving = ref(false)
+const profileEditError = ref(null)
+const clearTelegramBusy = ref(false)
+
+const formTelegramId = ref('')
+const formSubUntil = ref('')
+const formAccountRole = ref('client')
+const formRegisteredAt = ref('')
+const formTrafficLimitGib = ref('')
+
+const TRAFFIC_GIB_BYTES = 1024 ** 3
+
+const profileHasTelegramData = computed(() => {
+  const p = profile.value
+  if (!p) return false
+  if (p.telegram_id != null) return true
+  const props = p.telegram_properties
+  if (!props || typeof props !== 'object') return false
+  return Object.keys(props).length > 0
+})
 
 function formatDateTime(d) {
   return formatMskApiDateTime(d, { dateStyle: 'short', timeStyle: 'short' })
+}
+
+function isoYyyyMmDdToRuDmy(iso) {
+  const s = String(iso ?? '').trim().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return ''
+  const [y, m, d] = s.split('-').map(Number)
+  if (!y || !m || !d) return ''
+  return `${String(d).padStart(2, '0')}.${String(m).padStart(2, '0')}.${y}`
+}
+
+function utcIsoToRuDmy(iso) {
+  if (iso == null || iso === '') return ''
+  const t = Date.parse(String(iso))
+  if (Number.isNaN(t)) return ''
+  const d = new Date(t)
+  const day = String(d.getUTCDate()).padStart(2, '0')
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const y = d.getUTCFullYear()
+  return `${day}.${month}.${y}`
+}
+
+function dateFormToIsoOrNull(raw) {
+  const s = String(raw ?? '').trim()
+  if (!s) return null
+  const ru = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(s)
+  if (ru) {
+    const d = Number(ru[1])
+    const m = Number(ru[2])
+    const y = Number(ru[3])
+    if (m < 1 || m > 12 || d < 1 || d > 31 || y < 1 || y > 9999) return null
+    const dt = new Date(Date.UTC(y, m - 1, d))
+    if (
+      dt.getUTCFullYear() !== y ||
+      dt.getUTCMonth() !== m - 1 ||
+      dt.getUTCDate() !== d
+    ) {
+      return null
+    }
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [y, m, d] = s.split('-').map(Number)
+    const dt = new Date(Date.UTC(y, m - 1, d))
+    if (
+      dt.getUTCFullYear() !== y ||
+      dt.getUTCMonth() !== m - 1 ||
+      dt.getUTCDate() !== d
+    ) {
+      return null
+    }
+    return s
+  }
+  return null
+}
+
+function registrationDateTimeUtcOrNull(raw) {
+  const d = dateFormToIsoOrNull(raw)
+  if (d === null) return null
+  return `${d}T00:00:00.000Z`
+}
+
+function normalizeTelegramId(raw) {
+  const s = String(raw ?? '').trim().replace(/^@/, '')
+  if (!s) return null
+  if (!/^\d{1,19}$/.test(s)) return null
+  return Number(s)
+}
+
+function trafficLimitBytesToFormGib(bytes) {
+  if (bytes == null || bytes === '') return ''
+  const n = Number(bytes)
+  if (!Number.isFinite(n) || n <= 0) return ''
+  return String(Math.round(n / TRAFFIC_GIB_BYTES))
+}
+
+function trafficLimitFormGibToBytes(raw) {
+  const s = String(raw ?? '').trim().replace(',', '.')
+  if (!s) return null
+  const gib = Number.parseFloat(s)
+  if (!Number.isFinite(gib) || gib < 0 || gib > 10_000) return undefined
+  return Math.round(gib * TRAFFIC_GIB_BYTES)
+}
+
+function fillProfileFormFromProfile() {
+  const p = profile.value
+  if (!p) return
+  formTelegramId.value =
+    p.telegram_id != null ? String(p.telegram_id) : ''
+  const su = p.subscription_until
+  formSubUntil.value =
+    su != null && String(su).trim()
+      ? isoYyyyMmDdToRuDmy(String(su).slice(0, 10))
+      : ''
+  formAccountRole.value =
+    p.account_role === 'manager' || p.account_role === 'admin'
+      ? p.account_role
+      : 'client'
+  formRegisteredAt.value = utcIsoToRuDmy(p.registered_at)
+  formTrafficLimitGib.value = trafficLimitBytesToFormGib(p.traffic_limit_bytes)
+}
+
+function openProfileEdit() {
+  profileEditError.value = null
+  fillProfileFormFromProfile()
+  profileEditing.value = true
+}
+
+function cancelProfileEdit() {
+  if (profileSaving.value || clearTelegramBusy.value) return
+  profileEditError.value = null
+  profileEditing.value = false
+}
+
+async function reloadProfileCard() {
+  const uid = userId.value
+  if (uid == null) return
+  const r = await fetchJson(`/api/users/${uid}`)
+  profile.value = r && typeof r === 'object' ? r : null
+}
+
+async function saveProfileEdit() {
+  const uid = userId.value
+  if (uid == null) return
+  profileSaving.value = true
+  profileEditError.value = null
+  try {
+    const subRaw = String(formSubUntil.value ?? '').trim()
+    const subIso = subRaw === '' ? null : dateFormToIsoOrNull(formSubUntil.value)
+    if (subRaw !== '' && subIso === null) {
+      profileEditError.value = 'Подписка до: укажите дату как ДД.ММ.ГГГГ'
+      return
+    }
+    const regRaw = String(formRegisteredAt.value ?? '').trim()
+    if (regRaw !== '' && dateFormToIsoOrNull(formRegisteredAt.value) === null) {
+      profileEditError.value =
+        'Дата регистрации: укажите дату как ДД.ММ.ГГГГ или очистите поле'
+      return
+    }
+    const trafficLimitBytes = trafficLimitFormGibToBytes(formTrafficLimitGib.value)
+    if (trafficLimitBytes === undefined) {
+      profileEditError.value =
+        'Лимит трафика: укажите неотрицательное число гигабайт (до 10000) или очистите поле'
+      return
+    }
+    const tgRaw = String(formTelegramId.value ?? '').trim()
+    const tgId = tgRaw === '' ? null : normalizeTelegramId(formTelegramId.value)
+    if (tgRaw !== '' && tgId === null) {
+      profileEditError.value =
+        'Telegram ID: укажите числовой идентификатор или очистите поле'
+      return
+    }
+    await fetchJson(`/api/users/${uid}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        telegram_id: tgId,
+        subscription_until: subIso,
+        account_role: formAccountRole.value,
+        registered_at: registrationDateTimeUtcOrNull(formRegisteredAt.value),
+        traffic_limit_bytes: trafficLimitBytes,
+      }),
+    })
+    profileEditing.value = false
+    await reloadProfileCard()
+  } catch (e) {
+    profileEditError.value = e.message || String(e)
+  } finally {
+    profileSaving.value = false
+  }
+}
+
+async function clearProfileTelegram() {
+  const uid = userId.value
+  if (uid == null || !profileHasTelegramData.value) return
+  const p = profile.value
+  const noEmail =
+    p &&
+    (p.email == null ||
+      (typeof p.email === 'string' && p.email.trim() === ''))
+  const warn =
+    noEmail ?
+      '\n\nУ пользователя нет email — после сброса Telegram войти в аккаунт будет нельзя.'
+    : ''
+  if (
+    !window.confirm(
+      `Сбросить привязку Telegram (числовой ID и профиль в JSON) у пользователя #${uid}?${warn}`,
+    )
+  ) {
+    return
+  }
+  clearTelegramBusy.value = true
+  profileEditError.value = null
+  try {
+    await fetchJson(`/api/users/${uid}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        telegram_id: null,
+        telegram_properties: null,
+      }),
+    })
+    formTelegramId.value = ''
+    await reloadProfileCard()
+    fillProfileFormFromProfile()
+  } catch (e) {
+    profileEditError.value = e.message || String(e)
+  } finally {
+    clearTelegramBusy.value = false
+  }
 }
 
 function telegramUsername(p) {
@@ -417,6 +645,8 @@ function resetAnalyticsPageState() {
   refereeUsersError.value = null
   refereeUsersLoading.value = false
   copyHint.value = null
+  profileEditing.value = false
+  profileEditError.value = null
   paymentLedgerItems.value = []
   paymentLedgerTotal.value = 0
   paymentsLedgerError.value = null
@@ -530,15 +760,100 @@ onMounted(() => {
     <p v-if="loading" class="loading-line">Загрузка…</p>
 
     <div v-if="!loading && profile" class="user-profile glass">
-      <h2 class="profile-title">Данные пользователя</h2>
+      <div class="profile-head">
+        <h2 class="profile-title">Данные пользователя</h2>
+        <div v-if="isAdmin" class="profile-head__actions">
+          <template v-if="profileEditing">
+            <button
+              type="button"
+              class="btn-primary btn-tiny"
+              :disabled="profileSaving || clearTelegramBusy"
+              @click="saveProfileEdit"
+            >
+              {{ profileSaving ? 'Сохранение…' : 'Сохранить' }}
+            </button>
+            <button
+              type="button"
+              class="btn-secondary btn-tiny"
+              :disabled="profileSaving || clearTelegramBusy"
+              @click="cancelProfileEdit"
+            >
+              Отмена
+            </button>
+          </template>
+          <button
+            v-else
+            type="button"
+            class="btn-secondary btn-tiny"
+            @click="openProfileEdit"
+          >
+            Редактировать
+          </button>
+        </div>
+      </div>
+      <p v-if="profileEditError" class="banner-err profile-edit-err">{{
+        profileEditError
+      }}</p>
       <dl class="kv-grid">
         <dt>ID</dt>
         <dd class="mono">{{ profile.id }}</dd>
         <dt>Email</dt>
         <dd>{{ profile.email && String(profile.email).trim() ? profile.email : '—' }}</dd>
+        <template v-if="isAdmin">
+          <dt>Роль</dt>
+          <dd>
+            <select
+              v-if="profileEditing"
+              v-model="formAccountRole"
+              class="profile-field-input profile-field-select"
+              aria-label="Роль пользователя"
+            >
+              <option value="client">Клиент (VPN)</option>
+              <option value="manager">Менеджер (реферальные токены)</option>
+              <option value="admin">Администратор</option>
+            </select>
+            <UserRolePill v-else :role="profile.account_role" />
+          </dd>
+          <dt>Ссылка подписки</dt>
+          <dd class="subscription-link-cell">
+            <template v-if="profile.token">
+              <span class="mono subscription-link-cell__token">{{
+                profile.token
+              }}</span>
+              <a
+                class="subscription-link-cell__url"
+                :href="subscriptionPublicUrl(profile.token)"
+                target="_blank"
+                rel="noopener noreferrer"
+              >{{ subscriptionPublicUrl(profile.token) }}</a>
+              <button
+                type="button"
+                class="btn-secondary btn-tiny"
+                aria-label="Копировать ссылку подписки в буфер обмена"
+                @click="copyReferralUrl(subscriptionPublicUrl(profile.token))"
+              >
+                Копировать
+              </button>
+            </template>
+            <span v-else class="muted-dash">—</span>
+          </dd>
+        </template>
         <dt>Telegram ID</dt>
         <dd class="mono">
-          {{ profile.telegram_id != null ? profile.telegram_id : '—' }}
+          <input
+            v-if="isAdmin && profileEditing"
+            v-model="formTelegramId"
+            type="text"
+            class="profile-field-input"
+            inputmode="numeric"
+            autocomplete="off"
+            autocapitalize="none"
+            spellcheck="false"
+            placeholder="например 123456789"
+          />
+          <template v-else>
+            {{ profile.telegram_id != null ? profile.telegram_id : '—' }}
+          </template>
         </dd>
         <dt>Username в Telegram</dt>
         <dd>{{ telegramUsername(profile) || '—' }}</dd>
@@ -548,26 +863,89 @@ onMounted(() => {
             JSON.stringify(profile.telegram_properties, null, 2)
           }}</pre>
           <span v-else class="muted-dash">—</span>
+          <button
+            v-if="isAdmin && profileEditing && profileHasTelegramData"
+            type="button"
+            class="btn-secondary btn-tiny profile-telegram-clear"
+            :disabled="profileSaving || clearTelegramBusy"
+            @click="clearProfileTelegram"
+          >
+            {{ clearTelegramBusy ? 'Сброс…' : 'Сбросить Telegram' }}
+          </button>
         </dd>
         <dt>Регистрация</dt>
-        <dd>{{ formatDateTime(profile.registered_at) }}</dd>
+        <dd>
+          <input
+            v-if="isAdmin && profileEditing"
+            v-model="formRegisteredAt"
+            type="text"
+            class="profile-field-input profile-field-date"
+            inputmode="numeric"
+            maxlength="10"
+            placeholder="ДД.ММ.ГГГГ"
+            autocomplete="off"
+            autocapitalize="none"
+            spellcheck="false"
+          />
+          <template v-else>{{ formatDateTime(profile.registered_at) }}</template>
+        </dd>
         <dt>Подписка до</dt>
-        <dd>{{ formatLocaleDateRu(profile.subscription_until) }}</dd>
+        <dd>
+          <input
+            v-if="isAdmin && profileEditing"
+            v-model="formSubUntil"
+            type="text"
+            class="profile-field-input profile-field-date"
+            inputmode="numeric"
+            maxlength="10"
+            placeholder="ДД.ММ.ГГГГ"
+            autocomplete="off"
+            autocapitalize="none"
+            spellcheck="false"
+          />
+          <template v-else>{{
+            formatLocaleDateRu(profile.subscription_until)
+          }}</template>
+        </dd>
         <dt>Трафик</dt>
         <dd
           class="mono"
           :class="{ 'traffic-over-limit': profile && isTrafficOverLimit(profile) }"
         >
-          {{
-            formatTrafficWithLimit(
-              profile.total_traffic_bytes ?? 0,
-              profile.traffic_limit_bytes,
-            )
-          }}
-          <span
-            v-if="profile.traffic_limit_bytes == null"
-            class="traffic-limit-hint"
-          >без лимита</span>
+          <template v-if="isAdmin && profileEditing">
+            <input
+              v-model="formTrafficLimitGib"
+              type="number"
+              class="profile-field-input profile-field-traffic"
+              min="0"
+              max="10000"
+              step="1"
+              inputmode="decimal"
+              placeholder="без лимита"
+              autocomplete="off"
+            />
+            <span class="profile-field-hint">
+              Сейчас:
+              {{
+                formatTrafficWithLimit(
+                  profile.total_traffic_bytes ?? 0,
+                  profile.traffic_limit_bytes,
+                )
+              }}
+            </span>
+          </template>
+          <template v-else>
+            {{
+              formatTrafficWithLimit(
+                profile.total_traffic_bytes ?? 0,
+                profile.traffic_limit_bytes,
+              )
+            }}
+            <span
+              v-if="profile.traffic_limit_bytes == null"
+              class="traffic-limit-hint"
+            >без лимита</span>
+          </template>
         </dd>
         <dt>Устройств по подписке</dt>
         <dd class="kv-dd-devices">
@@ -1523,12 +1901,76 @@ tr.referee-row-active-today {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+.profile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+.profile-head__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
 .profile-title {
-  margin: 0 0 0.85rem;
+  margin: 0;
   font-size: 1.05rem;
   font-weight: 800;
   font-family: var(--heading);
   color: var(--text-h);
+}
+.profile-edit-err {
+  margin: 0 0 0.75rem;
+}
+.subscription-link-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.subscription-link-cell__token {
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+.subscription-link-cell__url {
+  font-size: 0.82rem;
+  color: var(--accent);
+  word-break: break-all;
+}
+.profile-field-input {
+  width: 100%;
+  max-width: 18rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.profile-field-input:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 1px;
+}
+.profile-field-select {
+  max-width: 22rem;
+}
+.profile-field-date {
+  max-width: 10rem;
+}
+.profile-field-traffic {
+  max-width: 8rem;
+}
+.profile-field-hint {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-family: var(--sans);
+}
+.profile-telegram-clear {
+  margin-top: 0.45rem;
 }
 .kv-dd-devices {
   display: flex;

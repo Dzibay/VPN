@@ -163,11 +163,7 @@ const routes = [
     name: 'admin-user-analytics',
     component: UserAnalyticsView,
   },
-  {
-    path: '/admin/users',
-    name: 'admin-users',
-    component: AdminTablesPage,
-  },
+  { path: '/admin/users', redirect: '/admin/users/analytics' },
   {
     path: '/admin/servers',
     name: 'admin-servers',
@@ -189,7 +185,7 @@ const routes = [
     redirect: (to) =>
       to.query.tab === 'servers'
         ? { path: '/admin/servers' }
-        : { path: '/admin/users' },
+        : { path: '/admin/users/analytics' },
   },
 ]
 
@@ -222,7 +218,7 @@ router.beforeEach(async (to, _from, next) => {
 
   if ((to.name === 'login' || to.name === 'register') && token) {
     if (isAdminRole(role)) {
-      return next({ path: '/admin/users' })
+      return next({ path: '/admin/users/analytics' })
     }
     if (role === 'manager') {
       return next({ path: '/admin/referrals' })

@@ -11,10 +11,10 @@ import { isAdminRole, canAccessReferralsAdmin } from '../auth/permissions.js'
 /** @type {Array<{ routeName: string, label: string, path: string, access: AdminNavAccess }>} */
 export const ADMIN_NAV_DEFINITION = [
   {
-    routeName: 'admin-users',
-    label: 'Пользователи',
-    path: '/admin/users',
-    access: 'admin_only',
+    routeName: 'admin-users-staff-analytics',
+    label: 'Клиенты',
+    path: '/admin/users/analytics',
+    access: 'staff',
   },
   {
     routeName: 'admin-servers',
@@ -32,12 +32,6 @@ export const ADMIN_NAV_DEFINITION = [
     routeName: 'admin-subscription-user-agent-stats',
     label: 'Подключения',
     path: '/admin/users/subscription-user-agent-stats',
-    access: 'staff',
-  },
-  {
-    routeName: 'admin-users-staff-analytics',
-    label: 'Клиенты',
-    path: '/admin/users/analytics',
     access: 'staff',
   },
   {
