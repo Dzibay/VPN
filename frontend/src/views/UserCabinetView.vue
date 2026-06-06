@@ -21,7 +21,7 @@ import {
   hideClientLogoOnError,
   openClientLogoUrl,
 } from '../utils/subscription/subscriptionOpenClientLogo.js'
-import { Check, CreditCard, Link2, Loader2, Send } from 'lucide-vue-next'
+import { Check, ChevronRight, CreditCard, Gift, Calendar, Link2, Loader2, Lock, MousePointerClick, Send, UserPlus, Wallet } from 'lucide-vue-next'
 
 /** Подсказки к строкам исх./вх. в блоке трафика */
 const TRAFFIC_HINT_UP =
@@ -133,6 +133,8 @@ const profileTelegramUsername = computed(() => {
 
 /** @type {import('vue').Ref<null | Record<string, unknown>>} */
 const myReferralLink = ref(null)
+const myReferralBonusPending = ref(0)
+const myReferralBonusReceived = ref(0)
 const myReferralLoading = ref(false)
 const myReferralError = ref(null)
 const referralCopySite = ref(false)
@@ -165,6 +167,8 @@ const effectiveReferralTelegramUrl = computed(() => {
 async function loadMyReferral() {
   if (me.value?.role !== 'user') {
     myReferralLink.value = null
+    myReferralBonusPending.value = 0
+    myReferralBonusReceived.value = 0
     myReferralError.value = null
     return
   }
@@ -173,9 +177,13 @@ async function loadMyReferral() {
   try {
     const data = await fetchJson('/api/referral/me')
     myReferralLink.value = data?.link ?? null
+    myReferralBonusPending.value = Number(data?.bonus_days_pending_activation ?? 0)
+    myReferralBonusReceived.value = Number(data?.bonus_days_received ?? 0)
   } catch (e) {
     myReferralError.value = e.message || String(e)
     myReferralLink.value = null
+    myReferralBonusPending.value = 0
+    myReferralBonusReceived.value = 0
   } finally {
     myReferralLoading.value = false
   }
@@ -218,6 +226,8 @@ watch(
   (role) => {
     if (role !== 'user') {
       myReferralLink.value = null
+      myReferralBonusPending.value = 0
+      myReferralBonusReceived.value = 0
       myReferralError.value = null
       myReferralLoading.value = false
     }
@@ -985,8 +995,8 @@ onBeforeUnmount(() => {
         <div class="stack">
           <div class="card card-pad referral-card">
             <h2 class="block-title">Реферальная система</h2>
-            <p v-if="referralClientUser" class="hint">
-              Ваша персональная реферальная ссылка — ниже; по ней учитываются приглашённые пользователи.
+            <p v-if="referralClientUser" class="hint referral-card-lead">
+              Делитесь ссылкой — учитываются клики, регистрации и оплаты приглашённых.
             </p>
             <p v-else-if="referralsStaffVisible" class="hint">
               Сотрудникам: выпуск и учёт всех реферальных токенов — в админ-панели.
@@ -1007,64 +1017,220 @@ onBeforeUnmount(() => {
                 {{ myReferralError }}
               </div>
               <template v-else-if="myReferralLink">
-                <dl class="dl referral-stats-dl">
-                  <div class="row">
-                    <dt>Токен</dt>
-                    <dd class="mono">{{ myReferralLink.token }}</dd>
+                <section
+                  class="referral-section"
+                  aria-label="Статистика реферальной ссылки"
+                >
+                  <h3 class="referral-section-title">Статистика</h3>
+                  <div class="referral-stat-grid referral-stat-grid--3">
+                    <div class="referral-stat referral-stat--row">
+                      <span
+                        class="referral-stat__icon-wrap"
+                        aria-hidden="true"
+                      >
+                        <MousePointerClick
+                          class="referral-stat__icon"
+                          :size="18"
+                          :stroke-width="2"
+                        />
+                      </span>
+                      <div class="referral-stat__body">
+                        <span class="referral-stat__value">{{
+                          myReferralLink.clicks_count ?? 0
+                        }}</span>
+                        <span class="referral-stat__label">Клики</span>
+                      </div>
+                    </div>
+                    <div class="referral-stat referral-stat--row">
+                      <span
+                        class="referral-stat__icon-wrap"
+                        aria-hidden="true"
+                      >
+                        <UserPlus
+                          class="referral-stat__icon"
+                          :size="18"
+                          :stroke-width="2"
+                        />
+                      </span>
+                      <div class="referral-stat__body">
+                        <span class="referral-stat__value">{{
+                          myReferralLink.registrations_count ?? 0
+                        }}</span>
+                        <span class="referral-stat__label">Регистрации</span>
+                      </div>
+                    </div>
+                    <div class="referral-stat referral-stat--row">
+                      <span
+                        class="referral-stat__icon-wrap"
+                        aria-hidden="true"
+                      >
+                        <Wallet
+                          class="referral-stat__icon"
+                          :size="18"
+                          :stroke-width="2"
+                        />
+                      </span>
+                      <div class="referral-stat__body">
+                        <span class="referral-stat__value">{{
+                          myReferralLink.payments_count ?? 0
+                        }}</span>
+                        <span class="referral-stat__label">Оплаты</span>
+                      </div>
+                    </div>
                   </div>
-                  <div class="row">
-                    <dt>Клики</dt>
-                    <dd class="mono">{{ myReferralLink.clicks_count ?? 0 }}</dd>
+                </section>
+
+                <section
+                  class="referral-section"
+                  aria-label="Бонусные дни реферальной программы"
+                >
+                  <h3 class="referral-section-title">Бонусные дни</h3>
+                  <div class="referral-stat-grid referral-stat-grid--2">
+                    <div class="referral-stat referral-stat--row referral-stat--bonus">
+                      <span
+                        class="referral-stat__icon-wrap"
+                        aria-hidden="true"
+                      >
+                        <Gift
+                          class="referral-stat__icon"
+                          :size="18"
+                          :stroke-width="2"
+                        />
+                      </span>
+                      <div class="referral-stat__body">
+                        <span class="referral-stat__value">{{
+                          myReferralBonusPending
+                        }}</span>
+                        <span class="referral-stat__label">Накоплено</span>
+                        <span class="referral-stat__hint">
+                          Зачислятся при вашей следующей оплате
+                        </span>
+                      </div>
+                    </div>
+                    <div class="referral-stat referral-stat--row referral-stat--bonus">
+                      <span
+                        class="referral-stat__icon-wrap"
+                        aria-hidden="true"
+                      >
+                        <Calendar
+                          class="referral-stat__icon"
+                          :size="18"
+                          :stroke-width="2"
+                        />
+                      </span>
+                      <div class="referral-stat__body">
+                        <span class="referral-stat__value">{{
+                          myReferralBonusReceived
+                        }}</span>
+                        <span class="referral-stat__label">Получено</span>
+                        <span class="referral-stat__hint">
+                          Уже добавлены к подписке
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <div class="row">
-                    <dt>Регистрации</dt>
-                    <dd class="mono">{{ myReferralLink.registrations_count ?? 0 }}</dd>
+                </section>
+
+                <section class="referral-section referral-section--share">
+                  <h3 class="referral-section-title">Поделиться</h3>
+                  <div class="referral-share-stack">
+                    <button
+                      type="button"
+                      class="referral-share-row"
+                      :disabled="!effectiveReferralSiteUrl"
+                      @click="copyReferralSite"
+                    >
+                      <span
+                        class="referral-share-row__icon-wrap"
+                        aria-hidden="true"
+                      >
+                        <Check
+                          v-if="referralCopySite"
+                          class="referral-share-row__icon"
+                          :size="18"
+                          :stroke-width="2"
+                        />
+                        <Link2
+                          v-else
+                          class="referral-share-row__icon"
+                          :size="18"
+                          :stroke-width="2"
+                        />
+                      </span>
+                      <span class="referral-share-row__text">{{
+                        referralCopySite
+                          ? 'Скопировано'
+                          : 'Скопировать ссылку на сайт'
+                      }}</span>
+                      <ChevronRight
+                        v-if="effectiveReferralSiteUrl && !referralCopySite"
+                        class="referral-share-row__chevron"
+                        :size="18"
+                        :stroke-width="2"
+                        aria-hidden="true"
+                      />
+                    </button>
+                    <p
+                      v-if="!effectiveReferralSiteUrl"
+                      class="hint referral-copy-warn"
+                    >
+                      Не удалось собрать ссылку: задайте в .env API переменную
+                      <code class="inline-code">SITE_ADDRESS</code> (публичный URL сайта).
+                    </p>
+                    <button
+                      type="button"
+                      class="referral-share-row"
+                      :class="{
+                        'referral-share-row--locked': !effectiveReferralTelegramUrl,
+                      }"
+                      :disabled="!effectiveReferralTelegramUrl"
+                      @click="copyReferralTelegram"
+                    >
+                      <span
+                        class="referral-share-row__icon-wrap"
+                        aria-hidden="true"
+                      >
+                        <Check
+                          v-if="referralCopyTg"
+                          class="referral-share-row__icon"
+                          :size="18"
+                          :stroke-width="2"
+                        />
+                        <Send
+                          v-else
+                          class="referral-share-row__icon"
+                          :size="18"
+                          :stroke-width="2"
+                        />
+                      </span>
+                      <span class="referral-share-row__text">{{
+                        referralCopyTg
+                          ? 'Скопировано'
+                          : 'Скопировать ссылку на бота (Telegram)'
+                      }}</span>
+                      <Lock
+                        v-if="!effectiveReferralTelegramUrl"
+                        class="referral-share-row__lock"
+                        :size="16"
+                        :stroke-width="2"
+                        aria-hidden="true"
+                      />
+                      <ChevronRight
+                        v-else-if="!referralCopyTg"
+                        class="referral-share-row__chevron"
+                        :size="18"
+                        :stroke-width="2"
+                        aria-hidden="true"
+                      />
+                    </button>
+                    <p
+                      v-if="!effectiveReferralTelegramUrl"
+                      class="hint referral-copy-warn"
+                    >
+                      Ссылка на бота не настроена на сервере — используйте ссылку на сайт.
+                    </p>
                   </div>
-                  <div class="row">
-                    <dt>Оплаты</dt>
-                    <dd class="mono">{{ myReferralLink.payments_count ?? 0 }}</dd>
-                  </div>
-                </dl>
-                <div class="referral-copy-stack">
-                  <AppActionButton
-                    variant="secondary"
-                    block
-                    :disabled="!effectiveReferralSiteUrl"
-                    @click="copyReferralSite"
-                  >
-                    {{
-                      referralCopySite
-                        ? 'Скопировано'
-                        : 'Скопировать ссылку на сайт'
-                    }}
-                  </AppActionButton>
-                  <p
-                    v-if="!effectiveReferralSiteUrl"
-                    class="hint referral-copy-warn"
-                  >
-                    Не удалось собрать ссылку: задайте в .env API переменную
-                    <code class="inline-code">SITE_ADDRESS</code> (публичный URL сайта).
-                  </p>
-                  <AppActionButton
-                    variant="secondary"
-                    block
-                    :disabled="!effectiveReferralTelegramUrl"
-                    @click="copyReferralTelegram"
-                  >
-                    {{
-                      referralCopyTg
-                        ? 'Скопировано'
-                        : 'Скопировать ссылку на бота (Telegram)'
-                    }}
-                  </AppActionButton>
-                  <p
-                    v-if="!effectiveReferralTelegramUrl"
-                    class="hint referral-copy-warn"
-                  >
-                    Ссылка на бота не настроена на сервере — скопируйте токен и передайте
-                    приглашённому вручную или используйте ссылку на сайт.
-                  </p>
-                </div>
+                </section>
               </template>
               <p v-else class="hint referral-my-status">
                 Не удалось получить реферальную ссылку. Обновите страницу или попробуйте позже.
@@ -1169,10 +1335,17 @@ onBeforeUnmount(() => {
   text-decoration: none;
 }
 
+.referral-card-lead {
+  margin: -0.35rem 0 0;
+  line-height: 1.5;
+}
+
 .referral-my-block {
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--nav-border);
+  margin-top: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.35rem;
+  min-width: 0;
 }
 
 .referral-my-status {
@@ -1186,20 +1359,225 @@ onBeforeUnmount(() => {
   line-height: 1.45;
 }
 
-.referral-stats-dl {
-  margin-bottom: 0.25rem;
+.referral-section {
+  min-width: 0;
 }
 
-.referral-copy-stack {
+.referral-section-title {
+  margin: 0 0 0.65rem;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--text-h);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.referral-stat-grid {
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.referral-stat-grid--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.referral-stat-grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.referral-stat {
+  min-width: 0;
+  padding: 0.85rem 0.75rem;
+  border-radius: 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+}
+
+.referral-stat--row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.referral-stat--bonus {
+  align-items: flex-start;
+  padding: 0.95rem 0.85rem;
+}
+
+.referral-stat__icon-wrap {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.referral-stat__icon {
+  display: block;
+}
+
+.referral-stat__body {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  margin-top: 0.85rem;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.referral-stat__value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--text-h);
+  font-variant-numeric: tabular-nums;
+}
+
+.referral-stat--bonus .referral-stat__value {
+  font-size: 1.35rem;
+}
+
+.referral-stat__label {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--muted);
+  line-height: 1.25;
+}
+
+.referral-stat__hint {
+  margin-top: 0.15rem;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.referral-section--share {
+  padding-top: 0;
+  border-top: none;
+}
+
+.referral-share-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.referral-share-row {
+  appearance: none;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: var(--text-h);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+
+.referral-share-row:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent-soft) 35%, var(--card-bg));
+}
+
+.referral-share-row:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.referral-share-row:disabled,
+.referral-share-row--locked {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.referral-share-row__icon-wrap {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.referral-share-row--locked .referral-share-row__icon-wrap {
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+  color: var(--muted);
+}
+
+.referral-share-row__icon {
+  display: block;
+}
+
+.referral-share-row__text {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.referral-share-row__chevron,
+.referral-share-row__lock {
+  flex-shrink: 0;
+  color: var(--muted);
 }
 
 .referral-copy-warn {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+@media (max-width: 520px) {
+  .referral-stat-grid--3 {
+    gap: 0.45rem;
+  }
+
+  .referral-stat--row {
+    padding: 0.7rem 0.55rem;
+    gap: 0.5rem;
+  }
+
+  .referral-stat__icon-wrap {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .referral-stat__value {
+    font-size: 1.05rem;
+  }
+
+  .referral-stat--bonus .referral-stat__value {
+    font-size: 1.15rem;
+  }
+
+  .referral-stat__label {
+    font-size: 0.72rem;
+  }
+
+  .referral-stat__hint {
+    font-size: 0.64rem;
+  }
+
+  .referral-share-row {
+    padding: 0.75rem 0.85rem;
+    font-size: 0.86rem;
+  }
 }
 
 @media (max-width: 420px) {
