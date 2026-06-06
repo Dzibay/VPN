@@ -28,14 +28,22 @@ from app.infrastructure.persistence.models.user import User
 
 async def staff_payments_finance_summary(
     session: AsyncSession,
+    *,
+    granularity: Literal["month", "day"] = "month",
 ) -> StaffPaymentsFinanceSummaryResponse:
-    """Сводка для финансов: ``rpc_staff_payments_finance_summary()`` (месяцы UTC × тип оплаты)."""
-    stmt = text("SELECT rpc_staff_payments_finance_summary() AS payload")
+    """Сводка для финансов: monthly или daily RPC (UTC × тип оплаты)."""
+    rpc_name = (
+        "rpc_staff_payments_finance_summary_daily"
+        if granularity == "day"
+        else "rpc_staff_payments_finance_summary"
+    )
+    stmt = text(f"SELECT {rpc_name}() AS payload")
     row = (await session.execute(stmt)).one()
     raw = row.payload
     if raw is None:
         return StaffPaymentsFinanceSummaryResponse(
             months=[],
+            days=[],
             cash=StaffPaymentsFinanceBuckets(),
             cash_gross=StaffPaymentsFinanceBuckets(),
             spread=StaffPaymentsFinanceBuckets(),
@@ -46,7 +54,16 @@ async def staff_payments_finance_summary(
         )
     if not isinstance(raw, dict):
         raw = dict(raw)
-    return StaffPaymentsFinanceSummaryResponse.model_validate(raw)
+    parsed = StaffPaymentsFinanceSummaryResponse.model_validate(raw)
+    if granularity == "day":
+        return parsed.model_copy(
+            update={
+                "months": [],
+                "spread": StaffPaymentsFinanceBuckets(),
+                "spread_gross": StaffPaymentsFinanceBuckets(),
+            },
+        )
+    return parsed.model_copy(update={"days": []})
 
 
 async def create_staff_manual_payment_record(

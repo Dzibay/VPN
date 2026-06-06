@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import AdminBarChart from '../../components/AdminBarChart.vue'
 import AppRefreshButton from '../../components/AppRefreshButton.vue'
 import StateNote from '../../components/StateNote.vue'
@@ -13,6 +13,7 @@ const error = ref(null)
 /**
  * @type {import('vue').Ref<null | {
  *   months: string[]
+ *   days: string[]
  *   cash: FinanceBuckets
  *   cash_gross: FinanceBuckets
  *   spread: FinanceBuckets
@@ -24,11 +25,17 @@ const error = ref(null)
  */
 const summary = ref(null)
 
-/** «cash» — вся сумма в месяце платежа; «spread» — net_amount/months по месяцам подписки вперёд (UTC). */
-const chartDistribution = ref(/** @type {'cash' | 'spread'} */ ('cash'))
+/** «cash» — вся сумма в месяце платежа; «spread» — net_amount/months по месяцам подписки; «daily» — по дням UTC. */
+const chartDistribution = ref(/** @type {'cash' | 'spread' | 'daily'} */ ('daily'))
 
 /** По умолчанию — чистый доход после комиссии PSP. */
 const useNetAmount = ref(true)
+
+const isDailyView = computed(() => chartDistribution.value === 'daily')
+
+const sectionHeading = computed(() =>
+  isDailyView.value ? 'Доходы по дням' : 'Доходы по месяцам',
+)
 
 /** Нижний слой стека → верхний (порядок важен для stacked bar). */
 const KIND_ORDER = /** @type {const} */ ([
@@ -36,18 +43,25 @@ const KIND_ORDER = /** @type {const} */ ([
   { field: 'one_time', label: 'Разовая' },
 ])
 
+const periodKeys = computed(() => {
+  const s = summary.value
+  if (!s) return []
+  if (isDailyView.value) return Array.isArray(s.days) ? s.days : []
+  return Array.isArray(s.months) ? s.months : []
+})
+
 const activeBuckets = computed(() => {
   const s = summary.value
   if (!s) return null
   const useNet = useNetAmount.value
   const raw =
-    chartDistribution.value === 'spread'
+    isDailyView.value || chartDistribution.value === 'cash'
       ? useNet
-        ? s.spread
-        : s.spread_gross ?? s.spread
-      : useNet
         ? s.cash
         : s.cash_gross ?? s.cash
+      : useNet
+        ? s.spread
+        : s.spread_gross ?? s.spread
   if (!raw || typeof raw !== 'object') {
     return { subscription: [], one_time: [] }
   }
@@ -68,6 +82,17 @@ function formatMonthLabel(ym) {
   if (!y || !m || m < 1 || m > 12) return String(ym)
   const d = new Date(Date.UTC(y, m - 1, 1))
   return d.toLocaleDateString('ru-RU', {
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
+}
+
+function formatDayLabel(iso) {
+  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`)
+  if (Number.isNaN(d.getTime())) return String(iso)
+  return d.toLocaleDateString('ru-RU', {
+    day: 'numeric',
     month: 'short',
     year: 'numeric',
     timeZone: 'UTC',
@@ -101,15 +126,15 @@ const paymentCountLabel = computed(() => {
 })
 
 const financeChartLabels = computed(() => {
-  const s = summary.value
-  if (!s?.months?.length) return []
-  return s.months.map(formatMonthLabel)
+  if (!periodKeys.value.length) return []
+  return isDailyView.value
+    ? periodKeys.value.map(formatDayLabel)
+    : periodKeys.value.map(formatMonthLabel)
 })
 
 const financeChartDatasets = computed(() => {
-  const s = summary.value
   const buckets = activeBuckets.value
-  if (!s?.months?.length || !buckets) return []
+  if (!periodKeys.value.length || !buckets) return []
   const theme = adminChartTheme()
   /** @type {Record<string, [number, number, number]>} */
   const rgbByField = {
@@ -121,9 +146,15 @@ const financeChartDatasets = computed(() => {
     data: parseAmounts(buckets[field]),
     rgb: rgbByField[field] ?? theme.accent,
     borderRadius: 4,
-    maxBarThickness: 48,
+    maxBarThickness: isDailyView.value ? 24 : 48,
   }))
 })
+
+const chartAriaLabel = computed(() =>
+  isDailyView.value
+    ? 'Доходы по дням (UTC), ₽'
+    : 'Доходы по месяцам (UTC), ₽',
+)
 
 function financeFormatValueTick(v) {
   const n = Number(v)
@@ -154,8 +185,11 @@ async function load() {
   loading.value = true
   error.value = null
   summary.value = null
+  const granularity = isDailyView.value ? 'day' : 'month'
   try {
-    summary.value = await fetchJson('/api/admin/payments/finance-summary')
+    summary.value = await fetchJson(
+      `/api/admin/payments/finance-summary?granularity=${granularity}`,
+    )
   } catch (e) {
     error.value = e.message || String(e)
     summary.value = null
@@ -164,6 +198,14 @@ async function load() {
   }
 }
 
+watch(chartDistribution, (next, prev) => {
+  const needsReload =
+    next === 'daily' ||
+    prev === 'daily' ||
+    summary.value == null
+  if (needsReload) void load()
+})
+
 onMounted(() => {
   void load()
 })
@@ -171,13 +213,26 @@ onMounted(() => {
 
 <template>
   <div class="head-row">
-    <h2 class="section-heading">Доходы по месяцам</h2>
+    <h2 class="section-heading">{{ sectionHeading }}</h2>
     <div class="head-actions">
       <div
         class="dist-toggle"
         role="group"
-        aria-label="Как считать суммы по месяцам на графике"
+        :aria-label="
+          isDailyView
+            ? 'Группировка доходов по календарным дням UTC'
+            : 'Как считать суммы по месяцам на графике'
+        "
       >
+        <button
+          type="button"
+          class="dist-btn"
+          :class="{ 'dist-btn--active': chartDistribution === 'daily' }"
+          :disabled="loading"
+          @click="chartDistribution = 'daily'"
+        >
+          По дням
+        </button>
         <button
           type="button"
           class="dist-btn"
@@ -185,7 +240,7 @@ onMounted(() => {
           :disabled="loading"
           @click="chartDistribution = 'cash'"
         >
-          По дате платежа
+          По месяцам
         </button>
         <button
           type="button"
@@ -215,14 +270,14 @@ onMounted(() => {
       <p class="total-meta">{{ paymentCountLabel }} записей</p>
     </section>
 
-    <div v-if="!summary.months.length" class="empty-box">
+    <div v-if="!periodKeys.length" class="empty-box">
       <p class="muted">Платежей пока нет — график появится после первых оплат.</p>
     </div>
     <AdminBarChart
       v-else
       preset="finance"
-      aria-label="Доходы по месяцам (UTC), ₽"
-      :has-data="summary.months.length > 0"
+      :aria-label="chartAriaLabel"
+      :has-data="periodKeys.length > 0"
       :labels="financeChartLabels"
       :datasets="financeChartDatasets"
       stacked
@@ -230,6 +285,8 @@ onMounted(() => {
       :format-value-tick="financeFormatValueTick"
       :get-tooltip-footer="financeTooltipFooter"
       :tooltip-filter="financeTooltipFilter"
+      :category-max-ticks="isDailyView ? 18 : 22"
+      :category-max-rotation="isDailyView ? 55 : undefined"
     />
   </template>
 </template>

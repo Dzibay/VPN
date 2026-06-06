@@ -81,10 +81,15 @@ class StaffPaymentsFinanceBuckets(BaseModel):
 
 
 class StaffPaymentsFinanceSummaryResponse(BaseModel):
-    """Ответ ``rpc_staff_payments_finance_summary()`` — cash и spread по месяцам UTC."""
+    """Ответ RPC сводки платежей: cash (и spread для monthly) по оси периодов UTC."""
 
     months: list[str] = Field(
+        default_factory=list,
         description="Объединение месяцев YYYY-MM, где есть данные в cash или spread",
+    )
+    days: list[str] = Field(
+        default_factory=list,
+        description="Календарные дни YYYY-MM-DD (UTC) для daily-сводки",
     )
     cash: StaffPaymentsFinanceBuckets = Field(
         description="net_amount в месяце created_at (UTC)",
@@ -94,6 +99,7 @@ class StaffPaymentsFinanceSummaryResponse(BaseModel):
         description="amount (валовая) в месяце created_at (UTC)",
     )
     spread: StaffPaymentsFinanceBuckets = Field(
+        default_factory=StaffPaymentsFinanceBuckets,
         description="net_amount/months на каждый из months календарных месяцев вперёд от created_at (UTC)",
     )
     spread_gross: StaffPaymentsFinanceBuckets = Field(
