@@ -130,17 +130,21 @@ async def me(
     return await account_me(session, principal, settings)
 
 
-@router.get(
-    "/payments/yookassa-tariffs",
-    response_model=SitePaymentTariffsResponse,
-    dependencies=[Depends(require_client_jwt)],
-    summary="Тарифы разовой оплаты на сайте (app/data/yookassa_tariffs.json)",
-)
-async def me_yookassa_tariffs(
-    principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
-) -> SitePaymentTariffsResponse:
+def _require_client_user(principal: BearerPrincipal) -> None:
     if principal.role != "user" or principal.user_id is None:
         raise ForbiddenError(detail="Доступно только клиентской роли")
+
+
+@router.get(
+    "/payments/tariffs",
+    response_model=SitePaymentTariffsResponse,
+    dependencies=[Depends(require_client_jwt)],
+    summary="Тарифы разовой оплаты (app/data/yookassa_tariffs.json)",
+)
+async def me_payment_tariffs(
+    principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
+) -> SitePaymentTariffsResponse:
+    _require_client_user(principal)
     return yookassa_tariffs_public_response()
 
 

@@ -43,7 +43,7 @@ const {
   tariffs: tariffList,
   baseMonthlyPrice,
   load: loadTariffs,
-} = useYookassaPricing('/api/me/payments/yookassa-tariffs')
+} = useYookassaPricing('/api/me/payments/tariffs')
 
 const featureItems = [
   {

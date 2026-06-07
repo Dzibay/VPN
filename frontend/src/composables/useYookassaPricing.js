@@ -135,10 +135,10 @@ export function buildLandingPlans(tariffs, monthsList, metaByMonths) {
 }
 
 /**
- * Тарифы ЮKassa с публичного API (источник — backend/app/data/yookassa_tariffs.json).
- * @param {string} [fetchPath='/api/public/yookassa-tariffs']
+ * Тарифы с API (источник — backend/app/data/yookassa_tariffs.json).
+ * @param {string} [fetchPath='/api/payments/tariffs']
  */
-export function useYookassaPricing(fetchPath = '/api/public/yookassa-tariffs') {
+export function useYookassaPricing(fetchPath = '/api/payments/tariffs') {
   const loading = ref(true)
   const error = ref(null)
   /** @type {import('vue').Ref<YookassaTariff[]>} */

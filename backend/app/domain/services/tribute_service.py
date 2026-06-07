@@ -1,4 +1,6 @@
-"""Tribute: webhook подписки и разовой цифровой покупки; публичные тарифы — ``app/data/tribute_tariffs.json``.
+"""Tribute: webhook подписки и разовой цифровой покупки; ссылки — ``app/data/tribute_tariffs.json``.
+
+Цены для бота и сайта — ``app/data/yookassa_tariffs.json`` (см. :func:`tribute_payments_links_public_response`).
 
 Каждый HTTP webhook пишется в ``user_http_request_traces`` (см. ``http_audit_always_persist_for_path``).
 Зачисление подписки — через :func:`app.domain.services.payment_service.ingest_provider_payment`.
@@ -34,6 +36,7 @@ from app.domain.services.payment_service import (
     compute_tribute_net_amount,
     ingest_provider_payment,
 )
+from app.domain.services.yookassa_service import yookassa_tariffs_public_response
 from app.infrastructure.persistence.models.user import User
 
 log = logging.getLogger("app.tribute_service")
@@ -45,17 +48,33 @@ _PAID_DIGITAL_EVENTS = frozenset({"new_digital_product"})
 
 
 def tribute_payments_links_public_response() -> TributePaymentsLinksResponse:
-    """Ответ совпадает с содержимым ``app/data/tribute_tariffs.json`` (редактируйте файл)."""
+    """Ссылки из ``tribute_tariffs.json``; цены разовых тарифов — из ``yookassa_tariffs.json``."""
     try:
         raw = _TRIBUTE_TARIFFS_JSON.read_text(encoding="utf-8")
     except OSError as e:
         log.warning("Не удалось прочитать %s: %s", _TRIBUTE_TARIFFS_JSON, e)
         return TributePaymentsLinksResponse(tariffs=[])
     try:
-        return TributePaymentsLinksResponse.model_validate_json(raw)
+        response = TributePaymentsLinksResponse.model_validate_json(raw)
     except ValidationError:
         log.exception("Некорректный JSON тарифов: %s", _TRIBUTE_TARIFFS_JSON)
         return TributePaymentsLinksResponse(tariffs=[])
+
+    yookassa_prices = {
+        int(t.months): int(t.price)
+        for t in yookassa_tariffs_public_response().tariffs
+    }
+    if not yookassa_prices:
+        return response
+
+    merged = []
+    for item in response.tariffs:
+        if item.type != "single" or item.months is None:
+            merged.append(item)
+            continue
+        price = yookassa_prices.get(int(item.months))
+        merged.append(item if price is None else item.model_copy(update={"price": price}))
+    return TributePaymentsLinksResponse(tariffs=merged)
 
 
 _PERIOD_TO_MONTHS: dict[str, int] = {

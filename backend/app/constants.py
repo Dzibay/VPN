@@ -18,7 +18,7 @@ TRIAL_TRAFFIC_LIMIT_GIB = 20
 # Срок жизни access-JWT (дни) — единый для портала и админ-API.
 JWT_TOKEN_TTL_DAYS = 14
 
-# --- Tribute: тарифы для GET …/payments/tribute-links — файл ``app/data/tribute_tariffs.json`` (редактируйте его). ---
+# --- Tribute: ссылки для GET …/payments/tribute-links — ``app/data/tribute_tariffs.json``; цены — ``yookassa_tariffs.json``. ---
 
 # Точные product_name из webhook new_digital_product (после .strip()) → срок; пустая строка — не сопоставлять.
 TRIBUTE_DIGITAL_PRODUCT_NAME_1M: str = "Старт (1 месяц)"

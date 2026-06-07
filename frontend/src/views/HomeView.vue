@@ -259,7 +259,7 @@ const pricingBenefitsBottom = [
   },
 ]
 
-/** Сроки на лендинге; цены и экономия — из yookassa_tariffs.json через API. */
+/** Сроки на лендинге; цены и экономия — из app/data/yookassa_tariffs.json через GET /api/payments/tariffs. */
 const LANDING_PLAN_MONTHS = [1, 6, 12]
 
 const LANDING_PLAN_META = {

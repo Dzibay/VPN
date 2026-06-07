@@ -8,14 +8,31 @@ from fastapi import APIRouter, Depends, Header, Request
 
 from app.config import settings
 from app.core.dependencies import SessionDep, require_telegram_bot_api_secret
-from app.domain.models.payments import PaymentWebhookAck, TributeWebhookAck, TributeWebhookTestBody
+from app.domain.models.payments import (
+    PaymentWebhookAck,
+    SitePaymentTariffsResponse,
+    TributeWebhookAck,
+    TributeWebhookTestBody,
+)
 from app.domain.services.tribute_service import (
     process_tribute_webhook_event,
     process_tribute_webhook_raw_body,
 )
-from app.domain.services.yookassa_service import process_yookassa_webhook_raw_body
+from app.domain.services.yookassa_service import (
+    process_yookassa_webhook_raw_body,
+    yookassa_tariffs_public_response,
+)
 
 router = APIRouter(prefix="/payments", tags=["payments"])
+
+
+@router.get(
+    "/tariffs",
+    response_model=SitePaymentTariffsResponse,
+    summary="Тарифы разовой оплаты (app/data/yookassa_tariffs.json)",
+)
+async def payment_tariffs() -> SitePaymentTariffsResponse:
+    return yookassa_tariffs_public_response()
 
 
 @router.post(
