@@ -1,9 +1,16 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { ArrowLeft, Lock, ShieldCheck, Zap } from 'lucide-vue-next'
 import AppActionButton from '../components/AppActionButton.vue'
 import { fetchJson } from '../api/client.js'
+import {
+  formatPeriod,
+  formatRub,
+  monthlyPriceRub,
+  savingsRub,
+  useYookassaPricing,
+} from '../composables/useYookassaPricing.js'
 
 /** Кошелёк / карта с щитом: frontend/public/images/pay-wallet.png */
 const PAY_WALLET_IMG = '/images/pay-wallet.png'
@@ -23,8 +30,6 @@ const PAY_BRAND_FILES = [
   { file: 'yookassa.png', alt: 'ЮKassa' },
 ]
 
-const loading = ref(true)
-const error = ref(null)
 const payingMonths = ref(null)
 const walletImgVisible = ref(true)
 const brandsRowVisible = ref(true)
@@ -32,18 +37,13 @@ const brandsRowVisible = ref(true)
 const brandVisible = ref(
   Object.fromEntries(PAY_BRAND_FILES.map((b) => [b.file, true])),
 )
-/** @type {import('vue').Ref<{ tariffs: Array<{ months: number, price: number, name: string }> } | null>} */
-const tariffsData = ref(null)
-
-const tariffList = computed(() => {
-  const list = [...(tariffsData.value?.tariffs ?? [])]
-  return list.sort((a, b) => a.months - b.months)
-})
-
-const baseMonthlyPrice = computed(() => {
-  const one = tariffList.value.find((t) => t.months === 1)
-  return one?.price ?? tariffList.value[0]?.price ?? null
-})
+const {
+  loading,
+  error,
+  tariffs: tariffList,
+  baseMonthlyPrice,
+  load: loadTariffs,
+} = useYookassaPricing('/api/me/payments/yookassa-tariffs')
 
 const featureItems = [
   {
@@ -63,24 +63,8 @@ const featureItems = [
   },
 ]
 
-function formatPeriod(months) {
-  if (months === 1) return '1 месяц'
-  if (months === 3) return '3 месяца'
-  if (months === 6) return '6 месяцев'
-  if (months === 12) return '1 год'
-  return `${months} мес.`
-}
-
-function monthlyPrice(tariff) {
-  return Math.round(tariff.price / tariff.months)
-}
-
-function savingsRub(tariff) {
-  const base = baseMonthlyPrice.value
-  if (!base || tariff.months <= 1) return null
-  const full = base * tariff.months
-  const save = full - tariff.price
-  return save > 0 ? save : null
+function tariffSavings(tariff) {
+  return savingsRub(tariff, baseMonthlyPrice.value)
 }
 
 function badgeFor(months) {
@@ -91,19 +75,6 @@ function badgeFor(months) {
 
 function onBrandError(file) {
   brandVisible.value[file] = false
-}
-
-async function load() {
-  loading.value = true
-  error.value = null
-  try {
-    tariffsData.value = await fetchJson('/api/me/payments/yookassa-tariffs')
-  } catch (e) {
-    error.value = e.message || String(e)
-    tariffsData.value = null
-  } finally {
-    loading.value = false
-  }
 }
 
 async function startCheckout(months) {
@@ -128,7 +99,7 @@ async function startCheckout(months) {
 }
 
 onMounted(() => {
-  void load()
+  void loadTariffs()
 })
 </script>
 
@@ -205,14 +176,14 @@ onMounted(() => {
             <p class="pay-tariff__sub">{{ tariff.name }}</p>
 
             <div class="pay-tariff__price-row">
-              <span class="pay-tariff__price">{{ tariff.price }} ₽</span>
+              <span class="pay-tariff__price">{{ formatRub(tariff.price) }}</span>
               <span v-if="tariff.months > 1" class="pay-tariff__pill">
-                ~{{ monthlyPrice(tariff) }} ₽/мес
+                ~{{ formatRub(monthlyPriceRub(tariff)) }}/мес
               </span>
             </div>
 
-            <p v-if="savingsRub(tariff)" class="pay-tariff__save">
-              Экономия {{ savingsRub(tariff) }} ₽
+            <p v-if="tariffSavings(tariff)" class="pay-tariff__save">
+              Экономия {{ formatRub(tariffSavings(tariff)) }}
             </p>
 
             <AppActionButton

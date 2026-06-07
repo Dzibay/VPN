@@ -1,8 +1,8 @@
 {
   "tariffs": [
-    { "months": 1, "price": 120, "name": "1 мес" },
-    { "months": 3, "price": 349, "name": "3 мес" },
-    { "months": 6, "price": 669, "name": "6 мес" },
-    { "months": 12, "price": 1299, "name": "1 год" }
+    { "months": 1, "price": 149, "name": "1 мес" },
+    { "months": 3, "price": 399, "name": "3 мес" },
+    { "months": 6, "price": 769, "name": "6 мес" },
+    { "months": 12, "price": 1399, "name": "1 год" }
   ]
 }
