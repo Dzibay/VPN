@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -85,6 +86,26 @@ class TelegramYookassaCheckoutBody(BaseModel):
 class YookassaCheckoutResponse(BaseModel):
     confirmation_url: str = Field(description="URL редиректа на оплату ЮKassa")
     yookassa_payment_id: str = Field(description="Идентификатор платежа в ЮKassa")
+
+
+class UserPaymentHistoryItem(BaseModel):
+    """Строка истории оплат для GET /api/me/payments (без provider_webhook и net_amount)."""
+
+    model_config = {"from_attributes": True}
+
+    id: int
+    amount: Decimal
+    months: int
+    provider: str
+    payment_kind: str
+    created_at: datetime
+
+
+class UserPaymentsListResponse(BaseModel):
+    items: list[UserPaymentHistoryItem] = Field(description="Платежи пользователя, новые первыми")
+    total: int = Field(ge=0)
+    limit: int
+    offset: int
 
 
 class TributeWebhookSubscriptionTestPayload(BaseModel):

@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
 
 from app.config import settings
 from app.core.dependencies import (
@@ -20,11 +20,12 @@ from app.domain.models.auth import (
 )
 from app.domain.models.payments import (
     SitePaymentTariffsResponse,
+    UserPaymentsListResponse,
     YookassaCheckoutBody,
     YookassaCheckoutResponse,
 )
 from app.domain.services.auth_service import account_me, change_account_password
-from app.domain.services.me_service import delete_subscription_device
+from app.domain.services.me_service import delete_subscription_device, list_my_payments
 from app.domain.services.telegram_auth_service import telegram_sync_start_link
 from app.domain.services.yookassa_service import (
     create_yookassa_checkout,
@@ -133,6 +134,28 @@ async def me(
 def _require_client_user(principal: BearerPrincipal) -> None:
     if principal.role != "user" or principal.user_id is None:
         raise ForbiddenError(detail="Доступно только клиентской роли")
+
+
+@router.get(
+    "/payments",
+    response_model=UserPaymentsListResponse,
+    dependencies=[Depends(require_client_jwt)],
+    summary="История оплат текущего пользователя",
+)
+async def me_payments_history(
+    session: ReadonlySessionDep,
+    principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
+    limit: int = Query(20, ge=1, le=100, description="Размер страницы"),
+    offset: int = Query(0, ge=0, description="Смещение"),
+) -> UserPaymentsListResponse:
+    _require_client_user(principal)
+    items, total = await list_my_payments(
+        session,
+        user_id=int(principal.user_id),
+        limit=limit,
+        offset=offset,
+    )
+    return UserPaymentsListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.get(

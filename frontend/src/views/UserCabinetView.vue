@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import AppActionButton from '../components/AppActionButton.vue'
+import AppPager from '../components/AppPager.vue'
 import SitePageLayout from '../components/SitePageLayout.vue'
 import {
   detectStorePlatform,
@@ -12,6 +13,9 @@ import {
 } from '../api/client.js'
 import AppTooltip from '../components/AppTooltip.vue'
 import { formatTrafficBytes } from '../utils/formatTraffic.js'
+import { formatMskApiDateTime } from '../utils/mskDate.js'
+import { useOffsetPagination } from '../composables/useOffsetPagination.js'
+import { formatRub } from '../composables/useYookassaPricing.js'
 import { isMobileDevice, openTelegramDeepLink } from '../utils/subscription/openDeepLink.js'
 import {
   formatSubscriptionConnectionOs,
@@ -105,6 +109,94 @@ const referralsStaffVisible = computed(
 )
 
 const referralClientUser = computed(() => me.value?.role === 'user')
+
+/** @type {import('vue').Ref<Array<{ id: number, amount: string | number, months: number, provider: string, payment_kind: string, created_at: string }>>} */
+const paymentHistoryItems = ref([])
+const paymentHistoryTotal = ref(0)
+const paymentHistoryLoading = ref(false)
+const paymentHistoryError = ref(null)
+
+const {
+  offset: paymentHistoryOffset,
+  limit: paymentHistoryLimit,
+  canPrev: paymentHistoryCanPrev,
+  canNext: paymentHistoryCanNext,
+  rangeLabel: paymentHistoryRangeLabel,
+  prev: paymentHistoryPrev,
+  next: paymentHistoryNext,
+  reset: resetPaymentHistoryPagination,
+} = useOffsetPagination({
+  limit: 10,
+  total: () => paymentHistoryTotal.value,
+  count: () => paymentHistoryItems.value.length,
+  onChange: () => {
+    if (activeCabinetTab.value === 'profile' && referralClientUser.value) {
+      void loadPaymentHistory()
+    }
+  },
+})
+
+function paymentKindLabel(k) {
+  const s = String(k ?? '')
+  if (s === 'subscription') return 'Подписка'
+  if (s === 'one_time') return 'Разовая'
+  return s || '—'
+}
+
+function paymentProviderLabel(provider) {
+  const s = String(provider ?? '').trim().toLowerCase()
+  if (s === 'yookassa') return 'Сайт'
+  if (s === 'tribute') return 'Telegram'
+  if (s === 'manual') return 'Ручное начисление'
+  return s || '—'
+}
+
+function formatPaymentHistoryDate(iso) {
+  return formatMskApiDateTime(iso, { dateStyle: 'short', timeStyle: 'short' })
+}
+
+function formatPaymentAmount(v) {
+  const n = Number(v)
+  if (Number.isNaN(n)) return String(v ?? '—')
+  return formatRub(n)
+}
+
+function formatPaymentMonths(n) {
+  const m = Number(n)
+  if (!Number.isFinite(m) || m < 1) return '—'
+  const mod10 = m % 10
+  const mod100 = m % 100
+  let word = 'месяцев'
+  if (mod10 === 1 && mod100 !== 11) word = 'месяц'
+  else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) word = 'месяца'
+  return `${m} ${word}`
+}
+
+async function loadPaymentHistory() {
+  if (me.value?.role !== 'user') {
+    paymentHistoryItems.value = []
+    paymentHistoryTotal.value = 0
+    paymentHistoryError.value = null
+    return
+  }
+  paymentHistoryLoading.value = true
+  paymentHistoryError.value = null
+  try {
+    const params = new URLSearchParams({
+      limit: String(paymentHistoryLimit.value),
+      offset: String(paymentHistoryOffset.value),
+    })
+    const data = await fetchJson(`/api/me/payments?${params.toString()}`)
+    paymentHistoryItems.value = Array.isArray(data?.items) ? data.items : []
+    paymentHistoryTotal.value = Number(data?.total) || 0
+  } catch (e) {
+    paymentHistoryError.value = e.message || String(e)
+    paymentHistoryItems.value = []
+    paymentHistoryTotal.value = 0
+  } finally {
+    paymentHistoryLoading.value = false
+  }
+}
 
 function telegramPropTrim(props, key) {
   if (!props || typeof props !== 'object') return ''
@@ -238,6 +330,10 @@ watch(
   () => [activeCabinetTab.value, referralClientUser.value],
   ([tab, isClient]) => {
     if (tab === 'referral' && isClient) void loadMyReferral()
+    if (tab === 'profile' && isClient) {
+      resetPaymentHistoryPagination()
+      void loadPaymentHistory()
+    }
   },
 )
 
@@ -981,6 +1077,65 @@ onBeforeUnmount(() => {
               Вход по паролю на сайте не настроен — задайте пароль при регистрации
               или через привязку email в Telegram-боте.
             </p>
+          </div>
+
+          <div
+            v-if="referralClientUser"
+            class="card card-pad payment-history-card"
+            aria-label="История оплат"
+          >
+            <h2 class="block-title">История оплат</h2>
+            <p v-if="paymentHistoryLoading && !paymentHistoryItems.length" class="hint">
+              Загрузка…
+            </p>
+            <p v-else-if="paymentHistoryError" class="err">
+              {{ paymentHistoryError }}
+            </p>
+            <template v-else>
+              <p v-if="paymentHistoryTotal === 0" class="hint payment-history-empty">
+                Платежей пока нет. После оплаты подписки записи появятся здесь.
+              </p>
+              <template v-else>
+                <AppPager
+                  class="payment-history-pager"
+                  :range-label="paymentHistoryRangeLabel"
+                  :can-prev="paymentHistoryCanPrev"
+                  :can-next="paymentHistoryCanNext"
+                  :loading="paymentHistoryLoading"
+                  @prev="paymentHistoryPrev"
+                  @next="paymentHistoryNext"
+                />
+                <ul class="payment-history-list" role="list">
+                  <li
+                    v-for="row in paymentHistoryItems"
+                    :key="row.id"
+                    class="payment-history-item"
+                  >
+                    <div class="payment-history-item__main">
+                      <span class="payment-history-item__amount mono">{{
+                        formatPaymentAmount(row.amount)
+                      }}</span>
+                      <span class="payment-history-item__months">{{
+                        formatPaymentMonths(row.months)
+                      }}</span>
+                    </div>
+                    <div class="payment-history-item__meta">
+                      <span class="payment-history-item__date">{{
+                        formatPaymentHistoryDate(row.created_at)
+                      }}</span>
+                      <span class="payment-history-item__dot" aria-hidden="true">·</span>
+                      <span class="payment-history-item__kind">{{
+                        paymentKindLabel(row.payment_kind)
+                      }}</span>
+                      <span class="payment-history-item__dot" aria-hidden="true">·</span>
+                      <span class="payment-history-item__provider">{{
+                        paymentProviderLabel(row.provider)
+                      }}</span>
+                    </div>
+                  </li>
+                </ul>
+              </template>
+            </template>
           </div>
         </div>
       </div>
@@ -2053,6 +2208,77 @@ dd {
   margin: 1rem 0 0;
   padding-top: 1rem;
   border-top: 1px solid var(--nav-border);
+}
+
+.payment-history-card {
+  min-width: 0;
+}
+
+.payment-history-empty {
+  margin: 0;
+}
+
+.payment-history-pager {
+  margin-bottom: 0.85rem;
+}
+
+.payment-history-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.payment-history-item {
+  padding: 0.75rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  background: color-mix(in srgb, var(--surface) 55%, var(--card-bg));
+}
+
+.payment-history-item__main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.payment-history-item__amount {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.payment-history-item__months {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.payment-history-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.payment-history-item__date {
+  font-variant-numeric: tabular-nums;
+}
+
+.payment-history-item__dot {
+  opacity: 0.55;
+}
+
+.payment-history-item__kind,
+.payment-history-item__provider {
+  white-space: nowrap;
 }
 
 .row--telegram dd {
