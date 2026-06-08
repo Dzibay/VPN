@@ -13,7 +13,10 @@ import {
 } from '../api/client.js'
 import AppTooltip from '../components/AppTooltip.vue'
 import { formatTrafficBytes } from '../utils/formatTraffic.js'
-import { formatMskApiDateTime } from '../utils/mskDate.js'
+import {
+  formatMskApiDateTime,
+  formatMskSubscriptionDaysRemaining,
+} from '../utils/mskDate.js'
 import { useOffsetPagination } from '../composables/useOffsetPagination.js'
 import { formatRub } from '../composables/useYookassaPricing.js'
 import { isMobileDevice, openTelegramDeepLink } from '../utils/subscription/openDeepLink.js'
@@ -445,6 +448,10 @@ function formatDate(iso) {
   return d
 }
 
+const subscriptionRemainingLabel = computed(() =>
+  formatMskSubscriptionDaysRemaining(me.value?.subscription_until),
+)
+
 /** Календарная дата (UTC) по `registered_at` из API — в формате YYYY-MM-DD, как «Действует до». */
 function formatRegisteredAt(raw) {
   if (raw == null || raw === '') return '—'
@@ -658,7 +665,15 @@ onBeforeUnmount(() => {
               </div>
               <div class="row">
                 <dt>Действует до</dt>
-                <dd>{{ formatDate(me.subscription_until) }}</dd>
+                <dd>
+                  {{ formatDate(me.subscription_until) }}
+                  <span
+                    v-if="subscriptionRemainingLabel"
+                    class="subscription-remaining"
+                  >
+                    · {{ subscriptionRemainingLabel }}
+                  </span>
+                </dd>
               </div>
               <div class="row">
                 <dt>Потреблённый трафик</dt>
@@ -1993,6 +2008,13 @@ dd {
   background: var(--danger-soft);
   color: var(--danger);
   border: 1px solid rgba(225, 29, 72, 0.35);
+}
+
+.subscription-remaining {
+  font-size: 0.85em;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .hint {

@@ -125,6 +125,42 @@ export function formatMskHourAxis(isoOrTs) {
   }
 }
 
+/** Календарных дней от сегодня (МСК) до ``isoDay`` (0 — последний день доступа). */
+export function mskCalendarDaysUntil(isoDay) {
+  if (isoDay == null || isoDay === '') return null
+  const end = String(isoDay).slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(end)) return null
+  const today = mskTodayIso()
+  const [y1, m1, d1] = today.split('-').map(Number)
+  const [y2, m2, d2] = end.split('-').map(Number)
+  const t1 = Date.UTC(y1, m1 - 1, d1)
+  const t2 = Date.UTC(y2, m2 - 1, d2)
+  return Math.round((t2 - t1) / 86_400_000)
+}
+
+function ruDayWord(n) {
+  const abs = Math.abs(n)
+  const mod10 = abs % 10
+  const mod100 = abs % 100
+  if (mod10 === 1 && mod100 !== 11) return 'день'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'дня'
+  return 'дней'
+}
+
+/** Подпись «осталось N дней» для ``subscription_until`` (календарь Москвы). */
+export function formatMskSubscriptionDaysRemaining(isoDay) {
+  const days = mskCalendarDaysUntil(isoDay)
+  if (days == null) return null
+  if (days < 0) {
+    const ago = Math.abs(days)
+    return `истекла ${ago} ${ruDayWord(ago)} назад`
+  }
+  if (days === 0) return 'истекает сегодня'
+  const word = ruDayWord(days)
+  if (days === 1) return `остался 1 ${word}`
+  return `осталось ${days} ${word}`
+}
+
 /** Календарный день YYYY-MM-DD на ``days`` суток раньше (``days`` ≥ 1). */
 export function subtractCalendarDaysIso(isoDay, days = 1) {
   const n = Math.max(1, Math.trunc(Number(days)) || 1)
