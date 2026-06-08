@@ -28,7 +28,7 @@ import {
   hideClientLogoOnError,
   openClientLogoUrl,
 } from '../utils/subscription/subscriptionOpenClientLogo.js'
-import { Check, ChevronRight, CreditCard, Gift, Calendar, Link2, Loader2, Lock, MousePointerClick, Send, UserPlus, Wallet } from 'lucide-vue-next'
+import { BookOpen, Check, ChevronRight, CreditCard, Gift, Calendar, Link2, Loader2, Lock, MousePointerClick, Send, UserPlus, Wallet } from 'lucide-vue-next'
 
 /** Подсказки к строкам исх./вх. в блоке трафика */
 const TRAFFIC_HINT_UP =
@@ -918,6 +918,28 @@ onBeforeUnmount(() => {
                 <span class="client-app-tile__name">{{ c.display_name }}</span>
               </RouterLink>
             </div>
+          </div>
+
+          <div class="card card-pad instructions-widget">
+            <h2 class="block-title">Инструкции</h2>
+            <p class="hint instructions-widget__hint">
+              Пошаговые руководства по подключению VPN на вашем устройстве.
+            </p>
+            <AppActionButton
+              variant="secondary"
+              block
+              stacked
+              :to="{ name: 'cabinet-instructions' }"
+            >
+              <template #icon>
+                <BookOpen
+                  :size="18"
+                  :stroke-width="2"
+                  aria-hidden="true"
+                />
+              </template>
+              Открыть инструкции
+            </AppActionButton>
           </div>
         </div>
       </div>
@@ -2576,5 +2598,9 @@ dd {
 .platform-detect-hint {
   margin: 0.55rem 0 0;
   font-size: 0.8rem;
+}
+
+.instructions-widget__hint {
+  margin-top: -0.35rem;
 }
 </style>

@@ -21,6 +21,8 @@ const UserLoginView = () => import('../views/UserLoginView.vue')
 const UserRegisterView = () => import('../views/UserRegisterView.vue')
 const LinkFromTelegramView = () => import('../views/LinkFromTelegramView.vue')
 const UserCabinetView = () => import('../views/UserCabinetView.vue')
+const CabinetInstructionsView = () =>
+  import('../views/CabinetInstructionsView.vue')
 const CabinetPayView = () => import('../views/CabinetPayView.vue')
 const CabinetPayReturnView = () => import('../views/CabinetPayReturnView.vue')
 const CabinetPayReturnBotView = () => import('../views/CabinetPayReturnBotView.vue')
@@ -89,6 +91,11 @@ const routes = [
     component: LinkFromTelegramView,
   },
   { path: '/cabinet', name: 'cabinet', component: UserCabinetView },
+  {
+    path: '/cabinet/instructions',
+    name: 'cabinet-instructions',
+    component: CabinetInstructionsView,
+  },
   {
     path: '/cabinet/pay',
     name: 'cabinet-pay',
@@ -192,6 +199,15 @@ const routes = [
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition) {
+      return savedPosition
+    }
+    if (to.hash) {
+      return { el: to.hash, behavior: 'smooth' }
+    }
+    return { top: 0, left: 0 }
+  },
 })
 
 function isAdminProtectedRoute(to) {
@@ -207,7 +223,10 @@ router.beforeEach(async (to, _from, next) => {
   const role = getSessionRole()
 
   if (
-    (to.name === 'cabinet' || to.name === 'cabinet-pay' || to.name === 'cabinet-pay-return') &&
+    (to.name === 'cabinet' ||
+      to.name === 'cabinet-instructions' ||
+      to.name === 'cabinet-pay' ||
+      to.name === 'cabinet-pay-return') &&
     !token
   ) {
     return next({
