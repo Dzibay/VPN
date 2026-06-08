@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
     -- Цикл с referral_links.owner_user_id: без REFERENCES, целостность на уровне приложения
     referral_link_id BIGINT,
     referral_bonus_policy TEXT NOT NULL DEFAULT 'default',
+    support_seen_at TIMESTAMPTZ,
     CONSTRAINT users_token_key UNIQUE (token),
     CONSTRAINT users_vless_uuid_key UNIQUE (vless_uuid),
     CONSTRAINT users_account_role_check CHECK (account_role IN ('client', 'manager', 'admin')),
@@ -123,6 +124,24 @@ CREATE TABLE IF NOT EXISTS staff_chart_events (
     color TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS support_messages (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    author_kind TEXT NOT NULL,
+    body TEXT NOT NULL,
+    staff_user_id BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT support_messages_author_kind_check CHECK (
+        author_kind IN ('user', 'staff')
+    ),
+    CONSTRAINT support_messages_body_nonempty_check CHECK (
+        char_length(trim(body)) > 0
+    )
+);
+
+CREATE INDEX IF NOT EXISTS ix_support_messages_user_id_created_at
+    ON support_messages (user_id, created_at ASC);
 
 CREATE TABLE IF NOT EXISTS payments (
     id BIGSERIAL PRIMARY KEY,

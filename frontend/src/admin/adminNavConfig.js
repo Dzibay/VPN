@@ -82,6 +82,12 @@ export const ADMIN_NAV_DEFINITION = [
     path: '/admin/tasks',
     access: 'staff',
   },
+  {
+    routeName: 'admin-support-staff',
+    label: 'Поддержка',
+    path: '/admin/support',
+    access: 'staff',
+  },
 ]
 
 /**

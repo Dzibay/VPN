@@ -24,8 +24,20 @@ from app.domain.models.payments import (
     YookassaCheckoutBody,
     YookassaCheckoutResponse,
 )
+from app.domain.models.support_messages import (
+    SupportMessageCreate,
+    SupportMessageRead,
+    SupportMessagesListResponse,
+    SupportUnreadCountResponse,
+)
 from app.domain.services.auth_service import account_me, change_account_password
 from app.domain.services.me_service import delete_subscription_device, list_my_payments
+from app.domain.services.support_messages_service import (
+    count_unread_support_for_user,
+    create_user_support_message,
+    list_my_support_messages,
+    mark_support_seen_for_user,
+)
 from app.domain.services.telegram_auth_service import telegram_sync_start_link
 from app.domain.services.yookassa_service import (
     create_yookassa_checkout,
@@ -233,3 +245,83 @@ async def delete_my_subscription_device(
     if principal.user_id is None:
         raise HTTPException(status_code=401, detail="Требуется вход")
     await delete_subscription_device(session, user_id=int(principal.user_id), device_id=device_id)
+
+
+@router.get(
+    "/support-messages",
+    response_model=SupportMessagesListResponse,
+    dependencies=[Depends(require_client_jwt)],
+    summary="История сообщений чата поддержки",
+)
+async def me_support_messages(
+    session: ReadonlySessionDep,
+    principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
+    limit: int = Query(100, ge=1, le=200, description="Размер страницы"),
+    offset: int = Query(0, ge=0, description="Смещение"),
+) -> SupportMessagesListResponse:
+    _require_client_user(principal)
+    items, total = await list_my_support_messages(
+        session,
+        user_id=int(principal.user_id),
+        limit=limit,
+        offset=offset,
+    )
+    return SupportMessagesListResponse(
+        items=items,
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.post(
+    "/support-messages",
+    response_model=SupportMessageRead,
+    status_code=201,
+    dependencies=[Depends(require_client_jwt)],
+    summary="Отправить сообщение в поддержку",
+)
+async def me_support_message_create(
+    body: SupportMessageCreate,
+    session: SessionDep,
+    principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
+) -> SupportMessageRead:
+    _require_client_user(principal)
+    return await create_user_support_message(
+        session,
+        user_id=int(principal.user_id),
+        body=body.body,
+    )
+
+
+@router.get(
+    "/support-messages/unread-count",
+    response_model=SupportUnreadCountResponse,
+    dependencies=[Depends(require_client_jwt)],
+    summary="Число непрочитанных ответов поддержки",
+)
+async def me_support_unread_count(
+    session: ReadonlySessionDep,
+    principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
+) -> SupportUnreadCountResponse:
+    _require_client_user(principal)
+    unread = await count_unread_support_for_user(
+        session,
+        user_id=int(principal.user_id),
+    )
+    return SupportUnreadCountResponse(unread_count=unread)
+
+
+@router.post(
+    "/support-messages/mark-seen",
+    status_code=204,
+    dependencies=[Depends(require_client_jwt)],
+    summary="Отметить чат поддержки просмотренным",
+)
+async def me_support_mark_seen(
+    session: SessionDep,
+    principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
+) -> Response:
+    _require_client_user(principal)
+    await mark_support_seen_for_user(session, user_id=int(principal.user_id))
+    return Response(status_code=204)

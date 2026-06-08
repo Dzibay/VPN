@@ -23,6 +23,7 @@ const LinkFromTelegramView = () => import('../views/LinkFromTelegramView.vue')
 const UserCabinetView = () => import('../views/UserCabinetView.vue')
 const CabinetInstructionsView = () =>
   import('../views/CabinetInstructionsView.vue')
+const CabinetSupportView = () => import('../views/CabinetSupportView.vue')
 const CabinetPayView = () => import('../views/CabinetPayView.vue')
 const CabinetPayReturnView = () => import('../views/CabinetPayReturnView.vue')
 const CabinetPayReturnBotView = () => import('../views/CabinetPayReturnBotView.vue')
@@ -49,6 +50,7 @@ const AdminPaymentsStaffView = () =>
 const AdminFinanceStaffView = () =>
   import('../views/AdminFinanceStaffView.vue')
 const AdminTasksStaffView = () => import('../views/AdminTasksStaffView.vue')
+const AdminSupportStaffView = () => import('../views/AdminSupportStaffView.vue')
 const LegalDocumentView = () => import('../views/LegalDocumentView.vue')
 
 const routes = [
@@ -95,6 +97,11 @@ const routes = [
     path: '/cabinet/instructions',
     name: 'cabinet-instructions',
     component: CabinetInstructionsView,
+  },
+  {
+    path: '/cabinet/support',
+    name: 'cabinet-support',
+    component: CabinetSupportView,
   },
   {
     path: '/cabinet/pay',
@@ -144,6 +151,11 @@ const routes = [
     path: '/admin/tasks',
     name: 'admin-tasks-staff',
     component: AdminTasksStaffView,
+  },
+  {
+    path: '/admin/support',
+    name: 'admin-support-staff',
+    component: AdminSupportStaffView,
   },
   {
     path: '/admin/funnel',
@@ -225,6 +237,7 @@ router.beforeEach(async (to, _from, next) => {
   if (
     (to.name === 'cabinet' ||
       to.name === 'cabinet-instructions' ||
+      to.name === 'cabinet-support' ||
       to.name === 'cabinet-pay' ||
       to.name === 'cabinet-pay-return') &&
     !token
@@ -267,6 +280,7 @@ router.beforeEach(async (to, _from, next) => {
       const isPaymentsStaff = to.name === 'admin-payments-staff'
       const isFinanceStaff = to.name === 'admin-finance-staff'
       const isTasksStaff = to.name === 'admin-tasks-staff'
+      const isSupportStaff = to.name === 'admin-support-staff'
       if (
         isReferralsRoute ||
         isUsersAnalyticsStaff ||
@@ -277,7 +291,8 @@ router.beforeEach(async (to, _from, next) => {
         isSubscriptionUaStatsStaff ||
         isPaymentsStaff ||
         isFinanceStaff ||
-        isTasksStaff
+        isTasksStaff ||
+        isSupportStaff
       ) {
         if (!canAccessReferralsAdmin(role)) {
           return next({ path: '/cabinet' })

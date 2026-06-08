@@ -18,6 +18,12 @@ import {
   formatMskSubscriptionDaysRemaining,
 } from '../utils/mskDate.js'
 import { useOffsetPagination } from '../composables/useOffsetPagination.js'
+import {
+  refreshClientSupportUnread,
+  startClientSupportUnreadPolling,
+  stopClientSupportUnreadPolling,
+  useClientSupportUnread,
+} from '../composables/useClientSupportUnread.js'
 import { formatRub } from '../composables/useYookassaPricing.js'
 import { isMobileDevice, openTelegramDeepLink } from '../utils/subscription/openDeepLink.js'
 import {
@@ -28,7 +34,7 @@ import {
   hideClientLogoOnError,
   openClientLogoUrl,
 } from '../utils/subscription/subscriptionOpenClientLogo.js'
-import { BookOpen, Check, ChevronRight, CreditCard, Gift, Calendar, Link2, Loader2, Lock, MousePointerClick, Send, UserPlus, Wallet } from 'lucide-vue-next'
+import { BookOpen, Check, ChevronRight, CreditCard, Gift, Calendar, Headphones, Link2, Loader2, Lock, MousePointerClick, Send, UserPlus, Wallet } from 'lucide-vue-next'
 
 /** Подсказки к строкам исх./вх. в блоке трафика */
 const TRAFFIC_HINT_UP =
@@ -112,6 +118,16 @@ const referralsStaffVisible = computed(
 )
 
 const referralClientUser = computed(() => me.value?.role === 'user')
+
+const { unreadCount: clientSupportUnread } = useClientSupportUnread()
+
+const clientSupportUnreadLabel = computed(() => {
+  const n = clientSupportUnread.value
+  if (n < 1) return ''
+  if (n === 1) return '1 новый ответ'
+  if (n > 99) return '99+ новых ответов'
+  return `${n} новых ответа`
+})
 
 /** @type {import('vue').Ref<Array<{ id: number, amount: string | number, months: number, provider: string, payment_kind: string, created_at: string }>>} */
 const paymentHistoryItems = ref([])
@@ -565,6 +581,18 @@ function goCabinetPay() {
   void router.push({ name: 'cabinet-pay' })
 }
 
+watch(
+  () => me.value?.role,
+  (role) => {
+    if (role === 'user') {
+      startClientSupportUnreadPolling()
+      void refreshClientSupportUnread()
+    } else {
+      stopClientSupportUnreadPolling()
+    }
+  },
+)
+
 onMounted(() => {
   const q = route.query.unknown_client
   if (q === '1' || q === 'true') {
@@ -575,6 +603,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  stopClientSupportUnreadPolling()
   // Чистим таймеры «скопировано/сохранено», чтобы коллбэк не сработал после ухода со страницы.
   clearTimeout(referralCopySiteTimer)
   clearTimeout(referralCopyTgTimer)
@@ -921,25 +950,58 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="card card-pad instructions-widget">
-            <h2 class="block-title">Инструкции</h2>
+            <h2 class="block-title">Помощь</h2>
             <p class="hint instructions-widget__hint">
-              Пошаговые руководства по подключению VPN на вашем устройстве.
+              Пошаговые инструкции и чат с поддержкой.
             </p>
-            <AppActionButton
-              variant="secondary"
-              block
-              stacked
-              :to="{ name: 'cabinet-instructions' }"
+            <p
+              v-if="referralClientUser && clientSupportUnread > 0"
+              class="support-unread-callout"
+              role="status"
             >
-              <template #icon>
-                <BookOpen
-                  :size="18"
-                  :stroke-width="2"
-                  aria-hidden="true"
-                />
-              </template>
-              Открыть инструкции
-            </AppActionButton>
+              У вас {{ clientSupportUnreadLabel }} от поддержки — откройте чат ниже.
+            </p>
+            <div class="cabinet-help-action-stack">
+              <AppActionButton
+                variant="secondary"
+                block
+                stacked
+                :to="{ name: 'cabinet-instructions' }"
+              >
+                <template #icon>
+                  <BookOpen
+                    :size="18"
+                    :stroke-width="2"
+                    aria-hidden="true"
+                  />
+                </template>
+                Открыть инструкции
+              </AppActionButton>
+              <div
+                class="cabinet-support-btn-wrap"
+                :class="{ 'cabinet-support-btn-wrap--unread': clientSupportUnread > 0 }"
+              >
+                <AppActionButton
+                  :variant="clientSupportUnread > 0 ? 'accent' : 'secondary'"
+                  block
+                  stacked
+                  :to="{ name: 'cabinet-support' }"
+                >
+                  <template #icon>
+                    <Headphones
+                      :size="18"
+                      :stroke-width="2"
+                      aria-hidden="true"
+                    />
+                  </template>
+                  {{
+                    clientSupportUnread > 0
+                      ? `Поддержка · ${clientSupportUnreadLabel}`
+                      : 'Написать в поддержку'
+                  }}
+                </AppActionButton>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -2602,5 +2664,30 @@ dd {
 
 .instructions-widget__hint {
   margin-top: -0.35rem;
+}
+
+.cabinet-help-action-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--card-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.support-unread-callout {
+  margin: 0 0 0.75rem;
+  padding: 0.65rem 0.8rem;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+}
+
+.cabinet-support-btn-wrap--unread {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-border) 65%, transparent);
 }
 </style>

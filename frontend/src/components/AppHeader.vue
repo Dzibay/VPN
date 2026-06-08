@@ -1,15 +1,37 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { Headphones } from 'lucide-vue-next'
+import { fetchJson } from '../api/client.js'
+import { canAccessReferralsAdmin } from '../auth/permissions.js'
+import {
+  refreshClientSupportUnread,
+  startClientSupportUnreadPolling,
+  stopClientSupportUnreadPolling,
+  useClientSupportUnread,
+} from '../composables/useClientSupportUnread.js'
 import {
   clearSession,
   getAccessToken,
+  getSessionRole,
 } from '../auth/session.js'
+
+const SUPPORT_BADGE_POLL_MS = 30000
 
 const router = useRouter()
 const route = useRoute()
 
 const hasToken = ref(false)
+const staffSupportBadgeCount = ref(0)
+const { unreadCount: clientSupportUnread } = useClientSupportUnread()
+/** @type {ReturnType<typeof setInterval> | null} */
+let staffSupportBadgeTimer = null
+
+const supportBadgeCount = computed(() => {
+  if (showStaffSupportBell.value) return staffSupportBadgeCount.value
+  if (showClientSupportBell.value) return clientSupportUnread.value
+  return 0
+})
 
 function refreshSessions() {
   hasToken.value = Boolean(getAccessToken())
@@ -20,6 +42,52 @@ const isHome = computed(() => route.name === 'home')
 const showGuestAuthLinks = computed(
   () => !hasToken.value && route.name !== 'cabinet',
 )
+
+const showStaffSupportBell = computed(
+  () => hasToken.value && canAccessReferralsAdmin(getSessionRole()),
+)
+
+const showClientSupportBell = computed(
+  () => hasToken.value && getSessionRole() === 'user',
+)
+
+const showSupportBell = computed(
+  () => showStaffSupportBell.value || showClientSupportBell.value,
+)
+
+const supportBellTo = computed(() =>
+  showStaffSupportBell.value
+    ? { name: 'admin-support-staff' }
+    : { name: 'cabinet-support' },
+)
+
+const supportBadgeLabel = computed(() => {
+  const n = supportBadgeCount.value
+  if (n < 1) return ''
+  return n > 99 ? '99+' : String(n)
+})
+
+const supportBellAriaLabel = computed(() => {
+  const n = supportBadgeCount.value
+  if (showStaffSupportBell.value) {
+    return n > 0
+      ? `Поддержка: ${n} чатов ждут ответа`
+      : 'Поддержка: новых сообщений нет'
+  }
+  return n > 0
+    ? `Поддержка: ${n} новых ответов`
+    : 'Поддержка: новых ответов нет'
+})
+
+const supportBellTitle = computed(() => {
+  const n = supportBadgeCount.value
+  if (n > 0) {
+    return showStaffSupportBell.value
+      ? `Поддержка: ${n} чатов ждут ответа`
+      : `Поддержка: ${n} новых ответов`
+  }
+  return 'Поддержка'
+})
 
 const homeNavLinks = [
   { href: '#benefits', label: 'Преимущества' },
@@ -40,6 +108,8 @@ const headerWordmarkOk = ref(true)
 function logout() {
   clearSession()
   refreshSessions()
+  staffSupportBadgeCount.value = 0
+  stopSupportBadgePolling()
   if (route.path.startsWith('/cabinet') || route.path.startsWith('/admin')) {
     router.push('/login')
   } else {
@@ -47,8 +117,64 @@ function logout() {
   }
 }
 
-onMounted(refreshSessions)
-router.afterEach(refreshSessions)
+async function loadSupportBadgeCount() {
+  if (showStaffSupportBell.value) {
+    try {
+      const params = new URLSearchParams({ limit: '1', offset: '0' })
+      const data = await fetchJson(`/api/staff/support-chats?${params.toString()}`)
+      staffSupportBadgeCount.value = Number(data?.needs_reply_count) || 0
+    } catch {
+      staffSupportBadgeCount.value = 0
+    }
+    return
+  }
+  if (showClientSupportBell.value) {
+    await refreshClientSupportUnread()
+    return
+  }
+  staffSupportBadgeCount.value = 0
+}
+
+function startSupportBadgePolling() {
+  stopSupportBadgePolling()
+  if (!showSupportBell.value) return
+  if (showClientSupportBell.value) {
+    startClientSupportUnreadPolling(SUPPORT_BADGE_POLL_MS)
+    return
+  }
+  void loadSupportBadgeCount()
+  staffSupportBadgeTimer = setInterval(() => {
+    void loadSupportBadgeCount()
+  }, SUPPORT_BADGE_POLL_MS)
+}
+
+function stopSupportBadgePolling() {
+  stopClientSupportUnreadPolling()
+  if (staffSupportBadgeTimer) {
+    clearInterval(staffSupportBadgeTimer)
+    staffSupportBadgeTimer = null
+  }
+}
+
+watch(showSupportBell, (enabled) => {
+  if (enabled) startSupportBadgePolling()
+  else {
+    staffSupportBadgeCount.value = 0
+    stopSupportBadgePolling()
+  }
+})
+
+onMounted(() => {
+  refreshSessions()
+  if (showSupportBell.value) startSupportBadgePolling()
+})
+
+onBeforeUnmount(stopSupportBadgePolling)
+
+router.afterEach(() => {
+  refreshSessions()
+  if (showSupportBell.value) void loadSupportBadgeCount()
+})
 </script>
 
 <template>
@@ -106,6 +232,20 @@ router.afterEach(refreshSessions)
     <span class="spacer" aria-hidden="true" />
 
     <div class="toolbar">
+      <RouterLink
+        v-if="showSupportBell"
+        class="support-bell"
+        :class="{ 'support-bell--active': supportBadgeCount > 0 }"
+        :to="supportBellTo"
+        :aria-label="supportBellAriaLabel"
+        :title="supportBellTitle"
+      >
+        <Headphones :size="18" :stroke-width="2" aria-hidden="true" />
+        <span
+          v-if="supportBadgeCount > 0"
+          class="support-bell__badge"
+        >{{ supportBadgeLabel }}</span>
+      </RouterLink>
       <nav class="user-bar" aria-label="Аккаунт">
         <template v-if="showGuestAuthLinks">
           <RouterLink class="nav-link" to="/login">Войти</RouterLink>
@@ -281,6 +421,56 @@ router.afterEach(refreshSessions)
   justify-content: flex-end;
   gap: 0.35rem;
   min-width: 0;
+}
+
+.support-bell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 10px;
+  color: var(--nav-link);
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition:
+    color 0.2s ease,
+    background 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.support-bell:hover {
+  color: var(--text-h);
+  background: var(--nav-link-hover-bg);
+  border-color: var(--card-border);
+}
+
+.support-bell--active {
+  color: var(--accent);
+}
+
+.support-bell--active:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+
+.support-bell__badge {
+  position: absolute;
+  top: 0.12rem;
+  right: 0.08rem;
+  min-width: 1.05rem;
+  height: 1.05rem;
+  padding: 0 0.22rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.05rem;
+  text-align: center;
+  color: #fff;
+  background: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 70%, #000 30%);
+  pointer-events: none;
 }
 
 /* Узкая шапка (телефон): только «Вход»; ширина контейнера не зависит от содержимого user-bar. */

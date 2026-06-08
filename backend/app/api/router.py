@@ -17,6 +17,7 @@ from app.api.endpoints import (
     servers,
     staff_chart_events,
     staff_ledger,
+    staff_support_messages,
     subscription_device_stats,
     telegram,
     users,
@@ -34,6 +35,7 @@ api_router.include_router(payments.router)
 api_router.include_router(telegram.router)
 api_router.include_router(users.router)
 api_router.include_router(staff_chart_events.router)
+api_router.include_router(staff_support_messages.router)
 api_router.include_router(http_audit_staff.router)
 api_router.include_router(referral_links.staff_router)
 api_router.include_router(servers.router)

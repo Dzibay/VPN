@@ -57,5 +57,10 @@ class User(Base):
         nullable=True,
         default=utc_now,
     )
+    #: Когда пользователь последний раз открывал чат поддержки (для бейджа непрочитанных).
+    support_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     token: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     vless_uuid: Mapped[str] = mapped_column(Text, unique=True, nullable=False)

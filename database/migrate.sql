@@ -106,3 +106,30 @@ BEGIN
     END IF;
 END $$;
 
+-- Чат поддержки в личном кабинете.
+CREATE TABLE IF NOT EXISTS support_messages (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    author_kind TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT support_messages_author_kind_check CHECK (
+        author_kind IN ('user', 'staff')
+    ),
+    CONSTRAINT support_messages_body_nonempty_check CHECK (
+        char_length(trim(body)) > 0
+    )
+);
+
+CREATE INDEX IF NOT EXISTS ix_support_messages_user_id_created_at
+    ON support_messages (user_id, created_at ASC);
+
+ALTER TABLE support_messages
+    ADD COLUMN IF NOT EXISTS staff_user_id BIGINT REFERENCES users (id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS ix_support_messages_staff_user_id
+    ON support_messages (staff_user_id)
+    WHERE staff_user_id IS NOT NULL;
+
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS support_seen_at TIMESTAMPTZ;
