@@ -18,6 +18,10 @@ class HttpRequestTraceStaffItem(BaseModel):
     path: str
     status_code: int
     duration_ms: float = Field(description="Длительность запроса, мс")
+    client_ip: str | None = Field(
+        default=None,
+        description="IP клиента (X-Forwarded-For / X-Real-IP / TCP peer)",
+    )
     created_at: datetime
 
 

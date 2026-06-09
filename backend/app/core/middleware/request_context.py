@@ -13,6 +13,7 @@ import time
 import uuid
 from typing import Any, Awaitable, Callable, MutableMapping
 
+from app.core.client_ip import resolve_client_ip
 from app.core.logging_config import request_id_ctx
 from app.core.request_subject import reset_request_subject
 from app.domain.audit.http_trace import persist_http_request_trace_if_configured
@@ -50,16 +51,6 @@ def _path_with_query(scope: Scope) -> str:
     return path
 
 
-def _client_host(scope: Scope) -> str:
-    client = scope.get("client")
-    if not client:
-        return "-"
-    try:
-        return str(client[0])
-    except (TypeError, IndexError):
-        return "-"
-
-
 class RequestContextMiddleware:
     """
     Прокидывает X-Request-ID (или генерирует), кладёт его в contextvars (для логов),
@@ -90,6 +81,7 @@ class RequestContextMiddleware:
         start = time.perf_counter()
         rid_bytes = rid.encode("latin-1")
         status_code = 500
+        client_ip = resolve_client_ip(scope)
 
         async def send_wrapper(message: Message) -> None:
             nonlocal status_code
@@ -117,7 +109,7 @@ class RequestContextMiddleware:
                 _path_with_query(scope),
                 status_code,
                 duration_ms,
-                _client_host(scope),
+                client_ip or "-",
             )
         finally:
             try:
@@ -128,6 +120,7 @@ class RequestContextMiddleware:
                     http_method=str(scope.get("method", "?")),
                     status_code=status_code,
                     duration_ms=audit_ms,
+                    client_ip=client_ip,
                 )
             except Exception:
                 log.exception("Не удалось завершить запись аудита HTTP")

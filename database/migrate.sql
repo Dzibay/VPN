@@ -133,3 +133,6 @@ CREATE INDEX IF NOT EXISTS ix_support_messages_staff_user_id
 
 ALTER TABLE users
     ADD COLUMN IF NOT EXISTS support_seen_at TIMESTAMPTZ;
+
+ALTER TABLE user_http_request_traces
+    ADD COLUMN IF NOT EXISTS client_ip TEXT;

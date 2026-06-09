@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS user_http_request_traces (
     path TEXT NOT NULL,
     status_code INTEGER NOT NULL,
     duration_ms DOUBLE PRECISION NOT NULL,
+    client_ip TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

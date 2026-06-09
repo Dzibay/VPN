@@ -368,6 +368,7 @@ const httpTraceSortAccessors = {
   path: (r) => String(r.path ?? '').toLowerCase(),
   status_code: (r) => Number(r.status_code) || 0,
   duration_ms: (r) => Number(r.duration_ms) || 0,
+  client_ip: (r) => String(r.client_ip ?? '').toLowerCase(),
 }
 
 const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(
@@ -535,6 +536,13 @@ watch(
               @sort="toggleSort"
             />
             <AdminSortTh
+              label="IP"
+              column-key="client_ip"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              @sort="toggleSort"
+            />
+            <AdminSortTh
               label="Источник"
               column-key="subject_source"
               :sort-key="sortKey"
@@ -575,7 +583,7 @@ watch(
         </thead>
         <tbody>
           <tr v-if="sortedRows.length === 0">
-            <td :colspan="canDeleteLogs ? 8 : 7" class="muted center">Нет строк</td>
+            <td :colspan="canDeleteLogs ? 9 : 8" class="muted center">Нет строк</td>
           </tr>
           <tr v-for="row in sortedRows" :key="row.id">
             <td v-if="canDeleteLogs" class="td-select">
@@ -598,6 +606,7 @@ watch(
                   : '—'
               }}
             </td>
+            <td class="mono nowrap">{{ row.client_ip || '—' }}</td>
             <td>{{ row.subject_source }}</td>
             <td class="mono">{{ row.http_method }}</td>
             <td class="mono">

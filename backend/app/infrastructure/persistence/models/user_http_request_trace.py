@@ -33,6 +33,7 @@ class UserHttpRequestTrace(Base):
     path: Mapped[str] = mapped_column(Text, nullable=False)
     status_code: Mapped[int] = mapped_column(Integer, nullable=False)
     duration_ms: Mapped[float] = mapped_column(Double, nullable=False)
+    client_ip: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

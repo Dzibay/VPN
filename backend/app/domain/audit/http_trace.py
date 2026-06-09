@@ -88,6 +88,7 @@ async def persist_http_request_trace_if_configured(
     http_method: str,
     status_code: int,
     duration_ms: float,
+    client_ip: str | None = None,
 ) -> None:
     cfg = get_settings()
     always_persist = http_audit_always_persist_for_path(
@@ -117,6 +118,7 @@ async def persist_http_request_trace_if_configured(
         path=scope_path_with_query,
         status_code=status_code,
         duration_ms=duration_ms,
+        client_ip=client_ip,
     )
     try:
         async with AsyncSessionLocal() as session:
