@@ -32,6 +32,14 @@ def _parse_ip(value: str) -> str | None:
         return None
 
 
+def normalize_ip_address(value: str) -> str:
+    """Нормализованный IPv4/IPv6 или ValueError."""
+    ip = _parse_ip((value or "").strip())
+    if ip is None:
+        raise ValueError("Некорректный IP-адрес")
+    return ip
+
+
 def resolve_client_ip(scope: Scope) -> str | None:
     """
     IP клиента: первый валидный адрес из X-Forwarded-For, иначе X-Real-IP, иначе TCP peer.

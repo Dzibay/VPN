@@ -41,6 +41,7 @@ const UsersAnalyticsStaffView = () =>
 
 const AdminHttpRequestLogsView = () =>
   import('../views/AdminHttpRequestLogsView.vue')
+const AdminBlockedIpsView = () => import('../views/AdminBlockedIpsView.vue')
 const AdminSubscriptionUserAgentStatsView = () =>
   import('../views/AdminSubscriptionUserAgentStatsView.vue')
 const AdminServersReachabilityView = () =>
@@ -131,6 +132,11 @@ const routes = [
     path: '/admin/logs',
     name: 'admin-http-logs',
     component: AdminHttpRequestLogsView,
+  },
+  {
+    path: '/admin/blocked-ips',
+    name: 'admin-blocked-ips',
+    component: AdminBlockedIpsView,
   },
   {
     path: '/admin/referrals',

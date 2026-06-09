@@ -136,3 +136,11 @@ ALTER TABLE users
 
 ALTER TABLE user_http_request_traces
     ADD COLUMN IF NOT EXISTS client_ip TEXT;
+
+CREATE TABLE IF NOT EXISTS blocked_ips (
+    id BIGSERIAL PRIMARY KEY,
+    ip TEXT NOT NULL,
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT blocked_ips_ip_key UNIQUE (ip)
+);

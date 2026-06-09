@@ -59,6 +59,12 @@ export const ADMIN_NAV_DEFINITION = [
     access: 'staff',
   },
   {
+    routeName: 'admin-blocked-ips',
+    label: 'Блокировка IP',
+    path: '/admin/blocked-ips',
+    access: 'admin_only',
+  },
+  {
     routeName: 'admin-referrals',
     label: 'Реферальные токены',
     path: '/admin/referrals',

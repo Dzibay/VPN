@@ -12,7 +12,9 @@ from app.core.error_handlers import register_exception_handlers
 from app.core.staff_swagger_html import staff_swagger_ui_html
 from app.core.moscow_api_time import install_moscow_json_encoder
 from app.core.logging_config import setup_logging
+from app.core.middleware.blocked_ip import BlockedIpMiddleware
 from app.core.middleware.request_context import RequestContextMiddleware
+from app.domain.security.blocked_ip_cache import ensure_blocked_ips_loaded
 from app.core.openapi import attach_openapi
 from app.core.startup_checks import validate_production_secrets
 
@@ -59,6 +61,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(application)
     attach_openapi(application)
     application.add_middleware(RequestContextMiddleware)
+    application.add_middleware(BlockedIpMiddleware)
     application.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_allow_origins(),

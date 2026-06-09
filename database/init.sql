@@ -105,6 +105,14 @@ CREATE TABLE IF NOT EXISTS subscription_devices (
     CONSTRAINT uq_subscription_devices_user_fp UNIQUE (user_id, fingerprint)
 );
 
+CREATE TABLE IF NOT EXISTS blocked_ips (
+    id BIGSERIAL PRIMARY KEY,
+    ip TEXT NOT NULL,
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT blocked_ips_ip_key UNIQUE (ip)
+);
+
 CREATE TABLE IF NOT EXISTS user_http_request_traces (
     id BIGSERIAL PRIMARY KEY,
     request_id TEXT NOT NULL,
