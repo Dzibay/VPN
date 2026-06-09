@@ -144,6 +144,17 @@ const isAdmin = computed(() => isAdminRole(getSessionRole()))
 const canEditTrafficLimit = computed(() =>
   canAccessReferralsAdmin(getSessionRole()),
 )
+const canWriteSupport = canEditTrafficLimit
+
+const supportChatTo = computed(() => {
+  const uid = userId.value
+  if (uid == null) return null
+  const p = profile.value
+  const query = { user_id: String(uid) }
+  const label = profileSupportLabel(p)
+  if (label) query.user_label = label
+  return { name: 'admin-support-staff', query }
+})
 
 const profileEditing = ref(false)
 const profileSaving = ref(false)
@@ -400,6 +411,17 @@ function telegramUsername(p) {
   if (typeof u !== 'string' || !u.trim()) return null
   const s = u.trim().replace(/^@+/, '')
   return s ? `@${s}` : null
+}
+
+function profileSupportLabel(p) {
+  if (!p) return null
+  const email = p.email != null ? String(p.email).trim() : ''
+  if (email) return email
+  const tg = telegramUsername(p)
+  if (tg) return tg
+  if (p.telegram_id != null) return `Telegram ${p.telegram_id}`
+  if (p.id != null) return `Пользователь #${p.id}`
+  return null
 }
 
 /** Ячейка Telegram в таблице приглашённых (как в аналитике клиентов). */
@@ -781,6 +803,13 @@ onMounted(() => {
       <div class="profile-head">
         <h2 class="profile-title">Данные пользователя</h2>
         <div v-if="canEditTrafficLimit" class="profile-head__actions">
+          <RouterLink
+            v-if="canWriteSupport && supportChatTo"
+            :to="supportChatTo"
+            class="btn-primary btn-tiny profile-head__write"
+          >
+            Написать
+          </RouterLink>
           <template v-if="profileEditing">
             <button
               type="button"
@@ -1955,6 +1984,9 @@ tr.referee-row-active-today {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
+}
+.profile-head__write {
+  text-decoration: none;
 }
 .profile-title {
   margin: 0;

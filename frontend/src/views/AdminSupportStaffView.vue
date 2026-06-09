@@ -46,6 +46,21 @@ const selectedUserIdFromQuery = computed(() => {
   return Number.isFinite(n) && n > 0 ? n : null
 })
 
+const selectedUserLabelFromQuery = computed(() => {
+  const raw = route.query.user_label
+  const s = typeof raw === 'string' ? raw : Array.isArray(raw) ? raw[0] : ''
+  const trimmed = String(s ?? '').trim()
+  return trimmed || null
+})
+
+const isNewChat = computed(
+  () =>
+    selectedUserId.value != null &&
+    !messagesLoading.value &&
+    !messagesError.value &&
+    messages.value.length === 0,
+)
+
 const showStaffAuthor = computed(() => getSessionRole() === 'admin')
 
 function formatTime(iso) {
@@ -66,6 +81,15 @@ function messageAuthorLabel(msg) {
 
 function chatUserLabel(chat) {
   return String(chat?.user_label ?? `Пользователь #${chat?.user_id ?? '?'}`)
+}
+
+function chatSummaryForUserId(userId, label = null) {
+  const id = Number(userId)
+  const resolvedLabel =
+    label?.trim() ||
+    (Number(selectedUserId.value) === id ? selectedUserLabelFromQuery.value : null) ||
+    `Пользователь #${id}`
+  return { user_id: id, user_label: resolvedLabel }
 }
 
 async function scrollToBottom() {
@@ -97,7 +121,7 @@ async function loadChats(options = {}) {
         selectChat(found, { syncRoute: false })
       } else if (!silent) {
         selectedUserId.value = qid
-        selectedChat.value = { user_id: qid, user_label: `Пользователь #${qid}` }
+        selectedChat.value = chatSummaryForUserId(qid)
         void loadMessages(qid)
       }
     } else if (selectedUserId.value != null) {
@@ -231,7 +255,7 @@ watch(
     if (found) selectChat(found, { syncRoute: false })
     else {
       selectedUserId.value = id
-      selectedChat.value = { user_id: id, user_label: `Пользователь #${id}` }
+      selectedChat.value = chatSummaryForUserId(id)
       void loadMessages(id)
     }
   },
@@ -245,7 +269,7 @@ onMounted(() => {
       if (found) selectChat(found, { syncRoute: false })
       else {
         selectedUserId.value = qid
-        selectedChat.value = { user_id: qid, user_label: `Пользователь #${qid}` }
+        selectedChat.value = chatSummaryForUserId(qid)
         void loadMessages(qid)
       }
     }
@@ -292,7 +316,11 @@ onBeforeUnmount(() => {
           Загрузка…
         </div>
         <p v-else-if="!chats.length" class="support-inbox__state muted">
-          {{ onlyNeedsReply ? 'Нет чатов, ожидающих ответа.' : 'Сообщений от пользователей пока нет.' }}
+          {{
+            onlyNeedsReply
+              ? 'Нет чатов, ожидающих ответа.'
+              : 'Сообщений от пользователей пока нет. Откройте карточку клиента и нажмите «Написать», чтобы начать переписку.'
+          }}
         </p>
         <ul v-else class="support-inbox__list" role="list">
           <li v-for="chat in chats" :key="chat.user_id">
@@ -353,6 +381,12 @@ onBeforeUnmount(() => {
           <StateNote v-else-if="messagesError" variant="error">
             {{ messagesError }}
           </StateNote>
+          <p
+            v-else-if="isNewChat"
+            class="support-thread__new-chat muted"
+          >
+            Переписки пока нет. Напишите пользователю первым — сообщение появится в его кабинете.
+          </p>
           <div v-else class="support-thread__messages" role="log" aria-live="polite">
             <article
               v-for="msg in messages"
@@ -385,7 +419,11 @@ onBeforeUnmount(() => {
                 class="support-composer__input"
                 rows="3"
                 maxlength="4000"
-                placeholder="Ответ пользователю…"
+                :placeholder="
+                  isNewChat
+                    ? 'Первое сообщение пользователю…'
+                    : 'Сообщение пользователю…'
+                "
                 :disabled="sendBusy"
                 @keydown="onComposerKeydown"
               />
@@ -413,12 +451,12 @@ onBeforeUnmount(() => {
                   aria-hidden="true"
                 />
               </template>
-              {{ sendBusy ? 'Отправка…' : 'Отправить ответ' }}
+              {{ sendBusy ? 'Отправка…' : isNewChat ? 'Начать переписку' : 'Отправить' }}
             </AppActionButton>
           </form>
         </template>
         <p v-else class="support-thread__empty muted">
-          Выберите чат слева, чтобы просмотреть переписку и ответить.
+          Выберите чат слева или откройте карточку клиента и нажмите «Написать», чтобы начать переписку.
         </p>
       </section>
     </div>
@@ -653,11 +691,17 @@ onBeforeUnmount(() => {
 }
 
 .support-thread__state,
-.support-thread__empty {
+.support-thread__empty,
+.support-thread__new-chat {
   margin: 0;
   padding: 1.5rem 1rem;
   font-size: 0.92rem;
   line-height: 1.45;
+}
+
+.support-thread__new-chat {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--nav-border);
 }
 
 .support-thread__messages {
