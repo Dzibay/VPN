@@ -40,11 +40,27 @@ function httpTraceCreatedAtTs(iso) {
   return Number.isFinite(t) ? t : NaN
 }
 
-/** Дата и время в ячейке; развёрнутый формат — в title. */
-function formatHttpTraceDateTime(iso) {
+/** Дата и время в ячейке (две строки); развёрнутый формат — в title. */
+function formatHttpTraceDate(iso) {
   const ts = httpTraceCreatedAtTs(iso)
   if (!Number.isFinite(ts)) return '—'
-  return formatMskApiDateTime(ts, { dateStyle: 'short', timeStyle: 'medium' })
+  return new Date(ts).toLocaleDateString('ru-RU', {
+    timeZone: 'Europe/Moscow',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
+}
+
+function formatHttpTraceTime(iso) {
+  const ts = httpTraceCreatedAtTs(iso)
+  if (!Number.isFinite(ts)) return ''
+  return new Date(ts).toLocaleTimeString('ru-RU', {
+    timeZone: 'Europe/Moscow',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
 }
 
 function formatHttpTraceFullDateTime(iso) {
@@ -552,6 +568,7 @@ watch(
             <AdminSortTh
               label="Метод"
               column-key="http_method"
+              class="th-method"
               :sort-key="sortKey"
               :sort-dir="sortDir"
               @sort="toggleSort"
@@ -559,6 +576,7 @@ watch(
             <AdminSortTh
               label="Путь"
               column-key="path"
+              class="th-path"
               :sort-key="sortKey"
               :sort-dir="sortDir"
               @sort="toggleSort"
@@ -567,6 +585,7 @@ watch(
               label="Статус"
               column-key="status_code"
               align="right"
+              class="th-status"
               :sort-key="sortKey"
               :sort-dir="sortDir"
               @sort="toggleSort"
@@ -575,6 +594,7 @@ watch(
               label="мс"
               column-key="duration_ms"
               align="right"
+              class="th-ms"
               :sort-key="sortKey"
               :sort-dir="sortDir"
               @sort="toggleSort"
@@ -594,28 +614,29 @@ watch(
               />
             </td>
             <td
-              class="mono nowrap"
+              class="mono td-datetime"
               :title="formatHttpTraceFullDateTime(row.created_at)"
             >
-              {{ formatHttpTraceDateTime(row.created_at) }}
+              <span class="dt-date">{{ formatHttpTraceDate(row.created_at) }}</span>
+              <span class="dt-time">{{ formatHttpTraceTime(row.created_at) }}</span>
             </td>
-            <td class="mono num">
+            <td class="mono num td-user">
               {{
                 row.user_id != null
                   ? row.user_id
                   : '—'
               }}
             </td>
-            <td class="mono nowrap">{{ row.client_ip || '—' }}</td>
-            <td>{{ row.subject_source }}</td>
-            <td class="mono">{{ row.http_method }}</td>
-            <td class="mono">
+            <td class="mono nowrap td-ip">{{ row.client_ip || '—' }}</td>
+            <td class="td-source">{{ row.subject_source }}</td>
+            <td class="mono td-method">{{ row.http_method }}</td>
+            <td class="mono td-path">
               <span class="path-cell-inner" :title="fullHttpTracePath(row.path)">{{
                 row.path
               }}</span>
             </td>
-            <td class="mono num">{{ row.status_code }}</td>
-            <td class="mono num">{{ Number(row.duration_ms).toFixed(1) }}</td>
+            <td class="mono num td-status">{{ row.status_code }}</td>
+            <td class="mono num td-ms">{{ Number(row.duration_ms).toFixed(1) }}</td>
           </tr>
         </tbody>
       </table>
@@ -689,36 +710,36 @@ watch(
   max-width: 100%;
 }
 
-/* Короткие колонки — без переноса, ширина по содержимому */
-.http-trace-table :is(th, td):nth-child(1),
-.http-trace-table :is(th, td):nth-child(2),
-.http-trace-table :is(th, td):nth-child(3),
-.http-trace-table :is(th, td):nth-child(4),
-.http-trace-table :is(th, td):nth-child(5),
-.http-trace-table :is(th, td):nth-child(7),
-.http-trace-table :is(th, td):nth-child(8) {
+.http-trace-table :is(.td-datetime, .td-user, .td-ip, .td-method, .td-status, .td-ms, .th-method, .th-status, .th-ms) {
   white-space: nowrap;
   width: 1%;
 }
 
-/* Колонка "Путь" занимает оставшееся пространство таблицы */
-.http-trace-table :is(th, td):nth-child(6) {
+.http-trace-table :is(.td-path, .th-path) {
   width: 100%;
 }
 
-/* Вариант без колонки выбора (manager): индексы колонок сдвинуты на -1 */
-.http-trace-table--no-select :is(th, td):nth-child(1),
-.http-trace-table--no-select :is(th, td):nth-child(2),
-.http-trace-table--no-select :is(th, td):nth-child(3),
-.http-trace-table--no-select :is(th, td):nth-child(4),
-.http-trace-table--no-select :is(th, td):nth-child(6),
-.http-trace-table--no-select :is(th, td):nth-child(7) {
-  white-space: nowrap;
-  width: 1%;
+.td-datetime {
+  line-height: 1.25;
+  vertical-align: top;
 }
 
-.http-trace-table--no-select :is(th, td):nth-child(5) {
-  width: 100%;
+.dt-date,
+.dt-time {
+  display: block;
+}
+
+.dt-time {
+  color: var(--muted);
+  font-size: 0.78em;
+}
+
+.td-method,
+.th-method {
+  max-width: 3.25rem;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+  text-align: center;
 }
 
 .path-cell-inner {
