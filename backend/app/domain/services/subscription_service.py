@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from app.config import Settings, settings
-from app.domain.public_urls import support_telegram_public_url
+from app.domain.public_urls import public_spa_base_url, support_telegram_public_url
 from app.domain.models.subscription import SubscriptionOpenPageData, SubscriptionPayload
 from app.domain.subscription.build import (
     build_subscription_payload,
@@ -312,7 +312,11 @@ async def subscription_client_metadata_headers(
             if (url := support_telegram_public_url(settings))
             else {}
         ),
-        "profile-web-page-url": "https://cool-vpn.ru",
+        **(
+            {"profile-web-page-url": spa_url}
+            if (spa_url := public_spa_base_url(settings))
+            else {}
+        ),
         "announce": subscription_announce_header_value(announce_raw),
         "announce-url": _subscription_announce_url(
             block_reason=reason,

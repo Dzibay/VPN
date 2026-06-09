@@ -2,7 +2,7 @@ from functools import lru_cache
 from typing import Literal
 from urllib.parse import quote_plus
 
-from pydantic import Field, computed_field
+from pydantic import Field, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app import constants
@@ -92,8 +92,16 @@ class Settings(BaseSettings):
     site_address: str = Field(
         default="",
         description=(
-            "Публичный URL сайта (env SITE_ADDRESS): полный URL или host[:port] без схемы. "
-            "Единственный источник origin для SPA, рефералов, ссылок бота и редиректов /sub/…"
+            "Основной публичный URL сайта (env SITE_ADDRESS): полный URL или host[:port] без схемы. "
+            "Канонический origin для рефералов, ссылок бота и редиректов /sub/…; "
+            "дополнительные домены — в SITE_EXTRA_ADDRESSES."
+        ),
+    )
+    site_extra_addresses: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Дополнительные домены (env SITE_EXTRA_ADDRESSES), через запятую. "
+            "Тот же сайт и TLS, что у SITE_ADDRESS; канонические ссылки остаются на основном домене."
         ),
     )
     public_cabinet_url: str = Field(
@@ -586,6 +594,34 @@ class Settings(BaseSettings):
         le=32,
         description="Параллельных TCP-проб в одном цикле (каждый поток со своей sync-сессией БД).",
     )
+
+    @field_validator("site_extra_addresses", mode="before")
+    @classmethod
+    def _parse_site_extra_addresses(cls, v: object) -> list[str]:
+        if v is None or v == "":
+            return []
+        if isinstance(v, list):
+            return [str(x).strip() for x in v if str(x).strip()]
+        if isinstance(v, str):
+            return [part.strip() for part in v.split(",") if part.strip()]
+        return []
+
+    def cors_allow_origins(self) -> list[str]:
+        """cors_origins + https/http origin для SITE_ADDRESS и SITE_EXTRA_ADDRESSES."""
+        from app.domain.subscription.public_base import site_address_to_public_origin
+
+        seen: set[str] = set()
+        out: list[str] = []
+        for origin in self.cors_origins:
+            if origin not in seen:
+                seen.add(origin)
+                out.append(origin)
+        for raw in [self.site_address, *self.site_extra_addresses]:
+            origin = site_address_to_public_origin(raw)
+            if origin and origin not in seen:
+                seen.add(origin)
+                out.append(origin)
+        return out
 
     @computed_field
     def sqlalchemy_database_url(self) -> str:

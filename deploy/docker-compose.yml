@@ -1,6 +1,6 @@
 # Продакшен-стек: Caddy (TLS) → Nginx (SPA + /api) → FastAPI; Prometheus; Postgres; Redis; RQ worker.
 # Запуск из каталога deploy/:
-#   cp env.production.example .env   # JWT, POSTGRES_PASSWORD, SITE_ADDRESS, TELEGRAM_BOT_USERNAME
+#   cp env.production.example .env   # JWT, POSTGRES_PASSWORD, SITE_ADDRESS, SITE_EXTRA_ADDRESSES, TELEGRAM_BOT_USERNAME
 #   Для метрик в админке задайте в .env PROMETHEUS_SD_TOKEN (одна строка) — API и Prometheus подхватят его сами.
 #   mkdir -p secrets/ssh  # положите ключ для PROVISION_SSH_KEY_PATH
 #   docker compose up -d --build
@@ -264,14 +264,17 @@ services:
   caddy:
     image: caddy:2.8-alpine
     restart: unless-stopped
+    entrypoint: ["/bin/sh", "/etc/caddy/docker-entrypoint.sh"]
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:?SITE_ADDRESS is required (e.g. vpn.example.com)}
+      SITE_EXTRA_ADDRESSES: ${SITE_EXTRA_ADDRESSES:-}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/docker-entrypoint.sh:/etc/caddy/docker-entrypoint.sh:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
