@@ -145,6 +145,7 @@ const routes = [
     path: '/admin/blocked-ips',
     name: 'admin-blocked-ips',
     component: AdminBlockedIpsView,
+    meta: { adminOnly: true },
   },
   {
     path: '/admin/referrals',
@@ -252,6 +253,18 @@ router.beforeEach(async (to, _from, next) => {
 
   const token = getAccessToken()
   const role = getSessionRole()
+
+  if (to.meta?.adminOnly) {
+    if (!isAdminRole(role)) {
+      if (!token) {
+        return next({
+          name: 'login',
+          query: { redirect: to.fullPath },
+        })
+      }
+      return next({ path: defaultPathAfterLogin(role) })
+    }
+  }
 
   if (
     (to.name === 'cabinet' ||

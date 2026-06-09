@@ -18,7 +18,7 @@ Send = Callable[[Message], Awaitable[None]]
 
 _EXEMPT_PREFIXES = (
     "/api/health",
-    "/api/staff/blocked-ips",
+    "/api/admin/blocked-ips",
     "/api/public/ip-blocked",
     "/api/public/site-links",
 )

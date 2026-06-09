@@ -24,7 +24,7 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    rows.value = await fetchJson('/api/staff/blocked-ips')
+    rows.value = await fetchJson('/api/admin/blocked-ips')
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
     rows.value = []
@@ -43,7 +43,7 @@ async function addBlockedIp() {
   saving.value = true
   try {
     const note = String(formNote.value ?? '').trim()
-    await fetchJson('/api/staff/blocked-ips', {
+    await fetchJson('/api/admin/blocked-ips', {
       method: 'POST',
       body: JSON.stringify({ ip, note: note || null }),
     })
@@ -63,7 +63,7 @@ async function removeBlockedIp(id) {
   saving.value = true
   saveError.value = null
   try {
-    await fetchJson(`/api/staff/blocked-ips/${id}`, { method: 'DELETE' })
+    await fetchJson(`/api/admin/blocked-ips/${id}`, { method: 'DELETE' })
     await load()
   } catch (e) {
     saveError.value = e instanceof Error ? e.message : String(e)
