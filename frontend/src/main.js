@@ -5,10 +5,21 @@ import './styles/admin-ui.css'
 import './styles/admin-table.css'
 import './styles/admin-chart-wrap.css'
 import App from './App.vue'
+import { ensureIpBlockStatus, redirectToBlockedPage } from './auth/ipBlock.js'
 import { router } from './router/index.js'
 import { captureReferralFromRoute } from './referral/refCapture.js'
 
-createApp(App).use(router).mount('#app')
+async function bootstrap() {
+  const ipBlocked = await ensureIpBlockStatus()
+  if (ipBlocked && window.location.pathname !== '/blocked') {
+    redirectToBlockedPage()
+    return
+  }
+
+  createApp(App).use(router).mount('#app')
+}
+
+void bootstrap()
 
 router.afterEach((to) => {
   captureReferralFromRoute(to)

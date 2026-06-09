@@ -53,9 +53,10 @@ async def _send_redirect_blocked(scope: Scope, receive: Receive, send: Send) -> 
 
 
 async def _send_json_forbidden(scope: Scope, receive: Receive, send: Send) -> None:
-    body = json.dumps({"detail": "Доступ с этого IP заблокирован"}, ensure_ascii=False).encode(
-        "utf-8",
-    )
+    body = json.dumps(
+        {"detail": "Доступ ограничен", "code": "ip_blocked"},
+        ensure_ascii=False,
+    ).encode("utf-8")
     await send(
         {
             "type": "http.response.start",
@@ -63,6 +64,7 @@ async def _send_json_forbidden(scope: Scope, receive: Receive, send: Send) -> No
             "headers": [
                 [b"content-type", b"application/json; charset=utf-8"],
                 [b"content-length", str(len(body)).encode("ascii")],
+                [b"x-ip-blocked", b"1"],
             ],
         },
     )

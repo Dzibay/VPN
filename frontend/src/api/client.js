@@ -1,3 +1,7 @@
+import {
+  isIpBlockedApiResponse,
+  redirectToBlockedPage,
+} from '../auth/ipBlock.js'
 import { clearSession, getAccessToken } from '../auth/session.js'
 
 function tokenForApiPath(path) {
@@ -82,6 +86,9 @@ export async function fetchJson(path, options = {}) {
     }
   }
   if (!res.ok) {
+    if (isIpBlockedApiResponse(res.status, data)) {
+      redirectToBlockedPage()
+    }
     const authSent = headers.Authorization
     if (res.status === 401 && authSent?.startsWith('Bearer ')) {
       const sent = authSent.slice(7).trim()
