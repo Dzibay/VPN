@@ -7,7 +7,6 @@ import logging
 from typing import Any
 from urllib.parse import quote
 
-from fastapi import BackgroundTasks
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -308,7 +307,6 @@ async def telegram_site_link_complete(
     body: TelegramSiteLinkCompleteBody,
     redis_conn: object,
     cfg: Settings,
-    background_tasks: BackgroundTasks,
 ) -> RegisterAuthResponse:
     """Завершение «Привязать аккаунт сайта»: создать новый email или объединить с существующим.
 
@@ -395,7 +393,6 @@ async def telegram_site_link_complete(
             winner,
             cfg,
             redis_conn,
-            background_tasks,
             bind_source="telegram_site_link_complete",
         )
         if isinstance(result, TokenResponse):

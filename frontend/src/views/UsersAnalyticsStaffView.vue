@@ -175,6 +175,17 @@ function telegramCellTitle(u) {
   return v === '—' ? undefined : v
 }
 
+function hasUserEmail(u) {
+  return u.email != null && String(u.email).trim() !== ''
+}
+
+function emailCellTitle(u) {
+  if (!hasUserEmail(u)) return undefined
+  const parts = [String(u.email).trim()]
+  if (u.email_verified) parts.push('Email подтверждён')
+  return parts.join(' · ')
+}
+
 function toggleUserRowSelect(userId, event) {
   if (event?.target?.closest?.('a, button')) return
   selectedUserId.value = selectedUserId.value === userId ? null : userId
@@ -486,7 +497,17 @@ onMounted(() => {
               @click="toggleUserRowSelect(u.id, $event)"
             >
               <td class="num mono-num">{{ u.id }}</td>
-              <td class="email-cell" :title="u.email || undefined">{{ u.email ?? '—' }}</td>
+              <td class="email-cell" :title="emailCellTitle(u)">
+                <span class="email-cell__inner">
+                  <span
+                    v-if="u.email_verified"
+                    class="email-verified-mark"
+                    title="Email подтверждён"
+                    aria-label="Email подтверждён"
+                  >✓</span>
+                  <span class="email-cell__text">{{ u.email ?? '—' }}</span>
+                </span>
+              </td>
               <td class="tg-cell" :title="telegramCellTitle(u)">{{ telegramUsernameCell(u) }}</td>
               <td>{{ formatLocaleDateRu(u.registered_at) }}</td>
               <td>{{ formatLocaleDateRu(u.subscription_until) }}</td>
@@ -551,7 +572,15 @@ onMounted(() => {
                 <div class="tg-props-item__grid">
                   <span class="tg-props-label">Email</span>
                   <div class="tg-props-value-wrap">
-                    <span class="tg-props-value">{{ selectedUser.email ?? '—' }}</span>
+                    <span class="tg-props-value">
+                      <span
+                        v-if="selectedUser.email_verified"
+                        class="email-verified-mark"
+                        title="Email подтверждён"
+                        aria-label="Email подтверждён"
+                      >✓</span>
+                      {{ selectedUser.email ?? '—' }}
+                    </span>
                   </div>
                 </div>
               </li>
@@ -1100,10 +1129,25 @@ tr.client-row-has-payments.client-row-active-today.user-row--selected {
 .email-cell {
   max-width: 10rem;
   min-width: 0;
+  vertical-align: middle;
+}
+.email-cell__inner {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.email-cell__text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  vertical-align: middle;
+  min-width: 0;
+}
+.email-verified-mark {
+  flex-shrink: 0;
+  color: #1a7f37;
+  font-weight: 700;
+  line-height: 1;
 }
 /* Telegram ID / @username: ограничение ширины, длинные значения — с многоточием */
 .tg-cell {

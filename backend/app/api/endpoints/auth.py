@@ -60,9 +60,7 @@ async def register(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> RegisterAuthResponse:
-    resp = await register_with_email(
-        session, body, settings, get_redis(), background_tasks,
-    )
+    resp = await register_with_email(session, body, settings, get_redis())
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return resp
 
@@ -89,11 +87,8 @@ async def verify_email_ep(
 async def resend_verification_ep(
     body: EmailResendVerificationBody,
     session: SessionDep,
-    background_tasks: BackgroundTasks,
 ) -> EmailVerificationPendingResponse:
-    return await resend_verification_email(
-        session, body, get_redis(), settings, background_tasks,
-    )
+    return await resend_verification_email(session, body, get_redis(), settings)
 
 
 @router.post(
@@ -149,8 +144,6 @@ async def telegram_site_link_complete_ep(
     session: SessionDep,
     background_tasks: BackgroundTasks,
 ) -> RegisterAuthResponse:
-    resp = await telegram_site_link_complete(
-        session, body, get_redis(), settings, background_tasks,
-    )
+    resp = await telegram_site_link_complete(session, body, get_redis(), settings)
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return resp

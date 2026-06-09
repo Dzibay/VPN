@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from urllib.parse import quote
 
-from fastapi import BackgroundTasks
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +33,7 @@ from app.domain.models.auth import (
 )
 from app.domain.public_urls import public_spa_base_url
 from app.infrastructure.email.smtp_sender import (
+    SmtpDeliveryError,
     send_verification_email_sync,
     smtp_configured,
 )
@@ -89,12 +89,34 @@ async def issue_token_for_verified_user(user: User, cfg: Settings) -> TokenRespo
     return TokenResponse(access_token=access, role=jwt_role)
 
 
+async def _send_verification_email_now(
+    cfg: Settings,
+    *,
+    to_email: str,
+    verify_url: str,
+) -> None:
+    try:
+        await run_in_threadpool(
+            send_verification_email_sync,
+            cfg,
+            to_email=to_email,
+            verify_url=verify_url,
+        )
+    except SmtpDeliveryError as e:
+        log.warning("verification email failed for %s: %s", to_email, e)
+        raise ServiceUnavailableError(str(e)) from e
+    except Exception:
+        log.exception("verification email failed for %s", to_email)
+        raise ServiceUnavailableError(
+            "Не удалось отправить письмо подтверждения. Попробуйте позже или обратитесь в поддержку.",
+        ) from None
+
+
 async def complete_email_registration_flow(
     session: AsyncSession,
     user: User,
     cfg: Settings,
     redis_conn: object,
-    background_tasks: BackgroundTasks,
     *,
     bind_source: str,
 ) -> TokenResponse | EmailVerificationPendingResponse:
@@ -123,20 +145,7 @@ async def complete_email_registration_flow(
         raise ServiceUnavailableError("Redis недоступен") from None
 
     verify_url = _verification_url(cfg, token)
-    to_email = mail
-
-    async def _send() -> None:
-        try:
-            await run_in_threadpool(
-                send_verification_email_sync,
-                cfg,
-                to_email=to_email,
-                verify_url=verify_url,
-            )
-        except Exception:
-            log.exception("failed to send verification email to %s", to_email)
-
-    background_tasks.add_task(_send)
+    await _send_verification_email_now(cfg, to_email=mail, verify_url=verify_url)
     bind_request_subject_user(int(user.id), source=f"{bind_source}_pending")
     return EmailVerificationPendingResponse(email=mail)
 
@@ -145,7 +154,6 @@ async def schedule_verification_email(
     user: User,
     cfg: Settings,
     redis_conn: object,
-    background_tasks: BackgroundTasks,
 ) -> EmailVerificationPendingResponse:
     mail = (user.email or "").strip()
     if not mail:
@@ -164,20 +172,7 @@ async def schedule_verification_email(
         raise ServiceUnavailableError("Redis недоступен") from None
 
     verify_url = _verification_url(cfg, token)
-    to_email = mail
-
-    async def _send() -> None:
-        try:
-            await run_in_threadpool(
-                send_verification_email_sync,
-                cfg,
-                to_email=to_email,
-                verify_url=verify_url,
-            )
-        except Exception:
-            log.exception("failed to send verification email to %s", to_email)
-
-    background_tasks.add_task(_send)
+    await _send_verification_email_now(cfg, to_email=mail, verify_url=verify_url)
     return EmailVerificationPendingResponse(email=mail)
 
 
@@ -221,7 +216,6 @@ async def resend_verification_email(
     body: EmailResendVerificationBody,
     redis_conn: object,
     cfg: Settings,
-    background_tasks: BackgroundTasks,
 ) -> EmailVerificationPendingResponse:
     email = normalize_email(str(body.email))
     user = (
@@ -240,4 +234,4 @@ async def resend_verification_email(
             email=body.email,
             message="Если аккаунт с этим email существует, письмо будет отправлено.",
         )
-    return await schedule_verification_email(user, cfg, redis_conn, background_tasks)
+    return await schedule_verification_email(user, cfg, redis_conn)

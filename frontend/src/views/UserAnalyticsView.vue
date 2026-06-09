@@ -425,6 +425,14 @@ function profileSupportLabel(p) {
 }
 
 /** Ячейка Telegram в таблице приглашённых (как в аналитике клиентов). */
+function refereeEmailCellTitle(u) {
+  const mail = u.email != null ? String(u.email).trim() : ''
+  if (!mail) return undefined
+  const parts = [mail]
+  if (u.email_verified) parts.push('Email подтверждён')
+  return parts.join(' · ')
+}
+
 function refereeTelegramCell(u) {
   const props = u?.telegram_properties
   const nestedUsername =
@@ -1399,12 +1407,19 @@ onMounted(() => {
                       }"
                     >{{ u.id }}</RouterLink>
                   </td>
-                  <td
-                    class="email-cell"
-                    :title="u.email && String(u.email).trim() ? u.email : undefined"
-                  >{{
-                    u.email && String(u.email).trim() ? u.email : '—'
-                  }}</td>
+                  <td class="email-cell" :title="refereeEmailCellTitle(u)">
+                    <span class="email-cell__inner">
+                      <span
+                        v-if="u.email_verified"
+                        class="email-verified-mark"
+                        title="Email подтверждён"
+                        aria-label="Email подтверждён"
+                      >✓</span>
+                      <span class="email-cell__text">{{
+                        u.email && String(u.email).trim() ? u.email : '—'
+                      }}</span>
+                    </span>
+                  </td>
                   <td class="tg-cell">{{ refereeTelegramCell(u) }}</td>
                   <td>{{ formatLocaleDateRu(u.registered_at) }}</td>
                   <td>{{ formatLocaleDateRu(u.subscription_until) }}</td>
@@ -1836,10 +1851,25 @@ onMounted(() => {
 .referral-referees .email-cell {
   max-width: 14rem;
   min-width: 0;
+  vertical-align: middle;
+}
+.referral-referees .email-cell__inner {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.referral-referees .email-cell__text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  vertical-align: middle;
+  min-width: 0;
+}
+.referral-referees .email-verified-mark {
+  flex-shrink: 0;
+  color: #1a7f37;
+  font-weight: 700;
+  line-height: 1;
 }
 .referral-referees .tg-cell {
   white-space: nowrap;

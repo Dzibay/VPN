@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import BackgroundTasks
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -90,7 +89,6 @@ async def register_with_email(
     body: AccountRegisterBody,
     cfg: Settings,
     redis_conn: object,
-    background_tasks: BackgroundTasks,
 ) -> RegisterAuthResponse:
     """Регистрация по email и паролю; ответ — JWT или запрос подтверждения почты.
 
@@ -138,7 +136,6 @@ async def register_with_email(
         user,
         cfg,
         redis_conn,
-        background_tasks,
         bind_source="register_email",
     )
     if isinstance(result, TokenResponse):

@@ -49,6 +49,14 @@ function userTelegramSortKey(u) {
   return ''
 }
 
+function emailCellTitle(u) {
+  const mail = u.email != null ? String(u.email).trim() : ''
+  if (!mail) return undefined
+  const parts = [mail]
+  if (u.email_verified) parts.push('Email подтверждён')
+  return parts.join(' · ')
+}
+
 function userTelegramDisplay(u) {
   const directUsername = u.username ?? u.user_name ?? u.telegram_username
   const props = u.telegram_properties
@@ -1594,7 +1602,17 @@ watch(formIsCascadeRuEntry, (v) => {
           <tbody>
             <tr v-for="u in sortedUsers" :key="u.id">
               <td class="num">{{ u.id }}</td>
-              <td class="email-cell" :title="u.email || undefined">{{ u.email ?? '—' }}</td>
+              <td class="email-cell" :title="emailCellTitle(u)">
+                <span class="email-cell__inner">
+                  <span
+                    v-if="u.email_verified"
+                    class="email-verified-mark"
+                    title="Email подтверждён"
+                    aria-label="Email подтверждён"
+                  >✓</span>
+                  <span class="email-cell__text">{{ u.email ?? '—' }}</span>
+                </span>
+              </td>
               <td class="tg-display-cell" :title="userTelegramDisplay(u)">
                 <span class="tg-display-cell__text">{{ userTelegramDisplay(u) }}</span>
               </td>
@@ -3094,10 +3112,25 @@ watch(formIsCascadeRuEntry, (v) => {
 .email-cell {
   max-width: 14rem;
   min-width: 0;
+  vertical-align: middle;
+}
+.email-cell__inner {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.email-cell__text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  vertical-align: middle;
+  min-width: 0;
+}
+.email-verified-mark {
+  flex-shrink: 0;
+  color: #1a7f37;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .tg-display-cell {

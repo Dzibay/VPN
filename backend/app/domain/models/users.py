@@ -328,6 +328,10 @@ class UserListItem(BaseModel):
     telegram_id: int | None
     telegram_properties: dict[str, Any] | None = None
     email: str | None = None
+    email_verified: bool = Field(
+        default=False,
+        description="True, если задан email и он подтверждён (email_verified_at в БД).",
+    )
     account_role: Literal["client", "manager", "admin"] = Field(
         default="client",
         description="client — клиент; manager — рефералы; admin — полный администратор",

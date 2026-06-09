@@ -34,6 +34,11 @@ from app.infrastructure.persistence.models.subscription_device import Subscripti
 from app.infrastructure.persistence.models.user import User
 
 
+def _email_verified(user: User) -> bool:
+    mail = (user.email or "").strip()
+    return bool(mail) and user.email_verified_at is not None
+
+
 def _normalize_account_role(raw: str | None) -> str:
     r = (raw or "client").strip()
     if r in ("client", "manager", "admin"):
@@ -164,6 +169,7 @@ async def staff_get_user_list_item(
         id=user.id,
         registered_at=user.registered_at,
         email=user.email,
+        email_verified=_email_verified(user),
         account_role=role_lit,
         telegram_id=user.telegram_id,
         telegram_properties=user.telegram_properties,
@@ -230,6 +236,7 @@ async def _staff_user_list_items(
                 id=user.id,
                 registered_at=user.registered_at,
                 email=user.email,
+                email_verified=_email_verified(user),
                 account_role=role_lit,
                 telegram_id=user.telegram_id,
                 telegram_properties=user.telegram_properties,
