@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { fetchJson } from '../api/client.js'
 import { getAccessToken, getSessionRole } from '../auth/session.js'
+import { canUseCabinetUserFeatures } from '../auth/permissions.js'
 
 const unreadCount = ref(0)
 /** @type {ReturnType<typeof setInterval> | null} */
@@ -8,7 +9,7 @@ let pollTimer = null
 let subscriberCount = 0
 
 function isClientSession() {
-  return Boolean(getAccessToken()) && getSessionRole() === 'user'
+  return Boolean(getAccessToken()) && canUseCabinetUserFeatures(getSessionRole())
 }
 
 export async function refreshClientSupportUnread() {

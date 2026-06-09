@@ -24,6 +24,7 @@ import {
   stopClientSupportUnreadPolling,
   useClientSupportUnread,
 } from '../composables/useClientSupportUnread.js'
+import { canUseCabinetUserFeatures } from '../auth/permissions.js'
 import { formatRub } from '../composables/useYookassaPricing.js'
 import { isMobileDevice, openTelegramDeepLink } from '../utils/subscription/openDeepLink.js'
 import {
@@ -117,7 +118,9 @@ const referralsStaffVisible = computed(
   () => me.value?.role === 'admin' || me.value?.role === 'manager',
 )
 
-const referralClientUser = computed(() => me.value?.role === 'user')
+const cabinetUserFeatures = computed(() =>
+  canUseCabinetUserFeatures(me.value?.role),
+)
 
 const { unreadCount: clientSupportUnread } = useClientSupportUnread()
 
@@ -149,7 +152,7 @@ const {
   total: () => paymentHistoryTotal.value,
   count: () => paymentHistoryItems.value.length,
   onChange: () => {
-    if (activeCabinetTab.value === 'profile' && referralClientUser.value) {
+    if (activeCabinetTab.value === 'profile' && cabinetUserFeatures.value) {
       void loadPaymentHistory()
     }
   },
@@ -192,7 +195,7 @@ function formatPaymentMonths(n) {
 }
 
 async function loadPaymentHistory() {
-  if (me.value?.role !== 'user') {
+  if (!cabinetUserFeatures.value) {
     paymentHistoryItems.value = []
     paymentHistoryTotal.value = 0
     paymentHistoryError.value = null
@@ -276,7 +279,7 @@ const effectiveReferralTelegramUrl = computed(() => {
 })
 
 async function loadMyReferral() {
-  if (me.value?.role !== 'user') {
+  if (!cabinetUserFeatures.value) {
     myReferralLink.value = null
     myReferralBonusPending.value = 0
     myReferralBonusReceived.value = 0
@@ -335,7 +338,7 @@ async function copyReferralTelegram() {
 watch(
   () => me.value?.role,
   (role) => {
-    if (role !== 'user') {
+    if (!canUseCabinetUserFeatures(role)) {
       myReferralLink.value = null
       myReferralBonusPending.value = 0
       myReferralBonusReceived.value = 0
@@ -346,10 +349,10 @@ watch(
 )
 
 watch(
-  () => [activeCabinetTab.value, referralClientUser.value],
-  ([tab, isClient]) => {
-    if (tab === 'referral' && isClient) void loadMyReferral()
-    if (tab === 'profile' && isClient) {
+  () => [activeCabinetTab.value, cabinetUserFeatures.value],
+  ([tab, enabled]) => {
+    if (tab === 'referral' && enabled) void loadMyReferral()
+    if (tab === 'profile' && enabled) {
       resetPaymentHistoryPagination()
       void loadPaymentHistory()
     }
@@ -584,7 +587,7 @@ function goCabinetPay() {
 watch(
   () => me.value?.role,
   (role) => {
-    if (role === 'user') {
+    if (canUseCabinetUserFeatures(role)) {
       startClientSupportUnreadPolling()
       void refreshClientSupportUnread()
     } else {
@@ -955,7 +958,7 @@ onBeforeUnmount(() => {
               Пошаговые инструкции и чат с поддержкой.
             </p>
             <p
-              v-if="referralClientUser && clientSupportUnread > 0"
+              v-if="cabinetUserFeatures && clientSupportUnread > 0"
               class="support-unread-callout"
               role="status"
             >
@@ -1179,7 +1182,7 @@ onBeforeUnmount(() => {
           </div>
 
           <div
-            v-if="referralClientUser"
+            v-if="cabinetUserFeatures"
             class="card card-pad payment-history-card"
             aria-label="История оплат"
           >
@@ -1249,7 +1252,7 @@ onBeforeUnmount(() => {
         <div class="stack">
           <div class="card card-pad referral-card">
             <h2 class="block-title">Реферальная система</h2>
-            <p v-if="referralClientUser" class="hint referral-card-lead">
+            <p v-if="cabinetUserFeatures" class="hint referral-card-lead">
               Делитесь ссылкой — учитываются клики, регистрации и оплаты приглашённых.
             </p>
             <p v-else-if="referralsStaffVisible" class="hint">
@@ -1260,7 +1263,7 @@ onBeforeUnmount(() => {
             </p>
 
             <div
-              v-if="referralClientUser"
+              v-if="cabinetUserFeatures"
               class="referral-my-block"
               aria-label="Ваша реферальная ссылка"
             >

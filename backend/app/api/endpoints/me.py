@@ -47,7 +47,7 @@ from app.infrastructure.cache import get_redis
 
 router = APIRouter(prefix="/me", tags=["user"])
 
-require_client_jwt = require_roles("user")
+require_cabinet_jwt = require_roles("user", "admin", "manager")
 
 _AUTH_ME_OPENAPI_EXAMPLES: dict = {
     "user_with_email": {
@@ -143,15 +143,15 @@ async def me(
     return await account_me(session, principal, settings)
 
 
-def _require_client_user(principal: BearerPrincipal) -> None:
-    if principal.role != "user" or principal.user_id is None:
-        raise ForbiddenError(detail="Доступно только клиентской роли")
+def _require_cabinet_user(principal: BearerPrincipal) -> None:
+    if principal.user_id is None:
+        raise ForbiddenError(detail="Требуется вход")
 
 
 @router.get(
     "/payments",
     response_model=UserPaymentsListResponse,
-    dependencies=[Depends(require_client_jwt)],
+    dependencies=[Depends(require_cabinet_jwt)],
     summary="История оплат текущего пользователя",
 )
 async def me_payments_history(
@@ -160,7 +160,7 @@ async def me_payments_history(
     limit: int = Query(20, ge=1, le=100, description="Размер страницы"),
     offset: int = Query(0, ge=0, description="Смещение"),
 ) -> UserPaymentsListResponse:
-    _require_client_user(principal)
+    _require_cabinet_user(principal)
     items, total = await list_my_payments(
         session,
         user_id=int(principal.user_id),
@@ -173,28 +173,27 @@ async def me_payments_history(
 @router.get(
     "/payments/tariffs",
     response_model=SitePaymentTariffsResponse,
-    dependencies=[Depends(require_client_jwt)],
+    dependencies=[Depends(require_cabinet_jwt)],
     summary="Тарифы разовой оплаты (app/data/yookassa_tariffs.json)",
 )
 async def me_payment_tariffs(
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
 ) -> SitePaymentTariffsResponse:
-    _require_client_user(principal)
+    _require_cabinet_user(principal)
     return yookassa_tariffs_public_response()
 
 
 @router.post(
     "/payments/yookassa/checkout",
     response_model=YookassaCheckoutResponse,
-    dependencies=[Depends(require_client_jwt)],
+    dependencies=[Depends(require_cabinet_jwt)],
     summary="Создать платёж ЮKassa и получить URL для оплаты",
 )
 async def me_yookassa_checkout(
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
     body: YookassaCheckoutBody,
 ) -> YookassaCheckoutResponse:
-    if principal.role != "user" or principal.user_id is None:
-        raise ForbiddenError(detail="Доступно только клиентской роли")
+    _require_cabinet_user(principal)
     return await create_yookassa_checkout(
         settings,
         user_id=int(principal.user_id),
@@ -250,7 +249,7 @@ async def delete_my_subscription_device(
 @router.get(
     "/support-messages",
     response_model=SupportMessagesListResponse,
-    dependencies=[Depends(require_client_jwt)],
+    dependencies=[Depends(require_cabinet_jwt)],
     summary="История сообщений чата поддержки",
 )
 async def me_support_messages(
@@ -259,7 +258,7 @@ async def me_support_messages(
     limit: int = Query(100, ge=1, le=200, description="Размер страницы"),
     offset: int = Query(0, ge=0, description="Смещение"),
 ) -> SupportMessagesListResponse:
-    _require_client_user(principal)
+    _require_cabinet_user(principal)
     items, total = await list_my_support_messages(
         session,
         user_id=int(principal.user_id),
@@ -278,7 +277,7 @@ async def me_support_messages(
     "/support-messages",
     response_model=SupportMessageRead,
     status_code=201,
-    dependencies=[Depends(require_client_jwt)],
+    dependencies=[Depends(require_cabinet_jwt)],
     summary="Отправить сообщение в поддержку",
 )
 async def me_support_message_create(
@@ -286,7 +285,7 @@ async def me_support_message_create(
     session: SessionDep,
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
 ) -> SupportMessageRead:
-    _require_client_user(principal)
+    _require_cabinet_user(principal)
     return await create_user_support_message(
         session,
         user_id=int(principal.user_id),
@@ -297,14 +296,14 @@ async def me_support_message_create(
 @router.get(
     "/support-messages/unread-count",
     response_model=SupportUnreadCountResponse,
-    dependencies=[Depends(require_client_jwt)],
+    dependencies=[Depends(require_cabinet_jwt)],
     summary="Число непрочитанных ответов поддержки",
 )
 async def me_support_unread_count(
     session: ReadonlySessionDep,
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
 ) -> SupportUnreadCountResponse:
-    _require_client_user(principal)
+    _require_cabinet_user(principal)
     unread = await count_unread_support_for_user(
         session,
         user_id=int(principal.user_id),
@@ -315,13 +314,13 @@ async def me_support_unread_count(
 @router.post(
     "/support-messages/mark-seen",
     status_code=204,
-    dependencies=[Depends(require_client_jwt)],
+    dependencies=[Depends(require_cabinet_jwt)],
     summary="Отметить чат поддержки просмотренным",
 )
 async def me_support_mark_seen(
     session: SessionDep,
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
 ) -> Response:
-    _require_client_user(principal)
+    _require_cabinet_user(principal)
     await mark_support_seen_for_user(session, user_id=int(principal.user_id))
     return Response(status_code=204)

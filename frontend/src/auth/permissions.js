@@ -8,6 +8,11 @@ export function canAccessReferralsAdmin(role) {
   return role === 'admin' || role === 'manager'
 }
 
+/** Оплата, поддержка, персональная реферальная ссылка в личном кабинете. */
+export function canUseCabinetUserFeatures(role) {
+  return role === 'user' || canAccessReferralsAdmin(role)
+}
+
 /** Куда вести после входа по умолчанию (без учёта query.redirect). */
 export function defaultPathAfterLogin(role) {
   if (role === 'admin') return '/admin/users/analytics'
