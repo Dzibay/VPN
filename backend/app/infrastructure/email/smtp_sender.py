@@ -6,7 +6,7 @@ import logging
 import smtplib
 import socket
 from email.message import EmailMessage
-from email.utils import formataddr
+from email.utils import formataddr, formatdate, make_msgid, parseaddr
 
 from app.config import Settings
 
@@ -46,6 +46,40 @@ def _from_address(cfg: Settings) -> str:
     return formataddr((name, addr))
 
 
+def _message_id_domain(from_header: str) -> str | None:
+    _, addr = parseaddr(from_header)
+    mail = (addr or "").strip()
+    if "@" not in mail:
+        return None
+    return mail.rsplit("@", 1)[-1]
+
+
+def _build_email_message(
+    cfg: Settings,
+    *,
+    to_email: str,
+    subject: str,
+    text_body: str,
+    html_body: str | None = None,
+) -> EmailMessage:
+    from_header = _from_address(cfg)
+    msg = EmailMessage()
+    msg["From"] = from_header
+    msg["To"] = to_email
+    msg["Subject"] = subject
+    msg["Date"] = formatdate(localtime=True)
+    msg["Message-ID"] = make_msgid(domain=_message_id_domain(from_header))
+    msg["Auto-Submitted"] = "auto-generated"
+    msg["Content-Language"] = "ru"
+    reply_to = (cfg.smtp_from_email or cfg.smtp_user or "").strip()
+    if reply_to:
+        msg["Reply-To"] = reply_to
+    msg.set_content(text_body, charset="utf-8")
+    if html_body:
+        msg.add_alternative(html_body, subtype="html", charset="utf-8")
+    return msg
+
+
 def send_email_sync(
     cfg: Settings,
     *,
@@ -58,17 +92,13 @@ def send_email_sync(
     if not host:
         raise RuntimeError("SMTP не настроен (smtp_host пуст)")
 
-    msg = EmailMessage()
-    msg["From"] = _from_address(cfg)
-    msg["To"] = to_email
-    msg["Subject"] = subject
-    msg["Auto-Submitted"] = "auto-generated"
-    reply_to = (cfg.smtp_from_email or cfg.smtp_user or "").strip()
-    if reply_to:
-        msg["Reply-To"] = reply_to
-    msg.set_content(text_body)
-    if html_body:
-        msg.add_alternative(html_body, subtype="html")
+    msg = _build_email_message(
+        cfg,
+        to_email=to_email,
+        subject=subject,
+        text_body=text_body,
+        html_body=html_body,
+    )
 
     user = (cfg.smtp_user or "").strip() or None
     password = cfg.smtp_password or None
@@ -105,7 +135,7 @@ def send_verification_email_sync(cfg: Settings, *, to_email: str, verify_url: st
         "<p>Здравствуйте!</p>"
         "<p>Для завершения регистрации нажмите кнопку:</p>"
         f'<p><a href="{verify_url}" style="display:inline-block;padding:10px 18px;'
-        'background:#1D9A5C;color:#fff;text-decoration:none;border-radius:8px;">'
+        'background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;">'
         "Подтвердить email</a></p>"
         f'<p>Или перейдите по ссылке: <a href="{verify_url}">{verify_url}</a></p>'
         "<p>Если вы не регистрировались — проигнорируйте это письмо.</p>"
