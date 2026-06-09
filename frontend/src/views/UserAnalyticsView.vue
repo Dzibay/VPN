@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import AdminHighlightListLink from '../components/AdminHighlightListLink.vue'
 import AdminBarChart from '../components/AdminBarChart.vue'
 import AdminLineChartPanel from '../components/AdminLineChartPanel.vue'
@@ -33,6 +33,7 @@ import {
 const MIB = 1024 * 1024
 
 const route = useRoute()
+const router = useRouter()
 
 const loading = ref(false)
 const error = ref(null)
@@ -160,6 +161,7 @@ const profileEditing = ref(false)
 const profileSaving = ref(false)
 const profileEditError = ref(null)
 const clearTelegramBusy = ref(false)
+const deleteUserBusy = ref(false)
 
 const formTelegramId = ref('')
 const formSubUntil = ref('')
@@ -422,6 +424,44 @@ function profileSupportLabel(p) {
   if (p.telegram_id != null) return `Telegram ${p.telegram_id}`
   if (p.id != null) return `Пользователь #${p.id}`
   return null
+}
+
+function profileUserDeleteLabel(p) {
+  if (!p) return ''
+  const tg = telegramUsername(p)
+  if (tg) return tg
+  if (p.telegram_id != null) return String(p.telegram_id)
+  const email = p.email != null ? String(p.email).trim() : ''
+  if (email) return email
+  return `id ${p.id}`
+}
+
+async function deleteProfileUser() {
+  const uid = userId.value
+  const p = profile.value
+  if (uid == null || !p || !isAdmin.value) return
+  const label = profileUserDeleteLabel(p)
+  if (
+    !window.confirm(
+      `Удалить пользователя «${label}» из базы?\n\n` +
+        'Будут удалены: трафик по узлам, устройства подписки, платежи, задачи уведомлений, ' +
+        'сообщения поддержки, персональная реферальная ссылка.\n' +
+        'HTTP-логи и задачи, где пользователь указан как реферал, останутся без привязки к аккаунту.\n\n' +
+        'На всех узлах с готовым провижинингом в очередь поставится синхронизация Xray — UUID исчезнет из inbound.',
+    )
+  ) {
+    return
+  }
+  deleteUserBusy.value = true
+  profileEditError.value = null
+  try {
+    await fetchJson(`/api/users/${uid}`, { method: 'DELETE' })
+    await router.push(userAnalyticsBackTo.value)
+  } catch (e) {
+    profileEditError.value = e.message || String(e)
+  } finally {
+    deleteUserBusy.value = false
+  }
 }
 
 /** Ячейка Telegram в таблице приглашённых (как в аналитике клиентов). */
@@ -840,9 +880,21 @@ onMounted(() => {
             v-else
             type="button"
             class="btn-secondary btn-tiny"
+            :disabled="deleteUserBusy"
             @click="openProfileEdit"
           >
             Редактировать
+          </button>
+          <button
+            v-if="isAdmin && !profileEditing"
+            type="button"
+            class="btn-danger btn-tiny"
+            :disabled="
+              deleteUserBusy || profileSaving || clearTelegramBusy
+            "
+            @click="deleteProfileUser"
+          >
+            {{ deleteUserBusy ? 'Удаление…' : 'Удалить' }}
           </button>
         </div>
       </div>

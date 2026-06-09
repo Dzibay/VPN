@@ -27,8 +27,17 @@ from app.domain.models.users import (
     UsersCountResponse,
     UserUpdate,
 )
+from app.domain.auth.email_verify_tokens import (
+    EmailVerifyRedisError,
+    purge_email_verify_for_user,
+)
+from app.domain.auth.sync_tokens import (
+    TelegramSyncRedisError,
+    purge_telegram_link_tokens_for_user,
+)
 from app.domain.subscription.traffic_limit import apply_default_traffic_limit_for_new_client
 from app.domain.users.identifiers import new_subscription_token, new_vless_uuid
+from app.infrastructure.cache import get_redis
 from app.domain.users.search import search_staff_users
 from app.domain.users.staff_listing import (
     staff_get_user_list_item,
@@ -174,11 +183,35 @@ async def extend_active_subscriptions(
     return ExtendActiveSubscriptionsResponse(updated_count=n)
 
 
+def _purge_user_redis_keys(user_id: int) -> None:
+    """Best-effort: одноразовые токены email/Telegram в Redis после удаления users.id."""
+    try:
+        redis = get_redis()
+        purge_email_verify_for_user(redis, user_id)
+        purge_telegram_link_tokens_for_user(redis, user_id)
+    except (EmailVerifyRedisError, TelegramSyncRedisError):
+        log.warning(
+            "delete_staff_user: Redis недоступен, ключи user_id=%s не очищены",
+            user_id,
+            exc_info=True,
+        )
+
+
 async def delete_staff_user(session: AsyncSession, user_id: int) -> None:
-    """Удалить пользователя; вызывающий код ставит синхронизацию Xray в ``BackgroundTasks``."""
+    """Удалить пользователя и связанные строки (FK ON DELETE CASCADE/SET NULL в БД).
+
+    Каскадно удаляются: ``user_server_traffic``, ``subscription_devices``,
+    ``support_messages`` (как клиент), ``payments``, ``tasks`` (где ``user_id``),
+    ``referral_links`` (где ``owner_user_id``). Обнуляются: ``users.referral_link_id``
+    у приглашённых, ``user_http_request_traces.user_id``, ``tasks.referee_id``,
+    ``support_messages.staff_user_id``, ``created_by``/``updated_by`` в бухгалтерии.
+
+    Вызывающий код ставит синхронизацию Xray в ``BackgroundTasks``.
+    """
     user = await session.get(User, user_id)
     if user is None:
         raise NotFoundError("Пользователь не найден")
+    _purge_user_redis_keys(user_id)
     await session.delete(user)
 
 

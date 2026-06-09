@@ -87,6 +87,22 @@ def delete_email_verify_token(redis: Redis, token: str, user_id: int | None = No
         _delete_mapping(redis, f"{_KEY_PREFIX_USER}{int(user_id)}")
 
 
+def purge_email_verify_for_user(redis: Redis, user_id: int) -> None:
+    """Удалить все Redis-ключи подтверждения email для пользователя (перед удалением из БД)."""
+    uid = int(user_id)
+    user_key = f"{_KEY_PREFIX_USER}{uid}"
+    try:
+        raw = redis.get(user_key)
+    except RedisError as e:
+        raise EmailVerifyRedisError(str(e)) from e
+    if raw:
+        token = raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
+        if token:
+            _delete_mapping(redis, f"{_KEY_PREFIX}{token}")
+    _delete_mapping(redis, user_key)
+    _delete_mapping(redis, f"{_KEY_PREFIX_RESEND_COOLDOWN}{uid}")
+
+
 def resend_cooldown_remaining_sec(redis: Redis, user_id: int) -> int | None:
     """Секунды до следующей повторной отправки; ``None``, если лимит не активен."""
     key = f"{_KEY_PREFIX_RESEND_COOLDOWN}{int(user_id)}"

@@ -135,6 +135,21 @@ def delete_telegram_link_token(redis: Redis, token_value: str) -> None:
         _delete_mapping(redis, _KEY_PREFIX_TELEGRAM_LINK_USER + str(uid))
 
 
+def purge_telegram_link_tokens_for_user(redis: Redis, user_id: int) -> None:
+    """Удалить pending-токен привязки Telegram из личного кабинета (перед удалением из БД)."""
+    uid = int(user_id)
+    pending_key = _KEY_PREFIX_TELEGRAM_LINK_USER + str(uid)
+    try:
+        raw = redis.get(pending_key)
+    except RedisError as e:
+        raise TelegramSyncRedisError(str(e)) from e
+    if raw:
+        token = raw.decode() if isinstance(raw, bytes) else str(raw)
+        if token:
+            _delete_mapping(redis, _KEY_PREFIX_TELEGRAM_LINK + token)
+    _delete_mapping(redis, pending_key)
+
+
 def store_site_cred_token(redis: Redis, token_value: str, user_id: int) -> None:
     """Запомнить связку ``token → user_id`` для одноразовой ссылки на сайт из бота."""
     _setex_user_mapping(redis, _KEY_PREFIX_SITE_CRED + token_value, user_id)
