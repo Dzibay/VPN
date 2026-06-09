@@ -114,7 +114,7 @@ async function submit() {
           <RouterLink to="/terms" target="_blank">публичную оферту</RouterLink>,
           <RouterLink to="/privacy" target="_blank">политику конфиденциальности</RouterLink>
           и даю
-          <RouterLink to="/consent" target="_blank">согласие на обработку персональных данных</RouterLink>
+          <RouterLink to="/consent" target="_blank">политику обработки персональных данных</RouterLink>
         </span>
       </label>
       <p v-if="error" class="err">{{ error }}</p>

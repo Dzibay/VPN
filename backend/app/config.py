@@ -157,6 +157,12 @@ class Settings(BaseSettings):
         le=604800,
         description="Срок жизни ссылки подтверждения email в Redis (секунды).",
     )
+    email_verification_resend_cooldown_sec: int = Field(
+        default=60,
+        ge=10,
+        le=3600,
+        description="Минимальный интервал между повторными письмами подтверждения (секунды).",
+    )
 
     referral_bonus_days_per_paid_month: int = Field(
         default=3,

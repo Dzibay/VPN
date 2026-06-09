@@ -16,14 +16,17 @@ from app.core.exceptions import (
     ForbiddenError,
     NotFoundError,
     ServiceUnavailableError,
+    TooManyRequestsError,
 )
 from app.core.request_subject import bind_request_subject_user
 from app.core.time import utc_now
 from app.domain.auth.email_verify_tokens import (
     EmailVerifyRedisError,
     delete_email_verify_token,
+    resend_cooldown_remaining_sec,
     resolve_email_verify_user_id,
     store_email_verify_token,
+    touch_resend_cooldown,
 )
 from app.domain.auth.jwt import issue_access_token_or_http_error, jwt_role_for_user
 from app.domain.models.auth import (
@@ -211,6 +214,18 @@ async def verify_email_by_token(
     return TokenResponse(access_token=access, role=jwt_role)
 
 
+def _enforce_resend_cooldown(redis_conn: object, user_id: int, cfg: Settings) -> None:
+    cooldown = int(cfg.email_verification_resend_cooldown_sec)
+    try:
+        remaining = resend_cooldown_remaining_sec(redis_conn, int(user_id))
+    except EmailVerifyRedisError:
+        raise ServiceUnavailableError("Redis недоступен") from None
+    if remaining is not None:
+        raise TooManyRequestsError(
+            f"Повторное письмо можно запросить через {remaining} сек.",
+        )
+
+
 async def resend_verification_email(
     session: AsyncSession,
     body: EmailResendVerificationBody,
@@ -234,4 +249,14 @@ async def resend_verification_email(
             email=body.email,
             message="Если аккаунт с этим email существует, письмо будет отправлено.",
         )
-    return await schedule_verification_email(user, cfg, redis_conn)
+    _enforce_resend_cooldown(redis_conn, int(user.id), cfg)
+    resp = await schedule_verification_email(user, cfg, redis_conn)
+    try:
+        touch_resend_cooldown(
+            redis_conn,
+            int(user.id),
+            ttl_sec=int(cfg.email_verification_resend_cooldown_sec),
+        )
+    except EmailVerifyRedisError:
+        log.warning("resend cooldown: не удалось записать лимит в Redis для user_id=%s", user.id)
+    return resp

@@ -106,6 +106,12 @@ const routes = [
     meta: { legalDoc: 'cookies' },
   },
   {
+    path: '/marketing',
+    name: 'legal-marketing',
+    component: LegalDocumentView,
+    meta: { legalDoc: 'marketing' },
+  },
+  {
     path: '/link-from-telegram',
     name: 'link-from-telegram',
     component: LinkFromTelegramView,

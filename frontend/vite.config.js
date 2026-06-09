@@ -81,6 +81,11 @@ Sitemap: ${siteUrl}/sitemap.xml
     <changefreq>yearly</changefreq>
     <priority>0.1</priority>
   </url>
+  <url>
+    <loc>${siteUrl}/marketing</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.1</priority>
+  </url>
 </urlset>
 `
 

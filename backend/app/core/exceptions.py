@@ -63,6 +63,18 @@ class ConflictError(AppError):
         super().__init__(409, detail, headers=headers)
 
 
+class TooManyRequestsError(AppError):
+    """HTTP 429: превышен лимит частоты запросов (повторная отправка письма и т.п.)."""
+
+    def __init__(
+        self,
+        detail: str = "Слишком много запросов, попробуйте позже",
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(429, detail, headers=headers)
+
+
 class UnprocessableEntityError(AppError):
     """HTTP 422: тело прошло формальную валидацию, но не удовлетворяет бизнес-правилам."""
 

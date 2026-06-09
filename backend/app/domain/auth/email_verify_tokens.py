@@ -19,6 +19,7 @@ _TOKEN_ALPHABET = string.ascii_letters + string.digits
 _TOKEN_LEN = 48
 _KEY_PREFIX = "vpn:email_verify:"
 _KEY_PREFIX_USER = "vpn:email_verify_user:"
+_KEY_PREFIX_RESEND_COOLDOWN = "vpn:email_verify_resend:"
 
 
 class EmailVerifyRedisError(Exception):
@@ -84,3 +85,23 @@ def delete_email_verify_token(redis: Redis, token: str, user_id: int | None = No
     _delete_mapping(redis, f"{_KEY_PREFIX}{token}")
     if user_id is not None:
         _delete_mapping(redis, f"{_KEY_PREFIX_USER}{int(user_id)}")
+
+
+def resend_cooldown_remaining_sec(redis: Redis, user_id: int) -> int | None:
+    """Секунды до следующей повторной отправки; ``None``, если лимит не активен."""
+    key = f"{_KEY_PREFIX_RESEND_COOLDOWN}{int(user_id)}"
+    try:
+        ttl = redis.ttl(key)
+    except RedisError as e:
+        raise EmailVerifyRedisError(str(e)) from e
+    if ttl is None or int(ttl) < 1:
+        return None
+    return int(ttl)
+
+
+def touch_resend_cooldown(redis: Redis, user_id: int, *, ttl_sec: int) -> None:
+    key = f"{_KEY_PREFIX_RESEND_COOLDOWN}{int(user_id)}"
+    try:
+        redis.setex(key, int(ttl_sec), "1")
+    except RedisError as e:
+        raise EmailVerifyRedisError(str(e)) from e
