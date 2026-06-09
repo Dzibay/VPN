@@ -9,6 +9,8 @@ function tokenForApiPath(path) {
   if (
     path === '/api/auth/login' ||
     path === '/api/auth/register' ||
+    path.startsWith('/api/auth/verify-email') ||
+    path === '/api/auth/resend-verification' ||
     path.startsWith('/api/auth/telegram/site-link/preview') ||
     path === '/api/auth/telegram/site-link/complete'
   ) {
@@ -22,6 +24,9 @@ function formatErrorDetail(data) {
   const d = data.detail
   if (d == null) return null
   if (typeof d === 'string') return d
+  if (typeof d === 'object' && d !== null && typeof d.message === 'string') {
+    return d.message
+  }
   if (Array.isArray(d)) {
     return d
       .map((x) =>

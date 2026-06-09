@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 
 from app.config import Settings
+from app.infrastructure.email.smtp_sender import smtp_configured
 
 log = logging.getLogger("app.startup_checks")
 
@@ -50,4 +51,10 @@ def validate_production_secrets(settings: Settings) -> None:
         raise RuntimeError(
             "Небезопасная конфигурация боевого окружения (DEBUG=false):\n  - "
             f"{bullets}",
+        )
+
+    if not smtp_configured(settings):
+        log.warning(
+            "SMTP не настроен (SMTP_HOST пуст): подтверждение email при регистрации "
+            "недоступно. Задайте SMTP_HOST, SMTP_USER, SMTP_PASSWORD и др.",
         )

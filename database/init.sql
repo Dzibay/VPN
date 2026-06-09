@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
     referral_link_id BIGINT,
     referral_bonus_policy TEXT NOT NULL DEFAULT 'default',
     support_seen_at TIMESTAMPTZ,
+    email_verified_at TIMESTAMPTZ,
     CONSTRAINT users_token_key UNIQUE (token),
     CONSTRAINT users_vless_uuid_key UNIQUE (vless_uuid),
     CONSTRAINT users_account_role_check CHECK (account_role IN ('client', 'manager', 'admin')),

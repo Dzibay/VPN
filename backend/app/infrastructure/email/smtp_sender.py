@@ -1,0 +1,81 @@
+"""Отправка транзакционных писем через SMTP (stdlib, в threadpool)."""
+
+from __future__ import annotations
+
+import logging
+import smtplib
+from email.message import EmailMessage
+from email.utils import formataddr
+
+from app.config import Settings
+
+log = logging.getLogger("app.smtp")
+
+
+def smtp_configured(cfg: Settings) -> bool:
+    return bool((cfg.smtp_host or "").strip())
+
+
+def _from_address(cfg: Settings) -> str:
+    addr = (cfg.smtp_from_email or cfg.smtp_user or "noreply@localhost").strip()
+    name = (cfg.smtp_from_name or cfg.app_name or "VPN").strip()
+    return formataddr((name, addr))
+
+
+def send_email_sync(
+    cfg: Settings,
+    *,
+    to_email: str,
+    subject: str,
+    text_body: str,
+    html_body: str | None = None,
+) -> None:
+    host = (cfg.smtp_host or "").strip()
+    if not host:
+        raise RuntimeError("SMTP не настроен (smtp_host пуст)")
+
+    msg = EmailMessage()
+    msg["From"] = _from_address(cfg)
+    msg["To"] = to_email
+    msg["Subject"] = subject
+    msg.set_content(text_body)
+    if html_body:
+        msg.add_alternative(html_body, subtype="html")
+
+    user = (cfg.smtp_user or "").strip() or None
+    password = cfg.smtp_password or None
+
+    if cfg.smtp_use_ssl:
+        with smtplib.SMTP_SSL(host, cfg.smtp_port, timeout=30) as smtp:
+            if user and password:
+                smtp.login(user, password)
+            smtp.send_message(msg)
+        return
+
+    with smtplib.SMTP(host, cfg.smtp_port, timeout=30) as smtp:
+        if cfg.smtp_use_tls:
+            smtp.starttls()
+        if user and password:
+            smtp.login(user, password)
+        smtp.send_message(msg)
+
+
+def send_verification_email_sync(cfg: Settings, *, to_email: str, verify_url: str) -> None:
+    subject = "Подтвердите email"
+    text = (
+        "Здравствуйте!\n\n"
+        "Для завершения регистрации перейдите по ссылке:\n"
+        f"{verify_url}\n\n"
+        "Если вы не регистрировались на сайте — просто проигнорируйте это письмо.\n"
+    )
+    html = (
+        "<p>Здравствуйте!</p>"
+        "<p>Для завершения регистрации нажмите кнопку:</p>"
+        f'<p><a href="{verify_url}" style="display:inline-block;padding:10px 18px;'
+        'background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;">'
+        "Подтвердить email</a></p>"
+        f'<p>Или скопируйте ссылку: <a href="{verify_url}">{verify_url}</a></p>'
+        "<p>Если вы не регистрировались — проигнорируйте это письмо.</p>"
+    )
+    send_email_sync(cfg, to_email=to_email, subject=subject, text_body=text, html_body=html)
+    log.info("verification email sent to %s", to_email)

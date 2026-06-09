@@ -7,6 +7,7 @@ import logging
 from typing import Any
 from urllib.parse import quote
 
+from fastapi import BackgroundTasks
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -41,6 +42,7 @@ from app.domain.auth.sync_tokens import (
     sync_start_payload,
 )
 from app.domain.models.auth import (
+    RegisterAuthResponse,
     TelegramAuthBody,
     TelegramAuthUserResponse,
     TelegramSiteLinkCompleteBody,
@@ -53,6 +55,11 @@ from app.domain.models.auth import (
     TokenResponse,
     merge_telegram_auth_profile,
     telegram_auth_has_profile_fields,
+)
+from app.domain.services.email_verification_service import (
+    complete_email_registration_flow,
+    mark_email_verified_now,
+    user_has_verified_email,
 )
 from app.domain.services.auth_service import account_me_from_user
 from app.domain.public_urls import public_spa_base_url, telegram_bot_public_page_url
@@ -301,7 +308,8 @@ async def telegram_site_link_complete(
     body: TelegramSiteLinkCompleteBody,
     redis_conn: object,
     cfg: Settings,
-) -> TokenResponse:
+    background_tasks: BackgroundTasks,
+) -> RegisterAuthResponse:
     """Завершение «Привязать аккаунт сайта»: создать новый email или объединить с существующим.
 
     Если email свободен — пишем его и ``password_hash`` в Telegram-аккаунт. Если email занят
@@ -323,6 +331,7 @@ async def telegram_site_link_complete(
     existing = (await session.scalars(stmt_existing)).first()
 
     winner: User
+    new_email_on_tg_account = False
     if existing is None:
         if len(body.password.encode("utf-8")) > 72:
             raise BadRequestError("Пароль слишком длинный для системы входа")
@@ -337,6 +346,7 @@ async def telegram_site_link_complete(
             log.warning("telegram site-link complete conflict: %s", e)
             raise ConflictError("Пользователь с таким email уже зарегистрирован") from e
         winner = tg_user
+        new_email_on_tg_account = True
     else:
         if existing.id == tg_user.id:
             raise InternalServerError("Несогласованное состояние учётной записи")
@@ -370,6 +380,8 @@ async def telegram_site_link_complete(
             raise ConflictError(
                 "Не удалось объединить учётные записи (конфликт данных). Попробуйте позже или обратитесь в поддержку.",
             ) from e
+        if not user_has_verified_email(existing):
+            await mark_email_verified_now(session, existing)
         winner = existing
 
     try:
@@ -377,10 +389,23 @@ async def telegram_site_link_complete(
     except TelegramSyncRedisError:
         log.warning("telegram site-link: не удалось удалить токен из Redis")
 
+    if new_email_on_tg_account:
+        result = await complete_email_registration_flow(
+            session,
+            winner,
+            cfg,
+            redis_conn,
+            background_tasks,
+            bind_source="telegram_site_link_complete",
+        )
+        if isinstance(result, TokenResponse):
+            return RegisterAuthResponse.from_token(result)
+        return RegisterAuthResponse.from_pending(result)
+
     jwt_role = jwt_role_for_user(winner)
     jwt = issue_access_token_or_http_error(cfg, role=jwt_role, user_id=winner.id)
     bind_request_subject_user(int(winner.id), source="telegram_site_link_complete")
-    return TokenResponse(access_token=jwt, role=jwt_role)
+    return RegisterAuthResponse.from_token(TokenResponse(access_token=jwt, role=jwt_role))
 
 
 async def telegram_sync_start_link(

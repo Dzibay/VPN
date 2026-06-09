@@ -20,6 +20,9 @@ import { ensureIpBlockStatus } from '../auth/ipBlock.js'
 const HomeView = () => import('../views/HomeView.vue')
 const UserLoginView = () => import('../views/UserLoginView.vue')
 const UserRegisterView = () => import('../views/UserRegisterView.vue')
+const VerifyEmailView = () => import('../views/VerifyEmailView.vue')
+const EmailVerificationPendingView = () =>
+  import('../views/EmailVerificationPendingView.vue')
 const LinkFromTelegramView = () => import('../views/LinkFromTelegramView.vue')
 const UserCabinetView = () => import('../views/UserCabinetView.vue')
 const CabinetInstructionsView = () =>
@@ -66,6 +69,12 @@ const routes = [
   { path: '/', name: 'home', component: HomeView },
   { path: '/login', name: 'login', component: UserLoginView },
   { path: '/register', name: 'register', component: UserRegisterView },
+  { path: '/verify-email', name: 'verify-email', component: VerifyEmailView },
+  {
+    path: '/verify-email-pending',
+    name: 'verify-email-pending',
+    component: EmailVerificationPendingView,
+  },
   {
     path: '/terms',
     name: 'legal-terms',

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import date, datetime
 from typing import Any, Literal
 
@@ -11,6 +13,47 @@ class TokenResponse(BaseModel):
     role: Literal["admin", "user", "manager"] = Field(
         description="Роль в JWT: admin и manager соответствуют account_role в БД; user — клиентская запись (account_role=client).",
     )
+
+
+class EmailVerificationPendingResponse(BaseModel):
+    status: Literal["verification_required"] = "verification_required"
+    email: EmailStr = Field(max_length=320)
+    message: str = Field(
+        default="На указанный адрес отправлено письмо со ссылкой для подтверждения. "
+        "После перехода по ссылке вы сможете войти в личный кабинет.",
+    )
+
+
+class EmailResendVerificationBody(BaseModel):
+    email: EmailStr = Field(max_length=320)
+
+
+class RegisterAuthResponse(BaseModel):
+    """Ответ регистрации или привязки email: JWT сразу или ожидание подтверждения почты."""
+
+    access_token: str | None = None
+    token_type: str = "bearer"
+    role: Literal["admin", "user", "manager"] | None = None
+    status: Literal["ok", "verification_required"] = "ok"
+    email: EmailStr | None = None
+    message: str | None = None
+
+    @classmethod
+    def from_token(cls, token: TokenResponse) -> RegisterAuthResponse:
+        return cls(
+            access_token=token.access_token,
+            token_type=token.token_type,
+            role=token.role,
+            status="ok",
+        )
+
+    @classmethod
+    def from_pending(cls, pending: EmailVerificationPendingResponse) -> RegisterAuthResponse:
+        return cls(
+            status="verification_required",
+            email=pending.email,
+            message=pending.message,
+        )
 
 
 class SubscriptionOpenClientItem(BaseModel):

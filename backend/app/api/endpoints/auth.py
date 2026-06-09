@@ -11,6 +11,9 @@ from app.core.dependencies import (
 from app.domain.models.auth import (
     AccountLoginBody,
     AccountRegisterBody,
+    EmailResendVerificationBody,
+    EmailVerificationPendingResponse,
+    RegisterAuthResponse,
     TelegramAuthBody,
     TelegramAuthUserResponse,
     TelegramSiteLinkCompleteBody,
@@ -18,6 +21,10 @@ from app.domain.models.auth import (
     TokenResponse,
 )
 from app.domain.services.auth_service import login_with_password, register_with_email
+from app.domain.services.email_verification_service import (
+    resend_verification_email,
+    verify_email_by_token,
+)
 from app.domain.services.telegram_auth_service import (
     telegram_authenticate,
     telegram_site_link_complete,
@@ -43,19 +50,50 @@ async def login(body: AccountLoginBody, session: ReadonlySessionDep) -> TokenRes
 
 @router.post(
     "/register",
-    response_model=TokenResponse,
+    response_model=RegisterAuthResponse,
     status_code=201,
     tags=["public"],
-    summary="Регистрация по email и паролю; ответ содержит JWT",
+    summary="Регистрация по email и паролю; JWT или ожидание подтверждения почты",
 )
 async def register(
     body: AccountRegisterBody,
     session: SessionDep,
     background_tasks: BackgroundTasks,
-) -> TokenResponse:
-    resp = await register_with_email(session, body, settings)
+) -> RegisterAuthResponse:
+    resp = await register_with_email(
+        session, body, settings, get_redis(), background_tasks,
+    )
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return resp
+
+
+@router.get(
+    "/verify-email",
+    response_model=TokenResponse,
+    tags=["public"],
+    summary="Подтверждение email по одноразовой ссылке из письма; ответ — JWT",
+)
+async def verify_email_ep(
+    session: SessionDep,
+    token: str = Query(..., min_length=1, max_length=96, description="Токен из письма"),
+) -> TokenResponse:
+    return await verify_email_by_token(session, token, get_redis(), settings)
+
+
+@router.post(
+    "/resend-verification",
+    response_model=EmailVerificationPendingResponse,
+    tags=["public"],
+    summary="Повторная отправка письма подтверждения email",
+)
+async def resend_verification_ep(
+    body: EmailResendVerificationBody,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+) -> EmailVerificationPendingResponse:
+    return await resend_verification_email(
+        session, body, get_redis(), settings, background_tasks,
+    )
 
 
 @router.post(
@@ -99,7 +137,7 @@ async def telegram_site_link_preview_ep(
 
 @router.post(
     "/telegram/site-link/complete",
-    response_model=TokenResponse,
+    response_model=RegisterAuthResponse,
     tags=["public"],
     summary=(
         "По одноразовому token: новый email на Telegram-аккаунт либо объединение с "
@@ -110,7 +148,9 @@ async def telegram_site_link_complete_ep(
     body: TelegramSiteLinkCompleteBody,
     session: SessionDep,
     background_tasks: BackgroundTasks,
-) -> TokenResponse:
-    resp = await telegram_site_link_complete(session, body, get_redis(), settings)
+) -> RegisterAuthResponse:
+    resp = await telegram_site_link_complete(
+        session, body, get_redis(), settings, background_tasks,
+    )
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return resp

@@ -38,6 +38,12 @@ async function submit() {
       body: JSON.stringify(body),
     })
     clearPendingReferralToken()
+    if (data.status === 'verification_required') {
+      const q = new URLSearchParams({ email: data.email || email.value.trim() })
+      if (data.message) q.set('message', data.message)
+      router.replace({ path: '/verify-email-pending', query: Object.fromEntries(q) })
+      return
+    }
     setSession(data.access_token, data.role)
     router.replace('/cabinet')
   } catch (e) {

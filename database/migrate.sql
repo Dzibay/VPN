@@ -144,3 +144,12 @@ CREATE TABLE IF NOT EXISTS blocked_ips (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT blocked_ips_ip_key UNIQUE (ip)
 );
+
+-- Подтверждение email при регистрации и привязке с Telegram.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ;
+
+UPDATE users
+SET email_verified_at = COALESCE(registered_at, NOW())
+WHERE email IS NOT NULL
+  AND trim(email) <> ''
+  AND email_verified_at IS NULL;

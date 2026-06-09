@@ -12,10 +12,46 @@ const email = ref('')
 const password = ref('')
 const submitting = ref(false)
 const error = ref(null)
+const emailNotVerified = ref(false)
+const resending = ref(false)
+const resendOk = ref(false)
+const resendError = ref(null)
+
+function isEmailNotVerifiedError(e) {
+  const d = e?.data?.detail
+  return (
+    e?.status === 403 &&
+    d &&
+    typeof d === 'object' &&
+    d.code === 'email_not_verified'
+  )
+}
+
+async function resendVerification() {
+  const mail = email.value.trim()
+  if (!mail) return
+  resending.value = true
+  resendError.value = null
+  resendOk.value = false
+  try {
+    await fetchJson('/api/auth/resend-verification', {
+      method: 'POST',
+      body: JSON.stringify({ email: mail }),
+    })
+    resendOk.value = true
+  } catch (e) {
+    resendError.value = e.message || String(e)
+  } finally {
+    resending.value = false
+  }
+}
 
 async function submit() {
   submitting.value = true
   error.value = null
+  emailNotVerified.value = false
+  resendOk.value = false
+  resendError.value = null
   try {
     const data = await fetchJson('/api/auth/login', {
       method: 'POST',
@@ -50,7 +86,14 @@ async function submit() {
       router.replace(typeof r === 'string' && r ? r : '/cabinet')
     }
   } catch (e) {
-    error.value = e.message || String(e)
+    if (isEmailNotVerifiedError(e)) {
+      emailNotVerified.value = true
+      const d = e.data.detail
+      error.value =
+        typeof d.message === 'string' ? d.message : e.message || String(e)
+    } else {
+      error.value = e.message || String(e)
+    }
   } finally {
     submitting.value = false
   }
@@ -90,6 +133,17 @@ async function submit() {
         />
       </label>
       <p v-if="error" class="err">{{ error }}</p>
+      <button
+        v-if="emailNotVerified"
+        class="btn-secondary btn-block"
+        type="button"
+        :disabled="resending"
+        @click="resendVerification"
+      >
+        {{ resending ? 'Отправка…' : 'Отправить письмо подтверждения ещё раз' }}
+      </button>
+      <p v-if="resendOk" class="ok">Письмо отправлено. Проверьте почту и перейдите по ссылке.</p>
+      <p v-if="resendError" class="err">{{ resendError }}</p>
       <button class="btn-primary btn-block" type="submit" :disabled="submitting">
         {{ submitting ? 'Вход…' : 'Войти' }}
       </button>
@@ -185,6 +239,33 @@ h1 {
   margin: 0;
   color: var(--danger);
   font-size: 0.9rem;
+}
+
+.ok {
+  margin: 0;
+  color: var(--accent);
+  font-size: 0.9rem;
+}
+
+.btn-secondary {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+  color: var(--text-h);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .btn-block {

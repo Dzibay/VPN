@@ -128,6 +128,36 @@ class Settings(BaseSettings):
         ),
     )
 
+    smtp_host: str = Field(
+        default="",
+        description="SMTP-хост для писем подтверждения email. Пусто — в DEBUG авто-подтверждение.",
+    )
+    smtp_port: int = Field(default=587, ge=1, le=65535, description="Порт SMTP (обычно 587 или 465).")
+    smtp_user: str = Field(default="", description="Логин SMTP (пусто — без AUTH).")
+    smtp_password: str = Field(default="", description="Пароль SMTP.")
+    smtp_from_email: str = Field(
+        default="",
+        description="Адрес отправителя (From). Пусто — smtp_user или noreply@localhost.",
+    )
+    smtp_from_name: str = Field(
+        default="",
+        description="Имя отправителя в письме. Пусто — app_name.",
+    )
+    smtp_use_tls: bool = Field(
+        default=True,
+        description="STARTTLS на smtp_port (false — plain или SSL на 465, см. smtp_use_ssl).",
+    )
+    smtp_use_ssl: bool = Field(
+        default=False,
+        description="SMTP_SSL (порт 465): соединение сразу по TLS.",
+    )
+    email_verification_ttl_sec: int = Field(
+        default=86400,
+        ge=300,
+        le=604800,
+        description="Срок жизни ссылки подтверждения email в Redis (секунды).",
+    )
+
     referral_bonus_days_per_paid_month: int = Field(
         default=3,
         ge=0,

@@ -62,5 +62,10 @@ class User(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    #: Когда подтверждён email (NULL — ожидает подтверждения после регистрации/привязки).
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     token: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     vless_uuid: Mapped[str] = mapped_column(Text, unique=True, nullable=False)

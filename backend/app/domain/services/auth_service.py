@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 
+from fastapi import BackgroundTasks
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -27,9 +28,14 @@ from app.domain.models.auth import (
     AccountLoginBody,
     AccountMeResponse,
     AccountRegisterBody,
+    RegisterAuthResponse,
     SubscriptionConnectionItem,
     TokenResponse,
     build_subscription_open_client_items,
+)
+from app.domain.services.email_verification_service import (
+    complete_email_registration_flow,
+    require_verified_email_for_login,
 )
 from app.domain.public_urls import (
     support_telegram_public_url,
@@ -72,6 +78,7 @@ async def login_with_password(
     ok = await run_in_threadpool(verify_password, body.password, user.password_hash)
     if not ok:
         raise UnauthorizedError("Неверный email или пароль")
+    require_verified_email_for_login(user)
     jwt_role = jwt_role_for_user(user)
     token = issue_access_token_or_http_error(cfg, role=jwt_role, user_id=user.id)
     bind_request_subject_user(int(user.id), source="login_password")
@@ -79,9 +86,13 @@ async def login_with_password(
 
 
 async def register_with_email(
-    session: AsyncSession, body: AccountRegisterBody, cfg: Settings,
-) -> TokenResponse:
-    """Регистрация по email и паролю; ответ — JWT-токен.
+    session: AsyncSession,
+    body: AccountRegisterBody,
+    cfg: Settings,
+    redis_conn: object,
+    background_tasks: BackgroundTasks,
+) -> RegisterAuthResponse:
+    """Регистрация по email и паролю; ответ — JWT или запрос подтверждения почты.
 
     При наличии валидного ``referral_token`` инкремент счётчика регистраций по реферальной
     ссылке делается в той же транзакции, что и вставка пользователя. Если ссылка с
@@ -122,9 +133,17 @@ async def register_with_email(
             referee_user_id=int(user.id),
         )
 
-    token = issue_access_token_or_http_error(cfg, role="user", user_id=user.id)
-    bind_request_subject_user(int(user.id), source="register_email")
-    return TokenResponse(access_token=token, role="user")
+    result = await complete_email_registration_flow(
+        session,
+        user,
+        cfg,
+        redis_conn,
+        background_tasks,
+        bind_source="register_email",
+    )
+    if isinstance(result, TokenResponse):
+        return RegisterAuthResponse.from_token(result)
+    return RegisterAuthResponse.from_pending(result)
 
 
 async def account_me_from_user(
