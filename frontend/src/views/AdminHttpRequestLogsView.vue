@@ -17,6 +17,7 @@ const router = useRouter()
 const limit = ref(50)
 const offset = ref(0)
 const filterUserId = ref('')
+const filterClientIp = ref('')
 const filterPathContains = ref('')
 const filterStatusCodes = ref([])
 const filterSubjectSources = ref([])
@@ -148,6 +149,10 @@ function buildQueryForUrl(overrides = {}) {
   if (pathTrim) {
     q.path_contains = pathTrim
   }
+  const ipTrim = String(filterClientIp.value ?? '').trim()
+  if (ipTrim) {
+    q.client_ip = ipTrim
+  }
   if (filterStatusCodes.value.length > 0) {
     q.status_code = [...filterStatusCodes.value]
   }
@@ -193,6 +198,9 @@ async function syncFromRoute() {
   const pcf = q.path_contains
   filterPathContains.value =
     pcf != null && String(pcf).trim() !== '' ? String(pcf).trim() : ''
+  const ipf = q.client_ip
+  filterClientIp.value =
+    ipf != null && String(ipf).trim() !== '' ? String(ipf).trim() : ''
   filterTraceDate.value = normalizeTraceDate(q.trace_date)
   filterTimeFrom.value = normalizeTraceTime(q.time_from)
   filterTimeTo.value = normalizeTraceTime(q.time_to)
@@ -216,6 +224,10 @@ async function syncFromRoute() {
   const pathTrimSync = String(filterPathContains.value ?? '').trim()
   if (pathTrimSync) {
     params.set('path_contains', pathTrimSync)
+  }
+  const ipTrimSync = String(filterClientIp.value ?? '').trim()
+  if (ipTrimSync) {
+    params.set('client_ip', ipTrimSync)
   }
   const range = buildHttpTraceCreatedRange(
     filterTraceDate.value,
@@ -262,6 +274,7 @@ function applyFilters() {
 
 function resetFilters() {
   filterUserId.value = ''
+  filterClientIp.value = ''
   filterPathContains.value = ''
   filterStatusCodes.value = []
   filterSubjectSources.value = []
@@ -425,6 +438,17 @@ watch(
             autocomplete="off"
             class="f-input"
             placeholder="любой"
+          />
+        </label>
+        <label class="f-label">
+          <span>IP</span>
+          <input
+            v-model="filterClientIp"
+            type="text"
+            class="f-input f-input--ip"
+            autocomplete="off"
+            placeholder="203.0.113"
+            spellcheck="false"
           />
         </label>
         <label class="f-label narrow">
@@ -685,6 +709,11 @@ watch(
 
 .f-input {
   width: 7rem;
+}
+
+.f-input--ip {
+  width: 10.5rem;
+  font-family: ui-monospace, monospace;
 }
 
 .f-input--path {

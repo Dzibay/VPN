@@ -20,6 +20,7 @@ async def staff_list_http_request_traces(
     status_codes: list[int] | None,
     subject_sources: list[str] | None,
     path_contains: str | None,
+    client_ip_contains: str | None,
     created_from: datetime | None = None,
     created_to: datetime | None = None,
 ) -> tuple[list[UserHttpRequestTrace], int]:
@@ -34,6 +35,8 @@ async def staff_list_http_request_traces(
         filters.append(UserHttpRequestTrace.subject_source.in_(subject_sources))
     if path_contains:
         filters.append(func.strpos(UserHttpRequestTrace.path, path_contains) > 0)
+    if client_ip_contains:
+        filters.append(func.strpos(UserHttpRequestTrace.client_ip, client_ip_contains) > 0)
     if created_from is not None:
         filters.append(UserHttpRequestTrace.created_at >= created_from)
     if created_to is not None:

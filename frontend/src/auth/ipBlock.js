@@ -26,6 +26,12 @@ export function redirectToBlockedPage() {
   window.location.replace('/blocked')
 }
 
+export function redirectFromBlockedPageIfAllowed() {
+  if (typeof window === 'undefined') return
+  if (window.location.pathname !== '/blocked') return
+  window.location.replace('/')
+}
+
 /** Проверка до монтирования Vue и в роутере (один раз за вкладку). */
 export async function ensureIpBlockStatus() {
   if (checked) return blocked

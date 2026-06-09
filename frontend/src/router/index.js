@@ -250,6 +250,9 @@ router.beforeEach(async (to, _from, next) => {
   if (ipBlocked && to.name !== 'blocked') {
     return next({ name: 'blocked', replace: true })
   }
+  if (!ipBlocked && to.name === 'blocked') {
+    return next({ path: '/', replace: true })
+  }
 
   const token = getAccessToken()
   const role = getSessionRole()

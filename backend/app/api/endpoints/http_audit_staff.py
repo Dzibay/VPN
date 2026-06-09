@@ -38,7 +38,7 @@ router = APIRouter(
     response_model=HttpRequestTraceStaffPage,
     summary=(
         "Логи (пагинация, фильтры: user_id, анонимные, status_code[], "
-        "subject_source[], path_contains, created_from, created_to)"
+        "subject_source[], path_contains, client_ip, created_from, created_to)"
     ),
 )
 async def list_http_request_traces(
@@ -66,6 +66,13 @@ async def list_http_request_traces(
         Query(
             description="Подстрока пути запроса (path содержит это значение, без шаблонов)",
             max_length=512,
+        ),
+    ] = None,
+    client_ip: Annotated[
+        str | None,
+        Query(
+            description="Подстрока IP клиента (client_ip содержит это значение)",
+            max_length=45,
         ),
     ] = None,
     created_from: Annotated[
@@ -98,6 +105,11 @@ async def list_http_request_traces(
     path_sub = str(path_contains).strip() if path_contains is not None else ""
     path_filter = path_sub or None
 
+    client_ip_sub = str(client_ip).strip() if client_ip is not None else ""
+    if client_ip_sub and not all(c in "0123456789abcdefABCDEF.:[]" for c in client_ip_sub):
+        raise BadRequestError("client_ip: допустимы только символы IP-адреса")
+    client_ip_filter = client_ip_sub or None
+
     created_from_utc = (
         ensure_utc(created_from) if created_from is not None else None
     )
@@ -118,6 +130,7 @@ async def list_http_request_traces(
         status_codes=status_codes or None,
         subject_sources=subject_sources or None,
         path_contains=path_filter,
+        client_ip_contains=client_ip_filter,
         created_from=created_from_utc,
         created_to=created_to_utc,
     )
