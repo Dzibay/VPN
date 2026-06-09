@@ -1,9 +1,10 @@
+import json
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import quote_plus
 
 from pydantic import Field, computed_field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from app import constants
 
@@ -97,10 +98,10 @@ class Settings(BaseSettings):
             "дополнительные домены — в SITE_EXTRA_ADDRESSES."
         ),
     )
-    site_extra_addresses: list[str] = Field(
+    site_extra_addresses: Annotated[list[str], NoDecode] = Field(
         default_factory=list,
         description=(
-            "Дополнительные домены (env SITE_EXTRA_ADDRESSES), через запятую. "
+            "Дополнительные домены (env SITE_EXTRA_ADDRESSES), через запятую: cool-vpn.ru, alt.example.com. "
             "Тот же сайт и TLS, что у SITE_ADDRESS; канонические ссылки остаются на основном домене."
         ),
     )
@@ -603,7 +604,17 @@ class Settings(BaseSettings):
         if isinstance(v, list):
             return [str(x).strip() for x in v if str(x).strip()]
         if isinstance(v, str):
-            return [part.strip() for part in v.split(",") if part.strip()]
+            s = v.strip()
+            if not s:
+                return []
+            if s.startswith("["):
+                try:
+                    parsed = json.loads(s)
+                except json.JSONDecodeError:
+                    parsed = None
+                if isinstance(parsed, list):
+                    return [str(x).strip() for x in parsed if str(x).strip()]
+            return [part.strip() for part in s.split(",") if part.strip()]
         return []
 
     def cors_allow_origins(self) -> list[str]:
