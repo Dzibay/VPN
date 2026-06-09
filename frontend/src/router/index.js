@@ -11,6 +11,7 @@ import {
   isAdminJwtRequired,
 } from '../auth/session.js'
 import { fetchJson } from '../api/client.js'
+import { ensureIpBlockStatus } from '../auth/ipBlock.js'
 
 /**
  * Ленивые импорты вью: каждый роут — отдельный chunk.
@@ -53,8 +54,15 @@ const AdminFinanceStaffView = () =>
 const AdminTasksStaffView = () => import('../views/AdminTasksStaffView.vue')
 const AdminSupportStaffView = () => import('../views/AdminSupportStaffView.vue')
 const LegalDocumentView = () => import('../views/LegalDocumentView.vue')
+const BlockedIpView = () => import('../views/BlockedIpView.vue')
 
 const routes = [
+  {
+    path: '/blocked',
+    name: 'blocked',
+    component: BlockedIpView,
+    meta: { minimalChrome: true },
+  },
   { path: '/', name: 'home', component: HomeView },
   { path: '/login', name: 'login', component: UserLoginView },
   { path: '/register', name: 'register', component: UserRegisterView },
@@ -235,6 +243,11 @@ function isAdminProtectedRoute(to) {
 router.beforeEach(async (to, _from, next) => {
   if (consumeCabinetSsoFragment(to.name)) {
     return next({ name: 'cabinet', replace: true })
+  }
+
+  const ipBlocked = await ensureIpBlockStatus()
+  if (ipBlocked && to.name !== 'blocked') {
+    return next({ name: 'blocked', replace: true })
   }
 
   const token = getAccessToken()

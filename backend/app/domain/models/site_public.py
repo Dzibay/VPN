@@ -20,3 +20,7 @@ class PublicSiteLinksResponse(BaseModel):
         default=None,
         description="https://t.me/{SUPPORT_TELEGRAM_USERNAME}; null, если не задано.",
     )
+
+
+class IpBlockedStatusResponse(BaseModel):
+    blocked: bool = Field(description="True, если IP клиента в списке blocked_ips")

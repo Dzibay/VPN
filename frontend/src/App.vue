@@ -1,16 +1,20 @@
 <script setup>
-import { RouterView } from 'vue-router'
+import { computed } from 'vue'
+import { RouterView, useRoute } from 'vue-router'
 import AppHeader from './components/AppHeader.vue'
 import CookieConsentBanner from './components/CookieConsentBanner.vue'
+
+const route = useRoute()
+const showChrome = computed(() => !route.meta?.minimalChrome)
 </script>
 
 <template>
   <div class="app">
-    <AppHeader />
+    <AppHeader v-if="showChrome" />
     <main class="main">
       <RouterView />
     </main>
-    <CookieConsentBanner />
+    <CookieConsentBanner v-if="showChrome" />
   </div>
 </template>
 

@@ -8,7 +8,7 @@ from typing import Any, MutableMapping
 Scope = MutableMapping[str, Any]
 
 
-def _header_get(scope: Scope, name: bytes) -> str | None:
+def header_get(scope: Scope, name: bytes) -> str | None:
     for k, v in scope.get("headers") or ():
         if k == name:
             try:
@@ -44,14 +44,14 @@ def resolve_client_ip(scope: Scope) -> str | None:
     """
     IP клиента: первый валидный адрес из X-Forwarded-For, иначе X-Real-IP, иначе TCP peer.
     """
-    xff = _header_get(scope, b"x-forwarded-for")
+    xff = header_get(scope, b"x-forwarded-for")
     if xff:
         for part in xff.split(","):
             ip = _parse_ip(part)
             if ip:
                 return ip
 
-    xri = _header_get(scope, b"x-real-ip")
+    xri = header_get(scope, b"x-real-ip")
     if xri:
         ip = _parse_ip(xri)
         if ip:

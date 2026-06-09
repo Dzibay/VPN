@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Any, Awaitable, Callable, MutableMapping
 
-from app.core.client_ip import resolve_client_ip
+from app.core.client_ip import header_get, resolve_client_ip
 from app.domain.security.blocked_ip_cache import ensure_blocked_ips_loaded, is_ip_blocked
 
 log = logging.getLogger("app.security.blocked_ip")
@@ -19,7 +19,11 @@ Send = Callable[[Message], Awaitable[None]]
 _EXEMPT_PREFIXES = (
     "/api/health",
     "/api/staff/blocked-ips",
+    "/api/public/ip-blocked",
+    "/api/public/site-links",
 )
+
+_BLOCKED_PAGE_PATH = "/blocked"
 
 
 def _is_exempt_path(path: str) -> bool:
@@ -27,6 +31,25 @@ def _is_exempt_path(path: str) -> bool:
         if path == prefix or path.startswith(prefix + "/"):
             return True
     return False
+
+
+def _wants_html(scope: Scope) -> bool:
+    accept = (header_get(scope, b"accept") or "").lower()
+    return "text/html" in accept
+
+
+async def _send_redirect_blocked(scope: Scope, receive: Receive, send: Send) -> None:
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 302,
+            "headers": [
+                [b"location", _BLOCKED_PAGE_PATH.encode("ascii")],
+                [b"content-length", b"0"],
+            ],
+        },
+    )
+    await send({"type": "http.response.body", "body": b""})
 
 
 async def _send_json_forbidden(scope: Scope, receive: Receive, send: Send) -> None:
@@ -61,7 +84,10 @@ class BlockedIpMiddleware:
             blocked = await ensure_blocked_ips_loaded()
             if is_ip_blocked(client_ip, blocked):
                 log.warning("Заблокированный IP %s — %s %s", client_ip, scope.get("method"), path)
-                await _send_json_forbidden(scope, receive, send)
+                if _wants_html(scope):
+                    await _send_redirect_blocked(scope, receive, send)
+                else:
+                    await _send_json_forbidden(scope, receive, send)
                 return
 
         await self.app(scope, receive, send)
