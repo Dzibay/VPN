@@ -11,6 +11,7 @@ from app.core.dependencies import (
     require_referrals_staff,
     require_staff_user_list_access,
 )
+from app.core.exceptions import ForbiddenError
 from app.domain.models.server_traffic import UserTrafficByDayRow, UserTrafficByServersBundle
 from app.domain.models.users import (
     DailyPaymentsExpiryStatsResponse,
@@ -281,15 +282,25 @@ async def delete_user(
 @router.patch(
     "/{user_id}",
     response_model=UserRead,
-    dependencies=[Depends(require_admin)],
-    summary="Частичное обновление пользователя и синхронизация Xray на узлах",
+    dependencies=[Depends(require_referrals_staff)],
+    summary=(
+        "Частичное обновление пользователя и синхронизация Xray на узлах; "
+        "менеджер может менять только traffic_limit_bytes"
+    ),
 )
 async def patch_user(
     user_id: int,
     body: UserUpdate,
     session: SessionDep,
     background_tasks: BackgroundTasks,
+    list_mode: Annotated[StaffUserListMode, Depends(require_staff_user_list_access)],
 ) -> User:
+    if list_mode == "manager":
+        extra = set(body.model_dump(exclude_unset=True)) - {"traffic_limit_bytes"}
+        if extra:
+            raise ForbiddenError(
+                detail="Менеджер может изменять только лимит трафика (traffic_limit_bytes)",
+            )
     user = await patch_staff_user(session, user_id, body)
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return user

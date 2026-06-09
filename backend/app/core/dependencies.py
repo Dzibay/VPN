@@ -74,6 +74,7 @@ def require_roles(
     роль из токена должна входить в allowed_roles.
     - admin — полный доступ к админ-API и страницам /admin (кроме только рефералов).
     - manager — API реферальных ссылок и журнала HTTP-запросов, GET /users (сводка без токенов),
+      PATCH /users/{id} только traffic_limit_bytes,
       UI /admin/referrals, /admin/logs, /admin/payments, /admin/tasks, /admin/users/analytics,
       /admin/users/{id}/analytics,
       /admin/users/registrations-by-date, /admin/users/subscription-user-agent-stats

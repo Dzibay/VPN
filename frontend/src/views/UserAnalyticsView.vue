@@ -9,7 +9,7 @@ import AdminPageShell from '../components/AdminPageShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
 import { fetchJson, sitePublicUrl, subscriptionPublicUrl } from '../api/client.js'
-import { isAdminRole } from '../auth/permissions.js'
+import { canAccessReferralsAdmin, isAdminRole } from '../auth/permissions.js'
 import { getSessionRole } from '../auth/session.js'
 import UserRolePill from '../components/UserRolePill.vue'
 import { rgbTupleFromVar } from '../utils/adminChartTheme.js'
@@ -141,6 +141,9 @@ const userAnalyticsBackTo = computed(() => '/admin/users/analytics')
 const userAnalyticsBackLabel = computed(() => '← Клиенты')
 
 const isAdmin = computed(() => isAdminRole(getSessionRole()))
+const canEditTrafficLimit = computed(() =>
+  canAccessReferralsAdmin(getSessionRole()),
+)
 
 const profileEditing = ref(false)
 const profileSaving = ref(false)
@@ -297,6 +300,21 @@ async function saveProfileEdit() {
   profileSaving.value = true
   profileEditError.value = null
   try {
+    const trafficLimitBytes = trafficLimitFormGibToBytes(formTrafficLimitGib.value)
+    if (trafficLimitBytes === undefined) {
+      profileEditError.value =
+        'Лимит трафика: укажите неотрицательное число гигабайт (до 10000) или очистите поле'
+      return
+    }
+    if (!isAdmin.value) {
+      await fetchJson(`/api/users/${uid}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ traffic_limit_bytes: trafficLimitBytes }),
+      })
+      profileEditing.value = false
+      await reloadProfileCard()
+      return
+    }
     const subRaw = String(formSubUntil.value ?? '').trim()
     const subIso = subRaw === '' ? null : dateFormToIsoOrNull(formSubUntil.value)
     if (subRaw !== '' && subIso === null) {
@@ -307,12 +325,6 @@ async function saveProfileEdit() {
     if (regRaw !== '' && dateFormToIsoOrNull(formRegisteredAt.value) === null) {
       profileEditError.value =
         'Дата регистрации: укажите дату как ДД.ММ.ГГГГ или очистите поле'
-      return
-    }
-    const trafficLimitBytes = trafficLimitFormGibToBytes(formTrafficLimitGib.value)
-    if (trafficLimitBytes === undefined) {
-      profileEditError.value =
-        'Лимит трафика: укажите неотрицательное число гигабайт (до 10000) или очистите поле'
       return
     }
     const tgRaw = String(formTelegramId.value ?? '').trim()
@@ -768,7 +780,7 @@ onMounted(() => {
     <div v-if="!loading && profile" class="user-profile glass">
       <div class="profile-head">
         <h2 class="profile-title">Данные пользователя</h2>
-        <div v-if="isAdmin" class="profile-head__actions">
+        <div v-if="canEditTrafficLimit" class="profile-head__actions">
           <template v-if="profileEditing">
             <button
               type="button"
@@ -943,7 +955,7 @@ onMounted(() => {
           class="mono"
           :class="{ 'traffic-over-limit': profile && isTrafficOverLimit(profile) }"
         >
-          <template v-if="isAdmin && profileEditing">
+          <template v-if="canEditTrafficLimit && profileEditing">
             <input
               v-model="formTrafficLimitGib"
               type="number"
