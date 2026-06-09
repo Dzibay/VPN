@@ -1,4 +1,4 @@
-{$SITE_ALL_ADDRESSES} {
+{$SITE_ADDRESS} {
     encode gzip zstd
 
     header {

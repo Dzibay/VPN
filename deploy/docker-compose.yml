@@ -1,6 +1,6 @@
 # Продакшен-стек: Caddy (TLS) → Nginx (SPA + /api) → FastAPI; Prometheus; Postgres; Redis; RQ worker.
 # Запуск из каталога deploy/:
-#   cp env.production.example .env   # JWT, POSTGRES_PASSWORD, SITE_ADDRESS, SITE_EXTRA_ADDRESSES, TELEGRAM_BOT_USERNAME
+#   cp env.production.example .env   # SITE_ADDRESS=основной домен, SITE_EXTRA_ADDRESSES=старые (301 → основной)
 #   Для метрик в админке задайте в .env PROMETHEUS_SD_TOKEN (одна строка) — API и Prometheus подхватят его сами.
 #   mkdir -p secrets/ssh  # положите ключ для PROVISION_SSH_KEY_PATH
 #   docker compose up -d --build

@@ -1,10 +1,17 @@
 #!/bin/sh
 set -eu
 
-ADDRESSES="${SITE_ADDRESS}"
-if [ -n "${SITE_EXTRA_ADDRESSES:-}" ]; then
-  ADDRESSES="${ADDRESSES}, ${SITE_EXTRA_ADDRESSES}"
-fi
-export SITE_ALL_ADDRESSES="${ADDRESSES}"
+primary="${SITE_ADDRESS}"
+primary="${primary#https://}"
+primary="${primary#http://}"
+primary="${primary%%/*}"
 
-exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile "$@"
+{
+  if [ -n "${SITE_EXTRA_ADDRESSES:-}" ]; then
+    printf '%s {\n    redir https://%s{uri} permanent\n}\n\n' \
+      "${SITE_EXTRA_ADDRESSES}" "${primary}"
+  fi
+  cat /etc/caddy/Caddyfile
+} > /tmp/Caddyfile
+
+exec caddy run --config /tmp/Caddyfile --adapter caddyfile "$@"

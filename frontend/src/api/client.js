@@ -107,7 +107,8 @@ export async function fetchJson(path, options = {}) {
  */
 export function subscriptionPublicUrl(token) {
   const base =
-    import.meta.env.VITE_SUBSCRIPTION_BASE_URL?.replace(/\/$/, '') ?? ''
+    import.meta.env.VITE_SUBSCRIPTION_BASE_URL?.replace(/\/$/, '') ||
+    sitePublicUrl().replace(/\/$/, '')
   if (base) {
     return `${base}/sub/${token}`
   }
