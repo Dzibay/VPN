@@ -106,6 +106,22 @@ class ReferralMeResponse(BaseModel):
     )
 
 
+class ReferralExternalLinkCreateBody(BaseModel):
+    """POST /api/referral/external/links: токен задаётся внешним сервисом."""
+
+    token: str = Field(min_length=4, max_length=64)
+
+    @field_validator("token", mode="before")
+    @classmethod
+    def strip_external_token(cls, v: object) -> str:
+        if isinstance(v, str):
+            s = v.strip()
+            if not s:
+                raise ValueError("token не может быть пустым")
+            return s
+        raise ValueError("token: ожидается строка")
+
+
 class ReferralTrackClickBody(BaseModel):
     """Учёт клика по реферальной ссылке на сайте (публичный POST)."""
 

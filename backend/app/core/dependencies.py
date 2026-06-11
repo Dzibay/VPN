@@ -186,6 +186,24 @@ def get_bearer_principal_dep(
     return _claims_to_principal(claims)
 
 
+def require_referral_links_api_key(
+    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> None:
+    """
+    POST /api/referral/external/links (заголовок X-API-Key).
+    REFERRAL_LINKS_API_KEY в env; пусто — 503.
+    """
+    settings = get_settings()
+    expected = (settings.referral_links_api_key or "").strip()
+    if not expected:
+        raise ServiceUnavailableError(
+            detail="REFERRAL_LINKS_API_KEY не задан: эндпоинт отключён",
+        )
+    got = (x_api_key or "").strip()
+    if not got or not secrets.compare_digest(got, expected):
+        raise UnauthorizedError(detail="Недействительный API-ключ")
+
+
 def require_telegram_bot_api_secret(
     x_telegram_bot_secret: Annotated[str | None, Header()] = None,
 ) -> None:

@@ -175,6 +175,13 @@ class Settings(BaseSettings):
             "Счётчик ``referral_links.payments_count`` инкрементится в любом случае при оплате реферируемым."
         ),
     )
+    referral_links_api_key: str = Field(
+        default="",
+        description=(
+            "Секрет для POST /api/referral/external/links (автогенерация реферальных ссылок внешними сервисами): "
+            "заголовок X-API-Key. Пусто — эндпоинт отвечает 503. Env: REFERRAL_LINKS_API_KEY."
+        ),
+    )
 
     tribute_api_key: str = Field(
         default="",

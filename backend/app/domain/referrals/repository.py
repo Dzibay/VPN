@@ -114,6 +114,49 @@ async def get_or_create_user_owned_referral_link(
     raise InternalServerError("Не удалось сгенерировать уникальный реферальный токен")
 
 
+async def get_referral_link_by_token(
+    session: AsyncSession,
+    token: str,
+) -> ReferralLink | None:
+    """Найти запись по строковому токену; ``None`` — если не существует."""
+    raw = token.strip()
+    if not raw:
+        return None
+    return (
+        await session.scalars(
+            select(ReferralLink).where(ReferralLink.token == raw).limit(1),
+        )
+    ).first()
+
+
+async def get_or_create_external_referral_link(
+    session: AsyncSession,
+    token: str,
+) -> tuple[ReferralLink, bool]:
+    """Создать именованную ссылку (``owner_kind=token``) или вернуть существующую по токену.
+
+    Второй элемент кортежа — ``True``, если запись создана в этом вызове.
+    """
+    raw = token.strip()
+    validate_token_shape(raw)
+    existing = await get_referral_link_by_token(session, raw)
+    if existing is not None:
+        return existing, False
+    try:
+        row = await create_referral_link(
+            session,
+            owner_kind="token",
+            owner_user_id=None,
+            token=raw,
+        )
+        return row, True
+    except ReferralTokenTakenError:
+        again = await get_referral_link_by_token(session, raw)
+        if again is not None:
+            return again, False
+        raise
+
+
 async def create_referral_link(
     session: AsyncSession,
     *,

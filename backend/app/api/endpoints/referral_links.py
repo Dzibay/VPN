@@ -10,10 +10,12 @@ from app.core.dependencies import (
     ReadonlySessionDep,
     SessionDep,
     get_bearer_principal_dep,
+    require_referral_links_api_key,
     require_referrals_staff,
 )
 from app.domain.models.referral_links import (
     ReferralDirectTrafficStats,
+    ReferralExternalLinkCreateBody,
     ReferralFunnelSummary,
     ReferralLinkCreate,
     ReferralLinkOut,
@@ -25,6 +27,7 @@ from app.domain.referrals.funnel import referral_funnel_compute
 from app.domain.referrals.public_links import referral_link_to_response
 from app.domain.referrals.repository import (
     create_referral_link,
+    get_or_create_external_referral_link,
     increment_referral_counter_by_token,
     update_referral_link,
 )
@@ -147,6 +150,37 @@ async def delete_referral_link(
 ) -> Response:
     await delete_referral_link_row(session, link_id)
     return Response(status_code=204)
+
+
+external_router = APIRouter(
+    prefix="/referral/external",
+    tags=["external"],
+    dependencies=[Depends(require_referral_links_api_key)],
+)
+
+
+@external_router.post(
+    "/links",
+    response_model=ReferralLinkOut,
+    summary="Создание или получение реферальной ссылки (внешние сервисы)",
+    description=(
+        "Идемпотентно: если ``token`` уже есть в базе — возвращается существующая ссылка, "
+        "иначе создаётся запись с ``owner_kind=token``. "
+        "Заголовок ``X-API-Key`` — значение ``REFERRAL_LINKS_API_KEY``."
+    ),
+    responses={
+        200: {"description": "Ссылка уже существовала"},
+        201: {"description": "Ссылка создана"},
+    },
+)
+async def post_external_referral_link(
+    body: ReferralExternalLinkCreateBody,
+    session: SessionDep,
+    response: Response,
+) -> ReferralLinkOut:
+    row, created = await get_or_create_external_referral_link(session, body.token)
+    response.status_code = 201 if created else 200
+    return referral_link_to_response(row, settings)
 
 
 public_router = APIRouter(prefix="/referral", tags=["public"])
