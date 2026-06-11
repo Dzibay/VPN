@@ -172,6 +172,7 @@ external_router = APIRouter(
         200: {"description": "Ссылка уже существовала"},
         201: {"description": "Ссылка создана"},
     },
+    openapi_extra={"security": [{"ReferralLinksApiKey": []}]},
 )
 async def post_external_referral_link(
     body: ReferralExternalLinkCreateBody,

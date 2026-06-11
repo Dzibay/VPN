@@ -28,6 +28,7 @@ api_router = APIRouter(dependencies=[Depends(apply_request_subject_from_bearer_o
 api_router.include_router(health.router)
 api_router.include_router(client_app_public.router)
 api_router.include_router(site_public.router)
+api_router.include_router(referral_links.external_router)
 api_router.include_router(referral_links.public_router)
 api_router.include_router(referral_links.me_router)
 api_router.include_router(me_endpoints.router)
