@@ -29,6 +29,22 @@ function siteUrlFromEnv(env) {
 
 function buildSeoStrings(siteUrl) {
   const ogImage = `${siteUrl}/icons/podorozhnik-logo.png`
+  const seoLandingPaths = [
+    '/vpn-dlya-youtube',
+    '/vpn-dlya-youtube/android',
+    '/vpn-dlya-youtube/pc',
+    '/vpn-dlya-gemini',
+    '/vpn-dlya-telegram',
+  ]
+  const seoSitemapEntries = seoLandingPaths
+    .map(
+      (path) => `  <url>
+    <loc>${siteUrl}${path}</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>`,
+    )
+    .join('\n')
   const robots = `User-agent: *
 Allow: /
 
@@ -86,6 +102,7 @@ Sitemap: ${siteUrl}/sitemap.xml
     <changefreq>yearly</changefreq>
     <priority>0.1</priority>
   </url>
+${seoSitemapEntries}
 </urlset>
 `
 

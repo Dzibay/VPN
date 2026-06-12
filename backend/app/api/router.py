@@ -13,6 +13,7 @@ from app.api.endpoints import (
     payments,
     prometheus_sd,
     referral_links,
+    seo_pages,
     server_metrics,
     servers,
     staff_blocked_ips,
@@ -30,6 +31,7 @@ api_router.include_router(client_app_public.router)
 api_router.include_router(site_public.router)
 api_router.include_router(referral_links.external_router)
 api_router.include_router(referral_links.public_router)
+api_router.include_router(seo_pages.public_router)
 api_router.include_router(referral_links.me_router)
 api_router.include_router(me_endpoints.router)
 api_router.include_router(auth.router)
@@ -41,6 +43,7 @@ api_router.include_router(staff_chart_events.router)
 api_router.include_router(staff_support_messages.router)
 api_router.include_router(http_audit_staff.router)
 api_router.include_router(referral_links.staff_router)
+api_router.include_router(seo_pages.staff_router)
 api_router.include_router(servers.router)
 api_router.include_router(server_metrics.router)
 api_router.include_router(subscription_device_stats.router)

@@ -153,3 +153,30 @@ SET email_verified_at = COALESCE(registered_at, NOW())
 WHERE email IS NOT NULL
   AND trim(email) <> ''
   AND email_verified_at IS NULL;
+
+-- SEO-страницы: учёт переходов для админки.
+CREATE TABLE IF NOT EXISTS seo_pages (
+    id BIGSERIAL PRIMARY KEY,
+    path TEXT NOT NULL,
+    title TEXT NOT NULL,
+    views_count BIGINT NOT NULL DEFAULT 0 CHECK (views_count >= 0),
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT seo_pages_path_key UNIQUE (path)
+);
+
+INSERT INTO seo_pages (path, title, sort_order)
+VALUES
+    ('/', 'Главная', 1),
+    ('/vpn-dlya-youtube', 'VPN для YouTube', 10),
+    ('/vpn-dlya-youtube/android', 'VPN для YouTube на Android', 11),
+    ('/vpn-dlya-youtube/pc', 'VPN для YouTube на ПК', 12)
+ON CONFLICT (path) DO NOTHING;
+
+DELETE FROM seo_pages
+WHERE path NOT IN (
+    '/',
+    '/vpn-dlya-youtube',
+    '/vpn-dlya-youtube/android',
+    '/vpn-dlya-youtube/pc'
+);

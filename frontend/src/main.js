@@ -12,6 +12,7 @@ import {
 } from './auth/ipBlock.js'
 import { router } from './router/index.js'
 import { captureReferralFromRoute } from './referral/refCapture.js'
+import { trackSeoPageFromRoute } from './seo/trackSeoPageView.js'
 
 async function bootstrap() {
   const ipBlocked = await ensureIpBlockStatus()
@@ -31,4 +32,5 @@ void bootstrap()
 
 router.afterEach((to) => {
   captureReferralFromRoute(to)
+  trackSeoPageFromRoute(to)
 })

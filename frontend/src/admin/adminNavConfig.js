@@ -71,6 +71,12 @@ export const ADMIN_NAV_DEFINITION = [
     access: 'staff',
   },
   {
+    routeName: 'admin-seo-pages',
+    label: 'SEO-страницы',
+    path: '/admin/seo-pages',
+    access: 'staff',
+  },
+  {
     routeName: 'admin-payments-staff',
     label: 'Платежи',
     path: '/admin/payments',

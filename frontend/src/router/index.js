@@ -12,6 +12,7 @@ import {
 } from '../auth/session.js'
 import { fetchJson } from '../api/client.js'
 import { ensureIpBlockStatus } from '../auth/ipBlock.js'
+import { buildSeoPageRoutes } from '../content/seo/index.js'
 
 /**
  * Ленивые импорты вью: каждый роут — отдельный chunk.
@@ -57,6 +58,7 @@ const AdminFinanceStaffView = () =>
 const AdminTasksStaffView = () => import('../views/AdminTasksStaffView.vue')
 const AdminSupportStaffView = () => import('../views/AdminSupportStaffView.vue')
 const LegalDocumentView = () => import('../views/LegalDocumentView.vue')
+const SeoPagesAdminView = () => import('../views/SeoPagesAdminView.vue')
 const BlockedIpView = () => import('../views/BlockedIpView.vue')
 
 const routes = [
@@ -66,7 +68,7 @@ const routes = [
     component: BlockedIpView,
     meta: { minimalChrome: true },
   },
-  { path: '/', name: 'home', component: HomeView },
+  { path: '/', name: 'home', component: HomeView, meta: { seoPage: true, seoPath: '/' } },
   { path: '/login', name: 'login', component: UserLoginView },
   { path: '/register', name: 'register', component: UserRegisterView },
   { path: '/verify-email', name: 'verify-email', component: VerifyEmailView },
@@ -111,6 +113,7 @@ const routes = [
     component: LegalDocumentView,
     meta: { legalDoc: 'marketing' },
   },
+  ...buildSeoPageRoutes(),
   {
     path: '/link-from-telegram',
     name: 'link-from-telegram',
@@ -166,6 +169,11 @@ const routes = [
     path: '/admin/referrals',
     name: 'admin-referrals',
     component: ReferralTokensAdminPage,
+  },
+  {
+    path: '/admin/seo-pages',
+    name: 'admin-seo-pages',
+    component: SeoPagesAdminView,
   },
   {
     path: '/admin/payments',
@@ -320,6 +328,7 @@ router.beforeEach(async (to, _from, next) => {
         })
       }
       const isReferralsRoute = to.name === 'admin-referrals'
+      const isSeoPagesRoute = to.name === 'admin-seo-pages'
       const isUsersAnalyticsStaff = to.name === 'admin-users-staff-analytics'
       const isUserPerAnalytics = to.name === 'admin-user-analytics'
       const isMarketingFunnel = to.name === 'admin-funnel'
@@ -333,6 +342,7 @@ router.beforeEach(async (to, _from, next) => {
       const isSupportStaff = to.name === 'admin-support-staff'
       if (
         isReferralsRoute ||
+        isSeoPagesRoute ||
         isUsersAnalyticsStaff ||
         isUserPerAnalytics ||
         isMarketingFunnel ||

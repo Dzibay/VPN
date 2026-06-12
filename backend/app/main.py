@@ -24,12 +24,17 @@ log = logging.getLogger("app.main")
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     from app.infrastructure.database.schema import ensure_schema
+    from app.infrastructure.database.session import AsyncSessionLocal
+    from app.domain.seo_pages.repository import ensure_seo_pages_catalog
 
     # Сами периодические корутины (Xray-сбор, Prometheus-load, ежедневный sync, TCP-доступность → Redis)
     # переехали в отдельный процесс `python -m app.scheduler.run` — см. backend/app/scheduler/run.py.
     # Здесь остался только ensure_schema (идемпотентно, быстро): запускается синхронно при
     # старте процесса и не зависит от порядка запуска контейнеров.
     ensure_schema()
+    async with AsyncSessionLocal() as session:
+        await ensure_seo_pages_catalog(session)
+        await session.commit()
     yield
 
 
