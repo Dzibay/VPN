@@ -10,6 +10,7 @@ SEO_PAGES_CATALOG: list[tuple[str, str, int]] = [
     ("/vpn-dlya-gemini", "VPN для Gemini", 20),
     ("/vpn-dlya-telegram", "VPN для Telegram", 30),
     ("/vpn-dlya-iphone", "VPN для iPhone", 40),
+    ("/vpn-dlya-android", "VPN для Android", 41),
 ]
 
 SEO_PAGE_PATHS: frozenset[str] = frozenset(path for path, _title, _sort in SEO_PAGES_CATALOG)

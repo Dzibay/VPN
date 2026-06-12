@@ -173,7 +173,8 @@ VALUES
     ('/vpn-dlya-youtube/pc', 'VPN для YouTube на ПК', 12),
     ('/vpn-dlya-gemini', 'VPN для Gemini', 20),
     ('/vpn-dlya-telegram', 'VPN для Telegram', 30),
-    ('/vpn-dlya-iphone', 'VPN для iPhone', 40)
+    ('/vpn-dlya-iphone', 'VPN для iPhone', 40),
+    ('/vpn-dlya-android', 'VPN для Android', 41)
 ON CONFLICT (path) DO NOTHING;
 
 DELETE FROM seo_pages
@@ -184,5 +185,6 @@ WHERE path NOT IN (
     '/vpn-dlya-youtube/pc',
     '/vpn-dlya-gemini',
     '/vpn-dlya-telegram',
-    '/vpn-dlya-iphone'
+    '/vpn-dlya-iphone',
+    '/vpn-dlya-android'
 );

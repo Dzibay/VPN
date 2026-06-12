@@ -47,6 +47,12 @@ export const SEO_PAGES = [
     sortOrder: 40,
     name: 'seo-vpn-dlya-iphone',
   },
+  {
+    path: '/vpn-dlya-android',
+    title: 'VPN для Android',
+    sortOrder: 41,
+    name: 'seo-vpn-dlya-android',
+  },
 ]
 
 /** @type {string[]} */
