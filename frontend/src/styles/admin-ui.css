@@ -129,6 +129,94 @@
   color: var(--danger);
 }
 
+/* ---------- Панель фильтра над таблицей (переключатели вида) ---------- */
+.admin-table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.admin-table-toolbar-meta {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  padding: 0.22rem 0.6rem;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--card-border);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+
+.btn-icon-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.8rem 0.35rem 0.4rem;
+  min-height: 2.25rem;
+  border-radius: 999px;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    color 0.18s ease;
+}
+
+.btn-icon-toggle:hover {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--accent-border) 50%, var(--card-border));
+}
+
+.btn-icon-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.btn-icon-toggle--active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: color-mix(in srgb, var(--accent) 88%, var(--text-h));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-border) 40%, transparent);
+}
+
+.btn-icon-toggle__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  color: var(--muted);
+  transition:
+    background 0.18s ease,
+    color 0.18s ease;
+}
+
+.btn-icon-toggle--active .btn-icon-toggle__icon {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+
+.btn-icon-toggle__svg {
+  flex-shrink: 0;
+  display: block;
+}
+
+.btn-icon-toggle__text {
+  white-space: nowrap;
+  line-height: 1.25;
+}
+
 /* ---------- Поля форм ---------- */
 .field {
   display: flex;

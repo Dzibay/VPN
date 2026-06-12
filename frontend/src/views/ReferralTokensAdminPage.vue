@@ -184,10 +184,19 @@ function telegramUrlForRow(r) {
   return r.telegram_deep_link || ''
 }
 
+function isUserToken(r) {
+  return r.owner_kind === 'user'
+}
+
+const userTokenCount = computed(() => rows.value.filter(isUserToken).length)
+
+const rowsForTable = computed(() =>
+  showUserTokens.value ? rows.value : rows.value.filter((r) => !isUserToken(r)),
+)
+
 const referralSortAccessors = {
   id: (r) => r.id,
   token: (r) => String(r.token ?? '').toLowerCase(),
-  owner_kind: (r) => String(r.owner_kind ?? '').toLowerCase(),
   owner_user_id: (r) => (r.owner_user_id != null ? r.owner_user_id : -1),
   site: (r) => siteUrlForRow(r).toLowerCase(),
   telegram: (r) => (telegramUrlForRow(r) || '').toLowerCase(),
@@ -198,11 +207,13 @@ const referralSortAccessors = {
 }
 
 const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(
-  rows,
+  rowsForTable,
   referralSortAccessors,
 )
 
 const copyHint = ref(null)
+/** Показывать персональные токены (owner_kind = user) в таблице */
+const showUserTokens = ref(false)
 /** id строки во время DELETE */
 const deletingId = ref(null)
 /** id строки с временной подсветкой после перехода из других разделов */
@@ -322,13 +333,83 @@ onMounted(() => {
         </StatWidget>
         <StatWidget title="Токены" aria-label="Число реферальных токенов">
           <p class="stat-widget-value">
-            {{ loading ? '…' : error ? '—' : rows.length }}
+            {{ loading ? '…' : error ? '—' : rowsForTable.length }}
           </p>
-          <p v-if="!loading && !error" class="stat-widget-meta">Записей в таблице</p>
+          <p v-if="!loading && !error" class="stat-widget-meta">
+            {{
+              userTokenCount > 0 && !showUserTokens
+                ? `В таблице · ${userTokenCount} пользовательских скрыто`
+                : 'Записей в таблице'
+            }}
+          </p>
         </StatWidget>
       </div>
       <p v-if="copyHint" class="copy-hint">{{ copyHint }}</p>
     </section>
+
+    <div
+      v-if="!loading && !error && userTokenCount > 0"
+      class="admin-table-toolbar"
+      role="toolbar"
+      aria-label="Вид таблицы реферальных токенов"
+    >
+      <button
+        type="button"
+        class="btn-icon-toggle"
+        :class="{ 'btn-icon-toggle--active': showUserTokens }"
+        :aria-pressed="showUserTokens"
+        :title="
+          showUserTokens
+            ? 'Скрыть персональные токены пользователей'
+            : 'Показать персональные токены пользователей'
+        "
+        @click="showUserTokens = !showUserTokens"
+      >
+        <span class="btn-icon-toggle__icon" aria-hidden="true">
+          <svg
+            v-if="showUserTokens"
+            class="btn-icon-toggle__svg"
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+          >
+            <path
+              fill="currentColor"
+              d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-5-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"
+            />
+          </svg>
+          <svg
+            v-else
+            class="btn-icon-toggle__svg"
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+          >
+            <path
+              fill="currentColor"
+              d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"
+            />
+          </svg>
+        </span>
+        <span class="btn-icon-toggle__text">{{
+          showUserTokens ? 'Пользовательские видны' : 'Пользовательские скрыты'
+        }}</span>
+      </button>
+      <span class="admin-table-toolbar-meta">{{ userTokenCount }} персональных</span>
+    </div>
+    <p
+      v-if="
+        !loading &&
+        !error &&
+        rows.length > 0 &&
+        rowsForTable.length === 0 &&
+        !showUserTokens
+      "
+      class="table-filter-hint muted"
+    >
+      Все записи — персональные токены пользователей. Включите показ кнопкой с иконкой глаза
+      выше.
+    </p>
 
     <AdminTableWrap aria-label="Таблица реферальных токенов">
       <table class="admin-table">
@@ -345,13 +426,6 @@ onMounted(() => {
             <AdminSortTh
               label="Токен"
               column-key="token"
-              :sort-key="sortKey"
-              :sort-dir="sortDir"
-              @sort="toggleSort"
-            />
-            <AdminSortTh
-              label="Источник"
-              column-key="owner_kind"
               :sort-key="sortKey"
               :sort-dir="sortDir"
               @sort="toggleSort"
@@ -420,13 +494,13 @@ onMounted(() => {
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="11" class="muted">Загрузка…</td>
+            <td colspan="10" class="muted">Загрузка…</td>
           </tr>
           <tr v-else-if="error">
-            <td colspan="11" class="error-cell">{{ error }}</td>
+            <td colspan="10" class="error-cell">{{ error }}</td>
           </tr>
-          <tr v-else-if="rows.length === 0">
-            <td colspan="11" class="muted">Пока нет записей</td>
+          <tr v-else-if="rowsForTable.length === 0">
+            <td colspan="10" class="muted">Пока нет записей</td>
           </tr>
           <tr
             v-for="r in sortedRows"
@@ -436,9 +510,6 @@ onMounted(() => {
           >
             <td class="num">{{ r.id }}</td>
             <td class="mono-cell">{{ r.token }}</td>
-            <td>
-              <span class="pill pill-mono" :title="r.owner_kind">{{ r.owner_kind }}</span>
-            </td>
             <td class="owner-user-id-cell">
               <span class="owner-user-id-inner">
                 <template v-if="r.owner_user_id != null">
@@ -649,6 +720,10 @@ onMounted(() => {
   color: var(--accent);
   font-weight: 600;
 }
+.table-filter-hint {
+  margin: 0 0 0.65rem;
+  font-size: 0.85rem;
+}
 .error-cell {
   color: var(--danger);
 }
@@ -679,19 +754,5 @@ onMounted(() => {
 .btn-tiny {
   font-size: 0.75rem;
   padding: 0.25rem 0.45rem;
-}
-/* Нейтральный pill: фон/границу базовый .pill (admin-ui.css) не задаёт. */
-.pill-mono {
-  background: var(--surface);
-  border: 1px solid var(--card-border);
-  color: var(--muted);
-  font-family: ui-monospace, monospace;
-  font-size: 0.78rem;
-  font-weight: 600;
-  text-transform: none;
-  letter-spacing: 0.02em;
-  max-width: 12rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 </style>
