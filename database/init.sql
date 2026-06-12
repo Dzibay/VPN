@@ -413,5 +413,8 @@ VALUES
     ('/', 'Главная', 1),
     ('/vpn-dlya-youtube', 'VPN для YouTube', 10),
     ('/vpn-dlya-youtube/android', 'VPN для YouTube на Android', 11),
-    ('/vpn-dlya-youtube/pc', 'VPN для YouTube на ПК', 12)
+    ('/vpn-dlya-youtube/pc', 'VPN для YouTube на ПК', 12),
+    ('/vpn-dlya-gemini', 'VPN для Gemini', 20),
+    ('/vpn-dlya-telegram', 'VPN для Telegram', 30),
+    ('/vpn-dlya-iphone', 'VPN для iPhone', 40)
 ON CONFLICT (path) DO NOTHING;

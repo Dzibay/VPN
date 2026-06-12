@@ -3,6 +3,7 @@ import { vpnDlyaYoutubeAndroidPage } from './pages/vpn-dlya-youtube-android.js'
 import { vpnDlyaYoutubePcPage } from './pages/vpn-dlya-youtube-pc.js'
 import { vpnDlyaGeminiPage } from './pages/vpn-dlya-gemini.js'
 import { vpnDlyaTelegramPage } from './pages/vpn-dlya-telegram.js'
+import { vpnDlyaIphonePage } from './pages/vpn-dlya-iphone.js'
 
 /** @type {Record<string, object>} */
 const SEO_PAGE_CONTENT = {
@@ -11,6 +12,7 @@ const SEO_PAGE_CONTENT = {
   '/vpn-dlya-youtube/pc': vpnDlyaYoutubePcPage,
   '/vpn-dlya-gemini': vpnDlyaGeminiPage,
   '/vpn-dlya-telegram': vpnDlyaTelegramPage,
+  '/vpn-dlya-iphone': vpnDlyaIphonePage,
 }
 /** @param {string | undefined | null} path */
 export function getSeoPageContent(path) {

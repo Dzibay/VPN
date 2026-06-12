@@ -1,5 +1,9 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { buildSeoAssets } from './src/seo/buildSeoAssets.js'
+import { prerenderSeoPages } from './src/seo/prerenderSeoPages.js'
 
 // Прокси на API: порт должен совпадать с локальным uvicorn (по умолчанию 5000).
 const API_TARGET = process.env.VITE_DEV_API_TARGET || 'http://127.0.0.1:5000'
@@ -27,99 +31,11 @@ function siteUrlFromEnv(env) {
   return 'https://example.com'
 }
 
-function buildSeoStrings(siteUrl) {
-  const ogImage = `${siteUrl}/icons/podorozhnik-logo.png`
-  const seoLandingPaths = [
-    '/vpn-dlya-youtube',
-    '/vpn-dlya-youtube/android',
-    '/vpn-dlya-youtube/pc',
-    '/vpn-dlya-gemini',
-    '/vpn-dlya-telegram',
-  ]
-  const seoSitemapEntries = seoLandingPaths
-    .map(
-      (path) => `  <url>
-    <loc>${siteUrl}${path}</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
-  </url>`,
-    )
-    .join('\n')
-  const robots = `User-agent: *
-Allow: /
-
-# Закрытые разделы SPA
-Disallow: /cabinet
-Disallow: /admin
-
-Sitemap: ${siteUrl}/sitemap.xml
-`
-
-  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>${siteUrl}/</loc>
-    <changefreq>weekly</changefreq>
-    <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>${siteUrl}/login</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.3</priority>
-  </url>
-  <url>
-    <loc>${siteUrl}/register</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.4</priority>
-  </url>
-  <url>
-    <loc>${siteUrl}/terms</loc>
-    <changefreq>yearly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  <url>
-    <loc>${siteUrl}/privacy</loc>
-    <changefreq>yearly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  <url>
-    <loc>${siteUrl}/consent</loc>
-    <changefreq>yearly</changefreq>
-    <priority>0.1</priority>
-  </url>
-  <url>
-    <loc>${siteUrl}/refund</loc>
-    <changefreq>yearly</changefreq>
-    <priority>0.1</priority>
-  </url>
-  <url>
-    <loc>${siteUrl}/cookies</loc>
-    <changefreq>yearly</changefreq>
-    <priority>0.1</priority>
-  </url>
-  <url>
-    <loc>${siteUrl}/marketing</loc>
-    <changefreq>yearly</changefreq>
-    <priority>0.1</priority>
-  </url>
-${seoSitemapEntries}
-</urlset>
-`
-
-  const security = `# security.txt (RFC 9116) — укажите рабочий mailto
-Contact: mailto:security@example.com
-Preferred-Languages: ru, en
-Canonical: ${siteUrl}/.well-known/security.txt
-`
-
-  return { robots, sitemap, ogImage, security }
-}
-
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const siteUrl = siteUrlFromEnv(env)
-  const { robots, sitemap, ogImage, security } = buildSeoStrings(siteUrl)
+  const { robots, sitemap, ogImage, security } = buildSeoAssets(siteUrl)
 
   return {
     plugins: [
@@ -142,6 +58,14 @@ export default defineConfig(({ mode }) => {
             fileName: '.well-known/security.txt',
             source: security,
           })
+        },
+        closeBundle() {
+          const distDir = path.resolve(process.cwd(), 'dist')
+          const indexPath = path.join(distDir, 'index.html')
+          if (!fs.existsSync(indexPath)) return
+
+          const indexHtml = fs.readFileSync(indexPath, 'utf8')
+          prerenderSeoPages({ distDir, siteUrl, indexHtml })
         },
         configureServer(server) {
           server.middlewares.use((req, res, next) => {
