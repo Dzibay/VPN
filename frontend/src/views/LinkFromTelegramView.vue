@@ -239,7 +239,7 @@ watch(linkToken, (next, prev) => {
 
         <p class="hint-form">
           <template v-if="isNewEmailMode">
-            Укажите новый email и пароль для входа на сайте. Пароль нужно ввести дважды для подтверждения.
+            Укажите новый email и пароль для входа на сайте.
           </template>
           <template v-else>
             Введите email и пароль от существующего аккаунта на сайте — аккаунты будут объединены.

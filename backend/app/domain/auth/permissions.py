@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import BearerPrincipal
 from app.core.exceptions import InternalServerError, UnauthorizedError
+from app.domain.services.email_verification_service import require_verified_email_for_login
 from app.infrastructure.persistence.models.user import User
 
 
@@ -36,6 +37,9 @@ async def resolve_authenticated_user(
         raise UnauthorizedError("Пользователь не найден")
     if not user.email and not user.telegram_id:
         raise InternalServerError("У записи нет ни email, ни telegram_id")
+
+    if (user.email or "").strip() and user.password_hash:
+        require_verified_email_for_login(user)
 
     api_role = "manager" if principal.role == "manager" else "user"
     return user, api_role

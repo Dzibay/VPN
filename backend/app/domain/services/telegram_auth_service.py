@@ -248,6 +248,16 @@ async def telegram_site_link_start(
             raise ServiceUnavailableError(
                 "Не задан публичный URL SPA: задайте SITE_ADDRESS в окружении (полный URL или host[:port]).",
             )
+        if not user_has_verified_email(user):
+            msg = (
+                "Подтвердите email по ссылке из письма. "
+                "Если письмо не пришло — запросите повторную отправку на этой странице."
+            )
+            q = f"email={quote(mail, safe='')}&message={quote(msg, safe='')}"
+            site_url = f"{base}/verify-email-pending?{q}"
+            bind_request_subject_user(int(user.id), source="telegram_site_link_start_unverified")
+            return TelegramSiteLinkStartResponse(site_url=site_url, has_account=True)
+
         jwt_role = jwt_role_for_user(user)
         token = issue_access_token_or_http_error(cfg, role=jwt_role, user_id=user.id)
         site_url = f"{base}/cabinet#tg_sso_token={token}"

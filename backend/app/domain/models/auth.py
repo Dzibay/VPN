@@ -337,7 +337,8 @@ class TelegramSiteLinkStartResponse(BaseModel):
     site_url: str = Field(
         description=(
             "При has_account=false — /link-from-telegram?token=… (форма email/пароль). "
-            "При has_account=true — /cabinet#tg_sso_token=<JWT> (вход в кабинет)."
+            "При has_account=true и подтверждённом email — /cabinet#tg_sso_token=<JWT>. "
+            "При has_account=true и неподтверждённом email — /verify-email-pending?email=…"
         ),
     )
     has_account: bool = Field(
