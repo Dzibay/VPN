@@ -1,3 +1,8 @@
+import {
+  isTrustedEmailDomain,
+  UNTRUSTED_EMAIL_DOMAIN_ERROR,
+} from './trustedEmailDomains.js'
+
 export const PASSWORD_MIN_LENGTH = 8
 export const PASSWORD_MAX_LENGTH = 72
 
@@ -7,6 +12,7 @@ export const CREDENTIALS_ERRORS = {
   legalRequired:
     'Необходимо принять условия и дать согласие на обработку данных',
   emailRequired: 'Укажите email',
+  emailDomainUntrusted: UNTRUSTED_EMAIL_DOMAIN_ERROR,
 }
 
 export function normalizeEmailInput(value) {
@@ -16,6 +22,17 @@ export function normalizeEmailInput(value) {
 export function validateEmailInput(value) {
   const email = normalizeEmailInput(value)
   if (!email) return CREDENTIALS_ERRORS.emailRequired
+  return null
+}
+
+/** Email для регистрации или привязки нового адреса: обязателен и с доверенного домена. */
+export function validateRegistrationEmail(value) {
+  const requiredErr = validateEmailInput(value)
+  if (requiredErr) return requiredErr
+  const email = normalizeEmailInput(value)
+  if (!isTrustedEmailDomain(email)) {
+    return CREDENTIALS_ERRORS.emailDomainUntrusted
+  }
   return null
 }
 

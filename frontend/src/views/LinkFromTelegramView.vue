@@ -8,6 +8,7 @@ import {
   validateEmailInput,
   validateLegalConsent,
   validateNewPasswordPair,
+  validateRegistrationEmail,
 } from '../auth/credentialsValidation.js'
 import AuthCredentialsFields from '../components/auth/AuthCredentialsFields.vue'
 import SitePageLayout from '../components/SitePageLayout.vue'
@@ -92,15 +93,19 @@ function telegramLabel(pg) {
 }
 
 function validateBeforeSubmit() {
-  const emailErr = validateEmailInput(email.value)
-  if (emailErr) return emailErr
   if (isNewEmailMode.value) {
+    const emailErr = validateRegistrationEmail(email.value)
+    if (emailErr) return emailErr
     const pwErr = validateNewPasswordPair(password.value, passwordConfirm.value)
     if (pwErr) return pwErr
     const legalErr = validateLegalConsent(acceptedLegal.value)
     if (legalErr) return legalErr
-  } else if (!password.value) {
-    return 'Введите пароль от аккаунта на сайте'
+  } else {
+    const emailErr = validateEmailInput(email.value)
+    if (emailErr) return emailErr
+    if (!password.value) {
+      return 'Введите пароль от аккаунта на сайте'
+    }
   }
   return null
 }
@@ -239,7 +244,7 @@ watch(linkToken, (next, prev) => {
 
         <p class="hint-form">
           <template v-if="isNewEmailMode">
-            Укажите новый email и пароль для входа на сайте.
+            Укажите новый email и пароль для входа на сайте. Пароль нужно ввести дважды для подтверждения.
           </template>
           <template v-else>
             Введите email и пароль от существующего аккаунта на сайте — аккаунты будут объединены.

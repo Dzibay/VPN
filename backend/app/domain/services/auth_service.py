@@ -24,6 +24,7 @@ from app.domain.auth.credentials_validation import (
     validate_new_site_password,
     validate_new_site_password_with_confirm,
 )
+from app.domain.auth.trusted_email_domains import validate_trusted_email_domain
 from app.domain.auth.jwt import issue_access_token_or_http_error, jwt_role_for_user
 from app.domain.auth.permissions import resolve_authenticated_user
 from app.domain.models.auth import (
@@ -102,6 +103,7 @@ async def register_with_email(
     ``TRIAL_EXTRA_DAYS_USER_REFERRAL_REGISTRATION``.
     """
     email = normalize_email(str(body.email))
+    validate_trusted_email_domain(email)
     validate_new_site_password_with_confirm(body.password, body.password_confirm)
     pwd_hash = await run_in_threadpool(hash_password, body.password)
     rlink: ReferralLink | None = None

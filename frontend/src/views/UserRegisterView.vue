@@ -8,6 +8,7 @@ import {
   normalizeEmailInput,
   validateLegalConsent,
   validateNewPasswordPair,
+  validateRegistrationEmail,
 } from '../auth/credentialsValidation.js'
 import AuthCredentialsFields from '../components/auth/AuthCredentialsFields.vue'
 import SitePageLayout from '../components/SitePageLayout.vue'
@@ -25,6 +26,11 @@ async function submit() {
   submitting.value = true
   error.value = null
   try {
+    const emailErr = validateRegistrationEmail(email.value)
+    if (emailErr) {
+      error.value = emailErr
+      return
+    }
     const pwErr = validateNewPasswordPair(password.value, passwordConfirm.value)
     if (pwErr) {
       error.value = pwErr
@@ -137,6 +143,14 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.email-hint {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+  line-height: 1.45;
+  text-align: left;
 }
 
 .err {

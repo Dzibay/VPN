@@ -27,6 +27,7 @@ from app.core.exceptions import (
 )
 from app.core.passwords import hash_password, verify_password
 from app.domain.auth.credentials_validation import validate_new_site_password_with_confirm
+from app.domain.auth.trusted_email_domains import validate_trusted_email_domain
 from app.domain.auth.account_merge import merge_drop_user_into_keep
 from app.domain.auth.jwt import issue_access_token_or_http_error, jwt_role_for_user
 from app.domain.auth.permissions import user_can_add_credentials_from_site
@@ -342,6 +343,7 @@ async def telegram_site_link_complete(
     winner: User
     new_email_on_tg_account = False
     if existing is None:
+        validate_trusted_email_domain(email_norm)
         validate_new_site_password_with_confirm(body.password, body.password_confirm)
         tg_user.email = email_norm
         tg_user.password_hash = await run_in_threadpool(hash_password, body.password)
