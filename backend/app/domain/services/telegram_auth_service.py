@@ -26,6 +26,7 @@ from app.core.exceptions import (
     UnauthorizedError,
 )
 from app.core.passwords import hash_password, verify_password
+from app.domain.auth.credentials_validation import validate_new_site_password_with_confirm
 from app.domain.auth.account_merge import merge_drop_user_into_keep
 from app.domain.auth.jwt import issue_access_token_or_http_error, jwt_role_for_user
 from app.domain.auth.permissions import user_can_add_credentials_from_site
@@ -331,10 +332,7 @@ async def telegram_site_link_complete(
     winner: User
     new_email_on_tg_account = False
     if existing is None:
-        if len(body.password.encode("utf-8")) > 72:
-            raise BadRequestError("Пароль слишком длинный для системы входа")
-        if len(str(body.password)) < 8:
-            raise BadRequestError("Пароль должен содержать не менее 8 символов")
+        validate_new_site_password_with_confirm(body.password, body.password_confirm)
         tg_user.email = email_norm
         tg_user.password_hash = await run_in_threadpool(hash_password, body.password)
         try:

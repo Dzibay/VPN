@@ -3,10 +3,22 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { fetchJson } from '../api/client.js'
 import { setSession } from '../auth/session.js'
+import {
+  normalizeEmailInput,
+  validateEmailInput,
+  validateLegalConsent,
+  validateNewPasswordPair,
+} from '../auth/credentialsValidation.js'
+import AuthCredentialsFields from '../components/auth/AuthCredentialsFields.vue'
 import SitePageLayout from '../components/SitePageLayout.vue'
 
 const route = useRoute()
 const router = useRouter()
+
+const LINK_MODES = {
+  new: 'new',
+  existing: 'existing',
+}
 
 const linkToken = computed(() => {
   const raw = route.query.token
@@ -17,10 +29,34 @@ const loading = ref(true)
 const previewError = ref(null)
 const preview = ref(null)
 
+const linkMode = ref(LINK_MODES.new)
 const email = ref('')
 const password = ref('')
+const passwordConfirm = ref('')
+const acceptedLegal = ref(false)
 const submitting = ref(false)
 const submitError = ref(null)
+
+const isNewEmailMode = computed(() => linkMode.value === LINK_MODES.new)
+const submitDisabled = computed(() => {
+  if (submitting.value) return true
+  if (isNewEmailMode.value && !acceptedLegal.value) return true
+  return false
+})
+
+function resetFormFields() {
+  email.value = ''
+  password.value = ''
+  passwordConfirm.value = ''
+  acceptedLegal.value = false
+  submitError.value = null
+}
+
+function setLinkMode(mode) {
+  if (linkMode.value === mode) return
+  linkMode.value = mode
+  resetFormFields()
+}
 
 async function loadPreview() {
   loading.value = true
@@ -55,21 +91,46 @@ function telegramLabel(pg) {
   return parts.length ? parts.join(' ') : '—'
 }
 
+function validateBeforeSubmit() {
+  const emailErr = validateEmailInput(email.value)
+  if (emailErr) return emailErr
+  if (isNewEmailMode.value) {
+    const pwErr = validateNewPasswordPair(password.value, passwordConfirm.value)
+    if (pwErr) return pwErr
+    const legalErr = validateLegalConsent(acceptedLegal.value)
+    if (legalErr) return legalErr
+  } else if (!password.value) {
+    return 'Введите пароль от аккаунта на сайте'
+  }
+  return null
+}
+
 async function submit() {
   if (!preview.value?.can_add_credentials) return
   submitting.value = true
   submitError.value = null
   try {
+    const validationError = validateBeforeSubmit()
+    if (validationError) {
+      submitError.value = validationError
+      return
+    }
+    const body = {
+      link_token: linkToken.value,
+      email: normalizeEmailInput(email.value),
+      password: password.value,
+    }
+    if (isNewEmailMode.value) {
+      body.password_confirm = passwordConfirm.value
+    }
     const data = await fetchJson('/api/auth/telegram/site-link/complete', {
       method: 'POST',
-      body: JSON.stringify({
-        link_token: linkToken.value,
-        email: email.value.trim(),
-        password: password.value,
-      }),
+      body: JSON.stringify(body),
     })
     if (data.status === 'verification_required') {
-      const q = new URLSearchParams({ email: data.email || email.value.trim() })
+      const q = new URLSearchParams({
+        email: data.email || normalizeEmailInput(email.value),
+      })
       if (data.message) q.set('message', data.message)
       router.replace({ path: '/verify-email-pending', query: Object.fromEntries(q) })
       return
@@ -96,8 +157,8 @@ watch(linkToken, (next, prev) => {
         <RouterLink class="back" to="/">← На главную</RouterLink>
         <h1>Доступ из Telegram</h1>
         <p class="sub">
-          Если Вы впервые на сайте - введите email и пароль для возможности альтернативного управления аккаунтом.
-          Если у Вас уже есть аккаунт на сайте - введите его данные и аккаунты будут обьединены.
+          Привяжите email к аккаунту Telegram: создайте новый вход на сайте или объедините
+          с уже существующим аккаунтом.
         </p>
       </header>
     </template>
@@ -147,44 +208,68 @@ watch(linkToken, (next, prev) => {
         class="card card-pad form"
         @submit.prevent="submit"
       >
-        <h2 class="block-title form-title">Email и пароль</h2>
+        <h2 class="block-title form-title">Привязка email</h2>
+
+        <div
+          class="mode-tabs"
+          role="tablist"
+          aria-label="Способ привязки email"
+        >
+          <button
+            type="button"
+            role="tab"
+            class="mode-tab"
+            :class="{ 'mode-tab--active': isNewEmailMode }"
+            :aria-selected="isNewEmailMode"
+            @click="setLinkMode(LINK_MODES.new)"
+          >
+            Новый email
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="mode-tab"
+            :class="{ 'mode-tab--active': !isNewEmailMode }"
+            :aria-selected="!isNewEmailMode"
+            @click="setLinkMode(LINK_MODES.existing)"
+          >
+            Уже есть аккаунт
+          </button>
+        </div>
+
         <p class="hint-form">
-          Один пароль подходит для обоих сценариев: для нового email на сайте — не менее 8 символов;
-          для уже существующего email на сайте — ваш обычный пароль входа (как при «Входе»).
+          <template v-if="isNewEmailMode">
+            Укажите новый email и пароль для входа на сайте. Пароль нужно ввести дважды для подтверждения.
+          </template>
+          <template v-else>
+            Введите email и пароль от существующего аккаунта на сайте — аккаунты будут объединены.
+          </template>
         </p>
-        <label class="field">
-          <span class="label">Email</span>
-          <input
-            v-model="email"
-            class="input"
-            type="email"
-            name="email"
-            autocomplete="email"
-            required
-          />
-        </label>
-        <label class="field">
-          <span class="label">Пароль</span>
-          <input
-            v-model="password"
-            class="input"
-            type="password"
-            name="password"
-            autocomplete="current-password"
-            maxlength="72"
-            required
-          />
-        </label>
+
+        <AuthCredentialsFields
+          v-model:email="email"
+          v-model:password="password"
+          v-model:password-confirm="passwordConfirm"
+          v-model:accepted-legal="acceptedLegal"
+          :show-password-confirm="isNewEmailMode"
+          :show-legal-consent="isNewEmailMode"
+          :password-autocomplete="isNewEmailMode ? 'new-password' : 'current-password'"
+          :password-min-length="isNewEmailMode ? 8 : 0"
+          :password-label="isNewEmailMode ? 'Пароль' : 'Пароль от аккаунта на сайте'"
+        />
+
         <p v-if="submitError" class="err">{{ submitError }}</p>
         <button
           class="btn-primary btn-block"
           type="submit"
-          :disabled="submitting"
+          :disabled="submitDisabled"
         >
           {{
             submitting
               ? 'Обработка…'
-              : 'Продолжить и войти в кабинет'
+              : isNewEmailMode
+                ? 'Привязать email и войти в кабинет'
+                : 'Объединить аккаунты и войти'
           }}
         </button>
       </form>
@@ -249,11 +334,6 @@ h1 {
   line-height: 1.45;
 }
 
-.semi {
-  font-weight: 600;
-  color: var(--text-h);
-}
-
 .card {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
@@ -307,35 +387,53 @@ h1 {
   gap: 1rem;
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  text-align: left;
+.mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
 }
 
-.label {
-  font-size: 0.85rem;
+.mode-tab {
+  appearance: none;
+  margin: 0;
+  min-height: 2.45rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--radius-pill);
+  font: inherit;
+  font-size: 0.82rem;
   font-weight: 600;
+  line-height: 1.25;
+  cursor: pointer;
+  text-align: center;
   color: var(--muted);
-}
-
-.input {
-  padding: 0.6rem 0.75rem;
-  border-radius: 10px;
   border: 1px solid var(--card-border);
   background: var(--surface);
-  color: var(--text-h);
-  font: inherit;
   transition:
+    color 0.2s ease,
     border-color 0.2s ease,
-    box-shadow 0.2s ease;
+    background 0.2s ease;
 }
 
-.input:focus {
+.mode-tab:hover {
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+
+.mode-tab:focus-visible {
   outline: none;
-  border-color: var(--accent);
   box-shadow: var(--focus-ring);
+}
+
+.mode-tab--active {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.mode-tab--active:hover {
+  color: var(--on-accent);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 .err {

@@ -20,6 +20,10 @@ from app.core.auth_env import normalize_email
 from app.core.dependencies import BearerPrincipal
 from app.core.exceptions import BadRequestError, ConflictError, ForbiddenError, UnauthorizedError
 from app.core.passwords import hash_password, verify_password
+from app.domain.auth.credentials_validation import (
+    validate_new_site_password,
+    validate_new_site_password_with_confirm,
+)
 from app.domain.auth.jwt import issue_access_token_or_http_error, jwt_role_for_user
 from app.domain.auth.permissions import resolve_authenticated_user
 from app.domain.models.auth import (
@@ -98,6 +102,7 @@ async def register_with_email(
     ``TRIAL_EXTRA_DAYS_USER_REFERRAL_REGISTRATION``.
     """
     email = normalize_email(str(body.email))
+    validate_new_site_password_with_confirm(body.password, body.password_confirm)
     pwd_hash = await run_in_threadpool(hash_password, body.password)
     rlink: ReferralLink | None = None
     if body.referral_token:
@@ -206,8 +211,7 @@ async def change_account_password(
     cur_ok = await run_in_threadpool(verify_password, body.current_password, user.password_hash)
     if not cur_ok:
         raise ForbiddenError("Неверный текущий пароль")
-    if len(body.new_password.encode("utf-8")) > 72:
-        raise BadRequestError("Пароль слишком длинный (не более 72 байт в UTF-8)")
+    validate_new_site_password(body.new_password)
     same = await run_in_threadpool(verify_password, body.new_password, user.password_hash)
     if same:
         raise BadRequestError("Новый пароль совпадает с текущим")

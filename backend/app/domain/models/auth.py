@@ -108,7 +108,16 @@ class TelegramSubscriptionOpenClientsResponse(BaseModel):
 
 class AccountRegisterBody(BaseModel):
     email: EmailStr = Field(max_length=320)
-    password: str = Field(min_length=8, max_length=72, description="До 72 байт (ограничение bcrypt)")
+    password: str = Field(
+        min_length=1,
+        max_length=72,
+        description="До 72 байт UTF-8 (ограничение bcrypt); не короче 8 символов.",
+    )
+    password_confirm: str = Field(
+        ...,
+        max_length=72,
+        description="Должен совпадать с password (как при регистрации на сайте).",
+    )
     referral_token: str | None = Field(
         default=None,
         max_length=64,
@@ -373,6 +382,14 @@ class TelegramSiteLinkCompleteBody(BaseModel):
         description=(
             "Для первого сохранения email на Telegram-аккаунте — не короче 8 символов (проверка в endpoint). "
             "При объединении с уже существующим email — любой действующий пароль от этого аккаунта (до 72 байт bcrypt)."
+        ),
+    )
+    password_confirm: str | None = Field(
+        default=None,
+        max_length=72,
+        description=(
+            "Обязателен при привязке нового email: должен совпадать с password "
+            "(та же проверка, что при регистрации на сайте)."
         ),
     )
 
