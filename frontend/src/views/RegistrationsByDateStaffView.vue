@@ -126,6 +126,9 @@ const chartEventMarkers = computed(() =>
  * @typedef {{
  *   stats_date: string
  *   payments_count: number
+ *   payments_first_count: number
+ *   payments_repeat_count: number
+ *   subscription_expiring_has_payment_count: number
  *   subscription_expiring_total_count: number
  *   subscription_expiring_active_today_count: number
  *   subscription_expiring_active_on_day_count: number
@@ -168,7 +171,7 @@ const payExpLabels = computed(() =>
 )
 
 const payExpAriaLabel =
-  'По дням МСК: оплаты и окончания подписки (без трафика, с трафиком, активные в день окончания, активные сегодня)'
+  'По дням МСК: оплаты (первая, повторная), окончания подписки (без трафика, с трафиком, с оплатой, активные в день окончания, активные сегодня)'
 
 /** Нижний слой стека → верхний (как на странице «Финансы»). */
 const payExpDatasets = computed(() => {
@@ -176,9 +179,16 @@ const payExpDatasets = computed(() => {
   const { borderRadius, maxBarThickness } = PAY_EXP_BAR_STYLE
   return [
     {
-      label: 'Оплаты',
-      data: rows.map((r) => Number(r.payments_count) || 0),
+      label: 'Оплаты: первая',
+      data: rows.map((r) => Number(r.payments_first_count) || 0),
       rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.payment]),
+      borderRadius,
+      maxBarThickness,
+    },
+    {
+      label: 'Оплаты: повторная',
+      data: rows.map((r) => Number(r.payments_repeat_count) || 0),
+      rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.persistent]),
       borderRadius,
       maxBarThickness,
     },
@@ -197,6 +207,13 @@ const payExpDatasets = computed(() => {
       label: 'Окончание: с трафиком',
       data: rows.map((r) => Number(r.subscription_expiring_has_traffic_count) || 0),
       rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.traffic]),
+      borderRadius,
+      maxBarThickness,
+    },
+    {
+      label: 'Окончание: с оплатой',
+      data: rows.map((r) => Number(r.subscription_expiring_has_payment_count) || 0),
+      rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.subscription]),
       borderRadius,
       maxBarThickness,
     },

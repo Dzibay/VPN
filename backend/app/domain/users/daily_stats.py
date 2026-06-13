@@ -197,6 +197,53 @@ async def daily_payments_expiry_stats(
     pay_rows = (await session.execute(pay_stmt)).all()
     pay_by: dict[date, int] = {row[0]: int(row[1] or 0) for row in pay_rows if row[0] is not None}
 
+    pay_split_stmt = text(
+        """
+        WITH pay AS (
+            SELECT
+                (p.created_at AT TIME ZONE 'Europe/Moscow')::date AS d,
+                ROW_NUMBER() OVER (
+                    PARTITION BY p.user_id ORDER BY p.created_at ASC, p.id ASC
+                ) AS payment_num
+            FROM payments p
+            INNER JOIN users u ON u.id = p.user_id
+            WHERE u.registered_at IS NOT NULL
+              AND u.subscription_until IS NOT NULL
+        )
+        SELECT
+            d,
+            COUNT(*) FILTER (WHERE payment_num = 1)::bigint AS first_n,
+            COUNT(*) FILTER (WHERE payment_num > 1)::bigint AS repeat_n
+        FROM pay
+        GROUP BY d
+        """,
+    )
+    pay_split_rows = (await session.execute(pay_split_stmt)).all()
+    pay_first_by: dict[date, int] = {
+        row[0]: int(row[1] or 0) for row in pay_split_rows if row[0] is not None
+    }
+    pay_repeat_by: dict[date, int] = {
+        row[0]: int(row[2] or 0) for row in pay_split_rows if row[0] is not None
+    }
+
+    paid_uids_stmt = text(
+        """
+        SELECT DISTINCT p.user_id
+        FROM payments p
+        INNER JOIN users u ON u.id = p.user_id
+        WHERE u.registered_at IS NOT NULL
+          AND u.subscription_until IS NOT NULL
+        """,
+    )
+    paid_uids = {
+        int(row[0])
+        for row in (await session.execute(paid_uids_stmt)).all()
+        if row[0] is not None
+    }
+    expiring_paid_by: dict[date, int] = defaultdict(int)
+    for su_day, uids in by_su.items():
+        expiring_paid_by[su_day] = sum(1 for uid in uids if uid in paid_uids)
+
     by_user = await fetch_user_traffic_series(session, eligible_users_only=True)
 
     user_flags: dict[int, tuple[bool, frozenset[date]]] = {}
@@ -241,11 +288,17 @@ async def daily_payments_expiry_stats(
         counts = bucket_by_day.get(d)
         t, s, o, g = tuple(counts) if counts else (0, 0, 0, 0)
         pay_n = int(pay_by.get(d, 0) or 0)
+        pay_first_n = int(pay_first_by.get(d, 0) or 0)
+        pay_repeat_n = int(pay_repeat_by.get(d, 0) or 0)
+        expiring_paid_n = int(expiring_paid_by.get(d, 0) or 0)
         tot_e = t + s + o + g
         out.append(
             DailyPaymentsExpiryStatsRow(
                 stats_date=d,
                 payments_count=pay_n,
+                payments_first_count=pay_first_n,
+                payments_repeat_count=pay_repeat_n,
+                subscription_expiring_has_payment_count=expiring_paid_n,
                 subscription_expiring_total_count=tot_e,
                 subscription_expiring_active_today_count=t,
                 subscription_expiring_active_on_day_count=s,

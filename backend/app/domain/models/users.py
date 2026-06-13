@@ -194,6 +194,18 @@ class DailyPaymentsExpiryStatsRow(BaseModel):
 
     stats_date: date
     payments_count: int = Field(ge=0, description="Число строк payments за этот календарный день Europe/Moscow")
+    payments_first_count: int = Field(
+        ge=0,
+        description="Оплаты за день, которые являются первой оплатой пользователя (по created_at, id)",
+    )
+    payments_repeat_count: int = Field(
+        ge=0,
+        description="Оплаты за день от пользователей с хотя бы одной более ранней оплатой",
+    )
+    subscription_expiring_has_payment_count: int = Field(
+        ge=0,
+        description="Пользователи с subscription_until = этот день МСК и хотя бы одной оплатой когда-либо",
+    )
     subscription_expiring_total_count: int = Field(
         ge=0,
         description="Пользователи с subscription_until = этот день по Москве (сумма четырёх групп ниже)",
@@ -228,7 +240,12 @@ class DailyPaymentsExpiryStatsRow(BaseModel):
 
 class DailyPaymentsExpiryStatsResponse(BaseModel):
     rows: list[DailyPaymentsExpiryStatsRow] = Field(
-        description="Дни по возрастанию stats_date (МСК); при month=YYYY-MM — все дни месяца по Москве; сумма четырёх групп окончания = subscription_expiring_total_count",
+        description=(
+            "Дни по возрастанию stats_date (МСК); при month=YYYY-MM — все дни месяца по Москве; "
+            "payments_first_count + payments_repeat_count = payments_count; "
+            "сумма четырёх групп трафика окончания = subscription_expiring_total_count; "
+            "subscription_expiring_has_payment_count — подмножество истекающих с оплатой"
+        ),
     )
 
 
