@@ -1,7 +1,7 @@
 <script setup>
 /**
  * Общий столбчатый Chart.js: одинаковая высота/обёртка, как на странице «Финансы».
- * @typedef {{ label: string; data: number[]; rgb?: [number, number, number]; backgroundColor?: string; borderColor?: string; borderRadius?: number; maxBarThickness?: number; borderWidth?: number }} BarDatasetInput
+ * @typedef {{ label: string; data: number[]; rgb?: [number, number, number]; backgroundColor?: string; borderColor?: string; borderRadius?: number; maxBarThickness?: number; borderWidth?: number; stack?: string }} BarDatasetInput
  */
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import Chart from '../utils/chartSetup.js'
@@ -24,6 +24,8 @@ const props = defineProps({
   datasets: { type: Array, default: () => [] },
   /** Вертикальные отметки на категориальной оси (плагин staffChartMarkers). */
   xMarkers: { type: Array, default: () => [] },
+  /** Подписи над вершиной stack (плагин barStackTopLabels). */
+  stackTopLabels: { type: Array, default: () => [] },
   /** «finance» — оси/легенда/плотность как на странице «Финансы». */
   preset: { type: String, default: '' },
   stacked: { type: Boolean, default: false },
@@ -131,6 +133,7 @@ function drawChart() {
       maxBarThickness: ds.maxBarThickness ?? defaultMaxThick,
       categoryPercentage: catPct,
       barPercentage: barPct,
+      ...(ds.stack ? { stack: ds.stack } : {}),
     }
     if (ds.backgroundColor) {
       return {
@@ -272,6 +275,9 @@ function drawChart() {
       staffChartMarkers: {
         markers: Array.isArray(props.xMarkers) ? [...props.xMarkers] : [],
       },
+      barStackTopLabels: {
+        items: Array.isArray(props.stackTopLabels) ? [...props.stackTopLabels] : [],
+      },
     },
     scales: {
       [categoryAxisId]: {
@@ -327,6 +333,7 @@ watch(
     props.labels,
     props.datasets,
     props.xMarkers,
+    props.stackTopLabels,
     props.preset,
     props.stacked,
     props.indexAxis,

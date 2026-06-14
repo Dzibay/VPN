@@ -171,15 +171,29 @@ const payExpLabels = computed(() =>
 )
 
 const payExpAriaLabel =
-  'По дням МСК: оплаты (первая, повторная), окончания подписки (без трафика, с трафиком, с оплатой, активные в день окончания, активные сегодня)'
+  'По дням МСК: два столбца — оплаты (первая и повторная) и окончания подписки (без трафика, с трафиком, активные в день окончания, активные сегодня)'
 
-/** Нижний слой стека → верхний (как на странице «Финансы»). */
+const payExpHint =
+  'В каждом дне два столбца: слева оплаты, справа окончания подписки. Над правым столбцом — число окончаний у пользователей с оплатой когда-либо (подмножество, не отдельный слой).'
+
+const payExpStackTopLabels = computed(() => [
+  {
+    stack: 'exp',
+    values: payExpRows.value.map(
+      (r) => Number(r.subscription_expiring_has_payment_count) || 0,
+    ),
+    color: rgba(chartSeriesRgb.subscription, 0.95),
+  },
+])
+
+/** Нижний слой стека → верхний. Два stack: pay | exp — без суммирования разных метрик в один столбец. */
 const payExpDatasets = computed(() => {
   const rows = payExpRows.value
   const { borderRadius, maxBarThickness } = PAY_EXP_BAR_STYLE
   return [
     {
       label: 'Оплаты: первая',
+      stack: 'pay',
       data: rows.map((r) => Number(r.payments_first_count) || 0),
       rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.payment]),
       borderRadius,
@@ -187,6 +201,7 @@ const payExpDatasets = computed(() => {
     },
     {
       label: 'Оплаты: повторная',
+      stack: 'pay',
       data: rows.map((r) => Number(r.payments_repeat_count) || 0),
       rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.persistent]),
       borderRadius,
@@ -194,6 +209,7 @@ const payExpDatasets = computed(() => {
     },
     {
       label: 'Окончание: без трафика',
+      stack: 'exp',
       data: rows.map((r) => Number(r.subscription_expiring_no_traffic_count) || 0),
       backgroundColor: rgba(chartSeriesRgb.expiryGray, 0.45),
       borderColor: rgba(chartSeriesRgb.expiryGray, 0.68),
@@ -205,20 +221,15 @@ const payExpDatasets = computed(() => {
     },
     {
       label: 'Окончание: с трафиком',
+      stack: 'exp',
       data: rows.map((r) => Number(r.subscription_expiring_has_traffic_count) || 0),
       rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.traffic]),
       borderRadius,
       maxBarThickness,
     },
     {
-      label: 'Окончание: с оплатой',
-      data: rows.map((r) => Number(r.subscription_expiring_has_payment_count) || 0),
-      rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.subscription]),
-      borderRadius,
-      maxBarThickness,
-    },
-    {
       label: 'Окончание: активные в день окончания',
+      stack: 'exp',
       data: rows.map((r) => Number(r.subscription_expiring_active_on_day_count) || 0),
       rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.active]),
       borderRadius,
@@ -226,6 +237,7 @@ const payExpDatasets = computed(() => {
     },
     {
       label: 'Окончание: активные сегодня (МСК)',
+      stack: 'exp',
       data: rows.map((r) => Number(r.subscription_expiring_active_today_count) || 0),
       rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.activePay]),
       borderRadius,
@@ -238,14 +250,15 @@ const payExpDatasets = computed(() => {
 function payExpTooltipFooter(items) {
   const first = items?.[0]
   if (!first?.chart) return ''
-  const chart = first.chart
   const idx = first.dataIndex
-  let sum = 0
-  for (const ds of chart.data.datasets) {
-    const v = Number(ds.data[idx])
-    if (Number.isFinite(v)) sum += v
-  }
-  return `Всего по столбцу: ${sum.toLocaleString('ru-RU')}`
+  const row = payExpRows.value[idx]
+  if (!row) return ''
+  const payTotal = Number(row.payments_count) || 0
+  const expTotal = Number(row.subscription_expiring_total_count) || 0
+  return [
+    `Оплаты за день: ${payTotal.toLocaleString('ru-RU')}`,
+    `Окончания подписки: ${expTotal.toLocaleString('ru-RU')}`,
+  ]
 }
 
 /** @param {import('chart.js').TooltipItem<'bar'>} item */
@@ -486,10 +499,11 @@ watch(payExpMonth, () => {
         :has-data="payExpRows.length > 0"
         title="Оплаты и окончания подписки"
         unit-label="МСК"
-        hint=""
+        :hint="payExpHint"
         :labels="payExpLabels"
         :datasets="payExpDatasets"
         :x-markers="payExpXMarkers"
+        :stack-top-labels="payExpStackTopLabels"
         stacked
         :get-tooltip-footer="payExpTooltipFooter"
         :tooltip-filter="payExpTooltipFilter"

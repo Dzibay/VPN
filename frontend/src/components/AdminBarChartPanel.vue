@@ -19,6 +19,8 @@ defineProps({
   datasets: { type: Array, default: () => [] },
   /** Вертикальные отметки на оси X (плагин staffChartMarkers). */
   xMarkers: { type: Array, default: () => [] },
+  /** Подписи над вершиной stack (плагин barStackTopLabels). */
+  stackTopLabels: { type: Array, default: () => [] },
   yTitle: { type: String, default: '' },
   yGrace: { type: String, default: '8%' },
   stacked: { type: Boolean, default: false },
@@ -52,6 +54,7 @@ defineProps({
       :labels="labels"
       :datasets="datasets"
       :x-markers="xMarkers"
+      :stack-top-labels="stackTopLabels"
       :value-axis-title="yTitle"
       :y-grace="yGrace"
       :stacked="stacked"

@@ -26,6 +26,7 @@ import {
 } from 'chart.js'
 
 import { staffChartMarkersPlugin } from './chartStaffMarkersPlugin.js'
+import { barStackTopLabelsPlugin } from './chartBarStackTopLabelsPlugin.js'
 
 let registered = false
 
@@ -46,6 +47,7 @@ function registerCharts() {
     Legend,
     Title,
     staffChartMarkersPlugin,
+    barStackTopLabelsPlugin,
   )
   registered = true
 }
