@@ -12,10 +12,10 @@ from sqlalchemy.orm import InstrumentedAttribute
 from app.infrastructure.persistence.models.user import User
 
 
-def user_counts_in_admin_stats(
+def user_identity_confirmed_sql(
     user: type[User] | InstrumentedAttribute = User,
 ) -> ColumnElement[bool]:
-    """SQL-условие: пользователь входит в сводную статистику админки."""
+    """Telegram привязан или email подтверждён (общий критерий «реального» аккаунта)."""
     return or_(
         user.telegram_id.is_not(None),
         and_(
@@ -24,6 +24,13 @@ def user_counts_in_admin_stats(
             user.email_verified_at.is_not(None),
         ),
     )
+
+
+def user_counts_in_admin_stats(
+    user: type[User] | InstrumentedAttribute = User,
+) -> ColumnElement[bool]:
+    """SQL-условие: пользователь входит в сводную статистику админки."""
+    return user_identity_confirmed_sql(user)
 
 
 def user_unverified_email_without_telegram(

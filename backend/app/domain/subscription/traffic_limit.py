@@ -8,7 +8,8 @@
 1. ``collect_xray_user_traffic_all_servers`` обновляет ``user_server_traffic``.
 2. ``enforce_traffic_limits_after_collect`` находит превысивших, ставит ``sync_xray_clients_all_servers``,
    создаёт ``notify_traffic_low`` / ``notify_traffic_over`` (см. ``traffic_notify_jobs``).
-3. Список клиентов Xray — ``subscription_active_sql()`` (календарь + трафик < лимита или лимит NULL).
+3. Список клиентов Xray — ``subscription_active_sql()`` и ``user_identity_confirmed_sql()``
+   (Telegram или подтверждённый email).
 """
 
 from __future__ import annotations

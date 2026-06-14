@@ -1,15 +1,17 @@
 """
-Список клиентов VLESS для Xray: активные подписки + fallback на UUID узла.
+Список клиентов VLESS для Xray: активные подписки с подтверждённой идентичностью
+(Telegram или verified email) + fallback на UUID узла.
 """
 
 from __future__ import annotations
 
 import base64
 import json
-from sqlalchemy import Select, select
+from sqlalchemy import Select, and_, select
 from sqlalchemy.orm import Session
 
 from app.domain.subscription.validity import subscription_active_sql
+from app.domain.users.stats_qualification import user_identity_confirmed_sql
 from app.infrastructure.persistence.models.server import Server
 from app.infrastructure.persistence.models.user import User
 
@@ -17,7 +19,12 @@ from app.infrastructure.persistence.models.user import User
 def active_subscription_users(session: Session) -> list[User]:
     stmt: Select[User] = (
         select(User)
-        .where(subscription_active_sql())
+        .where(
+            and_(
+                subscription_active_sql(),
+                user_identity_confirmed_sql(),
+            ),
+        )
         .order_by(User.id.asc())
     )
     return list(session.scalars(stmt).all())

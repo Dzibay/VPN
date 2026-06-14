@@ -61,7 +61,8 @@ async def register(
     background_tasks: BackgroundTasks,
 ) -> RegisterAuthResponse:
     resp = await register_with_email(session, body, settings, get_redis())
-    background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
+    if resp.status == "ok":
+        background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return resp
 
 
@@ -73,9 +74,12 @@ async def register(
 )
 async def verify_email_ep(
     session: SessionDep,
+    background_tasks: BackgroundTasks,
     token: str = Query(..., min_length=1, max_length=96, description="Токен из письма"),
 ) -> TokenResponse:
-    return await verify_email_by_token(session, token, get_redis(), settings)
+    resp = await verify_email_by_token(session, token, get_redis(), settings)
+    background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
+    return resp
 
 
 @router.post(
@@ -145,5 +149,6 @@ async def telegram_site_link_complete_ep(
     background_tasks: BackgroundTasks,
 ) -> RegisterAuthResponse:
     resp = await telegram_site_link_complete(session, body, get_redis(), settings)
-    background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
+    if resp.status == "ok":
+        background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return resp
