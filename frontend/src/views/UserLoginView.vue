@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { fetchJson } from '../api/client.js'
+import { normalizeEmailInput } from '../auth/credentialsValidation.js'
 import { setSession } from '../auth/session.js'
 import SitePageLayout from '../components/SitePageLayout.vue'
 
@@ -28,7 +29,7 @@ function isEmailNotVerifiedError(e) {
 }
 
 async function resendVerification() {
-  const mail = email.value.trim()
+  const mail = normalizeEmailInput(email.value)
   if (!mail) return
   resending.value = true
   resendError.value = null
@@ -56,7 +57,7 @@ async function submit() {
     const data = await fetchJson('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({
-        email: email.value.trim(),
+        email: normalizeEmailInput(email.value),
         password: password.value,
       }),
     })

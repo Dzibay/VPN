@@ -15,8 +15,27 @@ export const CREDENTIALS_ERRORS = {
   emailDomainUntrusted: UNTRUSTED_EMAIL_DOMAIN_ERROR,
 }
 
+const GMAIL_DOMAINS = new Set(['gmail.com', 'googlemail.com'])
+
+function canonicalizeGmailLocalPart(local) {
+  const plusIdx = local.indexOf('+')
+  const base = plusIdx === -1 ? local : local.slice(0, plusIdx)
+  return base.replace(/\./g, '')
+}
+
+/** trim + lower; для Gmail/Googlemail — без «.» в local part и без +alias. */
 export function normalizeEmailInput(value) {
-  return typeof value === 'string' ? value.trim() : ''
+  if (typeof value !== 'string') return ''
+  const normalized = value.trim().toLowerCase()
+  const at = normalized.lastIndexOf('@')
+  if (at <= 0) return normalized
+  let local = normalized.slice(0, at)
+  let domain = normalized.slice(at + 1)
+  if (GMAIL_DOMAINS.has(domain)) {
+    local = canonicalizeGmailLocalPart(local)
+    domain = 'gmail.com'
+  }
+  return `${local}@${domain}`
 }
 
 export function validateEmailInput(value) {
