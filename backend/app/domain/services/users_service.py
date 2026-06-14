@@ -271,6 +271,7 @@ async def patch_staff_user(session: AsyncSession, user_id: int, body: UserUpdate
     в админку требует пароль на сайте.
     """
     from app.constants import REFERRAL_BONUS_POLICY_FIXED_FIRST_PAYMENT_INSTANT
+    from app.domain.balance.money import rub_to_kopecks
     from app.domain.referrals.referral_bonus_policy import normalize_referral_bonus_policy
     from app.domain.referrals.task_bonus_days import (
         apply_pending_referral_bonus_days_to_subscription,
@@ -296,6 +297,12 @@ async def patch_staff_user(session: AsyncSession, user_id: int, body: UserUpdate
             and old_policy != REFERRAL_BONUS_POLICY_FIXED_FIRST_PAYMENT_INSTANT
         )
         data["referral_bonus_policy"] = new_policy
+    if "referral_fixed_bonus_rub" in data:
+        rub = data.pop("referral_fixed_bonus_rub")
+        if rub is None:
+            user.referral_fixed_bonus_kopecks = None
+        else:
+            user.referral_fixed_bonus_kopecks = rub_to_kopecks(int(rub))
     for key, value in data.items():
         setattr(user, key, value)
     if policy_transition_to_instant:

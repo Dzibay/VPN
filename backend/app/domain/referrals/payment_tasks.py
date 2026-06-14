@@ -6,11 +6,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
+from app.constants import USER_BALANCE_LEDGER_KIND_REFERRAL_FIRST_PAYMENT
+from app.domain.balance.ledger import credit_user_balance, owner_already_credited_referral_balance_for_referee
 from app.domain.referrals.referral_bonus_policy import (
+    compute_referral_balance_bonus_kopecks_for_owner,
     compute_referral_bonus_days_for_owner,
     normalize_referral_bonus_policy,
     owner_already_rewarded_for_referee_payment,
     referral_bonus_applies_immediately,
+    referral_bonus_policy_is_balance,
 )
 from app.domain.referrals.repository import increment_referral_counter
 from app.domain.tasks.eligibility import async_user_has_telegram_id
@@ -26,6 +30,7 @@ async def apply_referral_bonus_on_payment(
     settings: Settings,
     referee_user_id: int,
     paid_months: int,
+    referee_payment_id: int | None = None,
 ) -> int | None:
     """После оплаты реферируемым: ``payments_count += 1`` и задача ``notify_ref_pay``.
 
@@ -34,9 +39,9 @@ async def apply_referral_bonus_on_payment(
     1. Если у покупателя нет ``users.referral_link_id`` — ничего не делаем.
     2. Иначе всегда инкрементируем ``referral_links.payments_count`` (учёт воронки).
     3. Для ссылок с ``owner_kind='user'`` и владельцем ≠ покупатель:
-       бонусные дни зависят от ``users.referral_bonus_policy`` владельца (см.
-       :func:`compute_referral_bonus_days_for_owner`); при ``bonus_days > 0`` —
-       задача ``notify_ref_pay``; при ``bonus_days == 0`` — задача не создаётся.
+       бонус зависит от ``users.referral_bonus_policy`` владельца (см.
+       :func:`compute_referral_bonus_days_for_owner` и
+       :func:`compute_referral_balance_bonus_kopecks_for_owner`).
 
     Политика ``default``: бонус = ``paid_months × REFERRAL_BONUS_DAYS_PER_PAID_MONTH``,
     ``subscription_until`` владельца здесь НЕ продлевается — дни копятся до его оплаты.
@@ -44,7 +49,10 @@ async def apply_referral_bonus_on_payment(
     Политика ``fixed_first_payment_instant``: фиксированные дни только при первой
     оплате каждого реферируемого; ``subscription_until`` продлевается сразу.
 
-    Возвращает фактически зафиксированные бонусные дни (или ``None``, если задача не создана).
+    Политика ``fixed_first_payment_balance``: фиксированная сумма на ``users.balance_kopecks``
+    только при первой оплате каждого реферируемого; запись в ``user_balance_ledger``.
+
+    Возвращает фактически зафиксированные бонусные дни (или ``None``, если дни не начислялись).
     """
 
     user_stmt = select(User).where(User.id == int(referee_user_id)).limit(1)
@@ -76,6 +84,18 @@ async def apply_referral_bonus_on_payment(
         owner_user_id=owner_id,
         referee_user_id=int(referee_user_id),
     )
+
+    if referral_bonus_policy_is_balance(policy):
+        return await _apply_referral_balance_bonus_on_payment(
+            session,
+            settings=settings,
+            owner=owner,
+            referee_user_id=int(referee_user_id),
+            referee_payment_id=referee_payment_id,
+            policy=policy,
+            is_first_referee_payment=is_first_referee_payment,
+        )
+
     bonus_days = compute_referral_bonus_days_for_owner(
         policy=policy,
         paid_months=int(paid_months),
@@ -110,3 +130,53 @@ async def apply_referral_bonus_on_payment(
         ),
     )
     return bonus_days
+
+
+async def _apply_referral_balance_bonus_on_payment(
+    session: AsyncSession,
+    *,
+    settings: Settings,
+    owner: User,
+    referee_user_id: int,
+    referee_payment_id: int | None,
+    policy: str,
+    is_first_referee_payment: bool,
+) -> None:
+    if not is_first_referee_payment:
+        return None
+    if await owner_already_credited_referral_balance_for_referee(
+        session,
+        owner_user_id=int(owner.id),
+        referee_user_id=referee_user_id,
+    ):
+        return None
+
+    amount_kopecks = compute_referral_balance_bonus_kopecks_for_owner(
+        policy=policy,
+        owner=owner,
+        settings=settings,
+        is_first_referee_payment=True,
+    )
+    if amount_kopecks <= 0:
+        return None
+
+    task = Task(
+        task_type=NOTIFY_REF_PAY,
+        user_id=int(owner.id),
+        referee_id=referee_user_id,
+        bonus_amount_kopecks=amount_kopecks,
+        referral_bonus_applied=True,
+    )
+    session.add(task)
+    await session.flush()
+
+    await credit_user_balance(
+        session,
+        user=owner,
+        amount_kopecks=amount_kopecks,
+        kind=USER_BALANCE_LEDGER_KIND_REFERRAL_FIRST_PAYMENT,
+        referee_id=referee_user_id,
+        referee_payment_id=referee_payment_id,
+        task_id=int(task.id),
+    )
+    return None

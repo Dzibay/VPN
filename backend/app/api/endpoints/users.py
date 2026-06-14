@@ -13,6 +13,7 @@ from app.core.dependencies import (
 )
 from app.core.exceptions import ForbiddenError
 from app.domain.models.server_traffic import UserTrafficByDayRow, UserTrafficByServersBundle
+from app.domain.models.user_balance import UserBalanceLedgerListResponse
 from app.domain.models.users import (
     DailyPaymentsExpiryStatsResponse,
     ExtendActiveSubscriptionsBody,
@@ -41,6 +42,7 @@ from app.domain.services.users_service import (
     users_count,
 )
 from app.domain.users.daily_stats import daily_payments_expiry_stats, users_daily_stats
+from app.domain.users.staff_balance_ledger import staff_user_balance_ledger
 from app.domain.users.traffic_breakdown import (
     user_traffic_by_servers_bundle,
     user_traffic_cumulative_by_day_rows,
@@ -280,6 +282,26 @@ async def get_staff_user(
 
 
 @router.get(
+    "/{user_id}/balance-ledger",
+    response_model=UserBalanceLedgerListResponse,
+    dependencies=[Depends(require_referrals_staff)],
+    summary="Журнал операций баланса пользователя (начисления реферальных бонусов и др.)",
+)
+async def user_balance_ledger_ep(
+    user_id: int,
+    session: ReadonlySessionDep,
+    limit: Annotated[int, Query(ge=1, le=500)] = 200,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> UserBalanceLedgerListResponse:
+    return await staff_user_balance_ledger(
+        session,
+        user_id=user_id,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
     "/{user_id}/traffic-by-server",
     response_model=UserTrafficByServersBundle,
     dependencies=[Depends(require_referrals_staff)],
@@ -323,7 +345,7 @@ async def delete_user(
 
 @router.patch(
     "/{user_id}",
-    response_model=UserRead,
+    response_model=UserListItem,
     dependencies=[Depends(require_referrals_staff)],
     summary=(
         "Частичное обновление пользователя и синхронизация Xray на узлах; "
@@ -336,13 +358,14 @@ async def patch_user(
     session: SessionDep,
     background_tasks: BackgroundTasks,
     list_mode: Annotated[StaffUserListMode, Depends(require_staff_user_list_access)],
-) -> User:
+) -> UserListItem:
     if list_mode == "manager":
         extra = set(body.model_dump(exclude_unset=True)) - {"traffic_limit_bytes"}
         if extra:
             raise ForbiddenError(
                 detail="Менеджер может изменять только лимит трафика (traffic_limit_bytes)",
             )
-    user = await patch_staff_user(session, user_id, body)
+    await patch_staff_user(session, user_id, body)
     background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
-    return user
+    show_secrets = list_mode in ("open", "admin")
+    return await staff_get_user_list_item(session, user_id, show_secrets=show_secrets)

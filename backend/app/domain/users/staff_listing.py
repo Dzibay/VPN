@@ -22,6 +22,7 @@ from app.domain.models.users import (
 )
 from app.domain.referrals.referral_bonus_policy import normalize_referral_bonus_policy
 from app.domain.referrals.repository import get_user_owned_referral_link
+from app.domain.users.staff_balance_fields import staff_user_balance_fields
 from app.domain.subscription.devices import list_subscription_connection_records_for_users
 from app.domain.user_traffic import (
     user_server_traffic_latest_subquery,
@@ -240,6 +241,7 @@ async def staff_get_user_list_item(
             ReferralBonusPolicy,
             normalize_referral_bonus_policy(user.referral_bonus_policy),
         ),
+        **staff_user_balance_fields(user),
         token=(user.token if show_secrets else None),
         vless_uuid=(user.vless_uuid if show_secrets else None),
     )
@@ -309,6 +311,7 @@ async def _staff_user_list_items(
                     ReferralBonusPolicy,
                     normalize_referral_bonus_policy(user.referral_bonus_policy),
                 ),
+                **staff_user_balance_fields(user),
                 token=(user.token if show_secrets else None),
                 vless_uuid=(user.vless_uuid if show_secrets else None),
             ),

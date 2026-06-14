@@ -1,7 +1,8 @@
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 StatsGranularity = Literal["day", "hour"]
 
@@ -9,7 +10,11 @@ from app.constants import BIGINT_MAX
 from app.core.time import ensure_utc
 from app.domain.models.auth import SubscriptionConnectionItem
 
-ReferralBonusPolicy = Literal["default", "fixed_first_payment_instant"]
+ReferralBonusPolicy = Literal[
+    "default",
+    "fixed_first_payment_instant",
+    "fixed_first_payment_balance",
+]
 
 
 class UsersCountResponse(BaseModel):
@@ -359,9 +364,50 @@ class UserRead(BaseModel):
         description=(
             "Условия начисления реферальных бонусов: default — месяцы × глобальный коэффициент, "
             "активация при оплате реферера; fixed_first_payment_instant — +20 дней при первой "
-            "оплате каждого друга, сразу на subscription_until"
+            "оплате каждого друга, сразу на subscription_until; fixed_first_payment_balance — "
+            "фиксированная сумма на баланс при первой оплате каждого друга"
         ),
     )
+    balance_rub: Decimal = Field(
+        ge=0,
+        description="Накопленный баланс пользователя (руб.), из users.balance_kopecks",
+    )
+    referral_fixed_bonus_rub: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Персональная сумма реферального бонуса на баланс (руб.); null — глобальный дефолт "
+            "из REFERRAL_FIXED_FIRST_PAYMENT_BONUS_RUB"
+        ),
+    )
+    referral_fixed_bonus_rub_default: int = Field(
+        ge=1,
+        description="Глобальный дефолт суммы реферального бонуса на баланс (руб.)",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def inject_balance_fields_from_user_orm(cls, data: object) -> object:
+        from app.domain.users.staff_balance_fields import staff_user_balance_fields
+        from app.infrastructure.persistence.models.user import User
+
+        if isinstance(data, User):
+            payload = {
+                "id": data.id,
+                "registered_at": data.registered_at,
+                "telegram_id": data.telegram_id,
+                "telegram_properties": data.telegram_properties,
+                "email": data.email,
+                "account_role": data.account_role,
+                "subscription_until": data.subscription_until,
+                "traffic_limit_bytes": data.traffic_limit_bytes,
+                "token": data.token,
+                "vless_uuid": data.vless_uuid,
+                "referral_bonus_policy": data.referral_bonus_policy,
+                **staff_user_balance_fields(data),
+            }
+            return payload
+        return data
 
 
 class UserListItem(BaseModel):
@@ -437,6 +483,19 @@ class UserListItem(BaseModel):
         default="default",
         description="Индивидуальные условия реферальных бонусов для этого пользователя как реферера",
     )
+    balance_rub: Decimal = Field(
+        ge=0,
+        description="Накопленный баланс пользователя (руб.)",
+    )
+    referral_fixed_bonus_rub: int | None = Field(
+        default=None,
+        ge=1,
+        description="Персональная сумма реферального бонуса на баланс (руб.); null — глобальный дефолт",
+    )
+    referral_fixed_bonus_rub_default: int = Field(
+        ge=1,
+        description="Глобальный дефолт суммы реферального бонуса на баланс (руб.)",
+    )
     token: str | None = Field(
         default=None,
         description="Токен подписки; у менеджера всегда null",
@@ -489,8 +548,17 @@ class UserUpdate(BaseModel):
     referral_bonus_policy: ReferralBonusPolicy | None = Field(
         default=None,
         description=(
-            "Условия реферальных бонусов: default | fixed_first_payment_instant; "
-            "не указывайте поле, если не меняете"
+            "Условия реферальных бонусов: default | fixed_first_payment_instant | "
+            "fixed_first_payment_balance; не указывайте поле, если не меняете"
+        ),
+    )
+    referral_fixed_bonus_rub: int | None = Field(
+        default=None,
+        ge=1,
+        le=1_000_000,
+        description=(
+            "Персональная сумма реферального бонуса на баланс (руб.); null — сбросить override "
+            "и использовать глобальный дефолт. Имеет смысл при политике fixed_first_payment_balance."
         ),
     )
 

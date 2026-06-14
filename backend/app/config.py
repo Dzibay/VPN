@@ -175,6 +175,16 @@ class Settings(BaseSettings):
             "Счётчик ``referral_links.payments_count`` инкрементится в любом случае при оплате реферируемым."
         ),
     )
+    referral_fixed_first_payment_bonus_rub: int = Field(
+        default=500,
+        ge=1,
+        le=1_000_000,
+        description=(
+            "Фиксированная сумма (руб.) на баланс реферера при первой оплате каждого приведённого друга "
+            "(политика ``fixed_first_payment_balance``). Переопределяется полем "
+            "``users.referral_fixed_bonus_kopecks``."
+        ),
+    )
     referral_links_api_key: str = Field(
         default="",
         description=(

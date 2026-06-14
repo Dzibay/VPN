@@ -15,13 +15,21 @@ CREATE TABLE IF NOT EXISTS users (
     -- Цикл с referral_links.owner_user_id: без REFERENCES, целостность на уровне приложения
     referral_link_id BIGINT,
     referral_bonus_policy TEXT NOT NULL DEFAULT 'default',
+    referral_fixed_bonus_kopecks BIGINT CHECK (
+        referral_fixed_bonus_kopecks IS NULL OR referral_fixed_bonus_kopecks >= 100
+    ),
+    balance_kopecks BIGINT NOT NULL DEFAULT 0 CHECK (balance_kopecks >= 0),
     support_seen_at TIMESTAMPTZ,
     email_verified_at TIMESTAMPTZ,
     CONSTRAINT users_token_key UNIQUE (token),
     CONSTRAINT users_vless_uuid_key UNIQUE (vless_uuid),
     CONSTRAINT users_account_role_check CHECK (account_role IN ('client', 'manager', 'admin')),
     CONSTRAINT users_referral_bonus_policy_check CHECK (
-        referral_bonus_policy IN ('default', 'fixed_first_payment_instant')
+        referral_bonus_policy IN (
+            'default',
+            'fixed_first_payment_instant',
+            'fixed_first_payment_balance'
+        )
     )
 );
 
@@ -175,6 +183,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     referee_id BIGINT REFERENCES users (id) ON DELETE SET NULL,
     bonus_days INTEGER CHECK (bonus_days IS NULL OR bonus_days >= 0),
+    bonus_amount_kopecks BIGINT CHECK (bonus_amount_kopecks IS NULL OR bonus_amount_kopecks >= 0),
     referral_bonus_applied BOOLEAN NOT NULL DEFAULT FALSE,
     early_payment_bonus_days INTEGER CHECK (early_payment_bonus_days IS NULL OR early_payment_bonus_days >= 0),
     paid_months INTEGER,
@@ -200,6 +209,28 @@ CREATE TABLE IF NOT EXISTS tasks (
     CONSTRAINT tasks_status_check CHECK (status IN ('pending', 'completed', 'failed')),
     CONSTRAINT tasks_paid_months_check CHECK (paid_months IS NULL OR paid_months >= 1)
 );
+
+CREATE TABLE IF NOT EXISTS user_balance_ledger (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    amount_kopecks BIGINT NOT NULL CHECK (amount_kopecks <> 0),
+    kind TEXT NOT NULL,
+    referee_id BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    referee_payment_id BIGINT REFERENCES payments (id) ON DELETE SET NULL,
+    task_id BIGINT REFERENCES tasks (id) ON DELETE SET NULL,
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT user_balance_ledger_kind_check CHECK (
+        kind IN ('referral_first_payment')
+    )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_user_balance_ledger_referral_first_payment
+    ON user_balance_ledger (user_id, referee_id)
+    WHERE kind = 'referral_first_payment' AND referee_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS ix_user_balance_ledger_user_id_created_at
+    ON user_balance_ledger (user_id, created_at DESC);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_users_telegram_id ON users (telegram_id)
     WHERE telegram_id IS NOT NULL;

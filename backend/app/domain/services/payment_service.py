@@ -88,6 +88,7 @@ async def fulfill_subscription_payment(
     user: User,
     months: int,
     paid_at: datetime | None,
+    referee_payment_id: int | None = None,
 ) -> None:
     """Продление подписки, notify_payment, реферальные бонусы, снятие лимита трафика."""
     from app.domain.subscription.traffic_limit import (
@@ -134,6 +135,7 @@ async def fulfill_subscription_payment(
         settings=settings,
         referee_user_id=int(user.id),
         paid_months=months,
+        referee_payment_id=referee_payment_id,
     )
     if await clear_traffic_limit_after_payment(session, user):
         enqueue_xray_clients_sync_for_access_change()
@@ -264,6 +266,7 @@ async def create_staff_manual_payment(
         user=user,
         months=int(months),
         paid_at=paid_at,
+        referee_payment_id=int(payment.id),
     )
     await session.flush()
     log.info(
@@ -389,6 +392,7 @@ async def ingest_provider_payment(
                 user=user,
                 months=int(parsed.months),
                 paid_at=paid_at,
+                referee_payment_id=payment_id,
             )
             fulfilled = True
             skip_reason = None

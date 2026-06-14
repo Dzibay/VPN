@@ -167,8 +167,9 @@ const formRegisteredAt = ref('')
 const editingUserTgUsername = ref('')
 /** Лимит трафика в ГиБ (1024³); пусто — без лимита */
 const formTrafficLimitGib = ref('')
-/** default | fixed_first_payment_instant — условия реферальных бонусов */
+/** default | fixed_first_payment_instant | fixed_first_payment_balance */
 const formReferralBonusPolicy = ref('default')
+const formReferralFixedBonusRub = ref('')
 
 const usersSyncLoading = ref(false)
 const usersSyncError = ref(null)
@@ -619,7 +620,11 @@ function openEditUser(u) {
   formReferralBonusPolicy.value =
     u.referral_bonus_policy === 'fixed_first_payment_instant'
       ? 'fixed_first_payment_instant'
-      : 'default'
+      : u.referral_bonus_policy === 'fixed_first_payment_balance'
+        ? 'fixed_first_payment_balance'
+        : 'default'
+  formReferralFixedBonusRub.value =
+    u.referral_fixed_bonus_rub != null ? String(u.referral_fixed_bonus_rub) : ''
   modalOpen.value = true
 }
 
@@ -763,15 +768,30 @@ async function submitSaveUser() {
     }
 
     if (editingUserId.value != null) {
+      const patchBody = {
+        subscription_until: subIso,
+        account_role: formAccountRole.value,
+        registered_at: registrationDateTimeUtcOrNull(formRegisteredAt.value),
+        traffic_limit_bytes: trafficLimitBytes,
+        referral_bonus_policy: formReferralBonusPolicy.value,
+      }
+      if (formReferralBonusPolicy.value === 'fixed_first_payment_balance') {
+        const bonusRaw = String(formReferralFixedBonusRub.value ?? '').trim()
+        if (bonusRaw === '') {
+          patchBody.referral_fixed_bonus_rub = null
+        } else {
+          const bonusRub = Number.parseInt(bonusRaw, 10)
+          if (!Number.isFinite(bonusRub) || bonusRub < 1 || bonusRub > 1_000_000) {
+            createError.value =
+              'Сумма реферального бонуса: целое число от 1 до 1 000 000 или пусто (дефолт)'
+            return
+          }
+          patchBody.referral_fixed_bonus_rub = bonusRub
+        }
+      }
       await fetchJson(`/api/users/${editingUserId.value}`, {
         method: 'PATCH',
-        body: JSON.stringify({
-          subscription_until: subIso,
-          account_role: formAccountRole.value,
-          registered_at: registrationDateTimeUtcOrNull(formRegisteredAt.value),
-          traffic_limit_bytes: trafficLimitBytes,
-          referral_bonus_policy: formReferralBonusPolicy.value,
-        }),
+        body: JSON.stringify(patchBody),
       })
     } else {
       await fetchJson('/api/users', {
@@ -2299,7 +2319,37 @@ watch(formIsCascadeRuEntry, (v) => {
                 <option value="fixed_first_payment_instant">
                   +20 дней при первой оплате друга, сразу на подписку
                 </option>
+                <option value="fixed_first_payment_balance">
+                  Фикс. сумма на баланс при первой оплате друга
+                </option>
               </select>
+            </label>
+            <label
+              v-if="
+                editingUserId != null &&
+                formReferralBonusPolicy === 'fixed_first_payment_balance'
+              "
+              class="field"
+            >
+              <span>Сумма бонуса, ₽</span>
+              <input
+                v-model="formReferralFixedBonusRub"
+                type="number"
+                min="1"
+                max="1000000"
+                step="1"
+                inputmode="numeric"
+                :placeholder="
+                  String(
+                    editingUserRow?.referral_fixed_bonus_rub_default ?? 500,
+                  )
+                "
+                autocomplete="off"
+              />
+              <span class="field-hint">
+                Пусто — глобальный дефолт
+                {{ editingUserRow?.referral_fixed_bonus_rub_default ?? 500 }} ₽
+              </span>
             </label>
             <label v-if="editingUserId != null" class="field">
               <span>Лимит трафика (ГиБ)</span>

@@ -33,13 +33,19 @@ TRIBUTE_PSP_FEE_RATE = "0.10"
 
 REFERRAL_BONUS_POLICY_DEFAULT = "default"
 REFERRAL_BONUS_POLICY_FIXED_FIRST_PAYMENT_INSTANT = "fixed_first_payment_instant"
+REFERRAL_BONUS_POLICY_FIXED_FIRST_PAYMENT_BALANCE = "fixed_first_payment_balance"
 REFERRAL_BONUS_POLICIES = frozenset(
     {
         REFERRAL_BONUS_POLICY_DEFAULT,
         REFERRAL_BONUS_POLICY_FIXED_FIRST_PAYMENT_INSTANT,
+        REFERRAL_BONUS_POLICY_FIXED_FIRST_PAYMENT_BALANCE,
     },
 )
 # Фиксированный бонус (дней) при первой оплате каждого приведённого друга (политика fixed_first_payment_instant).
 REFERRAL_BONUS_FIXED_FIRST_PAYMENT_DAYS = 20
+
+# --- Баланс пользователя: виды операций в user_balance_ledger ---
+
+USER_BALANCE_LEDGER_KIND_REFERRAL_FIRST_PAYMENT = "referral_first_payment"
 
 

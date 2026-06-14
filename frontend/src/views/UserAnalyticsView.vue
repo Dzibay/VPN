@@ -66,6 +66,11 @@ const refereeUsersLoading = ref(false)
 const refereeUsersError = ref(null)
 
 /** @type {import('vue').Ref<Array<Record<string, unknown>>>} */
+const balanceLedgerItems = ref([])
+const balanceLedgerTotal = ref(0)
+const balanceLedgerError = ref(null)
+
+/** @type {import('vue').Ref<Array<Record<string, unknown>>>} */
 const paymentLedgerItems = ref([])
 const paymentLedgerTotal = ref(0)
 const paymentsLedgerError = ref(null)
@@ -169,6 +174,37 @@ const formAccountRole = ref('client')
 const formRegisteredAt = ref('')
 const formTrafficLimitGib = ref('')
 const formReferralBonusPolicy = ref('default')
+const formReferralFixedBonusRub = ref('')
+
+function formatRub(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return '0,00'
+  return n.toLocaleString('ru-RU', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
+function referralBonusPolicyLabel(profileRow) {
+  if (!profileRow) return '—'
+  const policy = profileRow.referral_bonus_policy
+  if (policy === 'fixed_first_payment_instant') {
+    return '+20 дней при первой оплате друга, сразу'
+  }
+  if (policy === 'fixed_first_payment_balance') {
+    const rub =
+      profileRow.referral_fixed_bonus_rub ??
+      profileRow.referral_fixed_bonus_rub_default ??
+      500
+    return `${rub} ₽ за первую оплату друга → баланс`
+  }
+  return 'Стандарт'
+}
+
+const profileReferralFixedBonusDefault = computed(() => {
+  const p = profile.value
+  return Number(p?.referral_fixed_bonus_rub_default) || 500
+})
 
 const TRAFFIC_GIB_BYTES = 1024 ** 3
 
@@ -285,7 +321,11 @@ function fillProfileFormFromProfile() {
   formReferralBonusPolicy.value =
     p.referral_bonus_policy === 'fixed_first_payment_instant'
       ? 'fixed_first_payment_instant'
-      : 'default'
+      : p.referral_bonus_policy === 'fixed_first_payment_balance'
+        ? 'fixed_first_payment_balance'
+        : 'default'
+  formReferralFixedBonusRub.value =
+    p.referral_fixed_bonus_rub != null ? String(p.referral_fixed_bonus_rub) : ''
 }
 
 function openProfileEdit() {
@@ -347,16 +387,31 @@ async function saveProfileEdit() {
         'Telegram ID: укажите числовой идентификатор или очистите поле'
       return
     }
+    const patchBody = {
+      telegram_id: tgId,
+      subscription_until: subIso,
+      account_role: formAccountRole.value,
+      registered_at: registrationDateTimeUtcOrNull(formRegisteredAt.value),
+      traffic_limit_bytes: trafficLimitBytes,
+      referral_bonus_policy: formReferralBonusPolicy.value,
+    }
+    if (formReferralBonusPolicy.value === 'fixed_first_payment_balance') {
+      const bonusRaw = String(formReferralFixedBonusRub.value ?? '').trim()
+      if (bonusRaw === '') {
+        patchBody.referral_fixed_bonus_rub = null
+      } else {
+        const bonusRub = Number.parseInt(bonusRaw, 10)
+        if (!Number.isFinite(bonusRub) || bonusRub < 1 || bonusRub > 1_000_000) {
+          profileEditError.value =
+            'Сумма реферального бонуса: целое число от 1 до 1 000 000 или пусто (дефолт)'
+          return
+        }
+        patchBody.referral_fixed_bonus_rub = bonusRub
+      }
+    }
     await fetchJson(`/api/users/${uid}`, {
       method: 'PATCH',
-      body: JSON.stringify({
-        telegram_id: tgId,
-        subscription_until: subIso,
-        account_role: formAccountRole.value,
-        registered_at: registrationDateTimeUtcOrNull(formRegisteredAt.value),
-        traffic_limit_bytes: trafficLimitBytes,
-        referral_bonus_policy: formReferralBonusPolicy.value,
-      }),
+      body: JSON.stringify(patchBody),
     })
     profileEditing.value = false
     await reloadProfileCard()
@@ -741,6 +796,9 @@ function resetAnalyticsPageState() {
   taskLedgerItems.value = []
   taskLedgerTotal.value = 0
   tasksLedgerError.value = null
+  balanceLedgerItems.value = []
+  balanceLedgerTotal.value = 0
+  balanceLedgerError.value = null
 }
 
 async function load() {
@@ -753,7 +811,7 @@ async function load() {
   resetAnalyticsPageState()
   try {
     const uid = userId.value
-    const [r0, r1, r2, rPay, rTasks] = await Promise.allSettled([
+    const [r0, r1, r2, rPay, rTasks, rBalance] = await Promise.allSettled([
       fetchJson(`/api/users/${uid}`),
       fetchJson(`/api/users/${uid}/traffic-by-server`),
       fetchJson(`/api/users/${uid}/traffic-by-day`),
@@ -762,6 +820,9 @@ async function load() {
       ),
       fetchJson(
         `/api/admin/tasks?limit=${LEDGER_PAGE_LIMIT}&offset=0&user_id=${uid}`,
+      ),
+      fetchJson(
+        `/api/users/${uid}/balance-ledger?limit=${LEDGER_PAGE_LIMIT}&offset=0`,
       ),
     ])
     if (r0.status === 'fulfilled') {
@@ -810,6 +871,17 @@ async function load() {
       tasksLedgerError.value =
         rTasks.reason?.message ||
         String(rTasks.reason ?? 'Ошибка загрузки задач')
+    }
+    if (rBalance.status === 'fulfilled') {
+      const d = rBalance.value
+      balanceLedgerItems.value = Array.isArray(d?.items) ? d.items : []
+      balanceLedgerTotal.value = Number(d?.total) || 0
+    } else {
+      balanceLedgerItems.value = []
+      balanceLedgerTotal.value = 0
+      balanceLedgerError.value =
+        rBalance.reason?.message ||
+        String(rBalance.reason ?? 'Ошибка загрузки журнала баланса')
     }
     if (profile.value) {
       await Promise.all([
@@ -1015,6 +1087,42 @@ onMounted(() => {
           }}</template>
         </dd>
         <template v-if="isAdmin">
+          <dt>Баланс</dt>
+          <dd class="mono balance-kv">
+            <span class="balance-kv__amount">{{
+              formatRub(profile.balance_rub ?? 0)
+            }} ₽</span>
+            <details
+              v-if="balanceLedgerItems.length"
+              class="connections-expand balance-ledger-expand"
+            >
+              <summary class="connections-expand__summary">
+                Журнал ({{ balanceLedgerTotal }})
+              </summary>
+              <ul class="connections-expand__list balance-ledger-list" role="list">
+                <li
+                  v-for="row in balanceLedgerItems"
+                  :key="row.id"
+                  class="connections-expand__item connections-expand__item--readonly"
+                >
+                  <span class="balance-ledger-list__amount mono"
+                    >+{{ formatRub(row.amount_rub) }} ₽</span
+                  >
+                  <span class="balance-ledger-list__meta muted">
+                    {{ row.kind }}
+                    <template v-if="row.referee_id != null">
+                      · реферал #{{ row.referee_id }}
+                    </template>
+                    · {{ formatDateTime(row.created_at) }}
+                  </span>
+                </li>
+              </ul>
+            </details>
+            <span
+              v-else-if="balanceLedgerError"
+              class="profile-field-hint banner-err-inline"
+            >{{ balanceLedgerError }}</span>
+          </dd>
           <dt>Реферальные бонусы</dt>
           <dd>
             <select
@@ -1029,15 +1137,36 @@ onMounted(() => {
               <option value="fixed_first_payment_instant">
                 +20 дней при первой оплате друга, сразу
               </option>
+              <option value="fixed_first_payment_balance">
+                Фикс. сумма на баланс при первой оплате друга
+              </option>
             </select>
-            <template v-else>
-              {{
-                profile.referral_bonus_policy === 'fixed_first_payment_instant'
-                  ? '+20 дней при первой оплате друга, сразу'
-                  : 'Стандарт'
-              }}
-            </template>
+            <template v-else>{{ referralBonusPolicyLabel(profile) }}</template>
           </dd>
+          <template
+            v-if="
+              profileEditing &&
+              formReferralBonusPolicy === 'fixed_first_payment_balance'
+            "
+          >
+            <dt>Сумма бонуса, ₽</dt>
+            <dd>
+              <input
+                v-model="formReferralFixedBonusRub"
+                type="number"
+                class="profile-field-input profile-field-traffic"
+                min="1"
+                max="1000000"
+                step="1"
+                inputmode="numeric"
+                :placeholder="String(profileReferralFixedBonusDefault)"
+                autocomplete="off"
+              />
+              <span class="profile-field-hint">
+                Пусто — дефолт {{ profileReferralFixedBonusDefault }} ₽
+              </span>
+            </dd>
+          </template>
         </template>
         <dt>Трафик</dt>
         <dd
@@ -2210,6 +2339,30 @@ tr.referee-row-active-today {
   color: var(--text);
   min-width: 0;
 }
+
+.balance-kv {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.balance-kv__amount {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.balance-ledger-list__amount {
+  margin-right: 0.35rem;
+}
+
+.balance-ledger-list__meta {
+  font-size: 0.85rem;
+}
+
+.banner-err-inline {
+  font-size: 0.85rem;
+}
+
 .json-pre {
   margin: 0;
   padding: 0.5rem 0.65rem;

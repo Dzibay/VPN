@@ -51,6 +51,15 @@ class User(Base):
         server_default=text("'default'"),
         default="default",
     )
+    #: Переопределение суммы реферального бонуса на баланс (копейки); NULL — глобальный дефолт из Settings.
+    referral_fixed_bonus_kopecks: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    #: Накопленный баланс пользователя (копейки); списание — отдельная задача.
+    balance_kopecks: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        server_default=text("0"),
+        default=0,
+    )
     #: Момент создания записи пользователя (регистрация / создание админом); для старых строк может быть null.
     registered_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
