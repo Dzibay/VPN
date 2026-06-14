@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.domain.tasks.delivery_channel import TASK_DELIVERY_TELEGRAM
 from app.core.time import utc_now
 from app.infrastructure.database.base import Base
 
@@ -32,6 +33,13 @@ class Task(Base):
     early_payment_bonus_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     #: Для ``notify_payment`` — число оплаченных месяцев (как в ``payments.months``).
     paid_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Куда доставлять оповещение: telegram — бот; website / email — другие потребители (ЛК, почта).
+    delivery_channel: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default=TASK_DELIVERY_TELEGRAM,
+        server_default="telegram",
+    )
     status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

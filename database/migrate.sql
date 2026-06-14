@@ -44,3 +44,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_user_balance_ledger_referral_first_payment
 
 CREATE INDEX IF NOT EXISTS ix_user_balance_ledger_user_id_created_at
     ON user_balance_ledger (user_id, created_at DESC);
+
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS delivery_channel TEXT NOT NULL DEFAULT 'telegram';
+
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_delivery_channel_check;
+
+ALTER TABLE tasks ADD CONSTRAINT tasks_delivery_channel_check CHECK (
+    delivery_channel IN ('telegram', 'website', 'email')
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_delivery_channel_pending
+    ON tasks (delivery_channel, status)
+    WHERE status = 'pending';

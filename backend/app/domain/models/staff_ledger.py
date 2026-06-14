@@ -122,6 +122,9 @@ class StaffTaskItem(BaseModel):
     bonus_days: int | None = None
     early_payment_bonus_days: int | None = None
     paid_months: int | None = None
+    delivery_channel: str = Field(
+        description="Канал доставки: telegram | website | email",
+    )
     status: str
     created_at: datetime
     done_at: datetime | None = None

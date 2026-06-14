@@ -22,6 +22,7 @@ from app.domain.models.staff_ledger import (
 )
 from app.domain.services.payment_service import create_staff_manual_payment
 from app.domain.list_sort import SortDir, order_clause
+from app.domain.tasks.delivery_channel import delivery_channel_for_user
 from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.task import Task
 from app.infrastructure.persistence.models.user import User
@@ -114,6 +115,7 @@ _STAFF_TASK_SORT_KEYS = frozenset({
     "bonus_days",
     "early_payment_bonus_days",
     "paid_months",
+    "delivery_channel",
     "status",
     "created_at",
     "done_at",
@@ -151,6 +153,7 @@ def _task_list_order_by(sort_by: str | None, sort_dir: SortDir):
         "bonus_days": Task.bonus_days,
         "early_payment_bonus_days": Task.early_payment_bonus_days,
         "paid_months": Task.paid_months,
+        "delivery_channel": Task.delivery_channel,
         "status": Task.status,
         "created_at": Task.created_at,
         "done_at": Task.done_at,
@@ -248,6 +251,7 @@ def _staff_task_item_from_orm(t: Task) -> StaffTaskItem:
             int(t.early_payment_bonus_days) if t.early_payment_bonus_days is not None else None
         ),
         paid_months=int(t.paid_months) if t.paid_months is not None else None,
+        delivery_channel=str(t.delivery_channel),
         status=str(t.status),
         created_at=t.created_at,
         done_at=t.done_at,
@@ -268,8 +272,6 @@ async def create_staff_task(
     recipient = await session.get(User, int(user_id))
     if recipient is None:
         raise LookupError("user_not_found")
-    if recipient.telegram_id is None:
-        raise LookupError("recipient_no_telegram")
     if referee_id is not None:
         if await session.scalar(select(User.id).where(User.id == referee_id)) is None:
             raise LookupError("referee_not_found")
@@ -282,6 +284,7 @@ async def create_staff_task(
         early_payment_bonus_days=early_payment_bonus_days,
         paid_months=paid_months,
         status="pending",
+        delivery_channel=delivery_channel_for_user(recipient),
     )
     session.add(task)
     await session.flush()

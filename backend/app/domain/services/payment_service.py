@@ -116,20 +116,22 @@ async def fulfill_subscription_payment(
         days=total_days,
     )
 
-    if user.telegram_id is not None:
-        session.add(
-            Task(
-                task_type="notify_payment",
-                user_id=int(user.id),
-                referee_id=None,
-                bonus_days=accumulated_bonus_days if accumulated_bonus_days > 0 else None,
-                early_payment_bonus_days=(
-                    early_payment_bonus_days if early_payment_bonus_days > 0 else None
-                ),
-                paid_months=months,
-                **({"created_at": paid_at} if paid_at is not None else {}),
+    from app.domain.tasks.delivery_channel import delivery_channel_for_user
+
+    session.add(
+        Task(
+            task_type="notify_payment",
+            user_id=int(user.id),
+            referee_id=None,
+            bonus_days=accumulated_bonus_days if accumulated_bonus_days > 0 else None,
+            early_payment_bonus_days=(
+                early_payment_bonus_days if early_payment_bonus_days > 0 else None
             ),
-        )
+            paid_months=months,
+            delivery_channel=delivery_channel_for_user(user),
+            **({"created_at": paid_at} if paid_at is not None else {}),
+        ),
+    )
     await apply_referral_bonus_on_payment(
         session,
         settings=settings,

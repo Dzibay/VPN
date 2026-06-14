@@ -13,6 +13,7 @@ from app.domain.models.telegram_notification_tasks import (
     TelegramNotificationTaskItem,
     TelegramNotificationTasksListResponse,
 )
+from app.domain.tasks.delivery_channel import TASK_DELIVERY_TELEGRAM
 from app.domain.tasks.notification_task_types import NOTIFY_PAYMENT, NOTIFICATION_TASK_TYPES
 from app.infrastructure.persistence.models.task import Task
 from app.infrastructure.persistence.models.user import User
@@ -31,6 +32,7 @@ async def list_pending_notification_tasks(
         .where(
             Task.status == "pending",
             Task.task_type.in_(NOTIFICATION_TASK_TYPES),
+            Task.delivery_channel == TASK_DELIVERY_TELEGRAM,
             ur.telegram_id.isnot(None),
         )
         .order_by(Task.created_at.asc())
@@ -106,6 +108,7 @@ async def acknowledge_notification_tasks_with_statuses(
                 Task.id.in_(ids),
                 Task.status == "pending",
                 Task.task_type.in_(NOTIFICATION_TASK_TYPES),
+                Task.delivery_channel == TASK_DELIVERY_TELEGRAM,
             )
             .values(status=status, done_at=now)
             .returning(Task.id)

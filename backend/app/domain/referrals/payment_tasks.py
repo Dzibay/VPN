@@ -17,7 +17,7 @@ from app.domain.referrals.referral_bonus_policy import (
     referral_bonus_policy_is_balance,
 )
 from app.domain.referrals.repository import increment_referral_counter
-from app.domain.tasks.eligibility import async_user_has_telegram_id
+from app.domain.tasks.delivery_channel import delivery_channel_for_user
 from app.domain.tasks.notification_task_types import NOTIFY_REF_PAY
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.task import Task
@@ -51,6 +51,9 @@ async def apply_referral_bonus_on_payment(
 
     Политика ``fixed_first_payment_balance``: фиксированная сумма на ``users.balance_kopecks``
     только при первой оплате каждого реферируемого; запись в ``user_balance_ledger``.
+
+    Задача ``notify_ref_pay`` создаётся всегда (если есть бонус); ``delivery_channel``
+    — telegram / website / email по данным реферера. В очередь бота попадают только telegram.
 
     Возвращает фактически зафиксированные бонусные дни (или ``None``, если дни не начислялись).
     """
@@ -104,8 +107,6 @@ async def apply_referral_bonus_on_payment(
     )
     if bonus_days <= 0:
         return None
-    if not await async_user_has_telegram_id(session, owner_id):
-        return None
 
     apply_immediately = referral_bonus_applies_immediately(policy)
     if apply_immediately:
@@ -127,6 +128,7 @@ async def apply_referral_bonus_on_payment(
             referee_id=int(referee_user_id),
             bonus_days=bonus_days,
             referral_bonus_applied=apply_immediately,
+            delivery_channel=delivery_channel_for_user(owner),
         ),
     )
     return bonus_days
@@ -166,6 +168,7 @@ async def _apply_referral_balance_bonus_on_payment(
         referee_id=referee_user_id,
         bonus_amount_kopecks=amount_kopecks,
         referral_bonus_applied=True,
+        delivery_channel=delivery_channel_for_user(owner),
     )
     session.add(task)
     await session.flush()

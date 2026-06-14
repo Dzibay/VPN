@@ -230,8 +230,11 @@ async def telegram_yookassa_checkout_ep(
     "/notification-tasks",
     response_model=TelegramNotificationTasksListResponse,
     dependencies=[Depends(require_telegram_bot_api_secret)],
-    summary="Невыполненные задачи оповещения (notify_ref_*, notify_payment, notify_sub_expire_*, notify_reg_1h_*, notify_traffic_*)",
-    description="С joined telegram_id получателя и реферала (если есть в users).",
+    summary="Невыполненные задачи оповещения для Telegram-бота",
+    description=(
+        "Только ``delivery_channel=telegram`` и пользователи с ``telegram_id``. "
+        "Задачи с каналом website/email обрабатываются другими потребителями (ЛК, почта)."
+    ),
 )
 async def telegram_list_notification_tasks_ep(
     session: ReadonlySessionDep,

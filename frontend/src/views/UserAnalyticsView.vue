@@ -107,6 +107,7 @@ const taskLedgerSortAccessors = {
   early_payment_bonus_days: (r) =>
     r.early_payment_bonus_days == null ? -1 : Number(r.early_payment_bonus_days),
   paid_months: (r) => (r.paid_months == null ? -1 : Number(r.paid_months)),
+  delivery_channel: (r) => String(r.delivery_channel ?? '').toLowerCase(),
   status: (r) => String(r.status ?? '').toLowerCase(),
   created_at: (r) => String(r.created_at ?? ''),
   done_at: (r) => String(r.done_at ?? ''),
@@ -216,6 +217,12 @@ const profileHasTelegramData = computed(() => {
   if (!props || typeof props !== 'object') return false
   return Object.keys(props).length > 0
 })
+
+function formatDeliveryChannel(channel) {
+  const labels = { telegram: 'Telegram', website: 'Сайт', email: 'Email' }
+  const key = String(channel ?? '').toLowerCase()
+  return labels[key] ?? channel ?? '—'
+}
 
 function formatDateTime(d) {
   return formatMskApiDateTime(d, { dateStyle: 'short', timeStyle: 'short' })
@@ -1812,6 +1819,13 @@ onMounted(() => {
                 @sort="toggleTaskLedgerSort"
               />
               <AdminSortTh
+                label="Канал"
+                column-key="delivery_channel"
+                :sort-key="taskSortKey"
+                :sort-dir="taskSortDir"
+                @sort="toggleTaskLedgerSort"
+              />
+              <AdminSortTh
                 label="Статус"
                 column-key="status"
                 :sort-key="taskSortKey"
@@ -1819,15 +1833,8 @@ onMounted(() => {
                 @sort="toggleTaskLedgerSort"
               />
               <AdminSortTh
-                label="Создана"
+                label="Даты"
                 column-key="created_at"
-                :sort-key="taskSortKey"
-                :sort-dir="taskSortDir"
-                @sort="toggleTaskLedgerSort"
-              />
-              <AdminSortTh
-                label="Завершена"
-                column-key="done_at"
                 :sort-key="taskSortKey"
                 :sort-dir="taskSortDir"
                 @sort="toggleTaskLedgerSort"
@@ -1860,13 +1867,20 @@ onMounted(() => {
               <td class="num">{{ row.bonus_days ?? '—' }}</td>
               <td class="num">{{ row.early_payment_bonus_days ?? '—' }}</td>
               <td class="num">{{ row.paid_months ?? '—' }}</td>
+              <td class="mono-cell">{{ formatDeliveryChannel(row.delivery_channel) }}</td>
               <td>
                 <span class="pill pill-mono" :title="row.status">{{
                   row.status
                 }}</span>
               </td>
-              <td class="date-cell">{{ formatRefTableDate(row.created_at) }}</td>
-              <td class="date-cell">{{ formatRefTableDate(row.done_at) }}</td>
+              <td class="date-cell task-dates-cell">
+                <span class="task-dates-cell__line">{{
+                  formatRefTableDate(row.created_at)
+                }}</span>
+                <span class="task-dates-cell__line">{{
+                  row.done_at ? formatRefTableDate(row.done_at) : '—'
+                }}</span>
+              </td>
               <td class="td-actions">
                 <RouterLink
                   class="btn-secondary btn-compact"
@@ -2134,6 +2148,17 @@ tr.referee-row-active-today {
   white-space: nowrap;
   font-size: 0.8rem;
   color: var(--muted);
+}
+.task-dates-cell {
+  white-space: normal;
+  line-height: 1.35;
+}
+.task-dates-cell__line {
+  display: block;
+}
+.task-dates-cell__line + .task-dates-cell__line {
+  margin-top: 0.15rem;
+  opacity: 0.92;
 }
 .link-actions {
   vertical-align: middle;

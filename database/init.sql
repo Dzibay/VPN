@@ -187,6 +187,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     referral_bonus_applied BOOLEAN NOT NULL DEFAULT FALSE,
     early_payment_bonus_days INTEGER CHECK (early_payment_bonus_days IS NULL OR early_payment_bonus_days >= 0),
     paid_months INTEGER,
+    delivery_channel TEXT NOT NULL DEFAULT 'telegram',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     done_at TIMESTAMPTZ,
     status TEXT NOT NULL DEFAULT 'pending',
@@ -207,6 +208,9 @@ CREATE TABLE IF NOT EXISTS tasks (
         )
     ),
     CONSTRAINT tasks_status_check CHECK (status IN ('pending', 'completed', 'failed')),
+    CONSTRAINT tasks_delivery_channel_check CHECK (
+        delivery_channel IN ('telegram', 'website', 'email')
+    ),
     CONSTRAINT tasks_paid_months_check CHECK (paid_months IS NULL OR paid_months >= 1)
 );
 

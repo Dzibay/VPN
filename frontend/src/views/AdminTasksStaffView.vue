@@ -61,6 +61,17 @@ const TASK_STATUS_OPTIONS = [
   { value: 'failed', label: 'failed — ошибка' },
 ]
 
+const DELIVERY_CHANNEL_LABELS = {
+  telegram: 'Telegram',
+  website: 'Сайт',
+  email: 'Email',
+}
+
+function formatDeliveryChannel(channel) {
+  const key = String(channel ?? '').toLowerCase()
+  return DELIVERY_CHANNEL_LABELS[key] ?? channel ?? '—'
+}
+
 const route = useRoute()
 const router = useRouter()
 
@@ -110,6 +121,7 @@ const sortAccessors = {
   early_payment_bonus_days: (r) =>
     r.early_payment_bonus_days == null ? -1 : Number(r.early_payment_bonus_days),
   paid_months: (r) => (r.paid_months == null ? -1 : Number(r.paid_months)),
+  delivery_channel: (r) => String(r.delivery_channel ?? '').toLowerCase(),
   status: (r) => String(r.status ?? '').toLowerCase(),
   created_at: (r) => String(r.created_at ?? ''),
   done_at: (r) => String(r.done_at ?? ''),
@@ -488,6 +500,13 @@ onMounted(() => {
                 @sort="toggleSort"
               />
               <AdminSortTh
+                label="Канал"
+                column-key="delivery_channel"
+                :sort-key="sortKey"
+                :sort-dir="sortDir"
+                @sort="toggleSort"
+              />
+              <AdminSortTh
                 label="Статус"
                 column-key="status"
                 :sort-key="sortKey"
@@ -495,15 +514,8 @@ onMounted(() => {
                 @sort="toggleSort"
               />
               <AdminSortTh
-                label="Создана"
+                label="Даты"
                 column-key="created_at"
-                :sort-key="sortKey"
-                :sort-dir="sortDir"
-                @sort="toggleSort"
-              />
-              <AdminSortTh
-                label="Завершена"
-                column-key="done_at"
                 :sort-key="sortKey"
                 :sort-dir="sortDir"
                 @sort="toggleSort"
@@ -537,11 +549,18 @@ onMounted(() => {
                 <td class="num">{{ row.bonus_days ?? '—' }}</td>
                 <td class="num">{{ row.early_payment_bonus_days ?? '—' }}</td>
                 <td class="num">{{ row.paid_months ?? '—' }}</td>
+                <td class="mono-cell" :title="row.delivery_channel">
+                  {{ formatDeliveryChannel(row.delivery_channel) }}
+                </td>
                 <td>
                   <span class="pill pill-mono" :title="row.status">{{ row.status }}</span>
                 </td>
-                <td class="date-cell">{{ fmtDate(row.created_at) }}</td>
-                <td class="date-cell">{{ fmtDate(row.done_at) }}</td>
+                <td class="date-cell task-dates-cell">
+                  <span class="task-dates-cell__line">{{ fmtDate(row.created_at) }}</span>
+                  <span class="task-dates-cell__line">{{
+                    row.done_at ? fmtDate(row.done_at) : '—'
+                  }}</span>
+                </td>
                 <td class="td-actions">
                   <button
                     type="button"
@@ -772,6 +791,17 @@ onMounted(() => {
   white-space: nowrap;
   font-size: 0.8rem;
   color: var(--muted);
+}
+.task-dates-cell {
+  white-space: normal;
+  line-height: 1.35;
+}
+.task-dates-cell__line {
+  display: block;
+}
+.task-dates-cell__line + .task-dates-cell__line {
+  margin-top: 0.15rem;
+  opacity: 0.92;
 }
 /* Нейтральный pill для статуса задачи: фон/границу базовый .pill (admin-ui.css) не задаёт. */
 .pill-mono {
