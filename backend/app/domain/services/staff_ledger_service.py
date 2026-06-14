@@ -21,6 +21,7 @@ from app.domain.models.staff_ledger import (
     StaffTaskItem,
 )
 from app.domain.services.payment_service import create_staff_manual_payment
+from app.domain.list_sort import SortDir, order_clause
 from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.task import Task
 from app.infrastructure.persistence.models.user import User
@@ -94,22 +95,92 @@ async def create_staff_manual_payment_record(
     )
 
 
+_STAFF_PAYMENT_SORT_KEYS = frozenset({
+    "id",
+    "user_id",
+    "amount",
+    "net_amount",
+    "months",
+    "provider",
+    "payment_kind",
+    "created_at",
+})
+
+_STAFF_TASK_SORT_KEYS = frozenset({
+    "id",
+    "type",
+    "user_id",
+    "referee_id",
+    "bonus_days",
+    "early_payment_bonus_days",
+    "paid_months",
+    "status",
+    "created_at",
+    "done_at",
+})
+
+
+def _payment_list_order_by(sort_by: str | None, sort_dir: SortDir):
+    if sort_by is None or sort_by not in _STAFF_PAYMENT_SORT_KEYS:
+        return (Payment.id.desc(),)
+    columns = {
+        "id": Payment.id,
+        "user_id": Payment.user_id,
+        "amount": Payment.amount,
+        "net_amount": Payment.net_amount,
+        "months": Payment.months,
+        "provider": Payment.provider,
+        "payment_kind": Payment.payment_kind,
+        "created_at": Payment.created_at,
+    }
+    primary = columns[sort_by]
+    clauses = [order_clause(primary, sort_dir)]
+    if sort_by != "id":
+        clauses.append(Payment.id.desc())
+    return tuple(clauses)
+
+
+def _task_list_order_by(sort_by: str | None, sort_dir: SortDir):
+    if sort_by is None or sort_by not in _STAFF_TASK_SORT_KEYS:
+        return (Task.id.desc(),)
+    columns = {
+        "id": Task.id,
+        "type": Task.task_type,
+        "user_id": Task.user_id,
+        "referee_id": Task.referee_id,
+        "bonus_days": Task.bonus_days,
+        "early_payment_bonus_days": Task.early_payment_bonus_days,
+        "paid_months": Task.paid_months,
+        "status": Task.status,
+        "created_at": Task.created_at,
+        "done_at": Task.done_at,
+    }
+    primary = columns[sort_by]
+    clauses = [order_clause(primary, sort_dir)]
+    if sort_by != "id":
+        clauses.append(Task.id.desc())
+    return tuple(clauses)
+
+
 async def list_staff_payments(
     session: AsyncSession,
     *,
     limit: int,
     offset: int,
     user_id: int | None = None,
+    sort_by: str | None = None,
+    sort_dir: SortDir = "asc",
 ) -> tuple[list[StaffPaymentItem], int]:
+    order_by = _payment_list_order_by(sort_by, sort_dir)
     if user_id is None:
         count_stmt = select(func.count()).select_from(Payment)
-        stmt = select(Payment).order_by(Payment.id.desc()).limit(limit).offset(offset)
+        stmt = select(Payment).order_by(*order_by).limit(limit).offset(offset)
     else:
         count_stmt = select(func.count()).select_from(Payment).where(Payment.user_id == user_id)
         stmt = (
             select(Payment)
             .where(Payment.user_id == user_id)
-            .order_by(Payment.id.desc())
+            .order_by(*order_by)
             .limit(limit)
             .offset(offset)
         )
@@ -137,16 +208,19 @@ async def list_staff_tasks(
     limit: int,
     offset: int,
     user_id: int | None = None,
+    sort_by: str | None = None,
+    sort_dir: SortDir = "asc",
 ) -> tuple[list[StaffTaskItem], int]:
+    order_by = _task_list_order_by(sort_by, sort_dir)
     if user_id is None:
         count_stmt = select(func.count()).select_from(Task)
-        stmt = select(Task).order_by(Task.id.desc()).limit(limit).offset(offset)
+        stmt = select(Task).order_by(*order_by).limit(limit).offset(offset)
     else:
         count_stmt = select(func.count()).select_from(Task).where(Task.user_id == user_id)
         stmt = (
             select(Task)
             .where(Task.user_id == user_id)
-            .order_by(Task.id.desc())
+            .order_by(*order_by)
             .limit(limit)
             .offset(offset)
         )

@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
+from app.domain.list_sort import SortDir, order_clause
 from app.core.time import utc_today
 from app.domain.models.auth import SubscriptionConnectionItem
 from app.domain.models.users import (
@@ -57,12 +58,56 @@ async def _user_rows_count(
     return int((await session.scalar(stmt)) or 0)
 
 
+_STAFF_USER_SORT_KEYS = frozenset({
+    "id",
+    "email",
+    "telegram",
+    "role",
+    "registered_at",
+    "subscription_until",
+    "subscription",
+    "traffic",
+    "devices",
+    "referral_link_id",
+})
+
+
+def _user_list_order_by(
+    sort_by: str | None,
+    sort_dir: SortDir,
+    *,
+    traffic_agg,
+    dev_agg,
+):
+    if sort_by is None or sort_by not in _STAFF_USER_SORT_KEYS:
+        return (User.id.desc(),)
+    columns = {
+        "id": User.id,
+        "email": User.email,
+        "telegram": User.telegram_id,
+        "role": User.account_role,
+        "registered_at": User.registered_at,
+        "subscription_until": User.subscription_until,
+        "subscription": User.token,
+        "traffic": func.coalesce(traffic_agg.c.total_bytes, 0),
+        "devices": func.coalesce(dev_agg.c.dev_cnt, 0),
+        "referral_link_id": User.referral_link_id,
+    }
+    primary = columns[sort_by]
+    clauses = [order_clause(primary, sort_dir)]
+    if sort_by != "id":
+        clauses.append(User.id.desc())
+    return tuple(clauses)
+
+
 async def _user_rows_with_traffic(
     session: AsyncSession,
     *,
     referral_link_id: int | None = None,
     limit: int | None = None,
     offset: int | None = None,
+    sort_by: str | None = None,
+    sort_dir: SortDir = "asc",
 ) -> list[tuple[User, int, int]]:
     """Список ``(user, total_bytes, devices_count)`` для админского экрана пользователей.
 
@@ -100,7 +145,14 @@ async def _user_rows_with_traffic(
         )
         .outerjoin(traffic_agg, User.id == traffic_agg.c.uid)
         .outerjoin(dev_agg, User.id == dev_agg.c.uid)
-        .order_by(User.id.desc())
+        .order_by(
+            *_user_list_order_by(
+                sort_by,
+                sort_dir,
+                traffic_agg=traffic_agg,
+                dev_agg=dev_agg,
+            ),
+        )
     )
     if referral_link_id is not None:
         stmt = stmt.where(User.referral_link_id == referral_link_id)
@@ -271,6 +323,8 @@ async def staff_list_users(
     referral_link_id: int | None = None,
     limit: int = 50,
     offset: int = 0,
+    sort_by: str | None = None,
+    sort_dir: SortDir = "asc",
 ) -> StaffUsersListResponse:
     """Пагинированный список пользователей для админ/менеджер интерфейса."""
     total = await _user_rows_count(session, referral_link_id=referral_link_id)
@@ -279,6 +333,8 @@ async def staff_list_users(
         referral_link_id=referral_link_id,
         limit=limit,
         offset=offset,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
     items = await _staff_user_list_items(session, rows, show_secrets=show_secrets)
     return StaffUsersListResponse(

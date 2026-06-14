@@ -79,9 +79,32 @@ async def staff_list_payments(
         int | None,
         Query(ge=1, description="Только платежи этого пользователя (users.id)"),
     ] = None,
+    sort_by: Annotated[
+        Literal[
+            "id",
+            "user_id",
+            "amount",
+            "net_amount",
+            "months",
+            "provider",
+            "payment_kind",
+            "created_at",
+        ]
+        | None,
+        Query(description="Столбец сортировки; без параметра — id по убыванию"),
+    ] = None,
+    sort_dir: Annotated[
+        Literal["asc", "desc"],
+        Query(description="Направление сортировки (при sort_by)"),
+    ] = "asc",
 ) -> StaffPaymentsListResponse:
     items, total = await list_staff_payments(
-        session, limit=limit, offset=offset, user_id=user_id
+        session,
+        limit=limit,
+        offset=offset,
+        user_id=user_id,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
     return StaffPaymentsListResponse(items=items, total=total, limit=limit, offset=offset)
 
@@ -148,8 +171,35 @@ async def staff_list_tasks(
         int | None,
         Query(ge=1, description="Только задачи с этим user_id"),
     ] = None,
+    sort_by: Annotated[
+        Literal[
+            "id",
+            "type",
+            "user_id",
+            "referee_id",
+            "bonus_days",
+            "early_payment_bonus_days",
+            "paid_months",
+            "status",
+            "created_at",
+            "done_at",
+        ]
+        | None,
+        Query(description="Столбец сортировки; без параметра — id по убыванию"),
+    ] = None,
+    sort_dir: Annotated[
+        Literal["asc", "desc"],
+        Query(description="Направление сортировки (при sort_by)"),
+    ] = "asc",
 ) -> StaffTasksListResponse:
-    items, total = await list_staff_tasks(session, limit=limit, offset=offset, user_id=user_id)
+    items, total = await list_staff_tasks(
+        session,
+        limit=limit,
+        offset=offset,
+        user_id=user_id,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
     return StaffTasksListResponse(items=items, total=total, limit=limit, offset=offset)
 
 

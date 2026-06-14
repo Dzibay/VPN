@@ -11,7 +11,7 @@ import AdminTableWrap from '../components/AdminTableWrap.vue'
 import { fetchJson } from '../api/client.js'
 import { formatTrafficWithLimit, isTrafficOverLimit } from '../utils/formatTraffic.js'
 import { useOffsetPagination } from '../composables/useOffsetPagination.js'
-import { useTableSort } from '../utils/adminTableSort.js'
+import { useTableSort, appendTableSortParams } from '../utils/adminTableSort.js'
 import { formatLocaleDateRu } from '../utils/formatLocaleDate.js'
 import {
   formatSubscriptionConnectionOs,
@@ -133,7 +133,7 @@ const registrationGapStats = computed(() => {
   }
 })
 
-const { offset, limit, canPrev, canNext, prev, next } = useOffsetPagination({
+const { offset, limit, canPrev, canNext, prev, next, reset } = useOffsetPagination({
   limit: 50,
   total: () => rowsTotal.value,
   count: () => rows.value.length,
@@ -269,6 +269,13 @@ const clientSortAccessors = {
 const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(
   rows,
   clientSortAccessors,
+  {
+    server: true,
+    onChange: () => {
+      reset()
+      void load()
+    },
+  },
 )
 
 watch(rows, (list) => {
@@ -292,6 +299,7 @@ async function load() {
       limit: String(limit.value),
       offset: String(offset.value),
     })
+    appendTableSortParams(params, sortKey.value, sortDir.value)
     const [data] = await Promise.all([
       fetchJson(`/api/users?${params.toString()}`),
       loadCountSummary(),

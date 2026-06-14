@@ -18,7 +18,7 @@ import {
   formatTrafficWithLimit,
   isTrafficOverLimit,
 } from '../utils/formatTraffic.js'
-import { useTableSort } from '../utils/adminTableSort.js'
+import { useTableSort, appendTableSortParams } from '../utils/adminTableSort.js'
 
 const route = useRoute()
 
@@ -92,7 +92,13 @@ const {
   sortDir: userSortDir,
   sortedRows: sortedUsers,
   toggleSort: toggleUserSort,
-} = useTableSort(users, userSortAccessors)
+} = useTableSort(users, userSortAccessors, {
+  server: true,
+  onChange: () => {
+    usersOffset.value = 0
+    void loadUsers()
+  },
+})
 
 function serverCascadeSortKey(s) {
   if (!s.is_cascade_ru_entry) return '0-external'
@@ -408,6 +414,7 @@ async function loadUsers() {
       limit: String(usersPageLimit),
       offset: String(usersOffset.value),
     })
+    appendTableSortParams(params, userSortKey.value, userSortDir.value)
     const data = await fetchJson(`/api/users?${params.toString()}`)
     users.value = Array.isArray(data?.items) ? data.items : []
     usersTotal.value = Number(data?.total) || 0

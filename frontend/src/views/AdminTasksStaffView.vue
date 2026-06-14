@@ -13,7 +13,7 @@ import StateNote from '../components/StateNote.vue'
 import { fetchJson } from '../api/client.js'
 import { getSessionRole } from '../auth/session.js'
 import { useOffsetPagination } from '../composables/useOffsetPagination.js'
-import { useTableSort } from '../utils/adminTableSort.js'
+import { useTableSort, appendTableSortParams } from '../utils/adminTableSort.js'
 import { formatMskApiDateTime } from '../utils/mskDate.js'
 
 const TASK_TYPE_OPTIONS = [
@@ -70,7 +70,7 @@ const error = ref(null)
 const items = ref([])
 const total = ref(0)
 
-const { offset, limit, canPrev, canNext, rangeLabel, prev, next } = useOffsetPagination({
+const { offset, limit, canPrev, canNext, rangeLabel, prev, next, reset } = useOffsetPagination({
   limit: 200,
   total: () => total.value,
   count: () => items.value.length,
@@ -115,7 +115,13 @@ const sortAccessors = {
   done_at: (r) => String(r.done_at ?? ''),
 }
 
-const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(items, sortAccessors)
+const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(items, sortAccessors, {
+  server: true,
+  onChange: () => {
+    reset()
+    void load()
+  },
+})
 
 const canDeleteTask = computed(() => getSessionRole() === 'admin')
 
@@ -140,6 +146,7 @@ async function load() {
       limit: String(limit.value),
       offset: String(offset.value),
     })
+    appendTableSortParams(params, sortKey.value, sortDir.value)
     const data = await fetchJson(`/api/admin/tasks?${params.toString()}`)
     items.value = Array.isArray(data?.items) ? data.items : []
     total.value = Number(data?.total) || 0

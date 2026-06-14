@@ -42,15 +42,46 @@ function normalizeString(v) {
 }
 
 /**
- * Клиентская сортировка строк таблицы по выбранному столбцу.
+ * Добавляет sort_by и sort_dir в URLSearchParams, если столбец выбран.
+ * @param {URLSearchParams} params
+ * @param {string | null | undefined} sortKey
+ * @param {'asc' | 'desc' | null | undefined} sortDir
+ */
+export function appendTableSortParams(params, sortKey, sortDir) {
+  if (sortKey == null || sortKey === '') return
+  params.set('sort_by', String(sortKey))
+  params.set('sort_dir', sortDir === 'desc' ? 'desc' : 'asc')
+}
+
+/**
+ * @typedef {object} UseTableSortOptions
+ * @property {string | null} [defaultKey] — начальная сортировка (обычно не задаётся)
+ * @property {boolean} [server] — не сортировать локально; порядок с сервера
+ * @property {() => unknown} [onChange] — после смены столбца/направления (обычно reload + reset offset)
+ */
+
+/**
+ * Сортировка строк таблицы по выбранному столбцу.
  * Пока столбец не выбран (клик по заголовку), порядок строк совпадает с данными с сервера.
  *
  * @template T
  * @param {import('vue').MaybeRefOrGetter<T[]>} sourceRows
  * @param {Record<string, (row: T) => unknown>} accessors
- * @param {string | null} [defaultKey] — начальная сортировка (обычно не задаётся)
+ * @param {string | null | UseTableSortOptions} [opts] — defaultKey (legacy) или опции
  */
-export function useTableSort(sourceRows, accessors, defaultKey = null) {
+export function useTableSort(sourceRows, accessors, opts = null) {
+  /** @type {UseTableSortOptions} */
+  let options = {}
+  if (typeof opts === 'string') {
+    options = { defaultKey: opts }
+  } else if (opts && typeof opts === 'object') {
+    options = opts
+  }
+
+  const defaultKey = options.defaultKey ?? null
+  const server = Boolean(options.server)
+  const onChange = options.onChange
+
   const sortKey = ref(
     defaultKey != null && defaultKey !== '' && accessors[defaultKey]
       ? defaultKey
@@ -66,10 +97,12 @@ export function useTableSort(sourceRows, accessors, defaultKey = null) {
       sortKey.value = key
       sortDir.value = 'asc'
     }
+    if (server) onChange?.()
   }
 
   const sortedRows = computed(() => {
     const rows = [...(toValue(sourceRows) ?? [])]
+    if (server) return rows
     const key = sortKey.value
     if (key == null || key === '') return rows
     const fn = accessors[key]

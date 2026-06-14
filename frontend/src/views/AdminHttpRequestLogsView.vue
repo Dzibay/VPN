@@ -9,7 +9,7 @@ import MultiSelectDropdown from '../components/MultiSelectDropdown.vue'
 import StateNote from '../components/StateNote.vue'
 import { fetchJson } from '../api/client.js'
 import { getSessionRole } from '../auth/session.js'
-import { useTableSort } from '../utils/adminTableSort.js'
+import { useTableSort, appendTableSortParams } from '../utils/adminTableSort.js'
 import { formatMskApiDateTime } from '../utils/mskDate.js'
 
 const route = useRoute()
@@ -35,6 +35,33 @@ const page = ref({
   limit: 50,
   offset: 0,
 })
+
+const logRows = computed(() => page.value.items)
+
+const httpTraceSortAccessors = {
+  created_at: (r) => r.created_at,
+  user_id: (r) => (r.user_id != null ? r.user_id : -1),
+  subject_source: (r) => String(r.subject_source ?? '').toLowerCase(),
+  http_method: (r) => String(r.http_method ?? '').toLowerCase(),
+  path: (r) => String(r.path ?? '').toLowerCase(),
+  status_code: (r) => Number(r.status_code) || 0,
+  duration_ms: (r) => Number(r.duration_ms) || 0,
+  client_ip: (r) => String(r.client_ip ?? '').toLowerCase(),
+}
+
+const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(
+  logRows,
+  httpTraceSortAccessors,
+  {
+    server: true,
+    onChange: () => {
+      router.replace({
+        path: '/admin/logs',
+        query: buildQueryForUrl({ offset: 0 }),
+      })
+    },
+  },
+)
 
 function httpTraceCreatedAtTs(iso) {
   const t = Date.parse(String(iso ?? ''))
@@ -167,6 +194,14 @@ function buildQueryForUrl(overrides = {}) {
     if (timeFrom) q.time_from = timeFrom
     if (timeTo) q.time_to = timeTo
   }
+  const sb =
+    overrides.sort_by !== undefined ? overrides.sort_by : sortKey.value
+  const sd =
+    overrides.sort_dir !== undefined ? overrides.sort_dir : sortDir.value
+  if (sb != null && sb !== '' && httpTraceSortAccessors[sb]) {
+    q.sort_by = String(sb)
+    q.sort_dir = sd === 'desc' ? 'desc' : 'asc'
+  }
   return q
 }
 
@@ -209,6 +244,15 @@ async function syncFromRoute() {
     Number.isFinite(lim) && lim >= 1 && lim <= 200 ? lim : 50
   const off = q.offset != null ? Number.parseInt(String(q.offset), 10) : 0
   offset.value = Number.isFinite(off) && off >= 0 ? off : 0
+  const sortByRaw = q.sort_by == null ? '' : Array.isArray(q.sort_by) ? q.sort_by[0] : String(q.sort_by)
+  const sortDirRaw = q.sort_dir == null ? '' : Array.isArray(q.sort_dir) ? q.sort_dir[0] : String(q.sort_dir)
+  if (sortByRaw && httpTraceSortAccessors[sortByRaw]) {
+    sortKey.value = sortByRaw
+    sortDir.value = sortDirRaw === 'desc' ? 'desc' : 'asc'
+  } else {
+    sortKey.value = null
+    sortDir.value = 'asc'
+  }
 
   loading.value = true
   error.value = null
@@ -246,6 +290,7 @@ async function syncFromRoute() {
   if (range.createdTo) {
     params.set('created_to', range.createdTo)
   }
+  appendTableSortParams(params, sortKey.value, sortDir.value)
   try {
     const data = await fetchJson(
       `/api/admin/http-request-traces?${params.toString()}`,
@@ -282,6 +327,8 @@ function resetFilters() {
   filterTimeFrom.value = ''
   filterTimeTo.value = ''
   limit.value = 50
+  sortKey.value = null
+  sortDir.value = 'asc'
   router.replace({ path: '/admin/logs', query: {} })
 }
 
@@ -386,24 +433,7 @@ const statusFilterOptions = [
   '503',
 ]
 
-const logRows = computed(() => page.value.items)
 const canDeleteLogs = computed(() => getSessionRole() === 'admin')
-
-const httpTraceSortAccessors = {
-  created_at: (r) => r.created_at,
-  user_id: (r) => (r.user_id != null ? r.user_id : -1),
-  subject_source: (r) => String(r.subject_source ?? '').toLowerCase(),
-  http_method: (r) => String(r.http_method ?? '').toLowerCase(),
-  path: (r) => String(r.path ?? '').toLowerCase(),
-  status_code: (r) => Number(r.status_code) || 0,
-  duration_ms: (r) => Number(r.duration_ms) || 0,
-  client_ip: (r) => String(r.client_ip ?? '').toLowerCase(),
-}
-
-const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(
-  logRows,
-  httpTraceSortAccessors,
-)
 
 watch(
   () => route.fullPath,

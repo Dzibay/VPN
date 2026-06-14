@@ -12,7 +12,7 @@ import StateNote from '../components/StateNote.vue'
 import { fetchJson } from '../api/client.js'
 import { getSessionRole } from '../auth/session.js'
 import { useOffsetPagination } from '../composables/useOffsetPagination.js'
-import { useTableSort } from '../utils/adminTableSort.js'
+import { useTableSort, appendTableSortParams } from '../utils/adminTableSort.js'
 import { formatMskApiDateTime } from '../utils/mskDate.js'
 
 const loading = ref(false)
@@ -50,7 +50,13 @@ const sortAccessors = {
   created_at: (r) => String(r.created_at ?? ''),
 }
 
-const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(items, sortAccessors)
+const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(items, sortAccessors, {
+  server: true,
+  onChange: () => {
+    reset()
+    void load()
+  },
+})
 
 const canDeletePayments = computed(() => getSessionRole() === 'admin')
 const rowIdsOnPage = computed(() => sortedRows.value.map((row) => Number(row.id)))
@@ -125,6 +131,7 @@ async function load() {
       limit: String(limit.value),
       offset: String(offset.value),
     })
+    appendTableSortParams(params, sortKey.value, sortDir.value)
     const data = await fetchJson(`/api/admin/payments?${params.toString()}`)
     items.value = Array.isArray(data?.items) ? data.items : []
     total.value = Number(data?.total) || 0

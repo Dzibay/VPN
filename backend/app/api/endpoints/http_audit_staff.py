@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
 
@@ -83,6 +83,24 @@ async def list_http_request_traces(
         datetime | None,
         Query(description="Верхняя граница created_at (включительно), ISO 8601"),
     ] = None,
+    sort_by: Annotated[
+        Literal[
+            "created_at",
+            "user_id",
+            "subject_source",
+            "http_method",
+            "path",
+            "status_code",
+            "duration_ms",
+            "client_ip",
+        ]
+        | None,
+        Query(description="Столбец сортировки; без параметра — created_at по убыванию"),
+    ] = None,
+    sort_dir: Annotated[
+        Literal["asc", "desc"],
+        Query(description="Направление сортировки (при sort_by)"),
+    ] = "asc",
 ) -> HttpRequestTraceStaffPage:
     if user_id is not None and only_without_user:
         raise BadRequestError(
@@ -133,6 +151,8 @@ async def list_http_request_traces(
         client_ip_contains=client_ip_filter,
         created_from=created_from_utc,
         created_to=created_to_utc,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
     return HttpRequestTraceStaffPage(
         items=[HttpRequestTraceStaffItem.model_validate(r) for r in rows],

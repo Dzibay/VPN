@@ -92,8 +92,28 @@ async def list_users(
     ] = 50,
     offset: Annotated[
         int,
-        Query(ge=0, description="Смещение от начала списка (сортировка id по убыванию)"),
+        Query(ge=0, description="Смещение от начала списка"),
     ] = 0,
+    sort_by: Annotated[
+        Literal[
+            "id",
+            "email",
+            "telegram",
+            "role",
+            "registered_at",
+            "subscription_until",
+            "subscription",
+            "traffic",
+            "devices",
+            "referral_link_id",
+        ]
+        | None,
+        Query(description="Столбец сортировки; без параметра — id по убыванию"),
+    ] = None,
+    sort_dir: Annotated[
+        Literal["asc", "desc"],
+        Query(description="Направление сортировки (при sort_by)"),
+    ] = "asc",
 ) -> StaffUsersListResponse:
     show_secrets = list_mode in ("open", "admin")
     return await staff_list_users(
@@ -102,6 +122,8 @@ async def list_users(
         referral_link_id=referral_link_id,
         limit=limit,
         offset=offset,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
 
 

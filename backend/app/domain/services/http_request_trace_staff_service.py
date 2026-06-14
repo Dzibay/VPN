@@ -7,7 +7,39 @@ from datetime import datetime
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.list_sort import SortDir, order_clause
 from app.infrastructure.persistence.models.user_http_request_trace import UserHttpRequestTrace
+
+_HTTP_TRACE_SORT_KEYS = frozenset({
+    "created_at",
+    "user_id",
+    "subject_source",
+    "http_method",
+    "path",
+    "status_code",
+    "duration_ms",
+    "client_ip",
+})
+
+
+def _http_trace_list_order_by(sort_by: str | None, sort_dir: SortDir):
+    if sort_by is None or sort_by not in _HTTP_TRACE_SORT_KEYS:
+        return (UserHttpRequestTrace.created_at.desc(),)
+    columns = {
+        "created_at": UserHttpRequestTrace.created_at,
+        "user_id": UserHttpRequestTrace.user_id,
+        "subject_source": UserHttpRequestTrace.subject_source,
+        "http_method": UserHttpRequestTrace.http_method,
+        "path": UserHttpRequestTrace.path,
+        "status_code": UserHttpRequestTrace.status_code,
+        "duration_ms": UserHttpRequestTrace.duration_ms,
+        "client_ip": UserHttpRequestTrace.client_ip,
+    }
+    primary = columns[sort_by]
+    clauses = [order_clause(primary, sort_dir)]
+    if sort_by != "created_at":
+        clauses.append(UserHttpRequestTrace.created_at.desc())
+    return tuple(clauses)
 
 
 async def staff_list_http_request_traces(
@@ -23,6 +55,8 @@ async def staff_list_http_request_traces(
     client_ip_contains: str | None,
     created_from: datetime | None = None,
     created_to: datetime | None = None,
+    sort_by: str | None = None,
+    sort_dir: SortDir = "asc",
 ) -> tuple[list[UserHttpRequestTrace], int]:
     filters: list = []
     if user_id is not None:
@@ -43,7 +77,9 @@ async def staff_list_http_request_traces(
         filters.append(UserHttpRequestTrace.created_at <= created_to)
 
     cnt_q = select(func.count(UserHttpRequestTrace.id))
-    list_q = select(UserHttpRequestTrace).order_by(UserHttpRequestTrace.created_at.desc())
+    list_q = select(UserHttpRequestTrace).order_by(
+        *_http_trace_list_order_by(sort_by, sort_dir),
+    )
     if filters:
         cnt_q = cnt_q.where(*filters)
         list_q = list_q.where(*filters)
