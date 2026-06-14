@@ -1,5 +1,8 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import AdminTableBulkBar from '../../components/AdminTableBulkBar.vue'
+import AdminTableSelectTd from '../../components/AdminTableSelectTd.vue'
+import AdminTableSelectTh from '../../components/AdminTableSelectTh.vue'
 import AdminTableWrap from '../../components/AdminTableWrap.vue'
 import AppModal from '../../components/AppModal.vue'
 import AppPager from '../../components/AppPager.vue'
@@ -7,6 +10,7 @@ import AppRefreshButton from '../../components/AppRefreshButton.vue'
 import { useOffsetPagination } from '../../composables/useOffsetPagination.js'
 import { fetchJson } from '../../api/client.js'
 import { getSessionRole } from '../../auth/session.js'
+import { useAdminTableBulkSelect } from '../../composables/useAdminTableBulkSelect.js'
 import { downloadCsv } from '../../utils/csv.js'
 import { mskMonthInputDefault, mskTodayIso } from '../../utils/mskDate.js'
 
@@ -28,8 +32,6 @@ const activeCategories = computed(() => categories.value.filter((c) => !c.archiv
 const expenses = ref([])
 const expTotal = ref(0)
 const expLimit = 100
-const selectedIds = ref([])
-const deleting = ref(false)
 
 const {
   offset: expOffset,
@@ -45,6 +47,13 @@ const {
   count: () => expenses.value.length,
   onChange: () => loadExpenses(),
 })
+
+const expRowIdsOnPage = computed(() => expenses.value.map((r) => Number(r.id)))
+const bulk = useAdminTableBulkSelect({
+  rowIdsOnPage: expRowIdsOnPage,
+  enabled: isAdmin,
+})
+const expTableColspan = computed(() => 5 + (bulk.canBulkSelect ? 1 : 0))
 
 // --- повторяющиеся ---
 const recurring = ref([])
@@ -106,18 +115,15 @@ function categoryColor(id) {
   return categoriesById.value.get(id)?.color ?? '#94a3b8'
 }
 
-const allSelectedOnPage = computed(() => {
-  const ids = expenses.value.map((r) => r.id)
-  return ids.length > 0 && ids.every((id) => selectedIds.value.includes(id))
-})
-function toggleSelectAll() {
-  const ids = expenses.value.map((r) => r.id)
-  if (allSelectedOnPage.value) {
-    const rm = new Set(ids)
-    selectedIds.value = selectedIds.value.filter((id) => !rm.has(id))
-  } else {
-    selectedIds.value = Array.from(new Set([...selectedIds.value, ...ids]))
-  }
+function onExpenseRowClick(row, event) {
+  if (!bulk.selectionMode) return
+  if (event?.target?.closest?.('a, button, input, label')) return
+  bulk.toggleRow(row.id)
+}
+
+async function deleteSelectedExpenses() {
+  await deleteExpenses(bulk.selectedIds)
+  bulk.exitSelectionMode()
 }
 
 async function loadCategories() {
@@ -238,22 +244,21 @@ async function exportExpensesCsv() {
 }
 
 async function deleteExpenses(ids) {
-  if (!isAdmin.value || ids.length === 0 || deleting.value) return
+  if (!isAdmin.value || ids.length === 0 || bulk.deleting) return
   const ok = window.confirm(`Удалить расходы (${ids.length})? Действие необратимо.`)
   if (!ok) return
-  deleting.value = true
+  bulk.deleting = true
   error.value = null
   try {
     await fetchJson('/api/admin/accounting/expenses', {
       method: 'DELETE',
       body: JSON.stringify({ ids }),
     })
-    selectedIds.value = selectedIds.value.filter((id) => !ids.includes(id))
     await loadExpenses()
   } catch (e) {
     error.value = e.message || String(e)
   } finally {
-    deleting.value = false
+    bulk.deleting = false
   }
 }
 
@@ -348,14 +353,6 @@ async function deleteRecurring(row) {
   }
 }
 
-watch(
-  () => expenses.value.map((r) => r.id),
-  (ids) => {
-    const keep = new Set(ids)
-    selectedIds.value = selectedIds.value.filter((id) => keep.has(id))
-  },
-)
-
 onMounted(() => {
   void loadAll()
 })
@@ -385,26 +382,32 @@ defineExpose({ reload: loadAll })
       @prev="expPrev"
       @next="expNext"
     >
-      <template #actions>
-        <button
-          v-if="isAdmin"
-          type="button"
-          class="btn-danger"
-          :disabled="selectedIds.length === 0 || deleting"
-          @click="deleteExpenses(selectedIds)"
-        >
-          {{ deleting ? 'Удаление…' : `Удалить выбранные (${selectedIds.length})` }}
-        </button>
+      <template v-if="bulk.canBulkSelect" #actions>
+        <AdminTableBulkBar
+          :active="bulk.selectionMode"
+          :selected-count="bulk.selectedCount"
+          :deleting="bulk.deleting"
+          entity-label="расходов"
+          @toggle="bulk.toggleSelectionMode()"
+          @delete="deleteSelectedExpenses"
+        />
       </template>
     </AppPager>
 
-    <AdminTableWrap aria-label="Разовые расходы">
+    <AdminTableWrap
+      aria-label="Разовые расходы"
+      :bulk-select-active="bulk.selectionMode"
+    >
       <table class="admin-table">
         <thead>
           <tr>
-            <th v-if="isAdmin" class="th-select">
-              <input type="checkbox" :checked="allSelectedOnPage" :disabled="expenses.length === 0" @change="toggleSelectAll" />
-            </th>
+            <AdminTableSelectTh
+              v-if="bulk.canBulkSelect"
+              :active="bulk.selectionMode"
+              :checked="bulk.allSelectedOnPage"
+              :disabled="expenses.length === 0"
+              @toggle="bulk.toggleSelectAllOnPage()"
+            />
             <th>Дата</th>
             <th>Категория</th>
             <th>Название</th>
@@ -414,12 +417,24 @@ defineExpose({ reload: loadAll })
         </thead>
         <tbody>
           <tr v-if="expenses.length === 0">
-            <td :colspan="isAdmin ? 6 : 5" class="muted">Расходов пока нет</td>
+            <td :colspan="expTableColspan" class="muted">Расходов пока нет</td>
           </tr>
-          <tr v-for="row in expenses" :key="row.id">
-            <td v-if="isAdmin" class="td-select">
-              <input v-model="selectedIds" type="checkbox" :value="row.id" />
-            </td>
+          <tr
+            v-for="row in expenses"
+            :key="row.id"
+            :class="{
+              'admin-bulk-row--selectable': bulk.selectionMode,
+              'admin-bulk-row--picked': bulk.selectionMode && bulk.isRowSelected(row.id),
+            }"
+            @click="onExpenseRowClick(row, $event)"
+          >
+            <AdminTableSelectTd
+              v-if="bulk.canBulkSelect"
+              :active="bulk.selectionMode"
+              :selected="bulk.isRowSelected(row.id)"
+              :row-id="row.id"
+              @toggle="bulk.toggleRow(row.id)"
+            />
             <td class="date-cell">{{ fmtDate(row.incurred_on) }}</td>
             <td>
               <span class="cat-chip">

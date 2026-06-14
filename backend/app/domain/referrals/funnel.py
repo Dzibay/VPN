@@ -17,6 +17,7 @@ from app.domain.users.daily_stats import (
     active_users_count_for_utc_date,
     count_users_with_subscription_device,
 )
+from app.domain.users.stats_qualification import user_counts_in_admin_stats
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.user import User
 
@@ -66,12 +67,22 @@ async def referral_funnel_compute(
         ).first()
         if row is None:
             raise NotFoundError("Реферальная ссылка не найдена")
-        registrations_total_raw = row.registrations_count
+        registrations_total_raw = await session.scalar(
+            select(func.count())
+            .select_from(User)
+            .where(
+                User.referral_link_id == referral_link_id,
+                user_counts_in_admin_stats(User),
+            ),
+        )
         users_with_traffic_raw = await session.scalar(
             select(func.count())
             .select_from(per_user_traffic)
             .join(User, User.id == per_user_traffic.c.uid)
-            .where(User.referral_link_id == referral_link_id),
+            .where(
+                User.referral_link_id == referral_link_id,
+                user_counts_in_admin_stats(User),
+            ),
         )
         today = utc_today()
         with_dev = await count_users_with_subscription_device(session, referral_link_id)
@@ -84,9 +95,14 @@ async def referral_funnel_compute(
             active_users_today_utc=_nz_metric(active_today),
         )
 
-    registrations_total_raw = await session.scalar(select(func.count()).select_from(User))
+    registrations_total_raw = await session.scalar(
+        select(func.count()).select_from(User).where(user_counts_in_admin_stats(User)),
+    )
     users_with_traffic_raw = await session.scalar(
-        select(func.count()).select_from(per_user_traffic),
+        select(func.count())
+        .select_from(per_user_traffic)
+        .join(User, User.id == per_user_traffic.c.uid)
+        .where(user_counts_in_admin_stats(User)),
     )
     today = utc_today()
     with_dev = await count_users_with_subscription_device(session, None)

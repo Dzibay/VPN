@@ -1,8 +1,10 @@
 -- Дневная сводка: registered_at, payments, devices — календарь Europe/Moscow;
 -- traffic_date (снимки) — календарный день UTC на момент сбора (см. xray_stats_collect).
--- Накопление регистраций (users_count): все пользователи; с registered_at — по дню МСК,
--- без registered_at — отдельная строка stats_date IS NULL.
+-- Накопление регистраций (users_count): учётные пользователи (Telegram или email ✓);
+-- с registered_at — по дню МСК, без registered_at — отдельная строка stats_date IS NULL.
 -- Прочие метрики (активность, снимок подписки, оплаты) — только с registered_at и subscription_until.
+-- Во все метрики входят только «учётные» пользователи: Telegram ИЛИ подтверждённый email
+-- (см. database/rpc/_user_stats_qualified.sql).
 -- Календарь выдачи: от первой регистрации (МСК) до сегодня по Europe/Moscow.
 -- На графике админки показывают последние 30 дней; накопительные серии считаются на фронте по полному ряду.
 drop function if exists rpc_users_daily_stats;
@@ -23,9 +25,20 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 AS $$
-WITH eligible_users AS (
+WITH qualified_users AS (
     SELECT u.id
     FROM users u
+    WHERE u.telegram_id IS NOT NULL
+       OR (
+           u.email IS NOT NULL
+           AND BTRIM(u.email) <> ''
+           AND u.email_verified_at IS NOT NULL
+       )
+),
+eligible_users AS (
+    SELECT u.id
+    FROM users u
+    INNER JOIN qualified_users qu ON qu.id = u.id
     WHERE u.registered_at IS NOT NULL
       AND u.subscription_until IS NOT NULL
 ),
@@ -36,6 +49,7 @@ msk_bounds AS (
             (
                 SELECT MIN((u.registered_at AT TIME ZONE 'Europe/Moscow')::date)
                 FROM users u
+                INNER JOIN qualified_users qu ON qu.id = u.id
                 WHERE u.registered_at IS NOT NULL
             ),
             (NOW() AT TIME ZONE 'Europe/Moscow')::date
@@ -96,6 +110,7 @@ reg AS (
             CASE WHEN COALESCE(utt.total_bytes, 0) > 0 THEN 1 ELSE 0 END
         )::bigint AS users_with_traffic_count
     FROM users u
+    INNER JOIN qualified_users qu ON qu.id = u.id
     LEFT JOIN user_traffic_total_all utt ON utt.user_id = u.id
     WHERE u.registered_at IS NOT NULL
     GROUP BY (u.registered_at AT TIME ZONE 'Europe/Moscow')::date
@@ -231,6 +246,7 @@ subscription_active_by_day AS (
        AND u.subscription_until >= dc.cal_day
        AND u.registered_at IS NOT NULL
        AND u.subscription_until IS NOT NULL
+       AND u.id IN (SELECT id FROM qualified_users)
     GROUP BY dc.cal_day
 ),
 merged AS (
@@ -278,6 +294,7 @@ undated AS (
                 CASE WHEN COALESCE(utt.total_bytes, 0) > 0 THEN 1 ELSE 0 END
             )::bigint AS users_with_traffic_count
         FROM users u
+        INNER JOIN qualified_users qu ON qu.id = u.id
         LEFT JOIN user_traffic_total_all utt ON utt.user_id = u.id
         WHERE u.registered_at IS NULL
     ) cnt

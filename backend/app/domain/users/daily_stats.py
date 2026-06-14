@@ -33,6 +33,7 @@ from app.domain.traffic_daily import (
     user_has_traffic_ever,
     user_traffic_growth_days,
 )
+from app.domain.users.stats_qualification import user_counts_in_admin_stats
 from app.infrastructure.persistence.models.subscription_device import SubscriptionDevice
 from app.infrastructure.persistence.models.user import User
 
@@ -53,8 +54,8 @@ async def stats_by_date_merged(session: AsyncSession) -> list[UserStatsByDateRow
     """Сводка по датам через PostgreSQL ``rpc_users_daily_stats()`` (см. ``database/rpc/users_daily_stats.sql``).
 
     Строка без ``stats_date`` — пользователи без ``registered_at`` (в конце набора).
-    Дневные ``users_count`` — прирост по дню регистрации (МСК) для всех с ``registered_at``,
-    без фильтра по ``subscription_until``.
+    Дневные ``users_count`` — прирост по дню регистрации (МСК) среди учётных пользователей
+    (Telegram или подтверждённый email), без фильтра по ``subscription_until``.
     """
     stmt = text(
         """
@@ -168,10 +169,12 @@ async def daily_payments_expiry_stats(
     """Столбчатый график: оплаты (день МСК) и разбивка по ``subscription_until`` (календарь Москвы)."""
 
     msk_td = moscow_today()
+    stats_user = user_counts_in_admin_stats(User)
 
     elig_raw = (
         await session.execute(
             select(User.id, User.subscription_until).where(
+                stats_user,
                 User.registered_at.is_not(None),
                 User.subscription_until.isnot(None),
             ),
@@ -191,6 +194,14 @@ async def daily_payments_expiry_stats(
         INNER JOIN users u ON u.id = p.user_id
         WHERE u.registered_at IS NOT NULL
           AND u.subscription_until IS NOT NULL
+          AND (
+              u.telegram_id IS NOT NULL
+              OR (
+                  u.email IS NOT NULL
+                  AND BTRIM(u.email) <> ''
+                  AND u.email_verified_at IS NOT NULL
+              )
+          )
         GROUP BY 1
         """,
     )
@@ -209,6 +220,14 @@ async def daily_payments_expiry_stats(
             INNER JOIN users u ON u.id = p.user_id
             WHERE u.registered_at IS NOT NULL
               AND u.subscription_until IS NOT NULL
+              AND (
+                  u.telegram_id IS NOT NULL
+                  OR (
+                      u.email IS NOT NULL
+                      AND BTRIM(u.email) <> ''
+                      AND u.email_verified_at IS NOT NULL
+                  )
+              )
         )
         SELECT
             d,
@@ -233,6 +252,14 @@ async def daily_payments_expiry_stats(
         INNER JOIN users u ON u.id = p.user_id
         WHERE u.registered_at IS NOT NULL
           AND u.subscription_until IS NOT NULL
+          AND (
+              u.telegram_id IS NOT NULL
+              OR (
+                  u.email IS NOT NULL
+                  AND BTRIM(u.email) <> ''
+                  AND u.email_verified_at IS NOT NULL
+              )
+          )
         """,
     )
     paid_uids = {
@@ -317,7 +344,9 @@ async def count_users_with_subscription_device(
 
     stmt = select(func.count(func.distinct(SubscriptionDevice.user_id))).select_from(
         SubscriptionDevice,
-    ).join(User, User.id == SubscriptionDevice.user_id)
+    ).join(User, User.id == SubscriptionDevice.user_id).where(
+        user_counts_in_admin_stats(User),
+    )
     if referral_link_id is not None:
         stmt = stmt.where(User.referral_link_id == referral_link_id)
     return int(await session.scalar(stmt) or 0)
@@ -334,8 +363,16 @@ async def active_users_count_for_utc_date(
     if referral_link_id is not None:
         ids_raw = (
             await session.scalars(
-                select(User.id).where(User.referral_link_id == referral_link_id),
+                select(User.id).where(
+                    User.referral_link_id == referral_link_id,
+                    user_counts_in_admin_stats(User),
+                ),
             )
+        ).all()
+        filt = {int(i) for i in ids_raw}
+    else:
+        ids_raw = (
+            await session.scalars(select(User.id).where(user_counts_in_admin_stats(User)))
         ).all()
         filt = {int(i) for i in ids_raw}
     series = await fetch_user_traffic_series(session, user_ids_filter=filt)

@@ -37,6 +37,10 @@ from app.domain.auth.sync_tokens import (
 )
 from app.domain.subscription.traffic_limit import apply_default_traffic_limit_for_new_client
 from app.domain.users.identifiers import new_subscription_token, new_vless_uuid
+from app.domain.users.stats_qualification import (
+    user_counts_in_admin_stats,
+    user_unverified_email_without_telegram,
+)
 from app.infrastructure.cache import get_redis
 from app.domain.users.search import search_staff_users
 from app.domain.users.staff_listing import (
@@ -53,6 +57,7 @@ __all__ = [
     "create_staff_user",
     "extend_active_subscriptions",
     "delete_staff_user",
+    "delete_staff_users_bulk",
     "patch_staff_user",
     "require_user_exists",
     # Реэкспорт доменных подмодулей (обратная совместимость импортов).
@@ -76,12 +81,20 @@ def _mean_registration_gap_ms(times: list[datetime]) -> float | None:
 
 
 async def users_count(session: AsyncSession) -> UsersCountResponse:
-    """Общее число записей в ``users`` и сводка по регистрациям для виджетов админки."""
-    total = int((await session.scalar(select(func.count()).select_from(User))) or 0)
+    """Сводка для виджетов админки: только учётные пользователи (Telegram или email ✓)."""
+    stats_user = user_counts_in_admin_stats(User)
+    unverified = user_unverified_email_without_telegram(User)
     today = moscow_today()
     yesterday = today - timedelta(days=1)
     start_today, end_today = moscow_day_bounds_utc(today)
     start_yesterday, _ = moscow_day_bounds_utc(yesterday)
+
+    total = int(
+        (await session.scalar(select(func.count()).select_from(User).where(stats_user))) or 0,
+    )
+    unverified_total = int(
+        (await session.scalar(select(func.count()).select_from(User).where(unverified))) or 0,
+    )
 
     regs_today = int(
         (
@@ -89,6 +102,22 @@ async def users_count(session: AsyncSession) -> UsersCountResponse:
                 select(func.count())
                 .select_from(User)
                 .where(
+                    stats_user,
+                    User.registered_at.is_not(None),
+                    User.registered_at >= start_today,
+                    User.registered_at < end_today,
+                ),
+            )
+        )
+        or 0,
+    )
+    regs_today_unverified = int(
+        (
+            await session.scalar(
+                select(func.count())
+                .select_from(User)
+                .where(
+                    unverified,
                     User.registered_at.is_not(None),
                     User.registered_at >= start_today,
                     User.registered_at < end_today,
@@ -103,6 +132,7 @@ async def users_count(session: AsyncSession) -> UsersCountResponse:
                 select(func.count())
                 .select_from(User)
                 .where(
+                    stats_user,
                     User.registered_at.is_not(None),
                     User.registered_at >= start_yesterday,
                     User.registered_at < start_today,
@@ -117,6 +147,7 @@ async def users_count(session: AsyncSession) -> UsersCountResponse:
         for t in (
             await session.scalars(
                 select(User.registered_at).where(
+                    stats_user,
                     User.registered_at.is_not(None),
                     User.subscription_until.is_not(None),
                 ),
@@ -133,7 +164,9 @@ async def users_count(session: AsyncSession) -> UsersCountResponse:
 
     return UsersCountResponse(
         users_count=total,
+        unverified_email_users_count=unverified_total,
         registrations_today_count=regs_today,
+        registrations_today_unverified_email_count=regs_today_unverified,
         registrations_yesterday_count=regs_yesterday,
         registration_gap_overall_ms=_mean_registration_gap_ms(all_times),
         registration_gap_today_ms=_mean_registration_gap_ms(today_times),
@@ -213,6 +246,22 @@ async def delete_staff_user(session: AsyncSession, user_id: int) -> None:
         raise NotFoundError("Пользователь не найден")
     _purge_user_redis_keys(user_id)
     await session.delete(user)
+
+
+async def delete_staff_users_bulk(session: AsyncSession, *, ids: list[int]) -> int:
+    """Удалить нескольких пользователей; несуществующие id пропускаются."""
+    uniq_ids = sorted({int(v) for v in ids if int(v) > 0})
+    if not uniq_ids:
+        return 0
+    deleted = 0
+    for user_id in uniq_ids:
+        user = await session.get(User, user_id)
+        if user is None:
+            continue
+        _purge_user_redis_keys(user_id)
+        await session.delete(user)
+        deleted += 1
+    return deleted
 
 
 async def patch_staff_user(session: AsyncSession, user_id: int, body: UserUpdate) -> User:

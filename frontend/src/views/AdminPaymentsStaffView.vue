@@ -3,6 +3,9 @@ import { computed, onMounted, ref, watch } from 'vue'
 import AdminHighlightListLink from '../components/AdminHighlightListLink.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
+import AdminTableBulkBar from '../components/AdminTableBulkBar.vue'
+import AdminTableSelectTd from '../components/AdminTableSelectTd.vue'
+import AdminTableSelectTh from '../components/AdminTableSelectTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
 import AppModal from '../components/AppModal.vue'
 import AppPager from '../components/AppPager.vue'
@@ -11,14 +14,13 @@ import StaffUserIdSuggestInput from '../components/StaffUserIdSuggestInput.vue'
 import StateNote from '../components/StateNote.vue'
 import { fetchJson } from '../api/client.js'
 import { getSessionRole } from '../auth/session.js'
+import { useAdminTableBulkSelect } from '../composables/useAdminTableBulkSelect.js'
 import { useOffsetPagination } from '../composables/useOffsetPagination.js'
 import { useTableSort, appendTableSortParams } from '../utils/adminTableSort.js'
 import { formatMskApiDateTime } from '../utils/mskDate.js'
 
 const loading = ref(false)
 const error = ref(null)
-const deleting = ref(false)
-const selectedIds = ref([])
 const modalOpen = ref(false)
 const createLoading = ref(false)
 const createError = ref(null)
@@ -60,20 +62,20 @@ const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(items, sortAcc
 
 const canDeletePayments = computed(() => getSessionRole() === 'admin')
 const rowIdsOnPage = computed(() => sortedRows.value.map((row) => Number(row.id)))
-const allSelectedOnPage = computed(() => {
-  if (rowIdsOnPage.value.length === 0) return false
-  return rowIdsOnPage.value.every((id) => selectedIds.value.includes(id))
+const bulk = useAdminTableBulkSelect({
+  rowIdsOnPage,
+  enabled: canDeletePayments,
 })
 
-function toggleSelectAllOnPage() {
-  if (allSelectedOnPage.value) {
-    const remove = new Set(rowIdsOnPage.value)
-    selectedIds.value = selectedIds.value.filter((id) => !remove.has(id))
+const paymentsTableColspan = computed(() => 8 + (bulk.canBulkSelect ? 1 : 0))
+
+function onPaymentRowClick(row, event) {
+  if (bulk.selectionMode) {
+    if (event?.target?.closest?.('a, button, input, label')) return
+    bulk.toggleRow(row.id)
     return
   }
-  selectedIds.value = Array.from(
-    new Set([...selectedIds.value, ...rowIdsOnPage.value]),
-  )
+  togglePaymentRow(row, event)
 }
 
 function formatAmount(v) {
@@ -168,24 +170,24 @@ function parseFormUserId() {
 }
 
 async function deleteSelected() {
-  if (!canDeletePayments.value || selectedIds.value.length === 0 || deleting.value) return
+  if (!canDeletePayments.value || bulk.selectedIds.length === 0 || bulk.deleting) return
   const ok = window.confirm(
-    `Удалить выбранные платежи (${selectedIds.value.length})? Действие необратимо.`,
+    `Удалить выбранные платежи (${bulk.selectedIds.length})? Действие необратимо.`,
   )
   if (!ok) return
-  deleting.value = true
+  bulk.deleting = true
   error.value = null
   try {
     await fetchJson('/api/admin/payments', {
       method: 'DELETE',
-      body: JSON.stringify({ ids: selectedIds.value }),
+      body: JSON.stringify({ ids: bulk.selectedIds }),
     })
-    selectedIds.value = []
+    bulk.exitSelectionMode()
     await load()
   } catch (e) {
     error.value = e.message || String(e)
   } finally {
-    deleting.value = false
+    bulk.deleting = false
   }
 }
 
@@ -248,10 +250,9 @@ async function submitCreatePayment() {
 }
 
 watch(
-  () => rowIdsOnPage.value,
-  (ids) => {
-    const keep = new Set(ids)
-    selectedIds.value = selectedIds.value.filter((id) => keep.has(id))
+  () => bulk.selectionMode,
+  (active) => {
+    if (active) expandedPaymentId.value = null
   },
 )
 
@@ -286,30 +287,32 @@ onMounted(() => {
         @prev="prev"
         @next="next"
       >
-        <template v-if="canDeletePayments" #actions>
-          <button
-            type="button"
-            class="btn-danger"
-            :disabled="selectedIds.length === 0 || deleting"
-            @click="deleteSelected"
-          >
-            {{ deleting ? 'Удаление…' : `Удалить выбранные (${selectedIds.length})` }}
-          </button>
+        <template v-if="bulk.canBulkSelect" #actions>
+          <AdminTableBulkBar
+            :active="bulk.selectionMode"
+            :selected-count="bulk.selectedCount"
+            :deleting="bulk.deleting"
+            entity-label="платежей"
+            @toggle="bulk.toggleSelectionMode()"
+            @delete="deleteSelected"
+          />
         </template>
       </AppPager>
 
-      <AdminTableWrap aria-label="Платежи">
-        <table class="admin-table payments-table" :class="{ 'payments-table--no-select': !canDeletePayments }">
+      <AdminTableWrap
+        aria-label="Платежи"
+        :bulk-select-active="bulk.selectionMode"
+      >
+        <table class="admin-table payments-table">
           <thead>
             <tr>
-              <th v-if="canDeletePayments" class="th-select">
-                <input
-                  type="checkbox"
-                  :checked="allSelectedOnPage"
-                  :disabled="rowIdsOnPage.length === 0"
-                  @change="toggleSelectAllOnPage"
-                />
-              </th>
+              <AdminTableSelectTh
+                v-if="bulk.canBulkSelect"
+                :active="bulk.selectionMode"
+                :checked="bulk.allSelectedOnPage"
+                :disabled="sortedRows.length === 0"
+                @toggle="bulk.toggleSelectAllOnPage()"
+              />
               <AdminSortTh
                 label="ID"
                 column-key="id"
@@ -375,22 +378,26 @@ onMounted(() => {
           </thead>
           <tbody>
             <tr v-if="sortedRows.length === 0">
-              <td :colspan="canDeletePayments ? 9 : 8" class="muted">Нет записей</td>
+              <td :colspan="paymentsTableColspan" class="muted">Нет записей</td>
             </tr>
             <template v-else>
               <template v-for="row in sortedRows" :key="row.id">
                 <tr
                   class="payment-row"
-                  :class="{ 'payment-row--expanded': expandedPaymentId === row.id }"
-                  @click="togglePaymentRow(row, $event)"
+                  :class="{
+                    'payment-row--expanded': !bulk.selectionMode && expandedPaymentId === row.id,
+                    'admin-bulk-row--selectable': bulk.selectionMode,
+                    'admin-bulk-row--picked': bulk.selectionMode && bulk.isRowSelected(row.id),
+                  }"
+                  @click="onPaymentRowClick(row, $event)"
                 >
-                  <td v-if="canDeletePayments" class="td-select" @click.stop>
-                    <input
-                      v-model="selectedIds"
-                      type="checkbox"
-                      :value="row.id"
-                    />
-                  </td>
+                  <AdminTableSelectTd
+                    v-if="bulk.canBulkSelect"
+                    :active="bulk.selectionMode"
+                    :selected="bulk.isRowSelected(row.id)"
+                    :row-id="row.id"
+                    @toggle="bulk.toggleRow(row.id)"
+                  />
                   <td class="num">{{ row.id }}</td>
                   <td class="owner-user-id-cell num" @click.stop>
                     <span class="owner-user-id-inner">
@@ -414,8 +421,11 @@ onMounted(() => {
                   </td>
                   <td class="date-cell">{{ fmtDate(row.created_at) }}</td>
                 </tr>
-                <tr v-if="expandedPaymentId === row.id" class="payment-detail-row">
-                  <td :colspan="canDeletePayments ? 9 : 8">
+                <tr
+                  v-if="!bulk.selectionMode && expandedPaymentId === row.id"
+                  class="payment-detail-row"
+                >
+                  <td :colspan="paymentsTableColspan">
                     <div class="webhook-detail">
                       <p class="webhook-detail-label">Webhook провайдера</p>
                       <pre class="webhook-json">{{ formatWebhookFull(row.provider_webhook) }}</pre>

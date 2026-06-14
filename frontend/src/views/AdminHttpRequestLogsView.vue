@@ -3,12 +3,16 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
+import AdminTableBulkBar from '../components/AdminTableBulkBar.vue'
+import AdminTableSelectTd from '../components/AdminTableSelectTd.vue'
+import AdminTableSelectTh from '../components/AdminTableSelectTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
 import AppPager from '../components/AppPager.vue'
 import MultiSelectDropdown from '../components/MultiSelectDropdown.vue'
 import StateNote from '../components/StateNote.vue'
 import { fetchJson } from '../api/client.js'
 import { getSessionRole } from '../auth/session.js'
+import { useAdminTableBulkSelect } from '../composables/useAdminTableBulkSelect.js'
 import { useTableSort, appendTableSortParams } from '../utils/adminTableSort.js'
 import { formatMskApiDateTime } from '../utils/mskDate.js'
 
@@ -27,8 +31,6 @@ const filterTimeTo = ref('')
 
 const loading = ref(false)
 const error = ref(null)
-const deleting = ref(false)
-const selectedIds = ref([])
 const page = ref({
   items: [],
   total: 0,
@@ -62,6 +64,21 @@ const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(
     },
   },
 )
+
+const canDeleteLogs = computed(() => getSessionRole() === 'admin')
+const rowIdsOnPage = computed(() => sortedRows.value.map((row) => Number(row.id)))
+const bulk = useAdminTableBulkSelect({
+  rowIdsOnPage,
+  enabled: canDeleteLogs,
+})
+
+const logTableColspan = computed(() => 8 + (bulk.canBulkSelect ? 1 : 0))
+
+function onLogRowClick(row, event) {
+  if (!bulk.selectionMode) return
+  if (event?.target?.closest?.('a, button, input, label')) return
+  bulk.toggleRow(row.id)
+}
 
 function httpTraceCreatedAtTs(iso) {
   const t = Date.parse(String(iso ?? ''))
@@ -329,28 +346,29 @@ function resetFilters() {
   limit.value = 50
   sortKey.value = null
   sortDir.value = 'asc'
+  bulk.exitSelectionMode()
   router.replace({ path: '/admin/logs', query: {} })
 }
 
 async function deleteSelected() {
-  if (!canDeleteLogs.value || selectedIds.value.length === 0 || deleting.value) return
+  if (!canDeleteLogs.value || bulk.selectedIds.length === 0 || bulk.deleting) return
   const ok = window.confirm(
-    `Удалить выбранные логи (${selectedIds.value.length})? Действие необратимо.`,
+    `Удалить выбранные логи (${bulk.selectedIds.length})? Действие необратимо.`,
   )
   if (!ok) return
-  deleting.value = true
+  bulk.deleting = true
   error.value = null
   try {
     await fetchJson('/api/admin/http-request-traces', {
       method: 'DELETE',
-      body: JSON.stringify({ ids: selectedIds.value }),
+      body: JSON.stringify({ ids: bulk.selectedIds }),
     })
-    selectedIds.value = []
+    bulk.exitSelectionMode()
     await syncFromRoute()
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
-    deleting.value = false
+    bulk.deleting = false
   }
 }
 
@@ -383,22 +401,6 @@ const rangeLabel = computed(() => {
 const canNext = computed(
   () => offset.value + page.value.items.length < page.value.total,
 )
-const rowIdsOnPage = computed(() => sortedRows.value.map((row) => Number(row.id)))
-const allSelectedOnPage = computed(() => {
-  if (rowIdsOnPage.value.length === 0) return false
-  return rowIdsOnPage.value.every((id) => selectedIds.value.includes(id))
-})
-
-function toggleSelectAllOnPage() {
-  if (allSelectedOnPage.value) {
-    const remove = new Set(rowIdsOnPage.value)
-    selectedIds.value = selectedIds.value.filter((id) => !remove.has(id))
-    return
-  }
-  selectedIds.value = Array.from(
-    new Set([...selectedIds.value, ...rowIdsOnPage.value]),
-  )
-}
 
 const sourceFilterOptions = computed(() => {
   const common = [
@@ -433,22 +435,12 @@ const statusFilterOptions = [
   '503',
 ]
 
-const canDeleteLogs = computed(() => getSessionRole() === 'admin')
-
 watch(
   () => route.fullPath,
   () => {
     void syncFromRoute()
   },
   { immediate: true },
-)
-
-watch(
-  () => rowIdsOnPage.value,
-  (ids) => {
-    const keep = new Set(ids)
-    selectedIds.value = selectedIds.value.filter((id) => keep.has(id))
-  },
 )
 </script>
 
@@ -566,30 +558,32 @@ watch(
       @prev="goPrev"
       @next="goNext"
     >
-      <template v-if="canDeleteLogs" #actions>
-        <button
-          type="button"
-          class="btn-danger"
-          :disabled="selectedIds.length === 0 || deleting"
-          @click="deleteSelected"
-        >
-          {{ deleting ? 'Удаление…' : `Удалить выбранные (${selectedIds.length})` }}
-        </button>
+      <template v-if="bulk.canBulkSelect" #actions>
+        <AdminTableBulkBar
+          :active="bulk.selectionMode"
+          :selected-count="bulk.selectedCount"
+          :deleting="bulk.deleting"
+          entity-label="логов"
+          @toggle="bulk.toggleSelectionMode()"
+          @delete="deleteSelected"
+        />
       </template>
     </AppPager>
 
-    <AdminTableWrap aria-label="Таблица журнала HTTP">
-      <table class="admin-table http-trace-table" :class="{ 'http-trace-table--no-select': !canDeleteLogs }">
+    <AdminTableWrap
+      aria-label="Таблица журнала HTTP"
+      :bulk-select-active="bulk.selectionMode"
+    >
+      <table class="admin-table http-trace-table">
         <thead>
           <tr>
-            <th v-if="canDeleteLogs" class="th-select">
-              <input
-                type="checkbox"
-                :checked="allSelectedOnPage"
-                :disabled="rowIdsOnPage.length === 0"
-                @change="toggleSelectAllOnPage"
-              />
-            </th>
+            <AdminTableSelectTh
+              v-if="bulk.canBulkSelect"
+              :active="bulk.selectionMode"
+              :checked="bulk.allSelectedOnPage"
+              :disabled="sortedRows.length === 0"
+              @toggle="bulk.toggleSelectAllOnPage()"
+            />
             <AdminSortTh
               label="Время"
               column-key="created_at"
@@ -657,16 +651,24 @@ watch(
         </thead>
         <tbody>
           <tr v-if="sortedRows.length === 0">
-            <td :colspan="canDeleteLogs ? 9 : 8" class="muted center">Нет строк</td>
+            <td :colspan="logTableColspan" class="muted center">Нет строк</td>
           </tr>
-          <tr v-for="row in sortedRows" :key="row.id">
-            <td v-if="canDeleteLogs" class="td-select">
-              <input
-                v-model="selectedIds"
-                type="checkbox"
-                :value="row.id"
-              />
-            </td>
+          <tr
+            v-for="row in sortedRows"
+            :key="row.id"
+            :class="{
+              'admin-bulk-row--selectable': bulk.selectionMode,
+              'admin-bulk-row--picked': bulk.selectionMode && bulk.isRowSelected(row.id),
+            }"
+            @click="onLogRowClick(row, $event)"
+          >
+            <AdminTableSelectTd
+              v-if="bulk.canBulkSelect"
+              :active="bulk.selectionMode"
+              :selected="bulk.isRowSelected(row.id)"
+              :row-id="row.id"
+              @toggle="bulk.toggleRow(row.id)"
+            />
             <td
               class="mono td-datetime"
               :title="formatHttpTraceFullDateTime(row.created_at)"

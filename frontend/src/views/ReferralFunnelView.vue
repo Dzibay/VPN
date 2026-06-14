@@ -197,8 +197,8 @@ onMounted(async () => {
             <div class="funnel-label-row">
               <span class="funnel-label">{{
                 hasLinkFilter
-                  ? 'Регистрации по счётчику ссылки'
-                  : 'Пользователей в базе (все записи)'
+                  ? 'Регистрации по ссылке (Telegram / email ✓)'
+                  : 'Пользователей в базе (Telegram / email ✓)'
               }}</span>
               <span class="funnel-num">{{ registrations.toLocaleString('ru-RU') }}</span>
             </div>

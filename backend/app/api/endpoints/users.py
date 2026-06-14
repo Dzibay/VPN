@@ -18,6 +18,8 @@ from app.domain.models.users import (
     ExtendActiveSubscriptionsBody,
     ExtendActiveSubscriptionsResponse,
     StaffUserSearchItem,
+    StaffUsersBulkDeleteBody,
+    StaffUsersBulkDeleteResponse,
     StaffUsersListResponse,
     UserCreate,
     UserListItem,
@@ -29,6 +31,7 @@ from app.domain.models.users import (
 from app.domain.services.users_service import (
     create_staff_user,
     delete_staff_user,
+    delete_staff_users_bulk,
     extend_active_subscriptions,
     patch_staff_user,
     require_user_exists,
@@ -125,6 +128,23 @@ async def list_users(
         sort_by=sort_by,
         sort_dir=sort_dir,
     )
+
+
+@router.delete(
+    "/bulk",
+    response_model=StaffUsersBulkDeleteResponse,
+    dependencies=[Depends(require_admin)],
+    summary="Массовое удаление пользователей (только admin)",
+)
+async def delete_users_bulk(
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+    body: StaffUsersBulkDeleteBody,
+) -> StaffUsersBulkDeleteResponse:
+    deleted = await delete_staff_users_bulk(session, ids=body.ids)
+    if deleted:
+        background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
+    return StaffUsersBulkDeleteResponse(deleted_count=deleted)
 
 
 @router.get(

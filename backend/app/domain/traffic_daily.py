@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time import as_calendar_date, iter_calendar_days
+from app.domain.users.stats_qualification import user_counts_in_admin_stats
 from app.infrastructure.persistence.models.user import User
 from app.infrastructure.persistence.models.user_server_traffic import UserServerTraffic
 
@@ -31,6 +32,7 @@ async def fetch_user_traffic_series(
     ).select_from(UserServerTraffic)
     if eligible_users_only:
         stmt = stmt.join(User, User.id == UserServerTraffic.user_id).where(
+            user_counts_in_admin_stats(User),
             User.registered_at.is_not(None),
             User.subscription_until.is_not(None),
         )

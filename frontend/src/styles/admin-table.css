@@ -146,3 +146,120 @@
   font-weight: 500;
   color: var(--muted);
 }
+
+/* ---------- Массовый выбор строк (admin) ---------- */
+.admin-table .admin-bulk-col {
+  width: 0;
+  max-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  overflow: hidden;
+  opacity: 0;
+  vertical-align: middle;
+  transition:
+    max-width 0.44s cubic-bezier(0.34, 1.56, 0.64, 1),
+    width 0.44s cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity 0.3s ease,
+    padding 0.44s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.admin-table .admin-bulk-col--visible {
+  width: 2.85rem;
+  max-width: 2.85rem;
+  padding-left: 0.65rem;
+  padding-right: 0.45rem;
+  opacity: 1;
+}
+
+.admin-bulk-col__inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.35rem;
+  transform: scale(0.72);
+  opacity: 0;
+  transition:
+    transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity 0.28s ease;
+}
+
+.admin-bulk-col--visible .admin-bulk-col__inner {
+  transform: scale(1);
+  opacity: 1;
+}
+
+.admin-bulk-check {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin: 0;
+  cursor: pointer;
+}
+
+.admin-bulk-check__input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.admin-bulk-check__box {
+  position: relative;
+  display: block;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 5px;
+  border: 2px solid color-mix(in srgb, var(--muted) 55%, var(--border));
+  background: var(--card-bg);
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.18s ease;
+}
+
+.admin-bulk-check:hover .admin-bulk-check__box {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.admin-bulk-check__input:focus-visible + .admin-bulk-check__box {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.admin-bulk-check__box--on,
+.admin-bulk-check__input:checked + .admin-bulk-check__box {
+  border-color: var(--accent, #2563eb);
+  background: var(--accent, #2563eb);
+  transform: scale(1.06);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.admin-bulk-check__input:checked + .admin-bulk-check__box::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.32rem;
+  height: 0.58rem;
+  margin-top: -0.06rem;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: translate(-50%, -55%) rotate(45deg);
+}
+
+.admin-table tbody tr.admin-bulk-row--selectable {
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+
+.admin-table tbody tr.admin-bulk-row--picked {
+  background: color-mix(in srgb, var(--accent) 13%, transparent) !important;
+}
+
+.admin-table tbody tr.admin-bulk-row--picked:hover {
+  background: color-mix(in srgb, var(--accent) 17%, transparent) !important;
+}

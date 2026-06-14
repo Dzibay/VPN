@@ -13,12 +13,32 @@ ReferralBonusPolicy = Literal["default", "fixed_first_payment_instant"]
 
 
 class UsersCountResponse(BaseModel):
-    users_count: int = Field(ge=0, description="Число записей в таблице users")
+    users_count: int = Field(
+        ge=0,
+        description=(
+            "Число пользователей в статистике: Telegram привязан "
+            "или email подтверждён"
+        ),
+    )
+    unverified_email_users_count: int = Field(
+        ge=0,
+        description=(
+            "Пользователи без Telegram с непустым, но неподтверждённым email "
+            "(не входят в users_count)"
+        ),
+    )
     registrations_today_count: int = Field(
         ge=0,
         description=(
-            "Регистрации за текущий календарный день Europe/Moscow "
-            "(как на графике daily-stats: registered_at и subscription_until заданы)"
+            "Регистрации за текущий календарный день Europe/Moscow среди "
+            "учётных пользователей (Telegram или подтверждённый email)"
+        ),
+    )
+    registrations_today_unverified_email_count: int = Field(
+        ge=0,
+        description=(
+            "Регистрации за сегодня (МСK) без Telegram и с неподтверждённым email "
+            "(не входят в registrations_today_count)"
         ),
     )
     registrations_yesterday_count: int = Field(
@@ -262,6 +282,18 @@ class ExtendActiveSubscriptionsResponse(BaseModel):
         ge=0,
         description="Число обновлённых пользователей (только с конечной активной подпиской)",
     )
+
+
+class StaffUsersBulkDeleteBody(BaseModel):
+    ids: list[int] = Field(
+        min_length=1,
+        max_length=500,
+        description="Список users.id для удаления",
+    )
+
+
+class StaffUsersBulkDeleteResponse(BaseModel):
+    deleted_count: int = Field(ge=0, description="Число удалённых пользователей")
 
 
 class UserCreate(BaseModel):

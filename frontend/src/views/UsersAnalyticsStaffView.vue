@@ -7,8 +7,14 @@ import AppPager from '../components/AppPager.vue'
 import StaffUserIdSuggestInput from '../components/StaffUserIdSuggestInput.vue'
 import StatWidget from '../components/StatWidget.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
+import AdminTableBulkBar from '../components/AdminTableBulkBar.vue'
+import AdminTableSelectTd from '../components/AdminTableSelectTd.vue'
+import AdminTableSelectTh from '../components/AdminTableSelectTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
 import { fetchJson } from '../api/client.js'
+import { isAdminRole } from '../auth/permissions.js'
+import { getSessionRole } from '../auth/session.js'
+import { useAdminTableBulkSelect } from '../composables/useAdminTableBulkSelect.js'
 import { formatTrafficWithLimit, isTrafficOverLimit } from '../utils/formatTraffic.js'
 import { useOffsetPagination } from '../composables/useOffsetPagination.js'
 import { useTableSort, appendTableSortParams } from '../utils/adminTableSort.js'
@@ -68,7 +74,13 @@ const userCountWidget = computed(() => {
   const s = usersCountSummary.value
   const total = Number(s.users_count) || 0
   const todayRegs = Number(s.registrations_today_count) || 0
+  const todayUnverified = Number(s.registrations_today_unverified_email_count) || 0
   const yesterdayRegs = Number(s.registrations_yesterday_count) || 0
+
+  const todayRegsDisplay =
+    todayUnverified > 0
+      ? `${todayRegs} (неподтв. почта: ${todayUnverified})`
+      : String(todayRegs)
 
   let vsLabel = ''
   let vsClass = 'stat-delta--muted'
@@ -92,7 +104,7 @@ const userCountWidget = computed(() => {
 
   return {
     totalDisplay: total.toLocaleString('ru-RU'),
-    todayRegsDisplay: String(todayRegs),
+    todayRegsDisplay,
     vsLabel,
     vsClass,
   }
@@ -187,7 +199,11 @@ function emailCellTitle(u) {
 }
 
 function toggleUserRowSelect(userId, event) {
-  if (event?.target?.closest?.('a, button')) return
+  if (event?.target?.closest?.('a, button, input, label')) return
+  if (bulk.selectionMode) {
+    bulk.toggleRow(userId)
+    return
+  }
   selectedUserId.value = selectedUserId.value === userId ? null : userId
 }
 
@@ -278,6 +294,22 @@ const { sortKey, sortDir, sortedRows, toggleSort } = useTableSort(
   },
 )
 
+const isAdmin = computed(() => isAdminRole(getSessionRole()))
+const rowIdsOnPage = computed(() => sortedRows.value.map((u) => Number(u.id)))
+const bulk = useAdminTableBulkSelect({
+  rowIdsOnPage,
+  enabled: isAdmin,
+})
+
+const tableColspan = computed(() => 8 + (bulk.canBulkSelect ? 1 : 0))
+
+watch(
+  () => bulk.selectionMode,
+  (active) => {
+    if (active) selectedUserId.value = null
+  },
+)
+
 watch(rows, (list) => {
   const id = selectedUserId.value
   if (id != null && !list.some((u) => u.id === id)) selectedUserId.value = null
@@ -344,6 +376,30 @@ function goToUserAnalytics(row) {
   router.push(`/admin/users/${id}/analytics`)
 }
 
+async function deleteSelectedUsers() {
+  if (!isAdmin.value || bulk.selectedIds.length === 0 || bulk.deleting) return
+  const n = bulk.selectedIds.length
+  const ok = window.confirm(
+    `Удалить выбранных пользователей (${n})? Действие необратимо. Синхронизация Xray будет поставлена в очередь.`,
+  )
+  if (!ok) return
+  bulk.deleting = true
+  error.value = null
+  try {
+    await fetchJson('/api/users/bulk', {
+      method: 'DELETE',
+      body: JSON.stringify({ ids: bulk.selectedIds }),
+    })
+    bulk.exitSelectionMode()
+    selectedUserId.value = null
+    await load()
+  } catch (e) {
+    error.value = e.message || String(e)
+  } finally {
+    bulk.deleting = false
+  }
+}
+
 onMounted(() => {
   void load()
 })
@@ -406,17 +462,38 @@ onMounted(() => {
       :loading="loading"
       @prev="prev"
       @next="next"
-    />
+    >
+      <template v-if="bulk.canBulkSelect" #actions>
+        <AdminTableBulkBar
+          :active="bulk.selectionMode"
+          :selected-count="bulk.selectedCount"
+          :deleting="bulk.deleting"
+          entity-label="пользователей"
+          @toggle="bulk.toggleSelectionMode()"
+          @delete="deleteSelectedUsers"
+        />
+      </template>
+    </AppPager>
 
     <div
       class="analytics-main"
       :class="{ 'analytics-main--split': selectedUser }"
     >
       <div class="analytics-main__table">
-        <AdminTableWrap aria-label="Таблица аналитики пользователей">
+        <AdminTableWrap
+          aria-label="Таблица аналитики пользователей"
+          :bulk-select-active="bulk.selectionMode"
+        >
           <table class="admin-table">
         <thead>
           <tr>
+            <AdminTableSelectTh
+              v-if="bulk.canBulkSelect"
+              :active="bulk.selectionMode"
+              :checked="bulk.allSelectedOnPage"
+              :disabled="sortedRows.length === 0"
+              @toggle="bulk.toggleSelectAllOnPage()"
+            />
             <AdminSortTh
               label="ID"
               column-key="id"
@@ -481,13 +558,13 @@ onMounted(() => {
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="8" class="muted">Загрузка…</td>
+            <td :colspan="tableColspan" class="muted">Загрузка…</td>
           </tr>
           <tr v-else-if="error">
-            <td colspan="8" class="error-cell">{{ error }}</td>
+            <td :colspan="tableColspan" class="error-cell">{{ error }}</td>
           </tr>
           <tr v-else-if="rowsTotal === 0">
-            <td colspan="8" class="muted">Нет пользователей</td>
+            <td :colspan="tableColspan" class="muted">Нет пользователей</td>
           </tr>
           <template v-else>
             <tr
@@ -497,13 +574,26 @@ onMounted(() => {
               class="client-row-toggle"
               :class="{
                 'admin-row-highlight': highlightUserId === u.id,
-                'user-row--selected': selectedUserId === u.id,
+                'user-row--selected': !bulk.selectionMode && selectedUserId === u.id,
                 'client-row-active-today': u.active_today,
                 'client-row-has-payments': u.has_payments,
+                'admin-bulk-row--selectable': bulk.selectionMode,
+                'admin-bulk-row--picked': bulk.selectionMode && bulk.isRowSelected(u.id),
               }"
-              title="Нажмите строку, чтобы открыть или закрыть карточку пользователя справа"
+              :title="
+                bulk.selectionMode
+                  ? 'Нажмите, чтобы выбрать или снять выбор'
+                  : 'Нажмите строку, чтобы открыть или закрыть карточку пользователя справа'
+              "
               @click="toggleUserRowSelect(u.id, $event)"
             >
+              <AdminTableSelectTd
+                v-if="bulk.canBulkSelect"
+                :active="bulk.selectionMode"
+                :selected="bulk.isRowSelected(u.id)"
+                :row-id="u.id"
+                @toggle="bulk.toggleRow(u.id)"
+              />
               <td class="num mono-num">{{ u.id }}</td>
               <td class="email-cell" :title="emailCellTitle(u)">
                 <span class="email-cell__inner">
