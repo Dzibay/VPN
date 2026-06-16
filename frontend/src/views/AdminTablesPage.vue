@@ -10,6 +10,7 @@ import {
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
+import ServersTopologyGrid from '../components/ServersTopologyGrid.vue'
 import AppModal from '../components/AppModal.vue'
 import UserRolePill from '../components/UserRolePill.vue'
 import { RouterLink, useRoute } from 'vue-router'
@@ -109,6 +110,8 @@ function serverCascadeSortKey(s) {
 }
 
 const showHiddenServers = ref(false)
+/** topology — схема вход→exit; table — классическая таблица */
+const serversViewMode = ref('topology')
 
 const serversForTable = computed(() =>
   servers.value.filter((s) => showHiddenServers.value || !s.is_hidden),
@@ -1158,6 +1161,23 @@ function isServerProvisionBusy(s) {
   )
 }
 
+const busyServerId = computed(() => {
+  const ids = [
+    serverProvisioningId.value,
+    serverReconcileId.value,
+    serverProvisionResetId.value,
+    serverXrayId.value,
+    serverHysteria2Id.value,
+    serverPrometheusId.value,
+    serverFairEgressId.value,
+    serverCleanupId.value,
+    serverPingId.value,
+    deletingServerId.value,
+    serverHiddenToggleId.value,
+  ]
+  return ids.find((id) => id != null) ?? null
+})
+
 async function enqueueProvision(s) {
   provisionActionError.value = null
   serverProvisioningId.value = s.id
@@ -1383,26 +1403,6 @@ const cascadeReferencedExitIds = computed(() => {
   }
   return s
 })
-
-const serverCascadePairs = computed(() => {
-  const out = []
-  for (const s of servers.value) {
-    if (!s.is_cascade_ru_entry || !s.cascade_next_server_id) continue
-    const exitS = servers.value.find((e) => e.id === s.cascade_next_server_id) ?? null
-    out.push({ entry: s, exit: exitS })
-  }
-  return out
-})
-
-const ruEntryAwaitingCascade = computed(() =>
-  servers.value.filter((s) => s.is_cascade_ru_entry && !s.cascade_next_server_id),
-)
-
-const externalServersUnpaired = computed(() =>
-  servers.value.filter(
-    (s) => !s.is_cascade_ru_entry && !cascadeReferencedExitIds.value.has(s.id),
-  ),
-)
 
 /** Под селектор: кто может быть внешним exit (не «вход РФ»; не self при правке) */
 function cascadeExitCandidates(editingId) {
@@ -1754,58 +1754,29 @@ watch(formIsCascadeRuEntry, (v) => {
             </li>
           </ul>
         </div>
-        <div class="cascade-overview" aria-label="Каскадные пары">
-          <h3 class="cascade-overview-title">Каскад (вход РФ → внешний exit)</h3>
-          <p class="cascade-muted cascade-provision-hint">
-            Сначала установите <strong>exit</strong> (REALITY, gRPC+TLS или WebSocket+TLS). Затем
-            <strong>РФ-вход</strong> того же семейства VLESS — Xray или полная установка: клиенты
-            подключаются ко входу, магистраль на exit — по типу exit и отдельному UUID. При смене пары
-            exit получит sync Xray (если Redis доступен).
-          </p>
-          <p v-if="!serverCascadePairs.length && !ruEntryAwaitingCascade.length && !externalServersUnpaired.length" class="cascade-muted">
-            Каскадов нет. Добавьте внешний сервер, при необходимости — отметьте вход (РФ) и привяжите exit.
-          </p>
-          <ul v-else class="cascade-pair-list">
-            <li
-              v-for="row in serverCascadePairs"
-              :key="`pair-${row.entry.id}`"
-              class="cascade-pair-item cascade-pair-item--ok"
-            >
-              <span class="cascade-pair-line">
-                <strong>Вход (РФ)</strong> id {{ row.entry.id }}
-                <span v-if="row.entry.name" class="cascade-muted"> · {{ row.entry.name }}</span>
-                <span class="cascade-mono"> · {{ row.entry.host }}</span>
-                <span class="cascade-arrow" aria-hidden="true"> → </span>
-                <strong>Exit</strong> id {{ row.exit?.id ?? row.entry.cascade_next_server_id }}
-                <span v-if="row.exit?.name" class="cascade-muted"> · {{ row.exit.name }}</span>
-                <span v-if="row.exit" class="cascade-mono"> · {{ row.exit.host }}</span>
-              </span>
-            </li>
-            <li
-              v-for="s in ruEntryAwaitingCascade"
-              :key="`ru-wait-${s.id}`"
-              class="cascade-pair-item cascade-pair-item--wait"
-            >
-              <span class="cascade-pair-line">
-                <strong>Вход (РФ)</strong> id {{ s.id }}{{ s.name ? ` · ${s.name}` : '' }}
-                <span class="cascade-mono"> · {{ s.host }}</span>
-                <span class="cascade-pair-hint">— внешний exit ещё не привязан (правка сервера)</span>
-              </span>
-            </li>
-            <li
-              v-for="s in externalServersUnpaired"
-              :key="`ext-${s.id}`"
-              class="cascade-pair-item cascade-pair-item--ext"
-            >
-              <span class="cascade-pair-line">
-                <strong>Только внешний</strong> id {{ s.id }}{{ s.name ? ` · ${s.name}` : '' }}
-                <span class="cascade-mono"> · {{ s.host }}</span>
-                <span v-if="s.country" class="cascade-muted"> ({{ s.country }})</span>
-              </span>
-            </li>
-          </ul>
-        </div>
         <div class="admin-table-toolbar" role="toolbar" aria-label="Вид таблицы серверов">
+          <div class="servers-view-toggle" role="tablist" aria-label="Режим отображения серверов">
+            <button
+              type="button"
+              class="servers-view-toggle__btn"
+              :class="{ 'servers-view-toggle__btn--active': serversViewMode === 'topology' }"
+              role="tab"
+              :aria-selected="serversViewMode === 'topology'"
+              @click="serversViewMode = 'topology'"
+            >
+              Схема
+            </button>
+            <button
+              type="button"
+              class="servers-view-toggle__btn"
+              :class="{ 'servers-view-toggle__btn--active': serversViewMode === 'table' }"
+              role="tab"
+              :aria-selected="serversViewMode === 'table'"
+              @click="serversViewMode = 'table'"
+            >
+              Таблица
+            </button>
+          </div>
           <button
             type="button"
             class="btn-icon-toggle"
@@ -1858,7 +1829,18 @@ watch(formIsCascadeRuEntry, (v) => {
         >
           Все серверы помечены как скрытые. Включите показ кнопкой с иконкой глаза выше.
         </p>
-        <AdminTableWrap aria-label="Таблица серверов">
+        <ServersTopologyGrid
+          v-if="serversViewMode === 'topology' && serversForTable.length"
+          :servers="serversForTable"
+          :menu-open-id="serverMenuOpenId"
+          :busy-server-id="busyServerId"
+          @edit="openEditServer"
+          @toggle-menu="toggleServerMenu"
+        />
+        <AdminTableWrap
+          v-else-if="serversViewMode === 'table' && serversForTable.length"
+          aria-label="Таблица серверов"
+        >
         <table class="admin-table">
           <thead>
             <tr>
@@ -2992,6 +2974,40 @@ watch(formIsCascadeRuEntry, (v) => {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
+}
+
+.servers-view-toggle {
+  display: inline-flex;
+  padding: 0.2rem;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+  gap: 0.15rem;
+}
+
+.servers-view-toggle__btn {
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--muted);
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.servers-view-toggle__btn:hover {
+  color: var(--text-h);
+}
+
+.servers-view-toggle__btn--active {
+  color: var(--text-h);
+  background: var(--card-bg);
+  box-shadow: 0 1px 2px color-mix(in srgb, #000 8%, transparent);
 }
 
 /* .admin-table-toolbar, .btn-icon-toggle — в styles/admin-ui.css */
