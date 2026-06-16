@@ -30,7 +30,10 @@ defineProps({
   getTooltipFooter: { type: Function, default: null },
   /** @type {import('vue').PropType<(item: import('chart.js').TooltipItem<'bar'>) => boolean>} */
   tooltipFilter: { type: Function, default: null },
+  selectedCategoryIndex: { type: Number, default: -1 },
 })
+
+defineEmits(['categoryClick'])
 </script>
 
 <template>
@@ -63,6 +66,8 @@ defineProps({
       :stacked="stacked"
       :get-tooltip-footer="getTooltipFooter"
       :tooltip-filter="tooltipFilter"
+      :selected-category-index="selectedCategoryIndex"
+      @category-click="$emit('categoryClick', $event)"
     />
   </div>
 </template>

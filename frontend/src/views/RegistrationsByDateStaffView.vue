@@ -4,6 +4,7 @@ import AdminBarChartPanel from '../components/AdminBarChartPanel.vue'
 import AdminLineChartPanel from '../components/AdminLineChartPanel.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AppRefreshButton from '../components/AppRefreshButton.vue'
+import PayExpDayDetailPanel from '../components/PayExpDayDetailPanel.vue'
 import { fetchJson } from '../api/client.js'
 import { mapStaffChartEventsToMarkers } from '../utils/chartStaffMarkersPlugin.js'
 import { useUsersDailyStatsChart } from '../composables/useUsersDailyStatsChart.js'
@@ -149,6 +150,25 @@ const payExpRows = ref(/** @type {PayExpRow[]} */ ([]))
 const payExpLoading = ref(false)
 const payExpError = ref(null)
 
+const payExpSelectedIndex = ref(-1)
+/** @type {import('vue').Ref<{ stats_date: string; groups: unknown[] } | null>} */
+const payExpDayDetail = ref(null)
+const payExpDayDetailLoading = ref(false)
+const payExpDayDetailError = ref(null)
+let payExpDayDetailGen = 0
+
+const payExpSelectedRow = computed(() => {
+  const idx = payExpSelectedIndex.value
+  if (idx < 0) return null
+  return payExpRows.value[idx] ?? null
+})
+
+const payExpSelectedDate = computed(() => {
+  const row = payExpSelectedRow.value
+  if (!row?.stats_date) return null
+  return String(row.stats_date).slice(0, 10)
+})
+
 const payExpXMarkers = computed(() => {
   const today = mskTodayIso()
   if (String(today).slice(0, 7) !== payExpMonth.value) return []
@@ -182,7 +202,7 @@ const payExpAriaLabel =
   'По дням МСК: два столбца — оплаты (первая и повторная) и окончания подписки (без трафика, с трафиком, активные в день окончания, активные сегодня)'
 
 const payExpHint =
-  'В каждом дне два столбца: слева оплаты, справа окончания подписки. Над столбцами по центру дня — число окончаний у пользователей с оплатой: голубое для сегодня и будущих дней, серое для прошедших.'
+  'В каждом дне два столбца: слева оплаты, справа окончания подписки. Над столбцами по центру дня — число окончаний у пользователей с оплатой: голубое для сегодня и будущих дней, серое для прошедших. Нажмите на столбец дня — ниже откроются списки пользователей и платежей.'
 
 const payExpCategoryBlue = rgba(chartSeriesRgb.active, 0.95)
 const payExpCategoryGray = rgba(chartSeriesRgb.expiryGray, 0.92)
@@ -297,12 +317,57 @@ async function loadPayExpBars() {
       typeof data.month_max === 'string' && data.month_max ? data.month_max : null
     payExpMonthBounds.value = { min, max }
     clampPayExpMonth()
+    if (payExpSelectedIndex.value >= payExpRows.value.length) {
+      closePayExpDayDetail()
+    }
   } catch (e) {
     payExpError.value = e.message || String(e)
     payExpRows.value = []
+    closePayExpDayDetail()
   } finally {
     payExpLoading.value = false
   }
+}
+
+function closePayExpDayDetail() {
+  payExpSelectedIndex.value = -1
+  payExpDayDetail.value = null
+  payExpDayDetailError.value = null
+  payExpDayDetailLoading.value = false
+}
+
+async function loadPayExpDayDetail(dayIso) {
+  const gen = ++payExpDayDetailGen
+  payExpDayDetailLoading.value = true
+  payExpDayDetailError.value = null
+  payExpDayDetail.value = null
+  try {
+    const data = await fetchJson(
+      `/api/users/daily-payments-expiry-bars/detail?day=${encodeURIComponent(dayIso)}`,
+    )
+    if (gen !== payExpDayDetailGen) return
+    payExpDayDetail.value = data
+  } catch (e) {
+    if (gen !== payExpDayDetailGen) return
+    payExpDayDetailError.value = e.message || String(e)
+    payExpDayDetail.value = null
+  } finally {
+    if (gen === payExpDayDetailGen) {
+      payExpDayDetailLoading.value = false
+    }
+  }
+}
+
+function onPayExpCategoryClick(index) {
+  if (payExpSelectedIndex.value === index) {
+    closePayExpDayDetail()
+    return
+  }
+  const row = payExpRows.value[index]
+  const dayIso = row?.stats_date ? String(row.stats_date).slice(0, 10) : null
+  if (!dayIso) return
+  payExpSelectedIndex.value = index
+  void loadPayExpDayDetail(dayIso)
 }
 
 async function refreshAllCharts() {
@@ -317,6 +382,7 @@ onMounted(() => {
 })
 
 watch(payExpMonth, () => {
+  closePayExpDayDetail()
   void loadPayExpBars()
 })
 </script>
@@ -530,7 +596,18 @@ watch(payExpMonth, () => {
         stacked
         :get-tooltip-footer="payExpTooltipFooter"
         :tooltip-filter="payExpTooltipFilter"
+        :selected-category-index="payExpSelectedIndex"
         y-title="Количество"
+        @category-click="onPayExpCategoryClick"
+      />
+      <PayExpDayDetailPanel
+        v-if="payExpSelectedDate"
+        :stats-date="payExpSelectedDate"
+        :groups="payExpDayDetail?.groups ?? []"
+        :loading="payExpDayDetailLoading"
+        :error="payExpDayDetailError"
+        :summary-row="payExpSelectedRow"
+        @close="closePayExpDayDetail"
       />
     </div>
   </AdminStaffShell>

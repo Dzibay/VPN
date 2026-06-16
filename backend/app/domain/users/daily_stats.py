@@ -23,7 +23,12 @@ from app.core.time import (
     msk_month_bounds,
 )
 from app.domain.models.users import (
+    DailyPaymentsExpiryDayDetailResponse,
     DailyPaymentsExpiryStatsRow,
+    PayExpDayDetailGroup,
+    PayExpDayDetailGroupKey,
+    PayExpDayPaymentItem,
+    PayExpDayUserItem,
     UserStatsByDateRow,
     UsersDailyStatsResponse,
 )
@@ -359,6 +364,249 @@ async def daily_payments_expiry_stats(
         month_min=month_min,
         month_max=month_max,
     )
+
+
+_PAY_EXP_GROUP_META: dict[
+    PayExpDayDetailGroupKey,
+    tuple[str, str],
+] = {
+    "payments_first": (
+        "Оплаты: первая",
+        "Первый платёж пользователя за всё время (по дате создания)",
+    ),
+    "payments_repeat": (
+        "Оплаты: повторная",
+        "Платёж пользователя, у которого уже была более ранняя оплата",
+    ),
+    "expiry_no_traffic": (
+        "Окончание: без трафика",
+        "Подписка истекает в этот день; суммарного трафика не было",
+    ),
+    "expiry_has_traffic": (
+        "Окончание: с трафиком",
+        "Истекает в этот день; трафик был, но нет роста ни сегодня, ни в день окончания",
+    ),
+    "expiry_active_on_day": (
+        "Окончание: активные в день окончания",
+        "Рост трафика в день окончания, но не в текущий день МСК",
+    ),
+    "expiry_active_today": (
+        "Окончание: активные сегодня (МСК)",
+        "Рост суммарного трафика в текущий календарный день Москвы",
+    ),
+}
+
+
+def _telegram_username_from_props(props: object) -> str | None:
+    if not isinstance(props, dict):
+        return None
+    uname = props.get("username")
+    if isinstance(uname, str):
+        uname = uname.strip()
+        return uname or None
+    return None
+
+
+def _user_to_pay_exp_item(user: User, paid_uids: set[int]) -> PayExpDayUserItem:
+    return PayExpDayUserItem(
+        user_id=int(user.id),
+        email=user.email,
+        telegram_id=int(user.telegram_id) if user.telegram_id is not None else None,
+        telegram_username=_telegram_username_from_props(user.telegram_properties),
+        subscription_until=as_calendar_date(user.subscription_until),
+        has_payments_ever=int(user.id) in paid_uids,
+    )
+
+
+def _classify_expiring_user(
+    uid: int,
+    su_day: date,
+    msk_td: date,
+    by_user: dict,
+    user_flags: dict[int, tuple[bool, frozenset[date]]],
+) -> PayExpDayDetailGroupKey:
+    sm = by_user.get(uid)
+    if not sm or not any(series for series in sm.values()):
+        return "expiry_no_traffic"
+    if uid not in user_flags:
+        user_flags[uid] = (
+            user_has_traffic_ever(sm),
+            user_traffic_growth_days(sm),
+        )
+    has_tr, growth = user_flags[uid]
+    if msk_td in growth:
+        return "expiry_active_today"
+    if su_day in growth:
+        return "expiry_active_on_day"
+    if has_tr:
+        return "expiry_has_traffic"
+    return "expiry_no_traffic"
+
+
+async def daily_payments_expiry_day_detail(
+    session: AsyncSession,
+    *,
+    day: date,
+) -> DailyPaymentsExpiryDayDetailResponse:
+    """Списки пользователей и платежей за один календарный день Europe/Moscow."""
+
+    msk_td = moscow_today()
+    stats_user = user_counts_in_admin_stats(User)
+
+    elig_raw = (
+        await session.execute(
+            select(User.id, User.subscription_until).where(
+                stats_user,
+                User.registered_at.is_not(None),
+                User.subscription_until.isnot(None),
+            ),
+        )
+    ).all()
+    by_su: dict[date, list[int]] = defaultdict(list)
+    for uid_raw, su_raw in elig_raw:
+        su = as_calendar_date(su_raw)
+        if su is None:
+            continue
+        by_su[su].append(int(uid_raw))
+
+    paid_uids_stmt = text(
+        """
+        SELECT DISTINCT p.user_id
+        FROM payments p
+        INNER JOIN users u ON u.id = p.user_id
+        WHERE u.registered_at IS NOT NULL
+          AND u.subscription_until IS NOT NULL
+          AND (
+              u.telegram_id IS NOT NULL
+              OR (
+                  u.email IS NOT NULL
+                  AND BTRIM(u.email) <> ''
+                  AND u.email_verified_at IS NOT NULL
+              )
+          )
+        """,
+    )
+    paid_uids = {
+        int(row[0])
+        for row in (await session.execute(paid_uids_stmt)).all()
+        if row[0] is not None
+    }
+
+    pay_detail_stmt = text(
+        """
+        WITH pay AS (
+            SELECT
+                p.id AS payment_id,
+                p.user_id,
+                p.amount,
+                p.provider,
+                p.created_at,
+                ROW_NUMBER() OVER (
+                    PARTITION BY p.user_id ORDER BY p.created_at ASC, p.id ASC
+                ) AS payment_num
+            FROM payments p
+            INNER JOIN users u ON u.id = p.user_id
+            WHERE u.registered_at IS NOT NULL
+              AND u.subscription_until IS NOT NULL
+              AND (
+                  u.telegram_id IS NOT NULL
+                  OR (
+                      u.email IS NOT NULL
+                      AND BTRIM(u.email) <> ''
+                      AND u.email_verified_at IS NOT NULL
+                  )
+              )
+        )
+        SELECT payment_id, user_id, amount, provider, created_at, payment_num
+        FROM pay
+        WHERE (created_at AT TIME ZONE 'Europe/Moscow')::date = :day
+        ORDER BY created_at ASC, payment_id ASC
+        """,
+    )
+    pay_rows = (await session.execute(pay_detail_stmt, {"day": day})).all()
+
+    by_user = await fetch_user_traffic_series(session, eligible_users_only=True)
+    user_flags: dict[int, tuple[bool, frozenset[date]]] = {}
+
+    expiry_buckets: dict[PayExpDayDetailGroupKey, list[int]] = defaultdict(list)
+    for uid in by_su.get(day, []):
+        bucket = _classify_expiring_user(uid, day, msk_td, by_user, user_flags)
+        expiry_buckets[bucket].append(uid)
+
+    user_ids_needed: set[int] = set()
+    for uid in by_su.get(day, []):
+        user_ids_needed.add(uid)
+    for row in pay_rows:
+        if row[1] is not None:
+            user_ids_needed.add(int(row[1]))
+
+    users_by_id: dict[int, User] = {}
+    if user_ids_needed:
+        users_raw = (
+            await session.scalars(select(User).where(User.id.in_(user_ids_needed)))
+        ).all()
+        users_by_id = {int(u.id): u for u in users_raw}
+
+    payments_first: list[PayExpDayPaymentItem] = []
+    payments_repeat: list[PayExpDayPaymentItem] = []
+    for row in pay_rows:
+        payment_id = int(row[0])
+        uid = int(row[1])
+        user = users_by_id.get(uid)
+        uname = _telegram_username_from_props(user.telegram_properties) if user else None
+        item = PayExpDayPaymentItem(
+            payment_id=payment_id,
+            user_id=uid,
+            email=user.email if user else None,
+            telegram_id=int(user.telegram_id) if user and user.telegram_id is not None else None,
+            telegram_username=uname,
+            amount_rub=row[2],
+            provider=str(row[3] or ""),
+            is_first_payment=int(row[5] or 0) == 1,
+            payment_at=ensure_utc(row[4]),
+        )
+        if item.is_first_payment:
+            payments_first.append(item)
+        else:
+            payments_repeat.append(item)
+
+    def expiry_users(key: PayExpDayDetailGroupKey) -> list[PayExpDayUserItem]:
+        uids = sorted(expiry_buckets.get(key, []))
+        out: list[PayExpDayUserItem] = []
+        for uid in uids:
+            user = users_by_id.get(uid)
+            if user is None:
+                continue
+            out.append(_user_to_pay_exp_item(user, paid_uids))
+        return out
+
+    raw_groups: list[tuple[PayExpDayDetailGroupKey, list[PayExpDayUserItem], list[PayExpDayPaymentItem]]] = [
+        ("payments_first", [], payments_first),
+        ("payments_repeat", [], payments_repeat),
+        ("expiry_no_traffic", expiry_users("expiry_no_traffic"), []),
+        ("expiry_has_traffic", expiry_users("expiry_has_traffic"), []),
+        ("expiry_active_on_day", expiry_users("expiry_active_on_day"), []),
+        ("expiry_active_today", expiry_users("expiry_active_today"), []),
+    ]
+
+    groups: list[PayExpDayDetailGroup] = []
+    for key, users, payments in raw_groups:
+        count = len(payments) if payments else len(users)
+        if count <= 0:
+            continue
+        title, hint = _PAY_EXP_GROUP_META[key]
+        groups.append(
+            PayExpDayDetailGroup(
+                key=key,
+                title=title,
+                hint=hint,
+                count=count,
+                users=users,
+                payments=payments,
+            ),
+        )
+
+    return DailyPaymentsExpiryDayDetailResponse(stats_date=day, groups=groups)
 
 
 async def count_users_with_subscription_device(

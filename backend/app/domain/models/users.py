@@ -282,9 +282,80 @@ class DailyPaymentsExpiryStatsResponse(BaseModel):
     month_max: str | None = Field(
         default=None,
         description=(
-            "Последний доступный месяц YYYY-MM (МСК): самый поздний календарный месяц с оплатой "
+            "Последний доступный месяц YYYY-MM (МСК): самый последний календарный месяц с оплатой "
             "или окончанием подписки; может быть в будущем"
         ),
+    )
+
+
+PayExpDayDetailGroupKey = Literal[
+    "payments_first",
+    "payments_repeat",
+    "expiry_no_traffic",
+    "expiry_has_traffic",
+    "expiry_active_on_day",
+    "expiry_active_today",
+]
+
+
+class PayExpDayUserItem(BaseModel):
+    """Пользователь в группе окончания подписки за выбранный день МСК."""
+
+    user_id: int = Field(description="users.id")
+    email: str | None = Field(default=None, description="Почта, если задана")
+    telegram_id: int | None = Field(default=None, description="Числовой id в Telegram")
+    telegram_username: str | None = Field(
+        default=None,
+        description="Ник из telegram_properties.username (без @)",
+    )
+    subscription_until: date | None = Field(
+        default=None,
+        description="Дата окончания подписки по Москве",
+    )
+    has_payments_ever: bool = Field(
+        default=False,
+        description="Был хотя бы один платёж когда-либо",
+    )
+
+
+class PayExpDayPaymentItem(BaseModel):
+    """Один платёж за выбранный календарный день Europe/Moscow."""
+
+    payment_id: int = Field(description="payments.id")
+    user_id: int = Field(description="users.id")
+    email: str | None = Field(default=None, description="Почта, если задана")
+    telegram_id: int | None = Field(default=None, description="Числовой id в Telegram")
+    telegram_username: str | None = Field(
+        default=None,
+        description="Ник из telegram_properties.username (без @)",
+    )
+    amount_rub: Decimal = Field(description="Сумма платежа (payments.amount)")
+    provider: str = Field(description="Провайдер платежа (payments.provider)")
+    is_first_payment: bool = Field(
+        description="True, если это первая оплата пользователя по created_at, id",
+    )
+    payment_at: datetime = Field(
+        description="Момент создания платежа (в JSON — московское время)",
+    )
+
+
+class PayExpDayDetailGroup(BaseModel):
+    """Одна категория столбчатого графика с детализацией по пользователям или платежам."""
+
+    key: PayExpDayDetailGroupKey
+    title: str
+    hint: str
+    count: int = Field(ge=0)
+    users: list[PayExpDayUserItem] = Field(default_factory=list)
+    payments: list[PayExpDayPaymentItem] = Field(default_factory=list)
+
+
+class DailyPaymentsExpiryDayDetailResponse(BaseModel):
+    """Детализация по одному дню МСК для виджета под графиком «Оплаты и окончания подписки»."""
+
+    stats_date: date = Field(description="Выбранный календарный день Europe/Moscow")
+    groups: list[PayExpDayDetailGroup] = Field(
+        description="Группы в порядке легенды графика; пустые группы не включаются",
     )
 
 

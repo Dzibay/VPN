@@ -55,7 +55,11 @@ const props = defineProps({
   categoryMaxTicks: { type: Number, default: null },
   categoryMaxRotation: { type: Number, default: null },
   categoryMinRotation: { type: Number, default: null },
+  /** Индекс выбранной категории на оси X; −1 — без выделения. */
+  selectedCategoryIndex: { type: Number, default: -1 },
 })
+
+const emit = defineEmits(['categoryClick'])
 
 const canvasEl = ref(null)
 
@@ -71,6 +75,35 @@ function destroyChart() {
 
 function parsedBarValue(ctx) {
   return props.indexAxis === 'y' ? ctx.parsed.x : ctx.parsed.y
+}
+
+function categoryBarAlpha(dataIndex) {
+  const sel = props.selectedCategoryIndex
+  if (sel == null || sel < 0 || sel === dataIndex) return 1
+  return 0.38
+}
+
+function multiplyRgbaAlpha(css, multiplier) {
+  const m = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)$/i.exec(
+    String(css).trim(),
+  )
+  if (!m) return css
+  const a = m[4] != null ? Number(m[4]) : 1
+  const next = Math.max(0, Math.min(1, a * multiplier))
+  return `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${next})`
+}
+
+function resolveBarFill(ctx, rgb, datasetIdx, solidBg) {
+  const mul = categoryBarAlpha(ctx.dataIndex)
+  if (solidBg) return multiplyRgbaAlpha(solidBg, mul)
+  const baseA = datasetIdx === 0 ? 0.82 : 0.75
+  return rgba(rgb, baseA * mul)
+}
+
+function resolveBarHover(ctx, rgb, datasetIdx, solidHover) {
+  const mul = categoryBarAlpha(ctx.dataIndex)
+  if (solidHover) return multiplyRgbaAlpha(solidHover, Math.max(mul, 0.85))
+  return rgba(rgb, (datasetIdx === 0 ? 0.95 : 0.9) * Math.max(mul, 0.85))
 }
 
 function drawChart() {
@@ -138,12 +171,14 @@ function drawChart() {
       ...(ds.stack ? { stack: ds.stack } : {}),
     }
     if (ds.backgroundColor) {
+      const bg = ds.backgroundColor
+      const hbg = ds.hoverBackgroundColor ?? bg
       return {
         ...base,
-        backgroundColor: ds.backgroundColor,
-        borderColor: ds.borderColor ?? ds.backgroundColor,
+        backgroundColor: (ctx) => resolveBarFill(ctx, null, idx, bg),
+        borderColor: ds.borderColor ?? bg,
         borderWidth: ds.borderWidth ?? 0,
-        hoverBackgroundColor: ds.hoverBackgroundColor,
+        hoverBackgroundColor: (ctx) => resolveBarHover(ctx, null, idx, hbg),
         hoverBorderColor: ds.hoverBorderColor,
       }
     }
@@ -160,10 +195,10 @@ function drawChart() {
     }
     return {
       ...base,
-      backgroundColor: rgba(rgb, idx === 0 ? 0.82 : 0.75),
+      backgroundColor: (ctx) => resolveBarFill(ctx, rgb, idx),
       borderColor: rgba(rgb, 0.95),
       borderWidth: borderWidthDefault,
-      hoverBackgroundColor: rgba(rgb, 0.95),
+      hoverBackgroundColor: (ctx) => resolveBarHover(ctx, rgb, idx),
       hoverBorderColor: rgba(rgb, 1),
     }
   })
@@ -209,6 +244,18 @@ function drawChart() {
     indexAxis: props.indexAxis,
     responsive: true,
     maintainAspectRatio: false,
+    onClick(_event, elements) {
+      if (!elements?.length) return
+      const index = elements[0]?.index
+      if (index == null || index < 0) return
+      emit('categoryClick', index)
+    },
+    onHover(event, elements) {
+      const canvas = event.native?.target
+      if (canvas instanceof HTMLCanvasElement) {
+        canvas.style.cursor = elements?.length ? 'pointer' : 'default'
+      }
+    },
     layout: {
       padding: {
         top: Array.isArray(props.categoryValueLabels) && props.categoryValueLabels.length
@@ -369,6 +416,7 @@ watch(
     props.categoryMaxTicks,
     props.categoryMaxRotation,
     props.categoryMinRotation,
+    props.selectedCategoryIndex,
   ],
   async () => {
     await nextTick()

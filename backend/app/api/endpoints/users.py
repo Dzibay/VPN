@@ -15,6 +15,7 @@ from app.core.exceptions import ForbiddenError
 from app.domain.models.server_traffic import UserTrafficByDayRow, UserTrafficByServersBundle
 from app.domain.models.user_balance import UserBalanceLedgerListResponse
 from app.domain.models.users import (
+    DailyPaymentsExpiryDayDetailResponse,
     DailyPaymentsExpiryStatsResponse,
     ExtendActiveSubscriptionsBody,
     ExtendActiveSubscriptionsResponse,
@@ -41,7 +42,11 @@ from app.domain.services.users_service import (
     staff_list_users,
     users_count,
 )
-from app.domain.users.daily_stats import daily_payments_expiry_stats, users_daily_stats
+from app.domain.users.daily_stats import (
+    daily_payments_expiry_day_detail,
+    daily_payments_expiry_stats,
+    users_daily_stats,
+)
 from app.domain.users.staff_balance_ledger import staff_user_balance_ledger
 from app.domain.users.traffic_breakdown import (
     user_traffic_by_servers_bundle,
@@ -232,6 +237,22 @@ async def daily_payments_expiry_bars_ep(
         month_min=bundle.month_min,
         month_max=bundle.month_max,
     )
+
+
+@router.get(
+    "/daily-payments-expiry-bars/detail",
+    response_model=DailyPaymentsExpiryDayDetailResponse,
+    dependencies=[Depends(require_referrals_staff)],
+    summary="Детализация по дню МСК: пользователи и платежи для столбчатого графика оплат/окончаний",
+)
+async def daily_payments_expiry_day_detail_ep(
+    session: ReadonlySessionDep,
+    day: Annotated[
+        date,
+        Query(description="Календарный день Europe/Moscow (YYYY-MM-DD)"),
+    ],
+) -> DailyPaymentsExpiryDayDetailResponse:
+    return await daily_payments_expiry_day_detail(session, day=day)
 
 
 @router.post(
