@@ -17,10 +17,10 @@ const route = useRoute()
 const rows = ref([])
 const loading = ref(false)
 const error = ref(null)
-/** @type {import('vue').Ref<{ total: number; with_telegram_id: number; without_telegram_id: number } | null>} */
-const directTraffic = ref(null)
-const directTrafficLoading = ref(false)
-const directTrafficError = ref(null)
+/** @type {import('vue').Ref<{ direct: { total: number; with_telegram_id: number; without_telegram_id: number }; channel_links: { total: number; with_telegram_id: number; without_telegram_id: number }; user_referrals: { total: number; with_telegram_id: number; without_telegram_id: number } } | null>} */
+const trafficStats = ref(null)
+const trafficStatsLoading = ref(false)
+const trafficStatsError = ref(null)
 
 const modalOpen = ref(false)
 const creating = ref(false)
@@ -38,16 +38,16 @@ const modalTitle = computed(() =>
   editingId.value != null ? 'Редактировать токен' : 'Новый реферальный токен',
 )
 
-async function loadDirectTraffic() {
-  directTrafficLoading.value = true
-  directTrafficError.value = null
+async function loadTrafficStats() {
+  trafficStatsLoading.value = true
+  trafficStatsError.value = null
   try {
-    directTraffic.value = await fetchJson('/api/referral-links/direct-traffic-stats')
+    trafficStats.value = await fetchJson('/api/referral-links/traffic-stats')
   } catch (e) {
-    directTrafficError.value = e.message || String(e)
-    directTraffic.value = null
+    trafficStatsError.value = e.message || String(e)
+    trafficStats.value = null
   } finally {
-    directTrafficLoading.value = false
+    trafficStatsLoading.value = false
   }
 }
 
@@ -65,7 +65,7 @@ async function load() {
 }
 
 async function reloadAll() {
-  await Promise.all([load(), loadDirectTraffic()])
+  await Promise.all([load(), loadTrafficStats()])
 }
 
 function openModal() {
@@ -293,7 +293,7 @@ onMounted(() => {
       <div class="head-row">
         <h2 class="section-heading">Конверсия по токенам</h2>
         <div class="head-actions">
-          <AppRefreshButton :busy="loading || directTrafficLoading" @click="reloadAll" />
+          <AppRefreshButton :busy="loading || trafficStatsLoading" @click="reloadAll" />
           <button type="button" class="btn-primary" @click="openModal">
             Новый токен
           </button>
@@ -306,30 +306,90 @@ onMounted(() => {
         <StatWidget title="Прямой трафик" aria-label="Прямой трафик без реферальной ссылки">
           <p class="stat-widget-value">
             {{
-              directTrafficLoading
+              trafficStatsLoading
                 ? '…'
-                : directTrafficError
+                : trafficStatsError
                   ? '—'
-                  : (directTraffic?.total ?? 0)
+                  : (trafficStats?.direct?.total ?? 0)
             }}
           </p>
-          <p v-if="!directTrafficLoading && !directTrafficError" class="stat-widget-meta">
+          <p v-if="!trafficStatsLoading && !trafficStatsError" class="stat-widget-meta">
             Пользователи без реферальной ссылки
           </p>
           <dl
-            v-if="!directTrafficLoading && !directTrafficError"
+            v-if="!trafficStatsLoading && !trafficStatsError"
             class="stat-widget-split"
           >
             <div>
               <dt>Telegram</dt>
-              <dd>{{ directTraffic?.with_telegram_id ?? 0 }}</dd>
+              <dd>{{ trafficStats?.direct?.with_telegram_id ?? 0 }}</dd>
             </div>
             <div>
               <dt>Сайт</dt>
-              <dd>{{ directTraffic?.without_telegram_id ?? 0 }}</dd>
+              <dd>{{ trafficStats?.direct?.without_telegram_id ?? 0 }}</dd>
             </div>
           </dl>
-          <p v-else-if="directTrafficError" class="stat-widget-err">{{ directTrafficError }}</p>
+          <p v-else-if="trafficStatsError" class="stat-widget-err">{{ trafficStatsError }}</p>
+        </StatWidget>
+        <StatWidget
+          title="По созданным ссылкам"
+          aria-label="Пользователи, пришедшие по созданным реферальным ссылкам"
+        >
+          <p class="stat-widget-value">
+            {{
+              trafficStatsLoading
+                ? '…'
+                : trafficStatsError
+                  ? '—'
+                  : (trafficStats?.channel_links?.total ?? 0)
+            }}
+          </p>
+          <p v-if="!trafficStatsLoading && !trafficStatsError" class="stat-widget-meta">
+            Кампании, каналы и внешние токены
+          </p>
+          <dl
+            v-if="!trafficStatsLoading && !trafficStatsError"
+            class="stat-widget-split"
+          >
+            <div>
+              <dt>Telegram</dt>
+              <dd>{{ trafficStats?.channel_links?.with_telegram_id ?? 0 }}</dd>
+            </div>
+            <div>
+              <dt>Сайт</dt>
+              <dd>{{ trafficStats?.channel_links?.without_telegram_id ?? 0 }}</dd>
+            </div>
+          </dl>
+        </StatWidget>
+        <StatWidget
+          title="Приглашения пользователей"
+          aria-label="Пользователи, приглашённые другими пользователями"
+        >
+          <p class="stat-widget-value">
+            {{
+              trafficStatsLoading
+                ? '…'
+                : trafficStatsError
+                  ? '—'
+                  : (trafficStats?.user_referrals?.total ?? 0)
+            }}
+          </p>
+          <p v-if="!trafficStatsLoading && !trafficStatsError" class="stat-widget-meta">
+            По персональным реферальным ссылкам
+          </p>
+          <dl
+            v-if="!trafficStatsLoading && !trafficStatsError"
+            class="stat-widget-split"
+          >
+            <div>
+              <dt>Telegram</dt>
+              <dd>{{ trafficStats?.user_referrals?.with_telegram_id ?? 0 }}</dd>
+            </div>
+            <div>
+              <dt>Сайт</dt>
+              <dd>{{ trafficStats?.user_referrals?.without_telegram_id ?? 0 }}</dd>
+            </div>
+          </dl>
         </StatWidget>
         <StatWidget title="Токены" aria-label="Число реферальных токенов">
           <p class="stat-widget-value">
@@ -699,6 +759,11 @@ onMounted(() => {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
+}
+@media (min-width: 1100px) {
+  .widgets-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 @media (max-width: 640px) {
   .widgets-grid {

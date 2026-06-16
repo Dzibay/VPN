@@ -30,28 +30,57 @@ from app.domain.referrals.task_bonus_days import (
     sum_referral_bonus_days_received_immediately,
     sum_referral_bonus_days_received_via_notify_payment,
 )
-from app.domain.models.referral_links import ReferralDirectTrafficStats
+from app.domain.models.referral_links import (
+    ReferralTrafficBreakdown,
+    ReferralTrafficOverviewStats,
+)
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.user import User
 
 
-async def direct_traffic_users_stats(session: AsyncSession) -> ReferralDirectTrafficStats:
-    """Число пользователей без referral_link_id, с разбивкой по наличию telegram_id."""
+def _traffic_breakdown_from_row(row: object, prefix: str) -> ReferralTrafficBreakdown:
+    return ReferralTrafficBreakdown(
+        total=int(getattr(row, f"{prefix}_total") or 0),
+        with_telegram_id=int(getattr(row, f"{prefix}_with_telegram_id") or 0),
+        without_telegram_id=int(getattr(row, f"{prefix}_without_telegram_id") or 0),
+    )
+
+
+async def referral_traffic_overview_stats(session: AsyncSession) -> ReferralTrafficOverviewStats:
+    """Сводка по источникам регистрации: прямой трафик, созданные ссылки, приглашения пользователей.
+
+    Один проход по ``users`` с LEFT JOIN ``referral_links`` и условными агрегатами.
+    Классификация реферального трафика — по ``referral_links.owner_user_id``:
+    NULL — созданная ссылка (кампания, канал, внешний токен), NOT NULL — персональная ссылка пользователя.
+    """
+    is_direct = User.referral_link_id.is_(None)
+    is_channel = User.referral_link_id.is_not(None) & ReferralLink.owner_user_id.is_(None)
+    is_user_referral = User.referral_link_id.is_not(None) & ReferralLink.owner_user_id.is_not(None)
+    with_tg = User.telegram_id.is_not(None)
+    without_tg = User.telegram_id.is_(None)
+
+    def _counts(prefix: str, category_filter):
+        return (
+            func.count().filter(category_filter).label(f"{prefix}_total"),
+            func.count().filter(category_filter, with_tg).label(f"{prefix}_with_telegram_id"),
+            func.count().filter(category_filter, without_tg).label(f"{prefix}_without_telegram_id"),
+        )
+
+    direct_counts = _counts("direct", is_direct)
+    channel_counts = _counts("channel", is_channel)
+    user_ref_counts = _counts("user_ref", is_user_referral)
+
     row = (
         await session.execute(
-            select(
-                func.count().label("total"),
-                func.count().filter(User.telegram_id.is_not(None)).label("with_telegram_id"),
-                func.count().filter(User.telegram_id.is_(None)).label("without_telegram_id"),
-            )
+            select(*direct_counts, *channel_counts, *user_ref_counts)
             .select_from(User)
-            .where(User.referral_link_id.is_(None)),
+            .outerjoin(ReferralLink, User.referral_link_id == ReferralLink.id),
         )
     ).one()
-    return ReferralDirectTrafficStats(
-        total=int(row.total or 0),
-        with_telegram_id=int(row.with_telegram_id or 0),
-        without_telegram_id=int(row.without_telegram_id or 0),
+    return ReferralTrafficOverviewStats(
+        direct=_traffic_breakdown_from_row(row, "direct"),
+        channel_links=_traffic_breakdown_from_row(row, "channel"),
+        user_referrals=_traffic_breakdown_from_row(row, "user_ref"),
     )
 
 

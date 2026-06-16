@@ -20,20 +20,33 @@ class ReferralLinkRead(BaseModel):
     created_at: datetime
 
 
-class ReferralDirectTrafficStats(BaseModel):
-    """Пользователи без привязки к реферальной ссылке (прямой трафик)."""
+class ReferralTrafficBreakdown(BaseModel):
+    """Число пользователей с разбивкой по каналу регистрации (Telegram / сайт)."""
 
-    total: int = Field(
-        ge=0,
-        description="Все пользователи с referral_link_id IS NULL",
-    )
+    total: int = Field(ge=0)
     with_telegram_id: int = Field(
         ge=0,
-        description="Прямой трафик с telegram_id (регистрация через Telegram без ref/start)",
+        description="С telegram_id (регистрация через Telegram)",
     )
     without_telegram_id: int = Field(
         ge=0,
-        description="Прямой трафик без telegram_id (регистрация на сайте без ?ref)",
+        description="Без telegram_id (регистрация на сайте)",
+    )
+
+
+class ReferralTrafficOverviewStats(BaseModel):
+    """Сводка по источникам регистрации пользователей."""
+
+    direct: ReferralTrafficBreakdown = Field(
+        description="Пользователи без referral_link_id (прямой трафик)",
+    )
+    channel_links: ReferralTrafficBreakdown = Field(
+        description=(
+            "Пользователи с referral_link_id на созданную ссылку (referral_links.owner_user_id IS NULL)"
+        ),
+    )
+    user_referrals: ReferralTrafficBreakdown = Field(
+        description="Пользователи, пришедшие по ссылке с владельцем (referral_links.owner_user_id IS NOT NULL)",
     )
 
 
