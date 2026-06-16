@@ -50,6 +50,7 @@ const {
   supportTelegramUrl,
   supportTelegramLabel,
   footerProductLinks,
+  footerSeoLinks,
   finalCtaFeatures,
   finalVisualPins,
   isLoggedIn,
@@ -81,8 +82,8 @@ const {
               />
             </picture>
             <p class="footer-brand__desc">
-              Умный VPN на VLESS с split tunneling: зарубежное — через туннель,
-              российское — напрямую.
+              VPN с умной маршрутизацией: зарубежные сервисы через защищённый
+              канал, российские — без постоянного переключения.
             </p>
             <div class="footer-social" aria-label="Связаться с нами">
               <a
@@ -122,6 +123,24 @@ const {
                   :target="link.external ? '_blank' : undefined"
                   :rel="link.external ? 'noopener noreferrer' : undefined"
                 >{{ link.label }}</a>
+              </li>
+            </ul>
+          </nav>
+
+          <nav
+            class="footer-col"
+            aria-label="Сервисы"
+          >
+            <h3 class="footer-col__title">
+              <span class="footer-col__dot" aria-hidden="true" />
+              Сервисы
+            </h3>
+            <ul class="footer-col__list">
+              <li
+                v-for="link in footerSeoLinks"
+                :key="link.to"
+              >
+                <RouterLink :to="link.to">{{ link.label }}</RouterLink>
               </li>
             </ul>
           </nav>

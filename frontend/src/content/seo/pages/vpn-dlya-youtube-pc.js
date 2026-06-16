@@ -7,7 +7,7 @@ export const vpnDlyaYoutubePcPage = {
   meta: {
     title: 'VPN для YouTube на ПК — Windows и macOS | Подорожник VPN',
     description:
-      'VPN для YouTube на компьютере: браузер и десктоп-клиент, VLESS, split tunneling для банков и Госуслуг. Пробный период 3 дня.',
+      'VPN для YouTube на компьютере: браузер и десктоп-клиент. Российские банки и Госуслуги — без постоянного переключения VPN. Пробный период 3 дня.',
   },
   hero: {
     badgeIcon: '/images/home/how/vpn/youtube.png',

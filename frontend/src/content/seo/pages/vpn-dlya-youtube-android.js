@@ -7,7 +7,7 @@ export const vpnDlyaYoutubeAndroidPage = {
   meta: {
     title: 'VPN для YouTube на Android — смотреть без блокировок | Подорожник VPN',
     description:
-      'Настройте VPN для YouTube на Android за пару минут: VLESS, клиент Happ, умный split tunneling — банки работают напрямую. Пробный период 3 дня.',
+      'VPN для YouTube на Android за пару минут через Happ. Российские банки и Госуслуги работают без постоянного переключения. Пробный период 3 дня.',
   },
   hero: {
     badgeIcon: '/images/home/how/vpn/youtube.png',
@@ -31,7 +31,7 @@ export const vpnDlyaYoutubeAndroidPage = {
       },
       {
         icon: 'Lock',
-        title: 'Split tunneling',
+        title: 'Умная маршрутизация',
         text: 'Банки и Госуслуги — напрямую',
       },
     ],

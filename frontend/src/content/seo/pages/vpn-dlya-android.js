@@ -9,7 +9,7 @@ export const vpnDlyaAndroidPage = {
   meta: {
     title: 'VPN для Android — установка и настройка на телефоне | Подорожник VPN',
     description:
-      'VPN для Android: быстрая установка через Happ, стабильный доступ к YouTube, Telegram и зарубежным сервисам. Split tunneling — банки работают напрямую. Пробный период 3 дня.',
+      'VPN для Android: установка через Happ за пару минут. YouTube, Telegram и зарубежные сервисы — через VPN, российские сервисы без постоянного переключения. Пробный период 3 дня.',
   },
   hero: {
     badgeText: 'VPN для Android',

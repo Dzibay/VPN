@@ -9,7 +9,7 @@ export const vpnDlyaTelegramPage = {
   meta: {
     title: 'VPN для Telegram — звонки и мессенджер без блокировок | Подорожник VPN',
     description:
-      'VPN для Telegram в России: стабильные звонки и сообщения, умный split tunneling — банки и Госуслуги работают напрямую. Пробный период 3 дня.',
+      'VPN для Telegram в России: стабильные звонки и сообщения. Российские банки и Госуслуги — без постоянного переключения. Пробный период 3 дня.',
   },
   hero: {
     badgeIcon: '/images/home/how/vpn/telegram.png',

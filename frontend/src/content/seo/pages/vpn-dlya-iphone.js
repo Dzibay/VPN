@@ -9,7 +9,7 @@ export const vpnDlyaIphonePage = {
   meta: {
     title: 'VPN для iPhone — установка и настройка на iOS | Подорожник VPN',
     description:
-      'VPN для iPhone и iPad: быстрая установка через Happ, стабильный доступ к YouTube, Telegram и зарубежным сервисам. Split tunneling — банки работают напрямую. Пробный период 3 дня.',
+      'VPN для iPhone и iPad: установка через Happ за пару минут. YouTube, Telegram и зарубежные сервисы — через VPN, российские сервисы без постоянного переключения. Пробный период 3 дня.',
   },
   hero: {
     badgeIcon: '/icons/apple-touch-icon.png',

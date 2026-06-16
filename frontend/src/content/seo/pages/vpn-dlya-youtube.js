@@ -8,7 +8,7 @@ export const YOUTUBE_SEO_HERO_BG = '/images/seo/vpn-dlya-youtube.png'
 export const vpnDlyaYoutubePage = {  meta: {
     title: 'VPN для YouTube — смотреть без блокировок | Подорожник VPN',
     description:
-      'VPN для YouTube в России: стабильный доступ к видео в 4K, умный split tunneling — банки и Госуслуги работают напрямую. Пробный период 3 дня.',
+      'VPN для YouTube в России: стабильный доступ к видео в 4K. Российские банки и Госуслуги работают без постоянного переключения. Пробный период 3 дня.',
   },
   hero: {
     badgeIcon: '/images/home/how/vpn/youtube.png',
@@ -17,7 +17,7 @@ export const vpnDlyaYoutubePage = {  meta: {
     titleHighlight: 'YouTube',
     titleLine2: 'без блокировок',
     lead:
-      'Доступ к YouTube в любой стране, в максимальном качестве и без ограничений скорости.',
+      'Смотрите YouTube в 4K без блокировок. Банки и Госуслуги — без постоянного переключения VPN.',
     bgImage: YOUTUBE_SEO_HERO_BG,    features: [
       {
         icon: 'Globe',

@@ -9,7 +9,7 @@ export const vpnDlyaGeminiPage = {
   meta: {
     title: 'VPN для Gemini — доступ к Google AI без блокировок | Подорожник VPN',
     description:
-      'VPN для Google Gemini: стабильный доступ к чату и API, умный split tunneling — банки и Госуслуги работают напрямую. Пробный период 3 дня.',
+      'VPN для Google Gemini: стабильный доступ к чату и сервисам Google. Российские банки и Госуслуги работают без постоянного переключения. Пробный период 3 дня.',
   },
   hero: {
     badgeIcon: '/images/home/how/vpn/google-gemini.png',

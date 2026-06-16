@@ -187,7 +187,7 @@ export function createLandingPageContext() {
   const faqs = [
     { q: 'Нужно ли выключать ВПН для оплаты картой?', a: 'Нет. Подорожник настроен так, что банковские приложения (Сбер, Т-Банк и др.) и Госуслуги работают через ваше прямое соединение, минуя VPN-сервер.' },
     { q: 'Будет ли работать Gemini и ChatGPT?', a: 'Да, все популярные ИИ-сервисы, включая Google Gemini, включены в список умной маршрутизации и открываются без проблем.' },
-    { q: 'На каких устройствах работает Подорожник VPN?', a: 'Windows, macOS, Android, iOS, Linux и даже Android TV. Подключайтесь через клиенты с поддержкой VLESS — например V2Ray или Happ.' },
+    { q: 'На каких устройствах работает Подорожник VPN?', a: 'Windows, macOS, Android, iOS, Linux и даже Android TV. Подключайтесь через клиенты Happ, V2Ray и другие приложения с поддержкой современных протоколов, включая VLESS.' },
     { q: 'Сколько устройств можно подключить?', a: 'По одной подписке вы можете подключить до 5 устройств одновременно без потери скорости.' },
   ]
 
@@ -211,6 +211,14 @@ export function createLandingPageContext() {
     const m = url.match(/t\.me\/([^/?#]+)/i)
     return m?.[1] ? `@${m[1]}` : SUPPORT_TELEGRAM
   })
+
+  const footerSeoLinks = [
+    { to: '/vpn-dlya-youtube', label: 'VPN для YouTube' },
+    { to: '/vpn-dlya-gemini', label: 'VPN для Gemini' },
+    { to: '/vpn-dlya-telegram', label: 'VPN для Telegram' },
+    { to: '/vpn-dlya-android', label: 'VPN для Android' },
+    { to: '/vpn-dlya-iphone', label: 'VPN для iPhone' },
+  ]
 
   const footerProductLinks = computed(() => {
     const links = [
@@ -276,7 +284,7 @@ export function createLandingPageContext() {
           name: 'Подорожник VPN',
           ...(base ? { url: `${base}/` } : {}),
           description:
-            'VPN-сервис с умным split tunneling и протоколом VLESS: зарубежные сервисы через защищённый туннель, российские банки и госуслуги — напрямую.',
+            'VPN-сервис Подорожник: доступ к зарубежным сервисам через защищённый канал и удобная работа с российскими сервисами без лишних переключений.',
         },
       ],
     }
@@ -349,6 +357,7 @@ export function createLandingPageContext() {
     supportTelegramUrl,
     supportTelegramLabel,
     footerProductLinks,
+    footerSeoLinks,
     finalCtaFeatures,
     finalVisualPins,
     isLoggedIn,

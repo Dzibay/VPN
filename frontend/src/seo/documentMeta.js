@@ -1,15 +1,9 @@
 /** @typedef {{ title: string, description: string, canonicalUrl: string, ogImage: string }} PageDocumentMeta */
 
 export const DEFAULT_DOCUMENT_META = {
-  title: 'Подорожник VPN — умный split tunneling и VLESS | не нужно выключать',
+  title: 'Подорожник VPN — YouTube, Telegram и ChatGPT без выключения VPN',
   description:
-    'Подорожник VPN — умный split tunneling на VLESS: YouTube, Gemini и ChatGPT через VPN; Сбербанк, Т-Банк и Госуслуги — напрямую. Пробный период 3 дня, до 5 устройств.',
-  ogTitle: 'Подорожник VPN — умный split tunneling и VLESS',
-  ogDescription:
-    'Зарубежные сервисы через VPN, российские банки и госуслуги — напрямую. Протокол VLESS, пробный период 3 дня.',
-  twitterTitle: 'Подорожник VPN — умный split tunneling',
-  twitterDescription:
-    'VLESS, split tunneling: международное через VPN, РФ — напрямую. Попробуйте 3 дня бесплатно.',
+    'YouTube, Gemini и ChatGPT через VPN. Российские банки и Госуслуги работают без постоянного переключения. Пробный период 3 дня, до 5 устройств.',
   ogImagePath: '/icons/podorozhnik-logo.png',
 }
 

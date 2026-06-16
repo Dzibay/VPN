@@ -2622,7 +2622,7 @@
 
 @media (min-width: 768px) {
   .footer-top {
-    grid-template-columns: minmax(0, 1.35fr) repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1.35fr) repeat(4, minmax(0, 1fr));
     gap: 1.5rem 1.75rem;
   }
 }
