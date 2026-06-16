@@ -12,6 +12,7 @@ import {
 } from './auth/ipBlock.js'
 import { router } from './router/index.js'
 import { captureReferralFromRoute } from './referral/refCapture.js'
+import { applyRobotsMeta, routeShouldNoindex } from './seo/documentMeta.js'
 import { trackSeoPageFromRoute } from './seo/trackSeoPageView.js'
 
 async function bootstrap() {
@@ -31,6 +32,7 @@ async function bootstrap() {
 void bootstrap()
 
 router.afterEach((to) => {
+  applyRobotsMeta(routeShouldNoindex(to))
   captureReferralFromRoute(to)
   trackSeoPageFromRoute(to)
 })

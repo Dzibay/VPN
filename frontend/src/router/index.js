@@ -69,13 +69,19 @@ const routes = [
     meta: { minimalChrome: true },
   },
   { path: '/', name: 'home', component: HomeView, meta: { seoPage: true, seoPath: '/' } },
-  { path: '/login', name: 'login', component: UserLoginView },
-  { path: '/register', name: 'register', component: UserRegisterView },
-  { path: '/verify-email', name: 'verify-email', component: VerifyEmailView },
+  { path: '/login', name: 'login', component: UserLoginView, meta: { noindex: true } },
+  { path: '/register', name: 'register', component: UserRegisterView, meta: { noindex: true } },
+  {
+    path: '/verify-email',
+    name: 'verify-email',
+    component: VerifyEmailView,
+    meta: { noindex: true },
+  },
   {
     path: '/verify-email-pending',
     name: 'verify-email-pending',
     component: EmailVerificationPendingView,
+    meta: { noindex: true },
   },
   {
     path: '/terms',
@@ -93,7 +99,7 @@ const routes = [
     path: '/consent',
     name: 'legal-consent',
     component: LegalDocumentView,
-    meta: { legalDoc: 'consent' },
+    meta: { legalDoc: 'consent', noindex: true },
   },
   {
     path: '/refund',
@@ -111,13 +117,14 @@ const routes = [
     path: '/marketing',
     name: 'legal-marketing',
     component: LegalDocumentView,
-    meta: { legalDoc: 'marketing' },
+    meta: { legalDoc: 'marketing', noindex: true },
   },
   ...buildSeoPageRoutes(),
   {
     path: '/link-from-telegram',
     name: 'link-from-telegram',
     component: LinkFromTelegramView,
+    meta: { noindex: true },
   },
   { path: '/cabinet', name: 'cabinet', component: UserCabinetView },
   {

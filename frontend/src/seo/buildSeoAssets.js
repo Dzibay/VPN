@@ -19,9 +19,12 @@ export function buildSeoAssets(siteUrl) {
   const robots = `User-agent: *
 Allow: /
 
-# Закрытые разделы SPA
+# Закрытые и служебные разделы SPA
 Disallow: /cabinet
 Disallow: /admin
+Disallow: /sub/
+Disallow: /blocked
+Disallow: /link-from-telegram
 
 Sitemap: ${base}/sitemap.xml
 `
@@ -34,16 +37,6 @@ Sitemap: ${base}/sitemap.xml
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>${base}/login</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.3</priority>
-  </url>
-  <url>
-    <loc>${base}/register</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.4</priority>
-  </url>
-  <url>
     <loc>${base}/terms</loc>
     <changefreq>yearly</changefreq>
     <priority>0.2</priority>
@@ -54,22 +47,12 @@ Sitemap: ${base}/sitemap.xml
     <priority>0.2</priority>
   </url>
   <url>
-    <loc>${base}/consent</loc>
-    <changefreq>yearly</changefreq>
-    <priority>0.1</priority>
-  </url>
-  <url>
     <loc>${base}/refund</loc>
     <changefreq>yearly</changefreq>
     <priority>0.1</priority>
   </url>
   <url>
     <loc>${base}/cookies</loc>
-    <changefreq>yearly</changefreq>
-    <priority>0.1</priority>
-  </url>
-  <url>
-    <loc>${base}/marketing</loc>
     <changefreq>yearly</changefreq>
     <priority>0.1</priority>
   </url>

@@ -126,6 +126,29 @@ export function applyDocumentMeta(meta) {
   setMetaByName('twitter:image', meta.ogImage)
 }
 
+/** @param {import('vue-router').RouteLocationNormalized} route */
+export function routeShouldNoindex(route) {
+  if (route.meta?.noindex) return true
+  const path = route.path
+  if (path.startsWith('/cabinet')) return true
+  if (path.startsWith('/admin')) return true
+  if (path.startsWith('/sub/')) return true
+  if (path === '/blocked') return true
+  return false
+}
+
+/** @param {boolean} noindex */
+export function applyRobotsMeta(noindex) {
+  if (typeof document === 'undefined') return
+
+  const el = document.querySelector('meta[name="robots"]')
+  if (noindex) {
+    setMetaByName('robots', 'noindex, follow')
+    return
+  }
+  el?.remove()
+}
+
 /** @param {string} siteUrl */
 export function applyDefaultDocumentMeta(siteUrl) {
   const base = (siteUrl || resolvePublicSiteUrl()).replace(/\/$/, '')
