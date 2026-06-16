@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Literal
 
@@ -161,11 +162,30 @@ async def users_daily_stats(
     )
 
 
+@dataclass(frozen=True)
+class DailyPaymentsExpiryStatsBundle:
+    rows: list[DailyPaymentsExpiryStatsRow]
+    month_min: str | None
+    month_max: str | None
+
+
+def _payments_expiry_month_bounds(
+    expiry_dates: set[date],
+    pay_dates: set[date],
+) -> tuple[str | None, str | None]:
+    all_dates = expiry_dates | pay_dates
+    if not all_dates:
+        return None, None
+    d0 = min(all_dates)
+    d1 = max(all_dates)
+    return f"{d0.year:04d}-{d0.month:02d}", f"{d1.year:04d}-{d1.month:02d}"
+
+
 async def daily_payments_expiry_stats(
     session: AsyncSession,
     *,
     month: str | None = None,
-) -> list[DailyPaymentsExpiryStatsRow]:
+) -> DailyPaymentsExpiryStatsBundle:
     """Столбчатый график: оплаты (день МСК) и разбивка по ``subscription_until`` (календарь Москвы)."""
 
     msk_td = moscow_today()
@@ -299,13 +319,14 @@ async def daily_payments_expiry_stats(
 
     expiry_dates = set(by_su.keys())
     pay_dates = set(pay_by.keys())
+    month_min, month_max = _payments_expiry_month_bounds(expiry_dates, pay_dates)
 
     if month is not None:
         lo, hi = msk_month_bounds(month)
         days = iter_calendar_days(lo, hi)
     else:
         if not expiry_dates and not pay_dates:
-            return []
+            return DailyPaymentsExpiryStatsBundle(rows=[], month_min=month_min, month_max=month_max)
         d0 = min(expiry_dates | pay_dates | {msk_td})
         d1 = max(expiry_dates | pay_dates | {msk_td})
         days = iter_calendar_days(d0, d1)
@@ -333,7 +354,11 @@ async def daily_payments_expiry_stats(
                 subscription_expiring_no_traffic_count=g,
             ),
         )
-    return out
+    return DailyPaymentsExpiryStatsBundle(
+        rows=out,
+        month_min=month_min,
+        month_max=month_max,
+    )
 
 
 async def count_users_with_subscription_device(

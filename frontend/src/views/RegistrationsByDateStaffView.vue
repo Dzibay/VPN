@@ -112,7 +112,15 @@ const {
 const { setGranularity, load } = chart
 
 const payExpMonth = ref(mskMonthInputDefault())
-const payExpMonthMax = computed(() => mskMonthInputDefault())
+/** @type {import('vue').Ref<{ min: string | null; max: string | null }>} */
+const payExpMonthBounds = ref({ min: null, max: null })
+
+function clampPayExpMonth() {
+  const { min, max } = payExpMonthBounds.value
+  if (!min || !max) return
+  if (payExpMonth.value < min) payExpMonth.value = min
+  if (payExpMonth.value > max) payExpMonth.value = max
+}
 
 const chartEventMarkers = computed(() =>
   mapStaffChartEventsToMarkers(
@@ -174,17 +182,26 @@ const payExpAriaLabel =
   'По дням МСК: два столбца — оплаты (первая и повторная) и окончания подписки (без трафика, с трафиком, активные в день окончания, активные сегодня)'
 
 const payExpHint =
-  'В каждом дне два столбца: слева оплаты, справа окончания подписки. Над правым столбцом — число окончаний у пользователей с оплатой.'
+  'В каждом дне два столбца: слева оплаты, справа окончания подписки. Над столбцами по центру дня — число окончаний у пользователей с оплатой: голубое для сегодня и будущих дней, серое для прошедших.'
 
-const payExpStackTopLabels = computed(() => [
-  {
-    stack: 'exp',
-    values: payExpRows.value.map(
-      (r) => Number(r.subscription_expiring_has_payment_count) || 0,
-    ),
-    color: rgba(chartSeriesRgb.subscription, 0.95),
-  },
-])
+const payExpCategoryBlue = rgba(chartSeriesRgb.active, 0.95)
+const payExpCategoryGray = rgba(chartSeriesRgb.expiryGray, 0.92)
+
+const payExpCategoryValueLabels = computed(() => {
+  const today = mskTodayIso()
+  const rows = payExpRows.value
+  return [
+    {
+      values: rows.map(
+        (r) => Number(r.subscription_expiring_has_payment_count) || 0,
+      ),
+      colors: rows.map((r) => {
+        const day = String(r.stats_date).slice(0, 10)
+        return day < today ? payExpCategoryGray : payExpCategoryBlue
+      }),
+    },
+  ]
+})
 
 /** Нижний слой стека → верхний. Два stack: pay | exp — без суммирования разных метрик в один столбец. */
 const payExpDatasets = computed(() => {
@@ -274,6 +291,12 @@ async function loadPayExpBars() {
       `/api/users/daily-payments-expiry-bars?month=${encodeURIComponent(payExpMonth.value)}`,
     )
     payExpRows.value = Array.isArray(data.rows) ? data.rows : []
+    const min =
+      typeof data.month_min === 'string' && data.month_min ? data.month_min : null
+    const max =
+      typeof data.month_max === 'string' && data.month_max ? data.month_max : null
+    payExpMonthBounds.value = { min, max }
+    clampPayExpMonth()
   } catch (e) {
     payExpError.value = e.message || String(e)
     payExpRows.value = []
@@ -486,9 +509,9 @@ watch(payExpMonth, () => {
             v-model="payExpMonth"
             type="month"
             class="pay-exp-month-input"
-            min="2020-01"
-            :max="payExpMonthMax"
-            :disabled="payExpLoading"
+            :min="payExpMonthBounds.min || undefined"
+            :max="payExpMonthBounds.max || undefined"
+            :disabled="payExpLoading || !payExpMonthBounds.min"
           />
         </label>
       </div>
@@ -503,7 +526,7 @@ watch(payExpMonth, () => {
         :labels="payExpLabels"
         :datasets="payExpDatasets"
         :x-markers="payExpXMarkers"
-        :stack-top-labels="payExpStackTopLabels"
+        :category-value-labels="payExpCategoryValueLabels"
         stacked
         :get-tooltip-footer="payExpTooltipFooter"
         :tooltip-filter="payExpTooltipFilter"

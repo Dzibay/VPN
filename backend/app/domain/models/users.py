@@ -272,6 +272,20 @@ class DailyPaymentsExpiryStatsResponse(BaseModel):
             "subscription_expiring_has_payment_count — подмножество истекающих с оплатой"
         ),
     )
+    month_min: str | None = Field(
+        default=None,
+        description=(
+            "Первый доступный месяц YYYY-MM (МСК): самый ранний календарный месяц с оплатой "
+            "или окончанием подписки"
+        ),
+    )
+    month_max: str | None = Field(
+        default=None,
+        description=(
+            "Последний доступный месяц YYYY-MM (МСК): самый поздний календарный месяц с оплатой "
+            "или окончанием подписки; может быть в будущем"
+        ),
+    )
 
 
 class ExtendActiveSubscriptionsBody(BaseModel):

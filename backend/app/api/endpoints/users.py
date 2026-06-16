@@ -224,10 +224,14 @@ async def daily_payments_expiry_bars_ep(
     ] = None,
 ) -> DailyPaymentsExpiryStatsResponse:
     try:
-        rows = await daily_payments_expiry_stats(session, month=month)
+        bundle = await daily_payments_expiry_stats(session, month=month)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
-    return DailyPaymentsExpiryStatsResponse(rows=rows)
+    return DailyPaymentsExpiryStatsResponse(
+        rows=bundle.rows,
+        month_min=bundle.month_min,
+        month_max=bundle.month_max,
+    )
 
 
 @router.post(

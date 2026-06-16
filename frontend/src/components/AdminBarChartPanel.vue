@@ -21,6 +21,8 @@ defineProps({
   xMarkers: { type: Array, default: () => [] },
   /** Подписи над вершиной stack (плагин barStackTopLabels). */
   stackTopLabels: { type: Array, default: () => [] },
+  /** Подписи по центру категории над столбцами (плагин categoryValueLabels). */
+  categoryValueLabels: { type: Array, default: () => [] },
   yTitle: { type: String, default: '' },
   yGrace: { type: String, default: '8%' },
   stacked: { type: Boolean, default: false },
@@ -55,6 +57,7 @@ defineProps({
       :datasets="datasets"
       :x-markers="xMarkers"
       :stack-top-labels="stackTopLabels"
+      :category-value-labels="categoryValueLabels"
       :value-axis-title="yTitle"
       :y-grace="yGrace"
       :stacked="stacked"

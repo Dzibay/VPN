@@ -27,6 +27,7 @@ import {
 
 import { staffChartMarkersPlugin } from './chartStaffMarkersPlugin.js'
 import { barStackTopLabelsPlugin } from './chartBarStackTopLabelsPlugin.js'
+import { categoryValueLabelsPlugin } from './chartCategoryValueLabelsPlugin.js'
 
 let registered = false
 
@@ -48,6 +49,7 @@ function registerCharts() {
     Title,
     staffChartMarkersPlugin,
     barStackTopLabelsPlugin,
+    categoryValueLabelsPlugin,
   )
   registered = true
 }

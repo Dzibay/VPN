@@ -26,6 +26,8 @@ const props = defineProps({
   xMarkers: { type: Array, default: () => [] },
   /** Подписи над вершиной stack (плагин barStackTopLabels). */
   stackTopLabels: { type: Array, default: () => [] },
+  /** Подписи по центру категории над столбцами (плагин categoryValueLabels). */
+  categoryValueLabels: { type: Array, default: () => [] },
   /** «finance» — оси/легенда/плотность как на странице «Финансы». */
   preset: { type: String, default: '' },
   stacked: { type: Boolean, default: false },
@@ -207,6 +209,13 @@ function drawChart() {
     indexAxis: props.indexAxis,
     responsive: true,
     maintainAspectRatio: false,
+    layout: {
+      padding: {
+        top: Array.isArray(props.categoryValueLabels) && props.categoryValueLabels.length
+          ? 18
+          : 0,
+      },
+    },
     interaction: { mode: 'index', intersect: false },
     animation: {
       duration: 520,
@@ -278,6 +287,11 @@ function drawChart() {
       barStackTopLabels: {
         items: Array.isArray(props.stackTopLabels) ? [...props.stackTopLabels] : [],
       },
+      categoryValueLabels: {
+        items: Array.isArray(props.categoryValueLabels)
+          ? [...props.categoryValueLabels]
+          : [],
+      },
     },
     scales: {
       [categoryAxisId]: {
@@ -334,6 +348,7 @@ watch(
     props.datasets,
     props.xMarkers,
     props.stackTopLabels,
+    props.categoryValueLabels,
     props.preset,
     props.stacked,
     props.indexAxis,
