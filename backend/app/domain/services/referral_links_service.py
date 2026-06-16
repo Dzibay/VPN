@@ -34,6 +34,7 @@ from app.domain.models.referral_links import (
     ReferralTrafficBreakdown,
     ReferralTrafficOverviewStats,
 )
+from app.domain.users.stats_qualification import user_counts_in_admin_stats
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.user import User
 
@@ -49,10 +50,12 @@ def _traffic_breakdown_from_row(row: object, prefix: str) -> ReferralTrafficBrea
 async def referral_traffic_overview_stats(session: AsyncSession) -> ReferralTrafficOverviewStats:
     """Сводка по источникам регистрации: прямой трафик, созданные ссылки, приглашения пользователей.
 
-    Один проход по ``users`` с LEFT JOIN ``referral_links`` и условными агрегатами.
-    Классификация реферального трафика — по ``referral_links.owner_user_id``:
-    NULL — созданная ссылка (кампания, канал, внешний токен), NOT NULL — персональная ссылка пользователя.
+    Учитываются только учётные пользователи (Telegram или подтверждённый email) — как в
+    ``GET /api/users/count``. Один проход по ``users`` с LEFT JOIN ``referral_links`` и
+    условными агрегатами. Классификация реферального трафика — по ``referral_links.owner_user_id``:
+    NULL — созданная ссылка, NOT NULL — персональная ссылка пользователя.
     """
+    stats_user = user_counts_in_admin_stats(User)
     is_direct = User.referral_link_id.is_(None)
     is_channel = User.referral_link_id.is_not(None) & ReferralLink.owner_user_id.is_(None)
     is_user_referral = User.referral_link_id.is_not(None) & ReferralLink.owner_user_id.is_not(None)
@@ -74,7 +77,8 @@ async def referral_traffic_overview_stats(session: AsyncSession) -> ReferralTraf
         await session.execute(
             select(*direct_counts, *channel_counts, *user_ref_counts)
             .select_from(User)
-            .outerjoin(ReferralLink, User.referral_link_id == ReferralLink.id),
+            .outerjoin(ReferralLink, User.referral_link_id == ReferralLink.id)
+            .where(stats_user),
         )
     ).one()
     return ReferralTrafficOverviewStats(

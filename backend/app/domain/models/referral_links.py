@@ -35,10 +35,10 @@ class ReferralTrafficBreakdown(BaseModel):
 
 
 class ReferralTrafficOverviewStats(BaseModel):
-    """Сводка по источникам регистрации пользователей."""
+    """Сводка по источникам регистрации учётных пользователей (Telegram или email ✓)."""
 
     direct: ReferralTrafficBreakdown = Field(
-        description="Пользователи без referral_link_id (прямой трафик)",
+        description="Учётные пользователи без referral_link_id (прямой трафик)",
     )
     channel_links: ReferralTrafficBreakdown = Field(
         description=(

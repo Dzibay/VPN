@@ -59,7 +59,10 @@ async def list_referral_links(session: ReadonlySessionDep) -> list[ReferralLinkO
 @staff_router.get(
     "/traffic-stats",
     response_model=ReferralTrafficOverviewStats,
-    summary="Сводка по источникам регистрации: прямой трафик, созданные ссылки, приглашения пользователей",
+    summary=(
+        "Сводка по источникам регистрации учётных пользователей "
+        "(Telegram или подтверждённый email): прямой трафик, созданные ссылки, приглашения"
+    ),
 )
 async def referral_traffic_stats(
     session: ReadonlySessionDep,
