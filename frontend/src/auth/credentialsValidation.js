@@ -19,11 +19,10 @@ const GMAIL_DOMAINS = new Set(['gmail.com', 'googlemail.com'])
 
 function canonicalizeGmailLocalPart(local) {
   const plusIdx = local.indexOf('+')
-  const base = plusIdx === -1 ? local : local.slice(0, plusIdx)
-  return base.replace(/\./g, '')
+  return plusIdx === -1 ? local : local.slice(0, plusIdx)
 }
 
-/** trim + lower; для Gmail/Googlemail — без «.» в local part и без +alias. */
+/** trim + lower; для Gmail/Googlemail — без +alias, googlemail.com → gmail.com. */
 export function normalizeEmailInput(value) {
   if (typeof value !== 'string') return ''
   const normalized = value.trim().toLowerCase()

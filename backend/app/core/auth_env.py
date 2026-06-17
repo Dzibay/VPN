@@ -5,7 +5,7 @@ _GMAIL_DOMAINS = frozenset({"gmail.com", "googlemail.com"})
 
 def _canonicalize_gmail_local_part(local: str) -> str:
     base, _, _suffix = local.partition("+")
-    return base.replace(".", "")
+    return base
 
 
 def normalize_email(email: str) -> str:
