@@ -407,14 +407,31 @@ def _telegram_username_from_props(props: object) -> str | None:
     return None
 
 
-def _user_to_pay_exp_item(user: User, paid_uids: set[int]) -> PayExpDayUserItem:
+def _user_to_pay_exp_item(
+    user: User,
+    paid_uids: set[int],
+    *,
+    stats_date: date | None = None,
+    paid_on_day_uids: set[int] | None = None,
+) -> PayExpDayUserItem:
+    uid = int(user.id)
+    has_paid = uid in paid_uids
+    su = as_calendar_date(user.subscription_until)
+    did_not_renew = False
+    if stats_date is not None and paid_on_day_uids is not None:
+        did_not_renew = (
+            has_paid
+            and su == stats_date
+            and uid not in paid_on_day_uids
+        )
     return PayExpDayUserItem(
-        user_id=int(user.id),
+        user_id=uid,
         email=user.email,
         telegram_id=int(user.telegram_id) if user.telegram_id is not None else None,
         telegram_username=_telegram_username_from_props(user.telegram_properties),
-        subscription_until=as_calendar_date(user.subscription_until),
-        has_payments_ever=int(user.id) in paid_uids,
+        subscription_until=su,
+        has_payments_ever=has_paid,
+        did_not_renew=did_not_renew,
     )
 
 
@@ -524,6 +541,9 @@ async def daily_payments_expiry_day_detail(
         """,
     )
     pay_rows = (await session.execute(pay_detail_stmt, {"day": day})).all()
+    paid_on_day_uids = {
+        int(row[1]) for row in pay_rows if row[1] is not None
+    }
 
     by_user = await fetch_user_traffic_series(session, eligible_users_only=True)
     user_flags: dict[int, tuple[bool, frozenset[date]]] = {}
@@ -577,7 +597,15 @@ async def daily_payments_expiry_day_detail(
             user = users_by_id.get(uid)
             if user is None:
                 continue
-            out.append(_user_to_pay_exp_item(user, paid_uids))
+            out.append(
+                _user_to_pay_exp_item(
+                    user,
+                    paid_uids,
+                    stats_date=day,
+                    paid_on_day_uids=paid_on_day_uids,
+                ),
+            )
+        out.sort(key=lambda u: (not u.did_not_renew, u.user_id))
         return out
 
     raw_groups: list[tuple[PayExpDayDetailGroupKey, list[PayExpDayUserItem], list[PayExpDayPaymentItem]]] = [
@@ -595,12 +623,19 @@ async def daily_payments_expiry_day_detail(
         if count <= 0:
             continue
         title, hint = _PAY_EXP_GROUP_META[key]
+        paid_users_count = 0
+        did_not_renew_count = 0
+        if users:
+            paid_users_count = sum(1 for u in users if u.has_payments_ever)
+            did_not_renew_count = sum(1 for u in users if u.did_not_renew)
         groups.append(
             PayExpDayDetailGroup(
                 key=key,
                 title=title,
                 hint=hint,
                 count=count,
+                paid_users_count=paid_users_count,
+                did_not_renew_count=did_not_renew_count,
                 users=users,
                 payments=payments,
             ),

@@ -316,6 +316,13 @@ class PayExpDayUserItem(BaseModel):
         default=False,
         description="Был хотя бы один платёж когда-либо",
     )
+    did_not_renew: bool = Field(
+        default=False,
+        description=(
+            "Только группы окончания: была оплата, subscription_until = stats_date "
+            "и нет платежа в этот день (не продлил подписку)"
+        ),
+    )
 
 
 class PayExpDayPaymentItem(BaseModel):
@@ -346,6 +353,16 @@ class PayExpDayDetailGroup(BaseModel):
     title: str
     hint: str
     count: int = Field(ge=0)
+    paid_users_count: int = Field(
+        default=0,
+        ge=0,
+        description="Группы окончания: пользователи с хотя бы одной оплатой когда-либо",
+    )
+    did_not_renew_count: int = Field(
+        default=0,
+        ge=0,
+        description="Группы окончания: оплачивали, но подписка заканчивается в этот день без оплаты в этот день",
+    )
     users: list[PayExpDayUserItem] = Field(default_factory=list)
     payments: list[PayExpDayPaymentItem] = Field(default_factory=list)
 

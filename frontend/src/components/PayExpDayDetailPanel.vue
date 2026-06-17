@@ -10,6 +10,8 @@ import { formatMskCalendarDayLong, formatMskDateTimeShort } from '../utils/mskDa
  *   title: string
  *   hint: string
  *   count: number
+ *   paid_users_count?: number
+ *   did_not_renew_count?: number
  *   users?: Array<{
  *     user_id: number
  *     email?: string | null
@@ -17,6 +19,7 @@ import { formatMskCalendarDayLong, formatMskDateTimeShort } from '../utils/mskDa
  *     telegram_username?: string | null
  *     subscription_until?: string | null
  *     has_payments_ever?: boolean
+ *     did_not_renew?: boolean
  *   }>
  *   payments?: Array<{
  *     payment_id: number
@@ -51,6 +54,13 @@ const GROUP_COLORS = /** @type {const} */ ({
   expiry_active_on_day: chartSeriesRgb.active,
   expiry_active_today: chartSeriesRgb.activePay,
 })
+
+const EXPIRY_GROUP_KEYS = new Set([
+  'expiry_no_traffic',
+  'expiry_has_traffic',
+  'expiry_active_on_day',
+  'expiry_active_today',
+])
 
 const openGroups = ref(/** @type {Set<string>} */ (new Set()))
 
@@ -92,6 +102,25 @@ function groupColor(key) {
 function groupBg(key) {
   const rgb = GROUP_COLORS[key] ?? chartSeriesRgb.active
   return rgba(rgb, 0.12)
+}
+
+function isExpiryGroup(key) {
+  return EXPIRY_GROUP_KEYS.has(key)
+}
+
+/** @param {PayExpGroup} group */
+function expiryDidNotRenewUsers(group) {
+  return (group.users ?? []).filter((u) => u.did_not_renew)
+}
+
+/** @param {PayExpGroup} group */
+function expiryWithoutPaymentUsers(group) {
+  return (group.users ?? []).filter((u) => !u.has_payments_ever)
+}
+
+/** @param {PayExpGroup} group */
+function expiryRenewedOnDayUsers(group) {
+  return (group.users ?? []).filter((u) => u.has_payments_ever && !u.did_not_renew)
 }
 
 function userDisplayName(item) {
@@ -141,7 +170,8 @@ function toggleGroup(key) {
 watch(
   () => props.groups,
   (groups) => {
-    const first = groups.find((g) => (Number(g.count) || 0) > 0)
+    const withChurn = groups.find((g) => (Number(g.did_not_renew_count) || 0) > 0)
+    const first = withChurn ?? groups.find((g) => (Number(g.count) || 0) > 0)
     openGroups.value = first ? new Set([first.key]) : new Set()
   },
   { immediate: true },
@@ -215,6 +245,29 @@ watch(
           <span class="pay-exp-day-group__titles">
             <span class="pay-exp-day-group__title">{{ group.title }}</span>
             <span class="pay-exp-day-group__hint">{{ group.hint }}</span>
+            <span
+              v-if="isExpiryGroup(group.key) && (group.did_not_renew_count || group.paid_users_count)"
+              class="pay-exp-day-group__renewal"
+            >
+              <span
+                v-if="group.did_not_renew_count"
+                class="pay-exp-day-group__renewal-chip pay-exp-day-group__renewal-chip--warn"
+              >
+                не продлили: {{ group.did_not_renew_count }}
+              </span>
+              <span
+                v-if="group.paid_users_count && group.paid_users_count !== group.did_not_renew_count"
+                class="pay-exp-day-group__renewal-chip"
+              >
+                с оплатой: {{ group.paid_users_count }}
+              </span>
+              <span
+                v-if="expiryWithoutPaymentUsers(group).length"
+                class="pay-exp-day-group__renewal-chip pay-exp-day-group__renewal-chip--muted"
+              >
+                без оплат: {{ expiryWithoutPaymentUsers(group).length }}
+              </span>
+            </span>
           </span>
           <span class="pay-exp-day-group__count">{{ group.count }}</span>
         </summary>
@@ -248,36 +301,136 @@ watch(
         </ul>
 
         <ul v-else-if="group.users?.length" class="pay-exp-day-list">
-          <li
-            v-for="user in group.users"
-            :key="user.user_id"
-            class="pay-exp-day-row"
-          >
-            <span class="pay-exp-day-row__main">
-              <span class="pay-exp-day-row__name">{{ userDisplayName(user) }}</span>
-              <span class="pay-exp-day-row__sub muted">{{ userSecondary(user) }}</span>
-            </span>
-            <span class="pay-exp-day-row__badges">
-              <span
-                v-if="user.has_payments_ever"
-                class="pay-exp-day-badge pay-exp-day-badge--paid"
-              >
-                Оплачивал
+          <template v-if="isExpiryGroup(group.key) && expiryDidNotRenewUsers(group).length">
+            <li class="pay-exp-day-subhead pay-exp-day-subhead--warn">
+              Оплачивали, не продлили подписку
+              <span class="pay-exp-day-subhead__n">{{
+                expiryDidNotRenewUsers(group).length
+              }}</span>
+            </li>
+            <li
+              v-for="user in expiryDidNotRenewUsers(group)"
+              :key="`dnr-${user.user_id}`"
+              class="pay-exp-day-row pay-exp-day-row--warn"
+            >
+              <span class="pay-exp-day-row__main">
+                <span class="pay-exp-day-row__name">{{ userDisplayName(user) }}</span>
+                <span class="pay-exp-day-row__sub muted">{{ userSecondary(user) }}</span>
               </span>
-              <span
-                v-if="user.subscription_until"
-                class="pay-exp-day-badge"
-              >
-                до {{ formatSubUntil(user.subscription_until) }}
+              <span class="pay-exp-day-row__badges">
+                <span class="pay-exp-day-badge pay-exp-day-badge--churn">
+                  Не продлил
+                </span>
+                <span
+                  v-if="user.subscription_until"
+                  class="pay-exp-day-badge pay-exp-day-badge--expiry"
+                >
+                  истекает {{ formatSubUntil(user.subscription_until) }}
+                </span>
               </span>
-            </span>
-            <AdminHighlightListLink
-              list="users"
-              :highlight="user.user_id"
-              panel
-              :title="`Аналитика: ${userDisplayName(user)}`"
-            />
-          </li>
+              <AdminHighlightListLink
+                list="users"
+                :highlight="user.user_id"
+                panel
+                :title="`Аналитика: ${userDisplayName(user)}`"
+              />
+            </li>
+          </template>
+
+          <template v-if="isExpiryGroup(group.key) && expiryWithoutPaymentUsers(group).length">
+            <li class="pay-exp-day-subhead">
+              Без оплат
+              <span class="pay-exp-day-subhead__n">{{
+                expiryWithoutPaymentUsers(group).length
+              }}</span>
+            </li>
+            <li
+              v-for="user in expiryWithoutPaymentUsers(group)"
+              :key="`free-${user.user_id}`"
+              class="pay-exp-day-row"
+            >
+              <span class="pay-exp-day-row__main">
+                <span class="pay-exp-day-row__name">{{ userDisplayName(user) }}</span>
+                <span class="pay-exp-day-row__sub muted">{{ userSecondary(user) }}</span>
+              </span>
+              <span class="pay-exp-day-row__badges">
+                <span class="pay-exp-day-badge muted">Пробный / без оплат</span>
+                <span
+                  v-if="user.subscription_until"
+                  class="pay-exp-day-badge"
+                >
+                  до {{ formatSubUntil(user.subscription_until) }}
+                </span>
+              </span>
+              <AdminHighlightListLink
+                list="users"
+                :highlight="user.user_id"
+                panel
+                :title="`Аналитика: ${userDisplayName(user)}`"
+              />
+            </li>
+          </template>
+
+          <template v-if="isExpiryGroup(group.key) && expiryRenewedOnDayUsers(group).length">
+            <li class="pay-exp-day-subhead">
+              Оплатили в этот день
+              <span class="pay-exp-day-subhead__n">{{
+                expiryRenewedOnDayUsers(group).length
+              }}</span>
+            </li>
+            <li
+              v-for="user in expiryRenewedOnDayUsers(group)"
+              :key="`renew-${user.user_id}`"
+              class="pay-exp-day-row"
+            >
+              <span class="pay-exp-day-row__main">
+                <span class="pay-exp-day-row__name">{{ userDisplayName(user) }}</span>
+                <span class="pay-exp-day-row__sub muted">{{ userSecondary(user) }}</span>
+              </span>
+              <span class="pay-exp-day-row__badges">
+                <span class="pay-exp-day-badge pay-exp-day-badge--paid">Оплата в этот день</span>
+              </span>
+              <AdminHighlightListLink
+                list="users"
+                :highlight="user.user_id"
+                panel
+                :title="`Аналитика: ${userDisplayName(user)}`"
+              />
+            </li>
+          </template>
+
+          <template v-if="!isExpiryGroup(group.key)">
+            <li
+              v-for="user in group.users"
+              :key="user.user_id"
+              class="pay-exp-day-row"
+            >
+              <span class="pay-exp-day-row__main">
+                <span class="pay-exp-day-row__name">{{ userDisplayName(user) }}</span>
+                <span class="pay-exp-day-row__sub muted">{{ userSecondary(user) }}</span>
+              </span>
+              <span class="pay-exp-day-row__badges">
+                <span
+                  v-if="user.has_payments_ever"
+                  class="pay-exp-day-badge pay-exp-day-badge--paid"
+                >
+                  Оплачивал
+                </span>
+                <span
+                  v-if="user.subscription_until"
+                  class="pay-exp-day-badge"
+                >
+                  до {{ formatSubUntil(user.subscription_until) }}
+                </span>
+              </span>
+              <AdminHighlightListLink
+                list="users"
+                :highlight="user.user_id"
+                panel
+                :title="`Аналитика: ${userDisplayName(user)}`"
+              />
+            </li>
+          </template>
         </ul>
       </details>
     </div>
@@ -467,6 +620,36 @@ watch(
   color: var(--muted);
 }
 
+.pay-exp-day-group__renewal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+}
+
+.pay-exp-day-group__renewal-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.42rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--group-color) 35%, var(--card-border));
+  background: color-mix(in srgb, var(--group-color) 12%, transparent);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.pay-exp-day-group__renewal-chip--warn {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--card-border));
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+.pay-exp-day-group__renewal-chip--muted {
+  color: var(--muted);
+  font-weight: 600;
+}
+
 .pay-exp-day-group__count {
   flex-shrink: 0;
   min-width: 1.75rem;
@@ -488,6 +671,44 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+}
+
+.pay-exp-day-subhead {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.15rem 0.1rem 0;
+  padding: 0.35rem 0.45rem 0.15rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.pay-exp-day-subhead--warn {
+  color: var(--danger);
+}
+
+.pay-exp-day-subhead__n {
+  display: inline-flex;
+  min-width: 1.2rem;
+  justify-content: center;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+}
+
+.pay-exp-day-row--warn {
+  border-color: color-mix(in srgb, var(--danger) 22%, transparent);
+  background: color-mix(in srgb, var(--danger) 6%, var(--group-bg));
+}
+
+.pay-exp-day-row--warn:hover {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--card-border));
+  background: color-mix(in srgb, var(--danger) 10%, var(--group-bg));
 }
 
 .pay-exp-day-row {
@@ -562,6 +783,16 @@ watch(
   color: var(--text-h);
   border-color: color-mix(in srgb, var(--accent) 35%, var(--card-border));
   background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.pay-exp-day-badge--churn {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--card-border));
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.pay-exp-day-badge--expiry {
+  font-family: var(--mono);
 }
 
 @media (max-width: 720px) {
