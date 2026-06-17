@@ -41,7 +41,6 @@ const props = defineProps({
   groups: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
   error: { type: String, default: null },
-  summaryRow: { type: Object, default: null },
 })
 
 const emit = defineEmits(['close'])
@@ -67,32 +66,6 @@ const openGroups = ref(/** @type {Set<string>} */ (new Set()))
 const dayTitle = computed(() =>
   formatMskCalendarDayLong(String(props.statsDate).slice(0, 10)),
 )
-
-const totalEvents = computed(() =>
-  props.groups.reduce((sum, g) => sum + (Number(g.count) || 0), 0),
-)
-
-const summaryChips = computed(() => {
-  const row = props.summaryRow
-  if (!row) return []
-  return [
-    {
-      label: 'Оплаты',
-      value: Number(row.payments_count) || 0,
-      color: rgba(chartSeriesRgb.payment, 0.95),
-    },
-    {
-      label: 'Окончания',
-      value: Number(row.subscription_expiring_total_count) || 0,
-      color: rgba(chartSeriesRgb.expiryGray, 0.88),
-    },
-    {
-      label: 'С оплатой',
-      value: Number(row.subscription_expiring_has_payment_count) || 0,
-      color: rgba(chartSeriesRgb.active, 0.95),
-    },
-  ]
-})
 
 function groupColor(key) {
   const rgb = GROUP_COLORS[key] ?? chartSeriesRgb.active
@@ -190,12 +163,6 @@ watch(
           {{ dayTitle }}
           <span class="pay-exp-day-panel__msk">МСК</span>
         </h3>
-        <p v-if="!loading && !error" class="pay-exp-day-panel__meta muted">
-          {{ totalEvents.toLocaleString('ru-RU') }}
-          {{ totalEvents === 1 ? 'событие' : totalEvents < 5 ? 'события' : 'событий' }}
-          в {{ groups.length }}
-          {{ groups.length === 1 ? 'категории' : groups.length < 5 ? 'категориях' : 'категориях' }}
-        </p>
       </div>
       <button
         type="button"
@@ -206,20 +173,6 @@ watch(
         Закрыть
       </button>
     </header>
-
-    <div v-if="summaryChips.length" class="pay-exp-day-panel__chips">
-      <span
-        v-for="chip in summaryChips"
-        :key="chip.label"
-        class="pay-exp-day-panel__chip"
-        :style="{ '--chip-color': chip.color }"
-      >
-        <span class="pay-exp-day-panel__chip-label">{{ chip.label }}</span>
-        <strong class="pay-exp-day-panel__chip-value">{{
-          chip.value.toLocaleString('ru-RU')
-        }}</strong>
-      </span>
-    </div>
 
     <p v-if="loading" class="pay-exp-day-panel__status muted">Загрузка списков…</p>
     <p v-else-if="error" class="pay-exp-day-panel__status pay-exp-day-panel__status--err">
@@ -492,11 +445,6 @@ watch(
   vertical-align: middle;
 }
 
-.pay-exp-day-panel__meta {
-  margin: 0.35rem 0 0;
-  font-size: 0.82rem;
-}
-
 .pay-exp-day-panel__close {
   margin: 0;
   padding: 0.4rem 0.75rem;
@@ -518,37 +466,6 @@ watch(
   color: var(--text-h);
   border-color: color-mix(in srgb, var(--accent) 35%, var(--card-border));
   background: color-mix(in srgb, var(--accent) 8%, var(--surface));
-}
-
-.pay-exp-day-panel__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-  margin-bottom: 0.9rem;
-}
-
-.pay-exp-day-panel__chip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.4rem;
-  padding: 0.35rem 0.65rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--chip-color) 35%, var(--card-border));
-  background: color-mix(in srgb, var(--chip-color) 10%, transparent);
-}
-
-.pay-exp-day-panel__chip-label {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-}
-
-.pay-exp-day-panel__chip-value {
-  font-family: var(--mono);
-  font-size: 0.88rem;
-  color: var(--text-h);
 }
 
 .pay-exp-day-panel__status {

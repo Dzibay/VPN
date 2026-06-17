@@ -201,9 +201,7 @@ const payExpLabels = computed(() =>
 const payExpAriaLabel =
   'По дням МСК: два столбца — оплаты (первая и повторная) и окончания подписки (без трафика, с трафиком, активные в день окончания, активные сегодня)'
 
-const payExpHint =
-  'В каждом дне два столбца: слева оплаты, справа окончания подписки. Над столбцами по центру дня — число окончаний у пользователей с оплатой: голубое для сегодня и будущих дней, серое для прошедших. Нажмите на столбец дня — ниже откроются списки пользователей и платежей.'
-
+const payExpHint = ''
 const payExpCategoryBlue = rgba(chartSeriesRgb.active, 0.95)
 const payExpCategoryGray = rgba(chartSeriesRgb.expiryGray, 0.92)
 
@@ -606,7 +604,6 @@ watch(payExpMonth, () => {
         :groups="payExpDayDetail?.groups ?? []"
         :loading="payExpDayDetailLoading"
         :error="payExpDayDetailError"
-        :summary-row="payExpSelectedRow"
         @close="closePayExpDayDetail"
       />
     </div>
