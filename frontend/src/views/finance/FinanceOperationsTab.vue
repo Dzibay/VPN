@@ -3,8 +3,10 @@ import { computed, onMounted, ref } from 'vue'
 import AdminTableWrap from '../../components/AdminTableWrap.vue'
 import AppRefreshButton from '../../components/AppRefreshButton.vue'
 import { fetchJson } from '../../api/client.js'
+import { getSessionRole } from '../../auth/session.js'
 import { mskTodayIso } from '../../utils/mskDate.js'
 
+const isAdmin = computed(() => getSessionRole() === 'admin')
 const loading = ref(false)
 const error = ref(null)
 
@@ -151,6 +153,23 @@ async function submitPayable() {
   await loadAll()
 }
 
+async function deletePayable(row) {
+  if (!isAdmin.value) return
+  if (num(row.paid_amount) > 0) {
+    error.value = 'Нельзя удалить долг с уже проведёнными выплатами.'
+    return
+  }
+  const ok = window.confirm(`Удалить долг «${row.title}» перед ${row.counterparty_name}?`)
+  if (!ok) return
+  error.value = null
+  try {
+    await fetchJson(`/api/admin/accounting/payables/${row.id}`, { method: 'DELETE' })
+    await loadAll()
+  } catch (e) {
+    error.value = e.message || String(e)
+  }
+}
+
 async function submitPayablePayment(row) {
   const f = payFormById.value[row.id] || {}
   await fetchJson(`/api/admin/accounting/payables/${row.id}/payments`, {
@@ -274,7 +293,7 @@ onMounted(() => {
     </form>
     <AdminTableWrap aria-label="Долги">
       <table class="admin-table">
-        <thead><tr><th>Кому</th><th>За что</th><th class="num">Долг</th><th class="num">Оплачено</th><th>Статус</th><th>Выплата</th></tr></thead>
+        <thead><tr><th>Кому</th><th>За что</th><th class="num">Долг</th><th class="num">Оплачено</th><th>Статус</th><th>Выплата</th><th v-if="isAdmin" class="th-actions">Действия</th></tr></thead>
         <tbody>
           <tr v-for="p in payables" :key="p.id">
             <td>{{ p.counterparty_name }}</td>
@@ -291,6 +310,17 @@ onMounted(() => {
                 </select>
                 <button class="btn-secondary btn-mini" type="submit">Выплатить</button>
               </form>
+            </td>
+            <td v-if="isAdmin" class="td-actions">
+              <button
+                v-if="num(p.paid_amount) <= 0"
+                type="button"
+                class="btn-icon btn-icon--danger"
+                title="Удалить"
+                @click="deletePayable(p)"
+              >
+                ✕
+              </button>
             </td>
           </tr>
         </tbody>

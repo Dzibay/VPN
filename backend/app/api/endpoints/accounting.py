@@ -69,6 +69,7 @@ from app.domain.services.accounting_service import (
     create_refund,
     delete_category,
     delete_expenses_by_ids,
+    delete_payable,
     delete_recurring_expense,
     get_accounting_summary,
     get_finance_settings,
@@ -508,6 +509,30 @@ async def post_payable_payment(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Некорректная сумма выплаты") from err
     except LookupError as err:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Долг или счет не найден") from err
+
+
+@accounting_router.delete(
+    "/payables/{payable_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_admin)],
+    summary="Удалить долг (только admin, без выплат)",
+)
+async def remove_payable(
+    session: SessionDep,
+    payable_id: Annotated[int, Path(ge=1)],
+) -> None:
+    try:
+        await delete_payable(session, payable_id)
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Нельзя удалить долг с уже проведёнными выплатами",
+        ) from err
+    except LookupError as err:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Долг не найден",
+        ) from err
 
 
 @accounting_router.get("/refunds", response_model=RefundsListResponse)

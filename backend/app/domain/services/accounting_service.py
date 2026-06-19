@@ -950,6 +950,16 @@ async def pay_payable(
     return PayableItem.model_validate(row)
 
 
+async def delete_payable(session: AsyncSession, payable_id: int) -> None:
+    row = await session.get(Payable, payable_id)
+    if row is None:
+        raise LookupError("payable_not_found")
+    if row.paid_amount > 0:
+        raise ValueError("payable_has_payments")
+    await session.delete(row)
+    await session.flush()
+
+
 async def list_refunds(
     session: AsyncSession,
     *,
