@@ -235,10 +235,16 @@ const DEFAULT_VLESS_FLOW = 'xtls-rprx-vision'
 const DEFAULT_GRPC_SERVICE_NAME = 'grpc'
 const DEFAULT_WS_PATH = '/vless'
 const DEFAULT_XHTTP_PATH = '/uploadfiles/'
+const DEFAULT_XHTTP_PLAIN_PATH = '/xhttp/'
 
 /** VLESS-типы, для которых доступен каскад (вход РФ → exit). */
 function proxyKindSupportsCascade(kind) {
-  return kind === 'vless' || kind === 'vless_grpc' || kind === 'vless_ws'
+  return (
+    kind === 'vless' ||
+    kind === 'vless_grpc' ||
+    kind === 'vless_ws' ||
+    kind === 'vless_xhttp'
+  )
 }
 
 function randomShortIdHex() {
@@ -585,8 +591,10 @@ function openEditServer(s) {
       ? 'hysteria2'
       : s.proxy_kind === 'vless_grpc'
         ? 'vless_grpc'
-        : s.proxy_kind === 'vless_ws'
+          : s.proxy_kind === 'vless_ws'
           ? 'vless_ws'
+          : s.proxy_kind === 'vless_xhttp'
+            ? 'vless_xhttp'
           : s.proxy_kind === 'vless_vk_cdn_xhttp'
             ? 'vless_vk_cdn_xhttp'
             : 'vless'
@@ -627,7 +635,8 @@ function openEditServer(s) {
   formCdnDomain.value =
     (s.cdn_domain && String(s.cdn_domain).trim()) || ''
   formXhttpPath.value =
-    (s.xhttp_path && String(s.xhttp_path).trim()) || DEFAULT_XHTTP_PATH
+    (s.xhttp_path && String(s.xhttp_path).trim()) ||
+    (s.proxy_kind === 'vless_xhttp' ? DEFAULT_XHTTP_PLAIN_PATH : DEFAULT_XHTTP_PATH)
   formIsCascadeRuEntry.value = Boolean(s.is_cascade_ru_entry)
   formCascadeNextServerId.value =
     s.cascade_next_server_id != null ? String(s.cascade_next_server_id) : ''
@@ -1054,6 +1063,12 @@ async function submitSaveServer() {
         const tls = String(formTlsSni.value ?? '').trim()
         patch.tls_sni = tls || null
       }
+      if (formProxyKind.value === 'vless_xhttp') {
+        const xp = String(formXhttpPath.value ?? '').trim()
+        if (xp) patch.xhttp_path = xp
+        const tls = String(formTlsSni.value ?? '').trim()
+        patch.tls_sni = tls || null
+      }
       if (formProxyKind.value === 'vless_vk_cdn_xhttp') {
         const origin = String(formOriginDomain.value ?? '').trim()
         const cdn = String(formCdnDomain.value ?? '').trim()
@@ -1122,6 +1137,12 @@ async function submitSaveServer() {
       if (formProxyKind.value === 'vless_ws') {
         const wp = String(formWsPath.value ?? '').trim()
         if (wp) createBody.ws_path = wp
+        const tls = String(formTlsSni.value ?? '').trim()
+        if (tls) createBody.tls_sni = tls
+      }
+      if (formProxyKind.value === 'vless_xhttp') {
+        const xp = String(formXhttpPath.value ?? '').trim()
+        if (xp) createBody.xhttp_path = xp
         const tls = String(formTlsSni.value ?? '').trim()
         if (tls) createBody.tls_sni = tls
       }
@@ -2624,7 +2645,9 @@ watch(formIsCascadeRuEntry, (v) => {
                   autocapitalize="none"
                   spellcheck="false"
                   :placeholder="
-                    formProxyKind === 'vless_grpc' || formProxyKind === 'vless_ws'
+                    formProxyKind === 'vless_grpc' ||
+                    formProxyKind === 'vless_ws' ||
+                    formProxyKind === 'vless_xhttp'
                       ? 'Домен с A-записью на VPS'
                       : formProxyKind === 'vless_vk_cdn_xhttp'
                         ? 'IP или origin-домен VPS для SSH'
@@ -2656,6 +2679,7 @@ watch(formIsCascadeRuEntry, (v) => {
                   <option value="vless">VLESS + REALITY</option>
                   <option value="vless_grpc">VLESS gRPC + TLS</option>
                   <option value="vless_ws">VLESS WebSocket + TLS</option>
+                  <option value="vless_xhttp">VLESS XHTTP + TLS</option>
                   <option value="vless_vk_cdn_xhttp">VK Cloud CDN XHTTP</option>
                   <option value="hysteria2">Hysteria2</option>
                 </select>
@@ -2772,6 +2796,10 @@ watch(formIsCascadeRuEntry, (v) => {
                 Домен с A-записью на узел, Let's Encrypt и VLESS поверх WebSocket+TLS. Может быть
                 и входом каскада (РФ), и exit — транспорт магистрали задаётся типом exit.
               </p>
+              <p v-else-if="formProxyKind === 'vless_xhttp'" class="field-hint">
+                Прямой VLESS XHTTP packet-up + TLS на домене сервера (без CDN). Нужен домен с
+                A-записью и Let's Encrypt. Подходит как fallback-профиль и вход каскада.
+              </p>
               <p v-else-if="formProxyKind === 'vless_vk_cdn_xhttp'" class="field-hint">
                 VK Cloud CDN + XHTTP packet-up. Установка поднимет nginx с TLS/заглушкой на
                 origin-домене и Xray на localhost:4443; клиентам будет выдан CDN-домен на 443.
@@ -2808,7 +2836,11 @@ watch(formIsCascadeRuEntry, (v) => {
                 />
               </label>
               <label
-                v-if="formProxyKind === 'vless_grpc' || formProxyKind === 'vless_ws'"
+                v-if="
+                  formProxyKind === 'vless_grpc' ||
+                  formProxyKind === 'vless_ws' ||
+                  formProxyKind === 'vless_xhttp'
+                "
                 class="field"
               >
                 <span>TLS SNI</span>
@@ -2828,6 +2860,20 @@ watch(formIsCascadeRuEntry, (v) => {
                   placeholder="/vless"
                 />
               </label>
+              <template v-if="formProxyKind === 'vless_xhttp'">
+                <label class="field">
+                  <span>XHTTP path</span>
+                  <input
+                    v-model="formXhttpPath"
+                    type="text"
+                    autocomplete="off"
+                    placeholder="/xhttp/"
+                  />
+                  <span class="field-hint"
+                    >Путь XHTTP на сервере. По умолчанию /xhttp/, mode = packet-up.</span
+                  >
+                </label>
+              </template>
               <template v-if="formProxyKind === 'vless_vk_cdn_xhttp'">
                 <label class="field">
                   <span>Origin-домен</span>

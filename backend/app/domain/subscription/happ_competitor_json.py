@@ -13,6 +13,7 @@ from typing import Any
 from app.domain.servers.reality_defaults import normalize_reality_spider_x
 from app.domain.subscription.build import (
     _XRAY_VLESS_STREAM_SETTINGS_SOCKOPT,
+    _xhttp_extra,
     _xhttp_path_for_server,
     _xhttp_vkcdn_extra,
     _primary_sni,
@@ -93,6 +94,12 @@ def server_to_competitor_vless_outbound(
         )
     if kind == "vless_ws":
         return server_to_competitor_vless_ws_outbound(
+            s,
+            client_uuid=client_uuid,
+            tag=tag,
+        )
+    if kind == "vless_xhttp":
+        return server_to_competitor_vless_xhttp_outbound(
             s,
             client_uuid=client_uuid,
             tag=tag,
@@ -191,6 +198,49 @@ def server_to_competitor_vless_ws_outbound(
                 "alpn": ["http/1.1"],
             },
             "wsSettings": {"path": wpath},
+        },
+    }
+
+
+def server_to_competitor_vless_xhttp_outbound(
+    s: Server,
+    *,
+    client_uuid: str,
+    tag: str,
+) -> dict[str, Any] | None:
+    host = (s.host or "").strip()
+    uid = (client_uuid or "").strip()
+    sni = _tls_sni_for_server(s)
+    if not host or not uid or not sni:
+        return None
+    path = _xhttp_path_for_server(s)
+    return {
+        "tag": tag,
+        "protocol": "vless",
+        "settings": {
+            "vnext": [
+                {
+                    "address": host,
+                    "port": int(s.port),
+                    "users": [{"id": uid, "encryption": "none"}],
+                }
+            ]
+        },
+        "streamSettings": {
+            "network": "xhttp",
+            "security": "tls",
+            "tlsSettings": {
+                "serverName": sni,
+                "fingerprint": "chrome",
+                "allowInsecure": False,
+                "alpn": ["h3", "h2", "http/1.1"],
+            },
+            "xhttpSettings": {
+                "path": path,
+                "mode": "packet-up",
+                "host": sni,
+                "extra": _xhttp_extra(path),
+            },
         },
     }
 

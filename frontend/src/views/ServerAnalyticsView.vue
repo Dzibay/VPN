@@ -142,6 +142,13 @@ const serverParamRows = computed(() => {
           { label: 'TLS SNI', value: t(s.tls_sni || s.host) },
         ]
       : []),
+    ...(s.proxy_kind === 'vless_xhttp'
+      ? [
+          { label: 'XHTTP path', value: t(s.xhttp_path) },
+          { label: 'TLS SNI', value: t(s.tls_sni || s.host) },
+          { label: 'XHTTP mode', value: 'packet-up' },
+        ]
+      : []),
     ...(s.proxy_kind === 'vless_vk_cdn_xhttp'
       ? [
           { label: 'Origin-домен', value: t(s.origin_domain) },

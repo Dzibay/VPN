@@ -32,7 +32,13 @@ from app.infrastructure.persistence.models.server import Server
 
 log = logging.getLogger("app.servers.provisioning")
 
-_XRAY_SYNCABLE_PROXY_KINDS = ("vless", "vless_grpc", "vless_ws", "vless_vk_cdn_xhttp")
+_XRAY_SYNCABLE_PROXY_KINDS = (
+    "vless",
+    "vless_grpc",
+    "vless_ws",
+    "vless_xhttp",
+    "vless_vk_cdn_xhttp",
+)
 
 
 def enqueue_sync_xray_all(cfg: Settings | None = None) -> XrayClientsSyncResultRead:

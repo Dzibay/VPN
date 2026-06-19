@@ -108,7 +108,9 @@ async def subscription_servers_from_db(session: AsyncSession) -> list[Server]:
             Server.provision_ready.is_(True),
             or_(
                 Server.proxy_kind == "hysteria2",
-                Server.proxy_kind.in_(("vless_grpc", "vless_ws", "vless_vk_cdn_xhttp")),
+                Server.proxy_kind.in_(
+                    ("vless_grpc", "vless_ws", "vless_xhttp", "vless_vk_cdn_xhttp")
+                ),
                 and_(
                     Server.proxy_kind == "vless",
                     Server.reality_public_key.isnot(None),
@@ -278,6 +280,13 @@ def _vless_ws_share_uri(
     return f"vless://{uuid}@{host}:{int(s.port)}?{query}#{fragment}"
 
 
+def _xhttp_extra(path: str) -> dict[str, Any]:
+    return {
+        "mode": "packet-up",
+        "path": path,
+    }
+
+
 def _xhttp_vkcdn_extra(path: str) -> dict[str, Any]:
     return {
         "mode": "packet-up",
@@ -292,12 +301,52 @@ def _xhttp_vkcdn_extra(path: str) -> dict[str, Any]:
 
 
 def _xhttp_path_for_server(s: Server) -> str:
-    path = (s.xhttp_path or "/uploadfiles/").strip() or "/uploadfiles/"
+    kind = (s.proxy_kind or "vless").strip().lower()
+    default = "/xhttp/" if kind == "vless_xhttp" else "/uploadfiles/"
+    path = (s.xhttp_path or default).strip() or default
     if not path.startswith("/"):
         path = "/" + path
     if not path.endswith("/"):
         path += "/"
     return path
+
+
+def _vless_xhttp_share_uri(
+    s: Server,
+    *,
+    client_uuid: str,
+    exit_ids_referenced: set[int],
+    fragment_override: str | None = None,
+) -> str | None:
+    host = (s.host or "").strip()
+    sni = _tls_sni_for_server(s)
+    if not host or not sni:
+        log.warning("Пропуск узла id=%s: пустой host/SNI для XHTTP", s.id)
+        return None
+    path = _xhttp_path_for_server(s)
+    params = {
+        "encryption": "none",
+        "security": "tls",
+        "type": "xhttp",
+        "host": sni,
+        "path": path,
+        "mode": "packet-up",
+        "sni": sni,
+        "fp": "chrome",
+        "alpn": "h3,h2,http/1.1",
+        "extra": json.dumps(_xhttp_extra(path), separators=(",", ":"), ensure_ascii=False),
+    }
+    query = urlencode(params, quote_via=quote, safe="")
+    remark = (
+        fragment_override
+        if fragment_override is not None
+        else _node_subscription_label(s, exit_ids_referenced=exit_ids_referenced)
+    )
+    fragment = quote(remark, safe="")
+    uuid = (client_uuid or "").strip()
+    if not uuid:
+        return None
+    return f"vless://{uuid}@{host}:{int(s.port)}?{query}#{fragment}"
 
 
 def _vless_vkcdn_xhttp_share_uri(
@@ -432,6 +481,29 @@ def _server_to_subscription_dict(
             "sni": sni,
             "path": wpath,
         }
+    if kind == "vless_xhttp":
+        host = (s.host or "").strip()
+        sni = _tls_sni_for_server(s)
+        path = _xhttp_path_for_server(s)
+        return {
+            "id": s.id,
+            "name": display_name,
+            "country": s.country,
+            "protocol": "vless",
+            "address": host,
+            "port": s.port,
+            "uuid": (client_uuid or "").strip(),
+            "encryption": "none",
+            "network": "xhttp",
+            "security": "tls",
+            "sni": sni,
+            "host": sni,
+            "path": path,
+            "mode": "packet-up",
+            "alpn": ["h3", "h2", "http/1.1"],
+            "fingerprint": "chrome",
+            "xhttp_extra": _xhttp_extra(path),
+        }
     if kind == "vless_vk_cdn_xhttp":
         cdn = (s.cdn_domain or "").strip().rstrip(".")
         path = _xhttp_path_for_server(s)
@@ -532,6 +604,12 @@ def _subscription_uri_and_fingerprint_by_server_id(
                 client_uuid=client_uuid,
                 exit_ids_referenced=ctx.exit_ids_referenced,
             )
+        elif kind == "vless_xhttp":
+            uri_by_id[s.id] = _vless_xhttp_share_uri(
+                s,
+                client_uuid=client_uuid,
+                exit_ids_referenced=ctx.exit_ids_referenced,
+            )
         elif kind == "vless_vk_cdn_xhttp":
             uri_by_id[s.id] = _vless_vkcdn_xhttp_share_uri(
                 s,
@@ -553,6 +631,7 @@ def _is_vless_server(s: Server) -> bool:
         "vless",
         "vless_grpc",
         "vless_ws",
+        "vless_xhttp",
         "vless_vk_cdn_xhttp",
     )
 
@@ -650,6 +729,13 @@ def _auto_best_share_uri(
             exit_ids_referenced=exit_ids_referenced,
             fragment_override=remark,
         )
+    if kind == "vless_xhttp":
+        return _vless_xhttp_share_uri(
+            best,
+            client_uuid=client_uuid,
+            exit_ids_referenced=exit_ids_referenced,
+            fragment_override=remark,
+        )
     if kind == "vless_vk_cdn_xhttp":
         return _vless_vkcdn_xhttp_share_uri(
             best,
@@ -725,6 +811,31 @@ def _append_clash_proxy(
                 "udp": True,
                 "servername": sni,
                 "ws-opts": {"path": wpath},
+            }
+        )
+        return
+    if kind == "vless_xhttp":
+        sni = _tls_sni_for_server(s)
+        path = _xhttp_path_for_server(s)
+        proxies.append(
+            {
+                "name": clash_name,
+                "type": "vless",
+                "server": host,
+                "port": int(s.port),
+                "uuid": client_uuid,
+                "network": "xhttp",
+                "tls": True,
+                "udp": True,
+                "servername": sni,
+                "client-fingerprint": "chrome",
+                "alpn": ["h3", "h2", "http/1.1"],
+                "xhttp-opts": {
+                    "path": path,
+                    "host": sni,
+                    "mode": "packet-up",
+                    "extra": _xhttp_extra(path),
+                },
             }
         )
         return

@@ -11,7 +11,14 @@ from app.domain.servers.host_validation import (
     normalize_xhttp_path,
 )
 
-ProxyKind = Literal["vless", "vless_grpc", "vless_ws", "vless_vk_cdn_xhttp", "hysteria2"]
+ProxyKind = Literal[
+    "vless",
+    "vless_grpc",
+    "vless_ws",
+    "vless_xhttp",
+    "vless_vk_cdn_xhttp",
+    "hysteria2",
+]
 
 
 class ServersCountResponse(BaseModel):
@@ -63,7 +70,7 @@ class ServerCreate(BaseModel):
         default="vless",
         description=(
             "Тип прокси: vless (REALITY), vless_grpc (gRPC+TLS), vless_ws (WS+TLS), "
-            "vless_vk_cdn_xhttp (VK Cloud CDN + XHTTP) или hysteria2"
+            "vless_xhttp (XHTTP+TLS), vless_vk_cdn_xhttp (VK Cloud CDN + XHTTP) или hysteria2"
         ),
     )
     vless_uuid: str | None = Field(
@@ -303,11 +310,11 @@ class ServerCreate(BaseModel):
             if not cdn or not is_domain_host(cdn):
                 raise ValueError("cdn_domain: укажите CDN-домен VK Cloud")
             return self
-        if self.proxy_kind not in ("vless_grpc", "vless_ws"):
+        if self.proxy_kind not in ("vless_grpc", "vless_ws", "vless_xhttp"):
             return self
         if not is_domain_host(self.host):
             raise ValueError(
-                "host: для VLESS gRPC/WebSocket+TLS нужен домен (A-запись на узел)",
+                "host: для VLESS gRPC/WebSocket/XHTTP+TLS нужен домен (A-запись на узел)",
             )
         sni = (self.tls_sni or self.host).strip()
         if not is_domain_host(sni):
@@ -646,7 +653,7 @@ class ServerRead(BaseModel):
     )
     xhttp_path: str = Field(
         default="/uploadfiles/",
-        description="XHTTP path для VK Cloud CDN",
+        description="XHTTP path (plain XHTTP или VK Cloud CDN)",
     )
     vless_uuid: str
     reality_private_key: str | None

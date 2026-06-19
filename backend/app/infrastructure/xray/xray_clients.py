@@ -82,6 +82,7 @@ def _is_xray_proxy_kind(proxy_kind: str | None) -> bool:
         "vless",
         "vless_grpc",
         "vless_ws",
+        "vless_xhttp",
         "vless_vk_cdn_xhttp",
     )
 

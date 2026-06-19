@@ -85,5 +85,5 @@ ALTER TABLE servers ADD CONSTRAINT servers_provision_progress_check CHECK (
 ALTER TABLE servers DROP CONSTRAINT IF EXISTS servers_proxy_kind_check;
 
 ALTER TABLE servers ADD CONSTRAINT servers_proxy_kind_check CHECK (
-    proxy_kind IN ('vless', 'vless_grpc', 'vless_ws', 'vless_vk_cdn_xhttp', 'hysteria2')
+    proxy_kind IN ('vless', 'vless_grpc', 'vless_ws', 'vless_xhttp', 'vless_vk_cdn_xhttp', 'hysteria2')
 );

@@ -6,6 +6,7 @@
 #   provision_vless.sh
 #   provision_vless_grpc.sh
 #   provision_vless_ws.sh
+#   provision_vless_xhttp.sh
 #   provision_vless_vk_cdn_xhttp.sh
 #   provision_cascade.sh
 #   provision_hysteria2.sh
@@ -34,6 +35,8 @@ case "$COMPONENT" in
       _vless_grpc_sync_clients
     elif [[ "$PROXY_KIND" == "vless_ws" ]]; then
       _vless_ws_sync_clients
+    elif [[ "$PROXY_KIND" == "vless_xhttp" ]]; then
+      _vless_xhttp_sync_clients
     elif [[ "$PROXY_KIND" == "vless_vk_cdn_xhttp" ]]; then
       _vless_vkcdn_xhttp_sync_clients
     else
@@ -45,6 +48,8 @@ case "$COMPONENT" in
       _vless_grpc_install
     elif [[ "$PROXY_KIND" == "vless_ws" ]]; then
       _vless_ws_install
+    elif [[ "$PROXY_KIND" == "vless_xhttp" ]]; then
+      _vless_xhttp_install
     elif [[ "$PROXY_KIND" == "vless_vk_cdn_xhttp" ]]; then
       _vless_vkcdn_xhttp_install
     else
@@ -70,6 +75,8 @@ case "$COMPONENT" in
       _vless_grpc_install
     elif [[ "$PROXY_KIND" == "vless_ws" ]]; then
       _vless_ws_install
+    elif [[ "$PROXY_KIND" == "vless_xhttp" ]]; then
+      _vless_xhttp_install
     elif [[ "$PROXY_KIND" == "vless_vk_cdn_xhttp" ]]; then
       _vless_vkcdn_xhttp_install
     else

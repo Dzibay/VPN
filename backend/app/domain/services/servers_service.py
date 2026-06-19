@@ -83,7 +83,7 @@ __all__ = [
     "enqueue_component_install",
 ]
 
-_CASCADE_ENTRY_KINDS = frozenset({"vless", "vless_grpc", "vless_ws"})
+_CASCADE_ENTRY_KINDS = frozenset({"vless", "vless_grpc", "vless_ws", "vless_xhttp"})
 
 
 def _assert_cascade_proxy_allowed(
@@ -198,14 +198,21 @@ async def patch_server(session: AsyncSession, server_id: int, body: ServerUpdate
     if data.get("reality_spider_x") is None and "reality_spider_x" in data:
         data["reality_spider_x"] = "/"
     if data.get("xhttp_path") is None and "xhttp_path" in data:
-        data["xhttp_path"] = "/uploadfiles/"
+        pk = str(data.get("proxy_kind", server.proxy_kind or "vless")).strip().lower()
+        data["xhttp_path"] = "/xhttp/" if pk == "vless_xhttp" else "/uploadfiles/"
     priv_in = data.get("reality_private_key")
     if priv_in:
         new_priv = str(priv_in).strip()
         old_priv = (server.reality_private_key or "").strip()
         if new_priv != old_priv:
             server.reality_public_key = None
-    if data.get("proxy_kind") in ("hysteria2", "vless_grpc", "vless_ws", "vless_vk_cdn_xhttp"):
+    if data.get("proxy_kind") in (
+        "hysteria2",
+        "vless_grpc",
+        "vless_ws",
+        "vless_xhttp",
+        "vless_vk_cdn_xhttp",
+    ):
         data["reality_public_key"] = None
     cascade_touched = False
     old_cnext: int | None = None

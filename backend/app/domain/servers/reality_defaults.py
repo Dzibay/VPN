@@ -26,6 +26,7 @@ REALITY_SHORT_ID_BYTES = 4
 GRPC_DEFAULT_SERVICE_NAME = "grpc"
 WS_DEFAULT_PATH = "/vless"
 XHTTP_DEFAULT_PATH = "/uploadfiles/"
+XHTTP_PLAIN_DEFAULT_PATH = "/xhttp/"
 
 
 def normalize_reality_spider_x(raw: str | None) -> str:
@@ -47,7 +48,7 @@ def reality_defaults_for_create(body: ServerCreate) -> dict[str, str]:
         "reality_spider_x": normalize_reality_spider_x(body.reality_spider_x),
         "vless_flow": body.vless_flow or VLESS_DEFAULT_FLOW,
     }
-    if body.proxy_kind in ("vless_grpc", "vless_ws"):
+    if body.proxy_kind in ("vless_grpc", "vless_ws", "vless_xhttp"):
         host = (body.host or "").strip()
         tls_sni = (body.tls_sni or host).strip()
         out["tls_sni"] = tls_sni or host
@@ -57,6 +58,10 @@ def reality_defaults_for_create(body: ServerCreate) -> dict[str, str]:
         )
     if body.proxy_kind == "vless_ws":
         out["ws_path"] = normalize_ws_path(body.ws_path or WS_DEFAULT_PATH)
+    if body.proxy_kind == "vless_xhttp":
+        out["xhttp_path"] = normalize_xhttp_path(
+            body.xhttp_path or XHTTP_PLAIN_DEFAULT_PATH
+        )
     if body.proxy_kind == "vless_vk_cdn_xhttp":
         out["origin_domain"] = (body.origin_domain or "").strip().rstrip(".").lower()
         out["cdn_domain"] = (body.cdn_domain or "").strip().rstrip(".").lower()

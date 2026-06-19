@@ -43,6 +43,7 @@ _REMOTE_SCRIPT_PARTS = (
     _SCRIPTS_DIR / "provision_vless.sh",
     _SCRIPTS_DIR / "provision_vless_grpc.sh",
     _SCRIPTS_DIR / "provision_vless_ws.sh",
+    _SCRIPTS_DIR / "provision_vless_xhttp.sh",
     _SCRIPTS_DIR / "provision_vless_vk_cdn_xhttp.sh",
     _SCRIPTS_DIR / "provision_hysteria2.sh",
     _REMOTE_SCRIPT,
@@ -106,8 +107,71 @@ def _set_provision_progress_by_id(
         db.close()
 
 
+def _extract_provision_failure_message(raw: str, *, limit: int = 1800) -> str:
+    """Выделить строки с реальной ошибкой; не показывать хвост успешного apt как «причину»."""
+    text = (raw or "").strip()
+    if not text:
+        return ""
+
+    stderr_part = ""
+    stdout_part = text
+    if "--- stderr ---" in text:
+        stdout_part, stderr_part = text.split("--- stderr ---", 1)
+        stdout_part = stdout_part.strip()
+        stderr_part = stderr_part.strip()
+
+    def _is_benign_apt_line(line: str) -> bool:
+        low = line.lower()
+        if "is already the newest version" in low:
+            return True
+        if "set to manually installed" in low:
+            return True
+        if low.startswith(("hit:", "get:", "ign:", "reading package lists", "building dependency")):
+            return True
+        return False
+
+    def _meaningful_lines(blob: str) -> list[str]:
+        out: list[str] = []
+        for line in blob.splitlines():
+            s = line.strip()
+            if not s or _is_benign_apt_line(s):
+                continue
+            low = s.lower()
+            if any(
+                k in low
+                for k in (
+                    "error",
+                    "failed",
+                    "fail:",
+                    "не удал",
+                    "невалид",
+                    "нужен ",
+                    "нет ",
+                    "[xray]",
+                    "[provision]",
+                    "[egress",
+                    "[vpn-egress",
+                    "run -test",
+                    "systemctl restart",
+                    "traceback",
+                    "exception",
+                )
+            ):
+                out.append(s)
+        return out
+
+    for part in (stderr_part, stdout_part, text):
+        hits = _meaningful_lines(part)
+        if hits:
+            chunk = "\n".join(hits[-15:])
+            return chunk[-limit:] if len(chunk) > limit else chunk
+
+    return text[-limit:] if len(text) > limit else text
+
+
 def _friendly_provision_error(raw: str) -> str:
-    blob = (raw or "").lower()
+    extracted = _extract_provision_failure_message(raw)
+    blob = (extracted or raw or "").lower()
     if "nxdomain" in blob or "dns problem" in blob:
         return (
             "DNS не настроен: origin-домен не резолвится публично. "
@@ -120,8 +184,24 @@ def _friendly_provision_error(raw: str) -> str:
         )
     if "nginx: configuration file" in blob and "test failed" in blob:
         return "Nginx-конфиг не прошёл проверку. Посмотрите деталь ошибки в логе провижининга."
-    if "failed to start xray" in blob or "xray config" in blob or "failed to read config" in blob:
-        return "Xray не стартовал: проверьте сгенерированный config.json и версию Xray."
+    if (
+        "failed to start xray" in blob
+        or "xray config" in blob
+        or "failed to read config" in blob
+        or "run -test" in blob
+        or "конфиг невалиден" in blob
+    ):
+        return (
+            "Xray не прошёл проверку config.json (run -test или restart). "
+            "На VPS: /usr/local/bin/xray run -test -c /usr/local/etc/xray/config.json"
+        )
+    if "egress_fairness" in blob or "vpn-egress-fairness" in blob or "нет tc" in blob:
+        return (
+            "Не удалось настроить egress fairness (tc/iproute2). "
+            "На VPS: apt-get install -y iproute2 && /usr/local/sbin/vpn-egress-fairness-apply.sh"
+        )
+    if "нужен python3" in blob:
+        return "На VPS не установлен python3 — нужен для записи config.json Xray."
     if "permission denied" in blob:
         return "SSH-доступ запрещён: проверьте пользователя, ключ и права sudo/NOPASSWD."
     if "could not resolve hostname" in blob:
@@ -130,7 +210,7 @@ def _friendly_provision_error(raw: str) -> str:
         return "SSH-соединение отклонено. Проверьте IP, SSH-порт и firewall сервера."
     if "openssl не найден" in blob:
         return "Не удалось установить openssl для fallback-сертификата."
-    tail = (raw or "").strip()
+    tail = (extracted or (raw or "").strip())
     return tail[-1800:] if tail else "Неизвестная ошибка установки; проверьте логи воркера."
 
 
@@ -151,6 +231,8 @@ def _progress_from_remote_line(line: str) -> tuple[str, int, str] | None:
         return ("Установка сайта-заглушки", 60, text)
     if "nginx" in low:
         return ("Настройка nginx", 68, text)
+    if "[vless_xhttp]" in low or "[vless_ws]" in low or "[vless_grpc]" in low:
+        return ("Настройка VLESS-транспорта", 72, text)
     if "запись /usr/local/etc/xray/config.json" in low or "config.json" in low:
         return ("Запись конфига Xray", 78, text)
     if "test config" in low or "конфиг" in low and "xray" in low:
@@ -302,6 +384,36 @@ def _vless_ws_env_lines(db: Session, server: Server, *, cfg: Settings) -> str:
         f"export VPN_XRAY_API_PORT={int(cfg.xray_remote_api_port)}\n"
         f"export VPN_TLS_DOMAIN={shlex.quote(domain)}\n"
         f"export VPN_WS_PATH={shlex.quote(ws_path)}\n"
+    )
+    if email:
+        remote_env += f"export VPN_TLS_CERTBOT_EMAIL={shlex.quote(email)}\n"
+    remote_env += _google_routing_env_line(server)
+    remote_env += _cascade_xray_env_for_ru_entry(db, server)
+    return remote_env
+
+
+def _vless_xhttp_env_lines(db: Session, server: Server, *, cfg: Settings) -> str:
+    domain = _tls_sni_for_server(server)
+    xhttp_path = (server.xhttp_path or "/xhttp/").strip() or "/xhttp/"
+    if not xhttp_path.startswith("/"):
+        xhttp_path = "/" + xhttp_path
+    if not xhttp_path.endswith("/"):
+        xhttp_path += "/"
+    uuids_csv = vless_client_uuids_csv_for_server(db, server)
+    clients_b64 = vless_clients_b64_for_server(db, server)
+    inbound_tag = (cfg.xray_vless_inbound_tag or "vpn-vless-in").strip() or "vpn-vless-in"
+    email = (cfg.provision_certbot_email or "").strip()
+    remote_env = (
+        f"export VPN_SERVER_PORT={server.port}\n"
+        f"export VPN_SERVER_ID={server.id}\n"
+        f"export VPN_XRAY_INSTALLER_URL={shlex.quote(cfg.provision_xray_installer_url)}\n"
+        f"export VPN_VLESS_UUID={shlex.quote(server.vless_uuid)}\n"
+        f"export VPN_VLESS_INBOUND_TAG={shlex.quote(inbound_tag)}\n"
+        f"export VPN_VLESS_CLIENT_UUIDS={shlex.quote(uuids_csv)}\n"
+        f"export VPN_VLESS_CLIENTS_B64={shlex.quote(clients_b64)}\n"
+        f"export VPN_XRAY_API_PORT={int(cfg.xray_remote_api_port)}\n"
+        f"export VPN_TLS_DOMAIN={shlex.quote(domain)}\n"
+        f"export VPN_XHTTP_PATH={shlex.quote(xhttp_path)}\n"
     )
     if email:
         remote_env += f"export VPN_TLS_CERTBOT_EMAIL={shlex.quote(email)}\n"
@@ -462,7 +574,14 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
     remote_env = 'export TERM="${TERM:-xterm-256color}"\n'
     remote_env += f"export VPN_PROVISION_COMPONENT={shlex.quote(component)}\n"
     proxy_kind = (getattr(server, "proxy_kind", None) or "vless").strip().lower()
-    if proxy_kind not in ("vless", "vless_grpc", "vless_ws", "vless_vk_cdn_xhttp", "hysteria2"):
+    if proxy_kind not in (
+        "vless",
+        "vless_grpc",
+        "vless_ws",
+        "vless_xhttp",
+        "vless_vk_cdn_xhttp",
+        "hysteria2",
+    ):
         proxy_kind = "vless"
     remote_env += f"export VPN_PROXY_KIND={shlex.quote(proxy_kind)}\n"
 
@@ -479,6 +598,8 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
             remote_env += _vless_grpc_env_lines(db, server, cfg=settings)
         elif proxy_kind == "vless_ws":
             remote_env += _vless_ws_env_lines(db, server, cfg=settings)
+        elif proxy_kind == "vless_xhttp":
+            remote_env += _vless_xhttp_env_lines(db, server, cfg=settings)
         elif proxy_kind == "vless_vk_cdn_xhttp":
             remote_env += _vless_vkcdn_xhttp_env_lines(db, server, cfg=settings)
         else:
@@ -490,6 +611,8 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
             remote_env += _vless_grpc_env_lines(db, server, cfg=settings)
         elif proxy_kind == "vless_ws":
             remote_env += _vless_ws_env_lines(db, server, cfg=settings)
+        elif proxy_kind == "vless_xhttp":
+            remote_env += _vless_xhttp_env_lines(db, server, cfg=settings)
         elif proxy_kind == "vless_vk_cdn_xhttp":
             remote_env += _vless_vkcdn_xhttp_env_lines(db, server, cfg=settings)
         else:
@@ -505,6 +628,8 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
             remote_env += _vless_grpc_env_lines(db, server, cfg=settings)
         elif proxy_kind == "vless_ws":
             remote_env += _vless_ws_env_lines(db, server, cfg=settings)
+        elif proxy_kind == "vless_xhttp":
+            remote_env += _vless_xhttp_env_lines(db, server, cfg=settings)
         elif proxy_kind == "vless_vk_cdn_xhttp":
             remote_env += _vless_vkcdn_xhttp_env_lines(db, server, cfg=settings)
         else:
@@ -726,6 +851,7 @@ def sync_xray_clients_to_server(server_id: int) -> None:
             "vless",
             "vless_grpc",
             "vless_ws",
+            "vless_xhttp",
             "vless_vk_cdn_xhttp",
         ):
             log.warning(
@@ -768,7 +894,9 @@ def sync_xray_clients_all_servers() -> None:
     try:
         stmt = select(Server.id).where(
             Server.provision_ready.is_(True),
-            Server.proxy_kind.in_(("vless", "vless_grpc", "vless_ws", "vless_vk_cdn_xhttp")),
+            Server.proxy_kind.in_(
+                ("vless", "vless_grpc", "vless_ws", "vless_xhttp", "vless_vk_cdn_xhttp")
+            ),
         )
         ids = list(db.scalars(stmt).all())
     finally:
@@ -828,7 +956,9 @@ def _collect_xray_user_traffic_all_servers_impl() -> dict[str, Any]:
             .where(
                 Server.provision_ready.is_(True),
                 Server.is_active.is_(True),
-                Server.proxy_kind.in_(("vless", "vless_grpc", "vless_ws", "vless_vk_cdn_xhttp")),
+                Server.proxy_kind.in_(
+                ("vless", "vless_grpc", "vless_ws", "vless_xhttp", "vless_vk_cdn_xhttp")
+            ),
             )
             .order_by(Server.id.asc())
         )

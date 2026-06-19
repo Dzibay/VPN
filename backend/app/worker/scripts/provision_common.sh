@@ -171,8 +171,17 @@ _egress_fairness_install() {
   fi
   _vps_net_sysctl_install || true
   if ! command -v tc >/dev/null 2>&1; then
-    echo "[egress_fairness] нет tc (пакет iproute2) — apt-get install -y iproute2" >&2
-    return 1
+    echo "[egress_fairness] нет tc (пакет iproute2) — пробуем apt-get install -y iproute2" >&2
+    if command -v apt-get >/dev/null 2>&1; then
+      export DEBIAN_FRONTEND=noninteractive
+      set +e
+      apt-get install -y --no-install-recommends iproute2 2>&1 | tail -20
+      set -e
+    fi
+    if ! command -v tc >/dev/null 2>&1; then
+      echo "[egress_fairness] tc недоступен после установки iproute2" >&2
+      return 1
+    fi
   fi
 
   install -d -m 755 /usr/local/sbin 2>/dev/null || mkdir -p /usr/local/sbin

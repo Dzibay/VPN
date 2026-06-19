@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS servers (
     origin_domain TEXT,
     cdn_domain TEXT,
     xhttp_path TEXT NOT NULL DEFAULT '/uploadfiles/',
-    proxy_kind TEXT NOT NULL DEFAULT 'vless' CHECK (proxy_kind IN ('vless', 'vless_grpc', 'vless_ws', 'vless_vk_cdn_xhttp', 'hysteria2')),
+    proxy_kind TEXT NOT NULL DEFAULT 'vless' CHECK (proxy_kind IN ('vless', 'vless_grpc', 'vless_ws', 'vless_xhttp', 'vless_vk_cdn_xhttp', 'hysteria2')),
     CONSTRAINT uq_servers_host_port UNIQUE (host, port),
     CONSTRAINT ck_servers_cascade_ru_and_next CHECK (
         cascade_next_server_id IS NULL OR is_cascade_ru_entry = TRUE

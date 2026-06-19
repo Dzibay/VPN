@@ -61,6 +61,7 @@ function proxyKindLabel(kind) {
   if (kind === 'hysteria2') return 'Hysteria2'
   if (kind === 'vless_grpc') return 'gRPC+TLS'
   if (kind === 'vless_ws') return 'WebSocket+TLS'
+  if (kind === 'vless_xhttp') return 'XHTTP+TLS'
   if (kind === 'vless_vk_cdn_xhttp') return 'VK CDN XHTTP'
   return 'REALITY'
 }
