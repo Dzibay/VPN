@@ -199,7 +199,7 @@ class FinanceSeries(BaseModel):
     expenses_total: list[str] = Field(default_factory=list)
     tax: list[str] = Field(default_factory=list)
     profit_net: list[str] = Field(default_factory=list)
-    #: День-точное признание выручки (заработано за месяц по факту прошедших дней подписки).
+    #: Помесячное признание выручки: первый месяц — в день оплаты (выдача ключа), далее по годовщинам.
     earned_net: list[str] = Field(default_factory=list)
     earned_gross: list[str] = Field(default_factory=list)
     #: Остаток неисполненных обязательств («замороженные деньги») на конец месяца.
@@ -216,7 +216,7 @@ class FinanceDeferredSnapshot(BaseModel):
     #: Заработано = свободно от обязательств (поступило − заморожено).
     earned_net: str
     earned_gross: str
-    #: Неисполненные обязательства перед клиентами (предоплата за непоставленные дни).
+    #: Неисполненные обязательства перед клиентами (предоплата за неисполненные месяцы подписки).
     deferred_net: str
     deferred_gross: str
     active_obligations: int = Field(
@@ -229,7 +229,7 @@ class FinanceDeferredSnapshot(BaseModel):
 
 
 class FinanceUnlockSchedule(BaseModel):
-    """График разблокировки: суммы по датам годовщин платежей (день и месяц)."""
+    """График разблокировки: суммы по датам начала каждого месяца подписки (первый — день оплаты)."""
 
     days: list[str] = Field(default_factory=list, description="Даты разблокировки YYYY-MM-DD")
     amounts_net: list[str] = Field(default_factory=list, description="Сумма за день, net")

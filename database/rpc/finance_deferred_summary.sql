@@ -1,7 +1,8 @@
 -- Признание выручки помесячно от даты платежа и баланс обязательств («замороженные деньги»).
 --
--- Платежи с months > 0: каждая «годовщина» даты оплаты (15 мая → 15 июня, 15 июля …)
--- размораживает 1/months суммы. 1 месяц → 15 июня 100%; 3 месяца → 15 июня 33%, 15 авг. 100%.
+-- Платежи с months > 0: услуга за месяц считается выполненной при выдаче ключа — первый месяц
+-- признаётся в день оплаты, каждый следующий — в годовщину (+1 мес. от оплаты).
+-- 300 ₽ / 3 мес. при оплате 15 мая → 100 ₽ сразу, ещё 100 ₽ 15 июня, ещё 100 ₽ 15 июля.
 -- Разовые (months=0) — сразу в дату платежа.
 DROP FUNCTION IF EXISTS rpc_finance_deferred_summary (date, date);
 
@@ -76,7 +77,7 @@ thaw_frac AS (
                 COALESCE((
                     SELECT COUNT(*)::numeric
                     FROM generate_series(1, pp.pay_months) AS n(n)
-                    WHERE (pp.s_day + (n || ' months')::interval)::date <= ep.eval_d
+                    WHERE (pp.s_day + ((n - 1) || ' months')::interval)::date <= ep.eval_d
                 ), 0) / pp.pay_months::numeric,
                 1::numeric
             )
@@ -142,7 +143,7 @@ active_paid AS (
 ),
 unlock_chunks AS (
     SELECT
-        (pp.s_day + (n || ' months')::interval)::date AS unlock_day,
+        (pp.s_day + ((n - 1) || ' months')::interval)::date AS unlock_day,
         (pp.net / pp.pay_months::numeric)::numeric(14, 6) AS chunk_net
     FROM pp
     CROSS JOIN generate_series(1, pp.pay_months) AS n(n)
