@@ -22,6 +22,7 @@ from app.infrastructure.persistence.models.server import Server
 
 _COMPETITOR_BALANCER_TAG = "auto-balance"
 _COMPETITOR_PROBE_URL = "http://1.1.1.1/generate_204"
+YOUTUBE_PROBE_URL = "https://www.youtube.com/generate_204"
 _COMPETITOR_PROBE_INTERVAL = "10s"
 _COMPETITOR_DNS_TAG = "dns-out"
 _DIRECT_SERVICE_PORTS = (
@@ -534,11 +535,15 @@ def _competitor_routing(
     }
 
 
-def _competitor_observatory(subject_tags: list[str]) -> dict[str, Any]:
+def _competitor_observatory(
+    subject_tags: list[str],
+    *,
+    probe_url: str = _COMPETITOR_PROBE_URL,
+) -> dict[str, Any]:
     return {
         "enableConcurrency": True,
         "probeInterval": _COMPETITOR_PROBE_INTERVAL,
-        "probeUrl": _COMPETITOR_PROBE_URL,
+        "probeUrl": probe_url,
         "subjectSelector": list(subject_tags),
     }
 
@@ -554,6 +559,7 @@ def _balanced_profile_doc(
     tiered_costs: list[dict[str, Any]] | None,
     pool_for_costs: list[Server] | None,
     costs_whitelist: bool,
+    probe_url: str = _COMPETITOR_PROBE_URL,
 ) -> dict[str, Any]:
     outbounds = [*proxy_outbounds, *_competitor_tail_outbounds()]
     routing = _competitor_routing(
@@ -572,7 +578,7 @@ def _balanced_profile_doc(
         "inbounds": _competitor_inbounds(),
         "log": _competitor_log(),
         "outbounds": outbounds,
-        "observatory": _competitor_observatory(observatory_tags),
+        "observatory": _competitor_observatory(observatory_tags, probe_url=probe_url),
     }
 
 
@@ -583,11 +589,13 @@ def build_happ_auto_group_balanced_profile(
     client_uuid: str,
     fp_by_id: dict[int, str],
     balancer_tag: str,
+    probe_url: str = _COMPETITOR_PROBE_URL,
 ) -> dict[str, Any] | None:
     """
     Auto-группа: все ``include_in_auto`` VLESS узлы в одном профиле.
 
     Cost: rec — по нагрузке, WL — повышенный (резерв).
+    ``probe_url`` — URL observatory (по умолчанию общий generate_204).
   """
     if not pool:
         return None
@@ -632,6 +640,7 @@ def build_happ_auto_group_balanced_profile(
         tiered_costs=_auto_mixed_pool_costs(pool),
         pool_for_costs=None,
         costs_whitelist=False,
+        probe_url=probe_url,
     )
 
 

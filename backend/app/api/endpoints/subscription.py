@@ -4,7 +4,9 @@
 Список узлов строится из БД: сначала узлы без ``whitelist`` (по ``servers.load_percent``),
 затем с ``whitelist`` (тоже по нагрузке; актуализация из Prometheus — фоновый планировщик
 в процессе API, по умолчанию каждые 5 минут, см. ``SERVER_LOAD_PROMETHEUS_SYNC_*``).
-В начале — ``🔥 Auto (рекомендуемый)`` и при наличии WL-узлов ``📄 Auto (Белые списки)``:
+В начале — ``🔥 Auto (рекомендуемый)``, при наличии WL-узлов ``📄 Auto (Белые списки)``,
+затем ``▶️ Auto (YouTube)`` (только ``include_in_auto`` + ``google_routing_mode=entry``;
+observatory/url-test через ``youtube.com/generate_204``):
 Happ — JSON-балансировщики; v2raytun/v2rayNG — лучший ``vless://`` по нагрузке; Clash — ``url-test``.
 Узлы с ``include_in_auto=false`` в группы Auto не попадают; VLESS с ``whitelist=true``
 всё равно получают tiered-профиль Happ (rec + WL с повышенным cost).

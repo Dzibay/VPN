@@ -1,8 +1,8 @@
 """Сборка тела подписки: Happ JSON (по UA) или Base64 share-ссылки, Clash YAML.
 
-Happ (``happ`` в User-Agent): ``application/json`` — Auto, узлы, tiered WL.
+Happ (``happ`` в User-Agent): ``application/json`` — Auto, Auto (Белые списки), Auto (YouTube), узлы, tiered WL.
 
-v2raytun / v2rayNG: ``text/plain`` Base64 — Auto (лучший по нагрузке ``vless://``), затем все узлы.
+v2raytun / v2rayNG: ``text/plain`` Base64 — Auto, Auto (Белые списки), Auto (YouTube), затем все узлы.
 
 Clash (``clash`` / ``hiddify`` в UA): YAML — отдельно в эндпоинте, здесь не собирается.
 
@@ -43,8 +43,10 @@ log = logging.getLogger("app.subscription.build")
 
 SUBSCRIPTION_AUTO_RECOMMENDED_LABEL = "🔥 Auto (рекомендуемый)"
 SUBSCRIPTION_AUTO_WHITELIST_LABEL = "📄 Auto (Белые списки)"
+SUBSCRIPTION_AUTO_YOUTUBE_LABEL = "▶️ Auto (YouTube)"
 
 _AUTO_BALANCER_PROBE_URL = "https://www.gstatic.com/generate_204"
+_AUTO_YOUTUBE_BALANCER_PROBE_URL = "https://www.youtube.com/generate_204"
 
 # uTLS fingerprint в vless:// и Clash: не из БД, а случайный на каждую выдачу подписки (DPI).
 _SUBSCRIPTION_UTLS_FP_CHOICES: tuple[str, ...] = ("chrome", "firefox", "safari", "edge")
@@ -580,6 +582,26 @@ def _pool_auto_vless(
     return out
 
 
+def _pool_auto_youtube_vless(
+    ctx: _SubscriptionDeliveryContext,
+    uri_by_id: dict[int, str | None],
+) -> list[Server]:
+    """
+    VLESS для Auto (YouTube): ``include_in_auto``, ``google_routing_mode=entry``
+    (YouTube через вход, не Gemini/exit) и валидный URI.
+    """
+    out: list[Server] = []
+    for s in ctx.delivery_rows:
+        if not _is_vless_server(s) or not s.include_in_auto:
+            continue
+        if (s.google_routing_mode or "exit").strip().lower() != "entry":
+            continue
+        if uri_by_id.get(s.id) is None:
+            continue
+        out.append(s)
+    return out
+
+
 def _pool_tiered_wl_vless(
     ctx: _SubscriptionDeliveryContext,
     uri_by_id: dict[int, str | None],
@@ -779,6 +801,7 @@ class SubscriptionBuildContext:
     fp_by_id: dict[int, str]
     pool_rec: list[Server]
     pool_wl: list[Server]
+    pool_youtube: list[Server]
     pool_wl_tiered: list[Server]
 
     @property
@@ -799,6 +822,7 @@ def _subscription_build_context(user: User, rows: list[Server]) -> SubscriptionB
         fp_by_id=fp_by_id,
         pool_rec=_pool_auto_vless(delivery, uri_by_id, whitelist=False),
         pool_wl=_pool_auto_vless(delivery, uri_by_id, whitelist=True),
+        pool_youtube=_pool_auto_youtube_vless(delivery, uri_by_id),
         pool_wl_tiered=_pool_tiered_wl_vless(delivery, uri_by_id),
     )
 
@@ -829,7 +853,12 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
     proxy_groups: list[dict[str, Any]] = []
     select_proxies: list[str] = []
 
-    def _append_url_test_group(label: str, pool: list[Server]) -> None:
+    def _append_url_test_group(
+        label: str,
+        pool: list[Server],
+        *,
+        probe_url: str = _AUTO_BALANCER_PROBE_URL,
+    ) -> None:
         member_names = [name_by_server_id[s.id] for s in pool if s.id in name_by_server_id]
         if not member_names:
             return
@@ -839,7 +868,7 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
                 "name": group_name,
                 "type": "url-test",
                 "proxies": member_names,
-                "url": _AUTO_BALANCER_PROBE_URL,
+                "url": probe_url,
                 "interval": 300,
                 "tolerance": 50,
             }
@@ -848,6 +877,11 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
 
     _append_url_test_group(SUBSCRIPTION_AUTO_RECOMMENDED_LABEL, bctx.pool_rec)
     _append_url_test_group(SUBSCRIPTION_AUTO_WHITELIST_LABEL, bctx.pool_wl)
+    _append_url_test_group(
+        SUBSCRIPTION_AUTO_YOUTUBE_LABEL,
+        bctx.pool_youtube,
+        probe_url=_AUTO_YOUTUBE_BALANCER_PROBE_URL,
+    )
 
     select_proxies.extend(p["name"] for p in proxies)
 
@@ -890,6 +924,7 @@ def _servers_metadata(bctx: SubscriptionBuildContext) -> list[dict[str, Any]]:
 
 def _happ_json_profiles(bctx: SubscriptionBuildContext) -> list[dict[str, Any]]:
     from app.domain.subscription.happ_competitor_json import (
+        YOUTUBE_PROBE_URL,
         build_happ_auto_group_balanced_profile,
         build_happ_plain_server_profile,
         build_happ_tiered_wl_balanced_profile,
@@ -911,6 +946,17 @@ def _happ_json_profiles(bctx: SubscriptionBuildContext) -> list[dict[str, Any]]:
             wl_auto = copy.deepcopy(auto_doc)
             wl_auto["remarks"] = SUBSCRIPTION_AUTO_WHITELIST_LABEL
             profiles.append(wl_auto)
+
+    youtube_doc = build_happ_auto_group_balanced_profile(
+        SUBSCRIPTION_AUTO_YOUTUBE_LABEL,
+        bctx.pool_youtube,
+        client_uuid=bctx.client_uuid,
+        fp_by_id=bctx.fp_by_id,
+        balancer_tag="auto-youtube-balance",
+        probe_url=YOUTUBE_PROBE_URL,
+    )
+    if youtube_doc:
+        profiles.append(youtube_doc)
 
     pool_wl_tiered_ids = {wl.id for wl in bctx.pool_wl_tiered}
     for s in ctx.delivery_rows:
@@ -964,6 +1010,16 @@ def _base64_share_lines(bctx: SubscriptionBuildContext) -> list[str]:
         )
         if auto_wl:
             lines.append(auto_wl)
+
+    auto_youtube = _auto_best_share_uri(
+        SUBSCRIPTION_AUTO_YOUTUBE_LABEL,
+        bctx.pool_youtube,
+        client_uuid=bctx.client_uuid,
+        fp_by_id=bctx.fp_by_id,
+        exit_ids_referenced=ctx.exit_ids_referenced,
+    )
+    if auto_youtube:
+        lines.append(auto_youtube)
 
     for s in ctx.delivery_rows:
         uri = bctx.uri_by_id.get(s.id)
