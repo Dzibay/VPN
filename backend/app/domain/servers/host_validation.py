@@ -44,3 +44,16 @@ def normalize_ws_path(raw: str | None) -> str:
     if not re.fullmatch(r"/[A-Za-z0-9._/-]*", s):
         raise ValueError("ws_path: путь должен начинаться с / (буквы, цифры, . _ - /)")
     return s
+
+
+def normalize_xhttp_path(raw: str | None) -> str:
+    s = (raw or "").strip() or "/uploadfiles/"
+    if not s.startswith("/"):
+        s = "/" + s
+    if not s.endswith("/"):
+        s = s + "/"
+    if len(s) > 256:
+        raise ValueError("xhttp_path: максимум 256 символов")
+    if not re.fullmatch(r"/[A-Za-z0-9._/-]*", s):
+        raise ValueError("xhttp_path: путь должен начинаться с / (буквы, цифры, . _ - /)")
+    return s

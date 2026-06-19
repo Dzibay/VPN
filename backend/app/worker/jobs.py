@@ -42,6 +42,7 @@ _REMOTE_SCRIPT_PARTS = (
     _SCRIPTS_DIR / "provision_vless.sh",
     _SCRIPTS_DIR / "provision_vless_grpc.sh",
     _SCRIPTS_DIR / "provision_vless_ws.sh",
+    _SCRIPTS_DIR / "provision_vless_vk_cdn_xhttp.sh",
     _SCRIPTS_DIR / "provision_hysteria2.sh",
     _REMOTE_SCRIPT,
 )
@@ -206,6 +207,38 @@ def _vless_ws_env_lines(db: Session, server: Server, *, cfg: Settings) -> str:
     return remote_env
 
 
+def _vless_vkcdn_xhttp_env_lines(db: Session, server: Server, *, cfg: Settings) -> str:
+    origin_domain = (server.origin_domain or server.host or "").strip().rstrip(".")
+    cdn_domain = (server.cdn_domain or "").strip().rstrip(".")
+    xhttp_path = (server.xhttp_path or "/uploadfiles/").strip() or "/uploadfiles/"
+    if not xhttp_path.startswith("/"):
+        xhttp_path = "/" + xhttp_path
+    if not xhttp_path.endswith("/"):
+        xhttp_path += "/"
+    uuids_csv = vless_client_uuids_csv_for_server(db, server)
+    clients_b64 = vless_clients_b64_for_server(db, server)
+    inbound_tag = "VKCDN"
+    email = (cfg.provision_certbot_email or "").strip()
+    remote_env = (
+        f"export VPN_SERVER_PORT={server.port}\n"
+        f"export VPN_SERVER_ID={server.id}\n"
+        f"export VPN_XRAY_INSTALLER_URL={shlex.quote(cfg.provision_xray_installer_url)}\n"
+        f"export VPN_VLESS_UUID={shlex.quote(server.vless_uuid)}\n"
+        f"export VPN_VLESS_INBOUND_TAG={shlex.quote(inbound_tag)}\n"
+        f"export VPN_VLESS_CLIENT_UUIDS={shlex.quote(uuids_csv)}\n"
+        f"export VPN_VLESS_CLIENTS_B64={shlex.quote(clients_b64)}\n"
+        f"export VPN_XRAY_API_PORT={int(cfg.xray_remote_api_port)}\n"
+        f"export VPN_ORIGIN_DOMAIN={shlex.quote(origin_domain)}\n"
+        f"export VPN_CDN_DOMAIN={shlex.quote(cdn_domain)}\n"
+        f"export VPN_XHTTP_PATH={shlex.quote(xhttp_path)}\n"
+        "export VPN_XHTTP_LOCAL_PORT=4443\n"
+    )
+    if email:
+        remote_env += f"export VPN_TLS_CERTBOT_EMAIL={shlex.quote(email)}\n"
+    remote_env += _google_routing_env_line(server)
+    return remote_env
+
+
 def _xray_env_lines(db: Session, server: Server) -> str:
     uuids_csv = vless_client_uuids_csv_for_server(db, server)
     clients_b64 = vless_clients_b64_for_server(db, server)
@@ -318,7 +351,7 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
     remote_env = 'export TERM="${TERM:-xterm-256color}"\n'
     remote_env += f"export VPN_PROVISION_COMPONENT={shlex.quote(component)}\n"
     proxy_kind = (getattr(server, "proxy_kind", None) or "vless").strip().lower()
-    if proxy_kind not in ("vless", "vless_grpc", "vless_ws", "hysteria2"):
+    if proxy_kind not in ("vless", "vless_grpc", "vless_ws", "vless_vk_cdn_xhttp", "hysteria2"):
         proxy_kind = "vless"
     remote_env += f"export VPN_PROXY_KIND={shlex.quote(proxy_kind)}\n"
 
@@ -335,6 +368,8 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
             remote_env += _vless_grpc_env_lines(db, server, cfg=settings)
         elif proxy_kind == "vless_ws":
             remote_env += _vless_ws_env_lines(db, server, cfg=settings)
+        elif proxy_kind == "vless_vk_cdn_xhttp":
+            remote_env += _vless_vkcdn_xhttp_env_lines(db, server, cfg=settings)
         else:
             remote_env += _xray_env_lines(db, server)
         remote_env += _node_exporter_env_lines(force_install=False)
@@ -344,6 +379,8 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
             remote_env += _vless_grpc_env_lines(db, server, cfg=settings)
         elif proxy_kind == "vless_ws":
             remote_env += _vless_ws_env_lines(db, server, cfg=settings)
+        elif proxy_kind == "vless_vk_cdn_xhttp":
+            remote_env += _vless_vkcdn_xhttp_env_lines(db, server, cfg=settings)
         else:
             remote_env += _xray_env_lines(db, server)
     elif component == "hysteria2":
@@ -357,6 +394,8 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
             remote_env += _vless_grpc_env_lines(db, server, cfg=settings)
         elif proxy_kind == "vless_ws":
             remote_env += _vless_ws_env_lines(db, server, cfg=settings)
+        elif proxy_kind == "vless_vk_cdn_xhttp":
+            remote_env += _vless_vkcdn_xhttp_env_lines(db, server, cfg=settings)
         else:
             remote_env += _xray_env_lines(db, server)
         remote_env += _node_exporter_env_lines(force_install=None)
@@ -515,6 +554,7 @@ def sync_xray_clients_to_server(server_id: int) -> None:
             "vless",
             "vless_grpc",
             "vless_ws",
+            "vless_vk_cdn_xhttp",
         ):
             log.warning(
                 "sync_xray_clients: пропуск id=%s (proxy_kind=%s)",
@@ -556,7 +596,7 @@ def sync_xray_clients_all_servers() -> None:
     try:
         stmt = select(Server.id).where(
             Server.provision_ready.is_(True),
-            Server.proxy_kind.in_(("vless", "vless_grpc", "vless_ws")),
+            Server.proxy_kind.in_(("vless", "vless_grpc", "vless_ws", "vless_vk_cdn_xhttp")),
         )
         ids = list(db.scalars(stmt).all())
     finally:
@@ -616,7 +656,7 @@ def _collect_xray_user_traffic_all_servers_impl() -> dict[str, Any]:
             .where(
                 Server.provision_ready.is_(True),
                 Server.is_active.is_(True),
-                Server.proxy_kind.in_(("vless", "vless_grpc", "vless_ws")),
+                Server.proxy_kind.in_(("vless", "vless_grpc", "vless_ws", "vless_vk_cdn_xhttp")),
             )
             .order_by(Server.id.asc())
         )

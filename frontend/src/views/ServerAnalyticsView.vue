@@ -136,6 +136,14 @@ const serverParamRows = computed(() => {
           { label: 'TLS SNI', value: t(s.tls_sni || s.host) },
         ]
       : []),
+    ...(s.proxy_kind === 'vless_vk_cdn_xhttp'
+      ? [
+          { label: 'Origin-домен', value: t(s.origin_domain) },
+          { label: 'CDN-домен', value: t(s.cdn_domain) },
+          { label: 'XHTTP path', value: t(s.xhttp_path) },
+          { label: 'Локальный Xray порт', value: '127.0.0.1:4443' },
+        ]
+      : []),
     ...(s.proxy_kind === 'vless'
       ? [
           { label: 'VLESS flow', value: t(s.vless_flow) },

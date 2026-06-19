@@ -57,3 +57,18 @@ ALTER TABLE tasks ADD CONSTRAINT tasks_delivery_channel_check CHECK (
 CREATE INDEX IF NOT EXISTS idx_tasks_delivery_channel_pending
     ON tasks (delivery_channel, status)
     WHERE status = 'pending';
+
+ALTER TABLE servers
+    ADD COLUMN IF NOT EXISTS origin_domain TEXT;
+
+ALTER TABLE servers
+    ADD COLUMN IF NOT EXISTS cdn_domain TEXT;
+
+ALTER TABLE servers
+    ADD COLUMN IF NOT EXISTS xhttp_path TEXT NOT NULL DEFAULT '/uploadfiles/';
+
+ALTER TABLE servers DROP CONSTRAINT IF EXISTS servers_proxy_kind_check;
+
+ALTER TABLE servers ADD CONSTRAINT servers_proxy_kind_check CHECK (
+    proxy_kind IN ('vless', 'vless_grpc', 'vless_ws', 'vless_vk_cdn_xhttp', 'hysteria2')
+);

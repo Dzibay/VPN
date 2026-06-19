@@ -48,6 +48,7 @@ from app.domain.servers.reachability import (
     tcp_probes_payload,
 )
 from app.domain.servers.reality_defaults import reality_defaults_for_create
+from app.domain.servers.host_validation import is_domain_host
 from app.domain.servers.traffic_archive import (
     TRAFFIC_ARCHIVE_SERVER_ID,
     assert_deletable_server_id,
@@ -102,6 +103,17 @@ def _assert_cascade_proxy_allowed(
         )
 
 
+def _assert_vk_cdn_xhttp_domains(*, proxy_kind: str, origin_domain: str | None, cdn_domain: str | None) -> None:
+    if (proxy_kind or "").strip().lower() != "vless_vk_cdn_xhttp":
+        return
+    origin = (origin_domain or "").strip().rstrip(".")
+    cdn = (cdn_domain or "").strip().rstrip(".")
+    if not origin or not is_domain_host(origin):
+        raise ConflictError("VK CDN XHTTP: укажите origin-домен с A-записью на VPS")
+    if not cdn or not is_domain_host(cdn):
+        raise ConflictError("VK CDN XHTTP: укажите CDN-домен VK Cloud")
+
+
 async def servers_count(session: AsyncSession) -> ServersCountResponse:
     """Общее число записей в таблице ``servers`` (без служебного архива id=0)."""
     total = await session.scalar(
@@ -135,6 +147,11 @@ async def create_server(
     elif not is_ru:
         cnext = None
     _assert_cascade_proxy_allowed(body.proxy_kind, is_ru_entry=is_ru, cascade_next_id=cnext)
+    _assert_vk_cdn_xhttp_domains(
+        proxy_kind=body.proxy_kind,
+        origin_domain=defaults.get("origin_domain"),
+        cdn_domain=defaults.get("cdn_domain"),
+    )
     await validate_cascade_pair(session, self_id=None, is_ru_entry=is_ru, cascade_next_id=cnext)
     cascade_egress_uuid: str | None = str(uuid_lib.uuid4()) if cnext else None
     server = Server(
@@ -180,13 +197,15 @@ async def patch_server(session: AsyncSession, server_id: int, body: ServerUpdate
         return server
     if data.get("reality_spider_x") is None and "reality_spider_x" in data:
         data["reality_spider_x"] = "/"
+    if data.get("xhttp_path") is None and "xhttp_path" in data:
+        data["xhttp_path"] = "/uploadfiles/"
     priv_in = data.get("reality_private_key")
     if priv_in:
         new_priv = str(priv_in).strip()
         old_priv = (server.reality_private_key or "").strip()
         if new_priv != old_priv:
             server.reality_public_key = None
-    if data.get("proxy_kind") in ("hysteria2", "vless_grpc", "vless_ws"):
+    if data.get("proxy_kind") in ("hysteria2", "vless_grpc", "vless_ws", "vless_vk_cdn_xhttp"):
         data["reality_public_key"] = None
     cascade_touched = False
     old_cnext: int | None = None
@@ -214,6 +233,11 @@ async def patch_server(session: AsyncSession, server_id: int, body: ServerUpdate
         str(final_proxy),
         is_ru_entry=final_is_ru,
         cascade_next_id=final_cnext,
+    )
+    _assert_vk_cdn_xhttp_domains(
+        proxy_kind=str(final_proxy),
+        origin_domain=data.get("origin_domain", server.origin_domain),
+        cdn_domain=data.get("cdn_domain", server.cdn_domain),
     )
     for key, value in data.items():
         setattr(server, key, value)

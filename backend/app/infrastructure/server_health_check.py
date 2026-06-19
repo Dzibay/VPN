@@ -128,18 +128,19 @@ async def build_server_health_read(
         )
     )
 
-    pk = _pbk_ok(server.reality_public_key)
-    sid = (server.reality_short_id or "").strip()
-    k_ok = pk and bool(sid)
-    checks.append(
-        HealthCheckItemRead(
-            id="xray_reality_keys",
-            label="Ключи REALITY в БД (публичный, shortId)",
-            ok=k_ok,
-            detail="Ключи заданы" if k_ok else "Нет reality_public_key или пустой reality_short_id (после провижининга обновите список)",
-            severity="critical",
+    if (server.proxy_kind or "vless").strip().lower() == "vless":
+        pk = _pbk_ok(server.reality_public_key)
+        sid = (server.reality_short_id or "").strip()
+        k_ok = pk and bool(sid)
+        checks.append(
+            HealthCheckItemRead(
+                id="xray_reality_keys",
+                label="Ключи REALITY в БД (публичный, shortId)",
+                ok=k_ok,
+                detail="Ключи заданы" if k_ok else "Нет reality_public_key или пустой reality_short_id (после провижининга обновите список)",
+                severity="critical",
+            )
         )
-    )
 
     if "ne" in tcp:
         n_ok, n_ms, n_err = tcp["ne"]
@@ -207,10 +208,15 @@ async def build_server_health_read(
     overall_ok = crit_ok
     bad = [c for c in checks if c.severity == "critical" and not c.ok]
     if not bad and overall_ok:
+        keys_label = (
+            "ключи в БД согласованы"
+            if (server.proxy_kind or "vless").strip().lower() == "vless"
+            else "настройки транспорта в БД согласованы"
+        )
         summary = (
             f"Узел {host}:{port} в порядке: TCP Xray OK"
             f"{f', {v_ms} мс' if v_ms is not None else ''}. "
-            f"Провижнинг и ключи в БД согласованы. "
+            f"Провижнинг и {keys_label}. "
         )
         if "ne" in tcp:
             n_ok = tcp["ne"][0]

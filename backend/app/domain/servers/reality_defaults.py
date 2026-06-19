@@ -11,7 +11,11 @@ import secrets
 import uuid as uuid_lib
 
 from app.domain.models.servers import ServerCreate
-from app.domain.servers.host_validation import normalize_grpc_service_name, normalize_ws_path
+from app.domain.servers.host_validation import (
+    normalize_grpc_service_name,
+    normalize_ws_path,
+    normalize_xhttp_path,
+)
 
 REALITY_DEFAULT_DEST = "www.amazon.com:443"
 REALITY_DEFAULT_SERVER_NAMES = "www.amazon.com,amazon.com"
@@ -21,6 +25,7 @@ VLESS_DEFAULT_FLOW = "xtls-rprx-vision"
 REALITY_SHORT_ID_BYTES = 4
 GRPC_DEFAULT_SERVICE_NAME = "grpc"
 WS_DEFAULT_PATH = "/vless"
+XHTTP_DEFAULT_PATH = "/uploadfiles/"
 
 
 def normalize_reality_spider_x(raw: str | None) -> str:
@@ -52,4 +57,8 @@ def reality_defaults_for_create(body: ServerCreate) -> dict[str, str]:
         )
     if body.proxy_kind == "vless_ws":
         out["ws_path"] = normalize_ws_path(body.ws_path or WS_DEFAULT_PATH)
+    if body.proxy_kind == "vless_vk_cdn_xhttp":
+        out["origin_domain"] = (body.origin_domain or "").strip().rstrip(".").lower()
+        out["cdn_domain"] = (body.cdn_domain or "").strip().rstrip(".").lower()
+        out["xhttp_path"] = normalize_xhttp_path(body.xhttp_path or XHTTP_DEFAULT_PATH)
     return out

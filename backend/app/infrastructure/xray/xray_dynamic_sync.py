@@ -126,7 +126,10 @@ def try_dynamic_xray_client_sync(
     cfg = cfg or default_settings
     if not cfg.xray_dynamic_client_sync_enabled:
         return False, None
-    tag = (cfg.xray_vless_inbound_tag or "").strip()
+    if (server.proxy_kind or "vless").strip().lower() == "vless_vk_cdn_xhttp":
+        tag = "VKCDN"
+    else:
+        tag = (cfg.xray_vless_inbound_tag or "").strip()
     if not tag:
         return False, 'Не задан xray_vless_inbound_tag (тег inbound в config на узле)'
 

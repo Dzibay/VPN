@@ -36,6 +36,17 @@ class Server(Base):
     grpc_service_name: Mapped[str] = mapped_column(Text, nullable=False, default="grpc")
     tls_sni: Mapped[str | None] = mapped_column(Text, nullable=True)
     ws_path: Mapped[str] = mapped_column(Text, nullable=False, default="/vless")
+    origin_domain: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        doc="Origin-домен VPS для CDN-транспортов (например file-clouds.ru).",
+    )
+    cdn_domain: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        doc="Клиентский CDN-домен (например progress.file-clouds.ru).",
+    )
+    xhttp_path: Mapped[str] = mapped_column(Text, nullable=False, default="/uploadfiles/")
     vless_uuid: Mapped[str] = mapped_column(Text, nullable=False)
     reality_private_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     reality_public_key: Mapped[str | None] = mapped_column(Text, nullable=True)
