@@ -243,7 +243,8 @@ function proxyKindSupportsCascade(kind) {
     kind === 'vless' ||
     kind === 'vless_grpc' ||
     kind === 'vless_ws' ||
-    kind === 'vless_xhttp'
+    kind === 'vless_xhttp' ||
+    kind === 'vless_vk_cdn_xhttp'
   )
 }
 
@@ -2801,10 +2802,10 @@ watch(formIsCascadeRuEntry, (v) => {
                 A-записью и Let's Encrypt. Подходит как fallback-профиль и вход каскада.
               </p>
               <p v-else-if="formProxyKind === 'vless_vk_cdn_xhttp'" class="field-hint">
-                VK Cloud CDN + XHTTP packet-up. Установка поднимет nginx с TLS/заглушкой на
-                origin-домене и Xray на localhost:4443; клиентам будет выдан CDN-домен на 443.
-                После провижининга настройте CDN-ресурс в VK Cloud: источник HTTPS → origin-домен,
-                кеширование и сжатие для /uploadfiles/ выключить.
+                VK Cloud CDN + XHTTP packet-up. Клиентам выдаётся CDN-домен на 443; origin — nginx +
+                Xray на localhost:4443. Можно включить каскад (РФ-вход → exit): трафик пойдёт
+                CDN → origin → exit. В VK Cloud: источник HTTPS → origin-домен, кеш/сжатие для
+                /uploadfiles/ выключить.
               </p>
               <p v-else class="field-hint">
                 Для Hysteria2 используется официальный сервер hysteria с password auth и TLS self-signed.

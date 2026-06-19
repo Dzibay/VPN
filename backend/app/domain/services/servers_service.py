@@ -83,7 +83,9 @@ __all__ = [
     "enqueue_component_install",
 ]
 
-_CASCADE_ENTRY_KINDS = frozenset({"vless", "vless_grpc", "vless_ws", "vless_xhttp"})
+_CASCADE_ENTRY_KINDS = frozenset(
+    {"vless", "vless_grpc", "vless_ws", "vless_xhttp", "vless_vk_cdn_xhttp"},
+)
 
 
 def _assert_cascade_proxy_allowed(
@@ -99,7 +101,7 @@ def _assert_cascade_proxy_allowed(
         raise ConflictError("Hysteria2 не поддерживает каскад")
     if is_ru_entry and cascade_next_id is not None and pk not in _CASCADE_ENTRY_KINDS:
         raise ConflictError(
-            "Вход каскада: VLESS+REALITY, gRPC+TLS или WebSocket+TLS",
+            "Вход каскада: VLESS+REALITY, gRPC+TLS, WebSocket+TLS, XHTTP+TLS или VK CDN XHTTP",
         )
 
 

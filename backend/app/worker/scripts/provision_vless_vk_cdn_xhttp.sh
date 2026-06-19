@@ -310,6 +310,18 @@ NGINXEOF
   systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true
 }
 
+_vless_vkcdn_xhttp_apply_cascade_if_needed() {
+  local CFG="${1:-${VPN_XRAY_CONFIG_PATH:-/usr/local/etc/xray/config.json}}"
+  if [[ "${VPN_CASCADE_ENABLED:-0}" != "1" ]]; then
+    return 0
+  fi
+  if [[ "${VPN_CASCADE_RU_DIRECT:-1}" != "0" ]]; then
+    _xray_ensure_geo_dats || return 1
+  fi
+  echo "[vkcdn_xhttp] каскад: маршрутизация VKCDN → egress-cascade (exit)…"
+  _apply_xray_cascade_to_file "$CFG"
+}
+
 _vless_vkcdn_xhttp_install() {
   local origin="${VPN_ORIGIN_DOMAIN:-}"
   local cdn="${VPN_CDN_DOMAIN:-}"
@@ -361,13 +373,18 @@ _vless_vkcdn_xhttp_install() {
   mkdir -p "$(dirname "$CFG")"
   echo "[vkcdn_xhttp] запись $CFG (XHTTP packet-up, path=${xhttp_path})…"
   _write_xray_vkcdn_xhttp_config > "$CFG"
+  _vless_vkcdn_xhttp_apply_cascade_if_needed "$CFG" || exit 1
   if command -v systemctl >/dev/null 2>&1; then
     systemctl enable xray 2>/dev/null || true
   fi
   _xray_test_config_and_restart "$CFG" "$XRAY_BIN" || exit 1
   _vps_net_sysctl_install || true
   systemctl reload nginx 2>/dev/null || true
-  echo "[vkcdn_xhttp] готово: origin=${origin} cdn=${cdn}:443 path=${xhttp_path} local_xray=${VPN_XHTTP_LOCAL_PORT}"
+  if [[ "${VPN_CASCADE_ENABLED:-0}" == "1" ]]; then
+    echo "[vkcdn_xhttp] готово: CDN=${cdn}:443 → origin=${origin} → exit (каскад)"
+  else
+    echo "[vkcdn_xhttp] готово: origin=${origin} cdn=${cdn}:443 path=${xhttp_path} local_xray=${VPN_XHTTP_LOCAL_PORT}"
+  fi
 }
 
 _vless_vkcdn_xhttp_sync_clients() {
@@ -383,6 +400,7 @@ _vless_vkcdn_xhttp_sync_clients() {
   local CFG="${VPN_XRAY_CONFIG_PATH:-/usr/local/etc/xray/config.json}"
   echo "[vkcdn_xhttp] sync_clients: запись $CFG…"
   _write_xray_vkcdn_xhttp_config > "$CFG"
+  _vless_vkcdn_xhttp_apply_cascade_if_needed "$CFG" || exit 1
   local XBIN="${XRAY_BIN:-}"
   if [[ -z "$XBIN" || ! -x "$XBIN" ]]; then
     XBIN=$(command -v xray 2>/dev/null) || true

@@ -10,8 +10,9 @@
 При изменении cascade-поля на РФ-входе нужно прокачать sync Xray-клиентов на exit, чтобы
 inbound на нём учитывал нового арендатора (``cascade_egress_client_uuid``).
 
-Вход (РФ): ``vless``, ``vless_grpc``, ``vless_ws``, ``vless_xhttp``. Exit: те же три типа; магистраль
-по ``proxy_kind`` exit (см. ``provision_cascade.sh``).
+Вход (РФ): ``vless``, ``vless_grpc``, ``vless_ws``, ``vless_xhttp``, ``vless_vk_cdn_xhttp``.
+Exit: ``vless``, ``vless_grpc``, ``vless_ws``; магистраль по ``proxy_kind`` exit (см. ``provision_cascade.sh``).
+Для VK CDN клиент ходит на CDN-домен, origin проксирует XHTTP в inbound ``VKCDN``, дальше ``egress-cascade``.
 """
 
 from __future__ import annotations

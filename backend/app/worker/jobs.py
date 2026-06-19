@@ -451,6 +451,7 @@ def _vless_vkcdn_xhttp_env_lines(db: Session, server: Server, *, cfg: Settings) 
     if email:
         remote_env += f"export VPN_TLS_CERTBOT_EMAIL={shlex.quote(email)}\n"
     remote_env += _google_routing_env_line(server)
+    remote_env += _cascade_xray_env_for_ru_entry(db, server)
     return remote_env
 
 
