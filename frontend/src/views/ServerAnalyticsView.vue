@@ -104,6 +104,12 @@ const serverParamRows = computed(() => {
     { label: 'Активен', value: s.is_active ? 'Да' : 'Нет' },
     { label: 'ПО готово', value: s.provision_ready ? 'Да' : 'Нет' },
     { label: 'Статус провижининга', value: t(s.provision_status) },
+    { label: 'Этап провижининга', value: t(s.provision_step) },
+    {
+      label: 'Прогресс провижининга',
+      value: s.provision_progress != null ? `${s.provision_progress}%` : '—',
+    },
+    { label: 'Деталь провижининга', value: t(s.provision_detail) },
     { label: 'Ошибка провижининга', value: t(s.provision_error) },
     { label: 'Job ID (RQ)', value: t(s.provision_job_id) },
     { label: 'Prometheus instance', value: t(s.prometheus_instance) },

@@ -119,12 +119,84 @@ print(json.dumps(cfg, indent=2, ensure_ascii=False))
 PY
 }
 
+_vkcdn_ensure_tls_cert() {
+  local origin="$1"
+  local email="${VPN_TLS_CERTBOT_EMAIL:-admin@${origin}}"
+  local le_cert="/etc/letsencrypt/live/${origin}/fullchain.pem"
+  local le_key="/etc/letsencrypt/live/${origin}/privkey.pem"
+  local fallback_dir="/etc/ssl/vpn-vkcdn-xhttp/${origin}"
+  local fallback_cert="${fallback_dir}/fullchain.pem"
+  local fallback_key="${fallback_dir}/privkey.pem"
+
+  if [[ -s "$le_cert" && -s "$le_key" ]]; then
+    export VPN_VKCDN_SSL_CERT="$le_cert"
+    export VPN_VKCDN_SSL_KEY="$le_key"
+    echo "[vkcdn_xhttp] TLS: найден Let's Encrypt сертификат для ${origin}"
+    return 0
+  fi
+
+  if ! command -v certbot >/dev/null 2>&1; then
+    echo "[vkcdn_xhttp] установка certbot…"
+    apt-get update -qq 2>/dev/null || true
+    apt-get install -y -qq certbot 2>/dev/null || true
+  fi
+
+  if command -v certbot >/dev/null 2>&1; then
+    echo "[vkcdn_xhttp] пробую выпустить Let's Encrypt для ${origin}…"
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl stop nginx 2>/dev/null || true
+      systemctl stop xray 2>/dev/null || true
+    fi
+    set +e
+    certbot certonly --standalone \
+      --preferred-challenges http \
+      --http-01-port 80 \
+      -d "$origin" \
+      --non-interactive --agree-tos \
+      -m "$email"
+    local rc=$?
+    set -e
+    if [[ "$rc" -eq 0 && -s "$le_cert" && -s "$le_key" ]]; then
+      export VPN_VKCDN_SSL_CERT="$le_cert"
+      export VPN_VKCDN_SSL_KEY="$le_key"
+      echo "[vkcdn_xhttp] TLS: Let's Encrypt сертификат получен"
+      return 0
+    fi
+    echo "[vkcdn_xhttp] предупреждение: Let's Encrypt не выпущен (код ${rc}); создаю self-signed fallback" >&2
+    echo "[vkcdn_xhttp] проверьте DNS: ${origin} должен резолвиться в IP этого VPS до настройки VK CDN" >&2
+  else
+    echo "[vkcdn_xhttp] предупреждение: certbot недоступен; создаю self-signed fallback" >&2
+  fi
+
+  if ! command -v openssl >/dev/null 2>&1; then
+    apt-get update -qq 2>/dev/null || true
+    apt-get install -y -qq openssl 2>/dev/null || true
+  fi
+  if ! command -v openssl >/dev/null 2>&1; then
+    echo "[vkcdn_xhttp] openssl не найден — не могу создать self-signed сертификат" >&2
+    return 1
+  fi
+
+  mkdir -p "$fallback_dir"
+  if [[ ! -s "$fallback_cert" || ! -s "$fallback_key" ]]; then
+    local cn="${origin:0:64}"
+    openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+      -keyout "$fallback_key" \
+      -out "$fallback_cert" \
+      -subj "/CN=${cn}" >/dev/null 2>&1
+    chmod 600 "$fallback_key" 2>/dev/null || true
+  fi
+  export VPN_VKCDN_SSL_CERT="$fallback_cert"
+  export VPN_VKCDN_SSL_KEY="$fallback_key"
+  echo "[vkcdn_xhttp] TLS: используется self-signed fallback (${fallback_cert})"
+}
+
 _vkcdn_install_nginx() {
   local origin="$1"
   local xhttp_path="$2"
   local xray_port="${VPN_XHTTP_LOCAL_PORT:-4443}"
-  local cert_file="/etc/letsencrypt/live/${origin}/fullchain.pem"
-  local key_file="/etc/letsencrypt/live/${origin}/privkey.pem"
+  local cert_file="${VPN_VKCDN_SSL_CERT:-/etc/letsencrypt/live/${origin}/fullchain.pem}"
+  local key_file="${VPN_VKCDN_SSL_KEY:-/etc/letsencrypt/live/${origin}/privkey.pem}"
 
   if ! command -v nginx >/dev/null 2>&1; then
     apt-get update -qq 2>/dev/null || true
@@ -282,7 +354,7 @@ _vless_vkcdn_xhttp_install() {
   if command -v systemctl >/dev/null 2>&1; then
     systemctl stop nginx 2>/dev/null || true
   fi
-  _tls_ensure_letsencrypt "$origin" || exit 1
+  _vkcdn_ensure_tls_cert "$origin" || exit 1
   _vkcdn_install_nginx "$origin" "$xhttp_path" || exit 1
 
   local CFG=/usr/local/etc/xray/config.json

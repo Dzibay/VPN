@@ -118,6 +118,9 @@ async def reset_server_provision(session: AsyncSession, server_id: int) -> Serve
     server.provision_status = "idle"
     server.provision_job_id = None
     server.provision_error = "Статус сброшен вручную; можно снова поставить задачу в очередь"
+    server.provision_step = "Статус сброшен"
+    server.provision_progress = 0
+    server.provision_detail = "Можно снова поставить задачу установки в очередь"
     await session.flush()
     return server
 

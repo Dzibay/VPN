@@ -8,6 +8,9 @@ import logging
 import shlex
 import shutil
 import subprocess
+import threading
+import time
+from collections.abc import Callable
 
 from app.config import settings
 from app.infrastructure.persistence.models.server import Server
@@ -123,6 +126,7 @@ def ssh_run_script_with_user_fallback(
     *,
     timeout: float,
     login_shell: bool = False,
+    output_callback: Callable[[str, str], None] | None = None,
 ) -> tuple[int, str, str, str]:
     """
     SSH + bash -s, stdin = script. Перебор PROVISION_SSH_USER → fallback
@@ -144,16 +148,25 @@ def ssh_run_script_with_user_fallback(
     for idx, u in enumerate(users):
         cmd = ssh_bash_s_cmd_for_user(server, u, login_shell=login_shell)
         log.debug("ssh %s (кандидат %d/%d)", u, idx + 1, len(users))
-        result = subprocess.run(
-            cmd,
-            input=data,
-            capture_output=True,
-            timeout=timeout,
-        )
-        out = (result.stdout or b"").decode("utf-8", errors="replace")
-        err = (result.stderr or b"").decode("utf-8", errors="replace")
-        last_u, last_out, last_err, last_rc = u, out, err, int(result.returncode)
-        if result.returncode == 0:
+        if output_callback is None:
+            result = subprocess.run(
+                cmd,
+                input=data,
+                capture_output=True,
+                timeout=timeout,
+            )
+            out = (result.stdout or b"").decode("utf-8", errors="replace")
+            err = (result.stderr or b"").decode("utf-8", errors="replace")
+            rc = int(result.returncode)
+        else:
+            rc, out, err = _run_script_streaming(
+                cmd,
+                data,
+                timeout=timeout,
+                output_callback=output_callback,
+            )
+        last_u, last_out, last_err, last_rc = u, out, err, rc
+        if rc == 0:
             if idx > 0:
                 log.info(
                     "SSH: успех под %s@%s (предыдущий кандидат не подошёл)",
@@ -162,7 +175,7 @@ def ssh_run_script_with_user_fallback(
                 )
             return 0, out, err, u
         if idx < len(users) - 1 and _ssh_worth_next_user(
-            int(result.returncode), out, err
+            rc, out, err
         ):
             nxt = users[idx + 1]
             nxt_at = f"{nxt}@{server.host}"
@@ -171,13 +184,77 @@ def ssh_run_script_with_user_fallback(
                 "SSH %s@%s: rc=%s, следующий кандидат %s. вывод: %s",
                 u,
                 server.host,
-                result.returncode,
+                rc,
                 nxt_at,
                 tail,
             )
             continue
-        return int(result.returncode), out, err, u
+        return rc, out, err, u
     return last_rc, last_out, last_err, last_u
+
+
+def _run_script_streaming(
+    cmd: list[str],
+    data: bytes,
+    *,
+    timeout: float,
+    output_callback: Callable[[str, str], None],
+) -> tuple[int, str, str]:
+    """Popen-вариант subprocess.run: отдаёт stdout/stderr построчно в callback."""
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+    )
+    out_lines: list[str] = []
+    err_lines: list[str] = []
+
+    def _writer() -> None:
+        try:
+            if proc.stdin is not None:
+                proc.stdin.write(data.decode("utf-8", errors="replace"))
+                proc.stdin.close()
+        except (BrokenPipeError, OSError, ValueError):
+            pass
+
+    def _reader(stream_name: str, target: list[str], pipe) -> None:
+        try:
+            for line in iter(pipe.readline, ""):
+                target.append(line)
+                output_callback(stream_name, line.rstrip("\n"))
+        except Exception:
+            log.exception("ssh streaming reader failed (%s)", stream_name)
+        finally:
+            try:
+                pipe.close()
+            except Exception:
+                pass
+
+    threads = [
+        threading.Thread(target=_writer, daemon=True),
+        threading.Thread(target=_reader, args=("stdout", out_lines, proc.stdout), daemon=True),
+        threading.Thread(target=_reader, args=("stderr", err_lines, proc.stderr), daemon=True),
+    ]
+    for t in threads:
+        t.start()
+
+    deadline = time.monotonic() + float(timeout)
+    while proc.poll() is None:
+        if time.monotonic() >= deadline:
+            proc.kill()
+            for t in threads:
+                t.join(timeout=1)
+            raise subprocess.TimeoutExpired(cmd, timeout)
+        time.sleep(0.1)
+
+    for t in threads:
+        t.join(timeout=2)
+    return int(proc.returncode or 0), "".join(out_lines), "".join(err_lines)
 
 
 def ssh_run_bash_lc(

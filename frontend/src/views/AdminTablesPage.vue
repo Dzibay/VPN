@@ -277,6 +277,7 @@ const serverReachabilityOk = ref(null)
 const serverReachabilityMsg = ref(null)
 /** Подпункты ответа GET /servers/:id/ping (TCP, БД, каскад, node_exporter) */
 const serverHealthChecks = ref([])
+const provisionPollTimer = ref(null)
 const deletingServerId = ref(null)
 const serverHiddenToggleId = ref(null)
 
@@ -381,6 +382,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', onServerMenuEscape)
   document.removeEventListener('scroll', onServerMenuScrollResize, true)
   window.removeEventListener('resize', onServerMenuScrollResize)
+  stopProvisionPolling()
 })
 
 watch(serverMenuTarget, (s) => {
@@ -438,8 +440,9 @@ async function loadUsers() {
   }
 }
 
-async function loadServers() {
-  serversLoading.value = true
+async function loadServers(options = {}) {
+  const { silent = false } = options
+  if (!silent) serversLoading.value = true
   serversError.value = null
   try {
     const [list, countRes] = await Promise.all([
@@ -453,9 +456,45 @@ async function loadServers() {
     servers.value = []
     serversCount.value = null
   } finally {
-    serversLoading.value = false
+    if (!silent) serversLoading.value = false
   }
 }
+
+function hasActiveProvisionJobs() {
+  return servers.value.some((s) => {
+    const st = String(s.provision_status ?? '').toLowerCase()
+    return st === 'queued' || st === 'running'
+  })
+}
+
+function startProvisionPolling() {
+  if (provisionPollTimer.value != null) return
+  provisionPollTimer.value = window.setInterval(() => {
+    if (section.value !== 'servers' || !hasActiveProvisionJobs()) {
+      stopProvisionPolling()
+      return
+    }
+    void loadServers({ silent: true })
+  }, 2500)
+}
+
+function stopProvisionPolling() {
+  if (provisionPollTimer.value == null) return
+  window.clearInterval(provisionPollTimer.value)
+  provisionPollTimer.value = null
+}
+
+watch(
+  servers,
+  () => {
+    if (section.value === 'servers' && hasActiveProvisionJobs()) {
+      startProvisionPolling()
+    } else {
+      stopProvisionPolling()
+    }
+  },
+  { deep: true },
+)
 
 async function syncServerLoadFromPrometheus() {
   loadSyncLoading.value = true
@@ -1162,6 +1201,35 @@ function formatProvisionStatus(status) {
     failed: 'Ошибка',
   }
   return labels[key] ?? status ?? '—'
+}
+
+function provisionProgressValue(s) {
+  const n = Number(s?.provision_progress)
+  if (!Number.isFinite(n)) return 0
+  return Math.min(100, Math.max(0, Math.round(n)))
+}
+
+function provisionStepText(s) {
+  const step = String(s?.provision_step ?? '').trim()
+  if (step) return step
+  return formatProvisionStatus(s?.provision_status)
+}
+
+function provisionDetailText(s) {
+  const detail = String(s?.provision_detail ?? '').trim()
+  if (detail) return detail
+  const err = String(s?.provision_error ?? '').trim()
+  if (err) return err
+  return ''
+}
+
+function provisionStatusClass(s) {
+  const st = String(s?.provision_status ?? '').toLowerCase()
+  return {
+    'provision-status--running': st === 'queued' || st === 'running',
+    'provision-status--success': st === 'success',
+    'provision-status--failed': st === 'failed',
+  }
 }
 
 function canEnqueueProvision(s) {
@@ -2007,7 +2075,41 @@ watch(formIsCascadeRuEntry, (v) => {
                 {{ s.whitelist ? 'да' : '—' }}
               </td>
               <td class="mono">{{ s.host }}</td>
-              <td>{{ formatProvisionStatus(s.provision_status) }}</td>
+              <td>
+                <div
+                  class="provision-status-cell"
+                  :class="provisionStatusClass(s)"
+                  :title="provisionDetailText(s)"
+                >
+                  <div class="provision-status-head">
+                    <span>{{ formatProvisionStatus(s.provision_status) }}</span>
+                    <span
+                      v-if="s.provision_status === 'queued' || s.provision_status === 'running'"
+                      class="mono tabular"
+                    >
+                      {{ provisionProgressValue(s) }}%
+                    </span>
+                  </div>
+                  <div class="provision-step">
+                    {{ provisionStepText(s) }}
+                  </div>
+                  <div
+                    v-if="s.provision_status === 'queued' || s.provision_status === 'running'"
+                    class="provision-progress"
+                    aria-hidden="true"
+                  >
+                    <span
+                      :style="{ width: `${provisionProgressValue(s)}%` }"
+                    />
+                  </div>
+                  <div
+                    v-if="provisionDetailText(s)"
+                    class="provision-detail"
+                  >
+                    {{ provisionDetailText(s) }}
+                  </div>
+                </div>
+              </td>
               <td class="row-actions">
                 <div class="server-row-dropdown">
                   <button
@@ -3124,6 +3226,69 @@ watch(formIsCascadeRuEntry, (v) => {
 
 .admin-table-row--hidden-server {
   opacity: 0.72;
+}
+
+.provision-status-cell {
+  min-width: 14rem;
+  max-width: 22rem;
+}
+
+.provision-status-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.provision-step {
+  margin-top: 0.15rem;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.provision-progress {
+  position: relative;
+  height: 0.38rem;
+  margin-top: 0.35rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 65%, transparent);
+}
+
+.provision-progress > span {
+  display: block;
+  height: 100%;
+  min-width: 0.35rem;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
+  transition: width 0.25s ease;
+}
+
+.provision-detail {
+  display: -webkit-box;
+  margin-top: 0.28rem;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.provision-status--running .provision-step {
+  color: var(--accent-hover);
+}
+
+.provision-status--success .provision-status-head {
+  color: var(--ok, #16a34a);
+}
+
+.provision-status--failed .provision-status-head,
+.provision-status--failed .provision-step,
+.provision-status--failed .provision-detail {
+  color: var(--danger);
 }
 
 .provision-banner {

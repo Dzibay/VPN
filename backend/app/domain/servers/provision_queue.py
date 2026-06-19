@@ -62,6 +62,9 @@ async def enqueue_software_job(
 
     server.provision_status = "queued"
     server.provision_error = None
+    server.provision_step = "В очереди на установку"
+    server.provision_progress = 5
+    server.provision_detail = "Задача поставлена в очередь воркера"
     if clear_ready:
         server.provision_ready = False
     server.provision_job_id = job.id

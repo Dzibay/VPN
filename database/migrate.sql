@@ -67,6 +67,21 @@ ALTER TABLE servers
 ALTER TABLE servers
     ADD COLUMN IF NOT EXISTS xhttp_path TEXT NOT NULL DEFAULT '/uploadfiles/';
 
+ALTER TABLE servers
+    ADD COLUMN IF NOT EXISTS provision_step TEXT;
+
+ALTER TABLE servers
+    ADD COLUMN IF NOT EXISTS provision_progress INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE servers
+    ADD COLUMN IF NOT EXISTS provision_detail TEXT;
+
+ALTER TABLE servers DROP CONSTRAINT IF EXISTS servers_provision_progress_check;
+
+ALTER TABLE servers ADD CONSTRAINT servers_provision_progress_check CHECK (
+    provision_progress >= 0 AND provision_progress <= 100
+);
+
 ALTER TABLE servers DROP CONSTRAINT IF EXISTS servers_proxy_kind_check;
 
 ALTER TABLE servers ADD CONSTRAINT servers_proxy_kind_check CHECK (

@@ -10,6 +10,7 @@ import logging
 import os
 import shlex
 import subprocess
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -59,6 +60,108 @@ def _format_ssh_capture(stdout_t: str, stderr_t: str, *, limit: int = 14000) -> 
         return ""
     combined = out + ("\n--- stderr ---\n" + err if err else "")
     return combined if len(combined) <= limit else combined[-limit:]
+
+
+def _set_provision_progress(
+    db: Session,
+    server: Server,
+    *,
+    step: str,
+    progress: int,
+    detail: str | None = None,
+    status: str | None = None,
+    error: str | None = None,
+) -> None:
+    server.provision_step = step
+    server.provision_progress = max(0, min(100, int(progress)))
+    if detail is not None:
+        server.provision_detail = detail[:2000]
+    if status is not None:
+        server.provision_status = status
+    if error is not None:
+        server.provision_error = error[:8000]
+    db.commit()
+
+
+def _set_provision_progress_by_id(
+    server_id: int,
+    *,
+    step: str,
+    progress: int,
+    detail: str | None = None,
+) -> None:
+    db = SessionLocal()
+    try:
+        server = db.get(Server, server_id)
+        if server is None or server.provision_status != "running":
+            return
+        _set_provision_progress(
+            db,
+            server,
+            step=step,
+            progress=progress,
+            detail=detail,
+        )
+    finally:
+        db.close()
+
+
+def _friendly_provision_error(raw: str) -> str:
+    blob = (raw or "").lower()
+    if "nxdomain" in blob or "dns problem" in blob:
+        return (
+            "DNS не настроен: origin-домен не резолвится публично. "
+            "Добавьте A-запись домена на IP VPS и повторите установку."
+        )
+    if "certbot failed to authenticate" in blob or "some challenges have failed" in blob:
+        return (
+            "Let's Encrypt не смог проверить домен. Проверьте A-запись на VPS, "
+            "открытый порт 80 и отсутствие другого сервиса на 80 во время выпуска."
+        )
+    if "nginx: configuration file" in blob and "test failed" in blob:
+        return "Nginx-конфиг не прошёл проверку. Посмотрите деталь ошибки в логе провижининга."
+    if "failed to start xray" in blob or "xray config" in blob or "failed to read config" in blob:
+        return "Xray не стартовал: проверьте сгенерированный config.json и версию Xray."
+    if "permission denied" in blob:
+        return "SSH-доступ запрещён: проверьте пользователя, ключ и права sudo/NOPASSWD."
+    if "could not resolve hostname" in blob:
+        return "SSH host не резолвится. Проверьте поле Host у сервера."
+    if "connection refused" in blob:
+        return "SSH-соединение отклонено. Проверьте IP, SSH-порт и firewall сервера."
+    if "openssl не найден" in blob:
+        return "Не удалось установить openssl для fallback-сертификата."
+    tail = (raw or "").strip()
+    return tail[-1800:] if tail else "Неизвестная ошибка установки; проверьте логи воркера."
+
+
+def _progress_from_remote_line(line: str) -> tuple[str, int, str] | None:
+    text = (line or "").strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "[preflight]" in low:
+        return ("Подготовка VPS", 15, text)
+    if "установка xray" in low or "installing xray" in low:
+        return ("Установка Xray", 30, text)
+    if "установка certbot" in low or "let's encrypt" in low or "certbot" in low:
+        return ("TLS-сертификат origin-домена", 45, text)
+    if "self-signed fallback" in low or "используется self-signed" in low:
+        return ("Fallback TLS-сертификат", 52, text)
+    if "sc-decoy" in low or "decoy" in low or "заглуш" in low:
+        return ("Установка сайта-заглушки", 60, text)
+    if "nginx" in low:
+        return ("Настройка nginx", 68, text)
+    if "запись /usr/local/etc/xray/config.json" in low or "config.json" in low:
+        return ("Запись конфига Xray", 78, text)
+    if "test config" in low or "конфиг" in low and "xray" in low:
+        return ("Проверка Xray", 84, text)
+    if "egress_fairness" in low or "net_sysctl" in low or "sysctl" in low:
+        return ("Оптимизация сети", 88, text)
+    if "node_exporter" in low:
+        return ("Установка метрик", 92, text)
+    if "готово" in low or "завершено" in low:
+        return ("Финальная проверка", 96, text)
+    return None
 
 ProvisionComponent = Literal[
     "all",
@@ -346,6 +449,14 @@ def _cascade_xray_env_for_ru_entry(db: Session, server: Server) -> str:
 
 
 def _run_ssh_remote_provision(db: Session, server: Server, *, component: ProvisionComponent) -> None:
+    _set_provision_progress(
+        db,
+        server,
+        step="Подготовка сценария установки",
+        progress=8,
+        detail="Собираем переменные окружения и SSH payload",
+        status="running",
+    )
     script_body = _remote_script_payload()
     # Иначе на удалённой стороне TERM пустой → tput в сторонних скриптах (install-release.sh) даёт ошибку и ненулевой exit.
     remote_env = 'export TERM="${TERM:-xterm-256color}"\n'
@@ -408,11 +519,46 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
         server.host,
         int(settings.provision_subprocess_timeout),
     )
+    _set_provision_progress(
+        db,
+        server,
+        step="SSH-подключение к VPS",
+        progress=12,
+        detail=f"Подключаемся к {server.host} и запускаем установочный сценарий",
+    )
+
+    progress_lock = threading.Lock()
+    last_progress = {"value": 12, "ts": 0.0}
+
+    def _on_ssh_output(_stream: str, line: str) -> None:
+        parsed = _progress_from_remote_line(line)
+        if parsed is None:
+            return
+        step, progress, detail = parsed
+        now = time.monotonic()
+        with progress_lock:
+            if progress < int(last_progress["value"]):
+                return
+            if progress == int(last_progress["value"]) and now - float(last_progress["ts"]) < 1.5:
+                return
+            last_progress["value"] = progress
+            last_progress["ts"] = now
+        try:
+            _set_provision_progress_by_id(
+                int(server.id),
+                step=step,
+                progress=progress,
+                detail=detail,
+            )
+        except Exception:
+            log.exception("Не удалось обновить progress server_id=%s", server.id)
+
     rc, stdout_t, stderr_t, used_user = ssh_run_script_with_user_fallback(
         server,
         payload,
         timeout=settings.provision_subprocess_timeout,
         login_shell=False,
+        output_callback=_on_ssh_output,
     )
     log.info(
         "SSH provision component=%s %s@%s server_id=%s",
@@ -435,6 +581,16 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
                 (stdout_t or "")[-8000:],
             )
         detail = _format_ssh_capture(stdout_t, stderr_t)
+        friendly = _friendly_provision_error(detail)
+        _set_provision_progress(
+            db,
+            server,
+            step="Ошибка установки",
+            progress=100,
+            detail=friendly,
+            status="failed",
+            error=friendly,
+        )
         raise RuntimeError(
             f"ssh завершился с кодом {rc}\n"
             + (
@@ -468,6 +624,9 @@ def _finalize_success(db: Session, server: Server, *, component: ProvisionCompon
         server.provision_status = "idle"
         server.provision_error = None
         server.provision_job_id = None
+        server.provision_step = "Очистка завершена"
+        server.provision_progress = 100
+        server.provision_detail = "ПО на узле удалено, статус сброшен"
         server.prometheus_instance = None
         server.reality_private_key = None
         server.reality_public_key = None
@@ -477,6 +636,9 @@ def _finalize_success(db: Session, server: Server, *, component: ProvisionCompon
     server.provision_ready = True
     server.provision_status = "success"
     server.provision_error = None
+    server.provision_step = "Установка завершена"
+    server.provision_progress = 100
+    server.provision_detail = "Сервер готов к работе; проверьте DNS/CDN и обновите подписку"
     # prometheus_instance в БД только если нужен override (другой порт, hostname в scrape);
     # иначе пусто — в API/PromQL берётся host + provision_node_exporter_port
     db.commit()
@@ -507,6 +669,9 @@ def install_server_software(
 
         server.provision_status = "running"
         server.provision_error = None
+        server.provision_step = "Воркер начал установку"
+        server.provision_progress = 8
+        server.provision_detail = f"Компонент: {component}"
         db.commit()
 
         try:
@@ -516,7 +681,14 @@ def install_server_software(
             db.refresh(server)
             server.provision_ready = False
             server.provision_status = "failed"
-            server.provision_error = str(e)[:8000]
+            if not (server.provision_step or "").strip():
+                server.provision_step = "Ошибка установки"
+            server.provision_progress = 100
+            friendly = (server.provision_error or server.provision_detail or "").strip()
+            if not friendly:
+                friendly = _friendly_provision_error(str(e))
+            server.provision_error = friendly[:8000]
+            server.provision_detail = friendly[:2000]
             db.commit()
             raise
 

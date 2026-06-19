@@ -606,6 +606,20 @@ class ServerRead(BaseModel):
     )
     provision_error: str | None = Field(description="Текст ошибки при failed")
     provision_job_id: str | None = Field(description="ID последней задачи RQ")
+    provision_step: str | None = Field(
+        default=None,
+        description="Текущий человекочитаемый этап установки ПО",
+    )
+    provision_progress: int = Field(
+        default=0,
+        ge=0,
+        le=100,
+        description="Прогресс установки ПО, 0–100",
+    )
+    provision_detail: str | None = Field(
+        default=None,
+        description="Краткая деталь текущего этапа или понятная причина ошибки",
+    )
     proxy_kind: ProxyKind = Field(
         default="vless",
         description="Тип прокси на узле",
