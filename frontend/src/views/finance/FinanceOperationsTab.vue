@@ -155,11 +155,12 @@ async function submitPayable() {
 
 async function deletePayable(row) {
   if (!isAdmin.value) return
-  if (num(row.paid_amount) > 0) {
-    error.value = 'Нельзя удалить долг с уже проведёнными выплатами.'
-    return
-  }
-  const ok = window.confirm(`Удалить долг «${row.title}» перед ${row.counterparty_name}?`)
+  const paid = num(row.paid_amount)
+  const msg =
+    paid > 0
+      ? `Удалить долг «${row.title}» перед ${row.counterparty_name}? Уже выплачено ${money(paid)} ₽ — эта сумма останется учтённой в cash.`
+      : `Удалить долг «${row.title}» перед ${row.counterparty_name}?`
+  const ok = window.confirm(msg)
   if (!ok) return
   error.value = null
   try {
@@ -313,7 +314,6 @@ onMounted(() => {
             </td>
             <td v-if="isAdmin" class="td-actions">
               <button
-                v-if="num(p.paid_amount) <= 0"
                 type="button"
                 class="btn-icon btn-icon--danger"
                 title="Удалить"

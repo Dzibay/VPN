@@ -515,7 +515,7 @@ async def post_payable_payment(
     "/payables/{payable_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_admin)],
-    summary="Удалить долг (только admin, без выплат)",
+    summary="Удалить долг (только admin; выплаты сохраняются в cash-корректировке)",
 )
 async def remove_payable(
     session: SessionDep,
@@ -524,10 +524,13 @@ async def remove_payable(
     try:
         await delete_payable(session, payable_id)
     except ValueError as err:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Нельзя удалить долг с уже проведёнными выплатами",
-        ) from err
+        code = err.args[0] if err.args else ""
+        if code == "no_cash_account":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Нужен хотя бы один активный счёт для сохранения уже проведённых выплат в cash",
+            ) from err
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Некорректная операция") from err
     except LookupError as err:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

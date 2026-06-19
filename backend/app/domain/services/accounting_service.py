@@ -9,7 +9,7 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.request_subject import get_request_subject
-from app.core.time import utc_now
+from app.core.time import moscow_today, utc_now
 from app.domain.models.accounting import (
     CashAccountCreateBody,
     CashAccountItem,
@@ -950,12 +950,45 @@ async def pay_payable(
     return PayableItem.model_validate(row)
 
 
+async def _default_cash_account_id(session: AsyncSession) -> int | None:
+    row = await session.scalar(
+        select(CashAccount.id)
+        .where(CashAccount.is_default.is_(True), CashAccount.active.is_(True))
+        .limit(1)
+    )
+    if row is not None:
+        return int(row)
+    row = await session.scalar(
+        select(CashAccount.id)
+        .where(CashAccount.active.is_(True))
+        .order_by(CashAccount.id.asc())
+        .limit(1)
+    )
+    return int(row) if row is not None else None
+
+
 async def delete_payable(session: AsyncSession, payable_id: int) -> None:
     row = await session.get(Payable, payable_id)
     if row is None:
         raise LookupError("payable_not_found")
-    if row.paid_amount > 0:
-        raise ValueError("payable_has_payments")
+    paid = row.paid_amount
+    if paid > 0:
+        account_id = await _default_cash_account_id(session)
+        if account_id is None:
+            raise ValueError("no_cash_account")
+        # Выплаты по долгу уже уменьшали cash через payables_paid.
+        # После удаления записи фиксируем ту же сумму в ручной корректировке, чтобы остаток не «откатился».
+        session.add(
+            CashTransaction(
+                account_id=account_id,
+                occurred_on=moscow_today(),
+                amount=-paid,
+                kind="adjustment",
+                title=f"Удалён долг (выплачено): {row.counterparty_name}",
+                note=row.title,
+                created_by=_current_user_id(),
+            )
+        )
     await session.delete(row)
     await session.flush()
 
