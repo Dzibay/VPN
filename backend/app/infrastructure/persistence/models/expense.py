@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Date, DateTime, ForeignKey, Numeric, Text
+from sqlalchemy import BigInteger, Date, DateTime, ForeignKey, Numeric, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.time import utc_now
@@ -23,6 +23,18 @@ class Expense(Base):
     )
     title: Mapped[str] = mapped_column(Text, nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payment_source: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default=text("'company'"),
+    )
+    paid_by_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cash_account_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("cash_accounts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    paid_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

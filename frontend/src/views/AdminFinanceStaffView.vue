@@ -5,6 +5,7 @@ import AdminStaffShell from '../components/AdminStaffShell.vue'
 import FinanceOverviewTab from './finance/FinanceOverviewTab.vue'
 import FinanceIncomeTab from './finance/FinanceIncomeTab.vue'
 import FinanceExpensesTab from './finance/FinanceExpensesTab.vue'
+import FinanceOperationsTab from './finance/FinanceOperationsTab.vue'
 import FinanceSettingsTab from './finance/FinanceSettingsTab.vue'
 import { mskTodayIso } from '../utils/mskDate.js'
 
@@ -12,6 +13,7 @@ const TABS = [
   { key: 'overview', label: 'Обзор' },
   { key: 'income', label: 'Доходы' },
   { key: 'expenses', label: 'Расходы' },
+  { key: 'operations', label: 'Операции' },
   { key: 'settings', label: 'Налоги и настройки' },
 ]
 const TAB_KEYS = TABS.map((t) => t.key)
@@ -142,6 +144,7 @@ const showPeriod = computed(() => activeTab.value === 'overview')
     <FinanceOverviewTab v-if="activeTab === 'overview'" :from="rangeFrom" :to="rangeTo" />
     <FinanceIncomeTab v-else-if="activeTab === 'income'" />
     <FinanceExpensesTab v-else-if="activeTab === 'expenses'" />
+    <FinanceOperationsTab v-else-if="activeTab === 'operations'" />
     <FinanceSettingsTab v-else-if="activeTab === 'settings'" />
   </AdminStaffShell>
 </template>
@@ -150,7 +153,7 @@ const showPeriod = computed(() => activeTab.value === 'overview')
 /* Сегментированная панель — на всю ширину, без скруглений и зазоров (не как pill admin-tabs). */
 .subtabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   width: 100%;
   gap: 0;
   margin: 0 0 0.85rem;

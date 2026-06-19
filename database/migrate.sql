@@ -87,3 +87,123 @@ ALTER TABLE servers DROP CONSTRAINT IF EXISTS servers_proxy_kind_check;
 ALTER TABLE servers ADD CONSTRAINT servers_proxy_kind_check CHECK (
     proxy_kind IN ('vless', 'vless_grpc', 'vless_ws', 'vless_xhttp', 'vless_vk_cdn_xhttp', 'hysteria2')
 );
+
+-- Полноценный финансовый контур: счета, долги, возвраты, вывод прибыли.
+CREATE TABLE IF NOT EXISTS cash_accounts (
+    id BIGSERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'bank',
+    currency TEXT NOT NULL DEFAULT 'RUB',
+    opening_balance NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    opened_on DATE NOT NULL DEFAULT CURRENT_DATE,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    CONSTRAINT cash_accounts_kind_check CHECK (
+        kind IN ('bank', 'psp', 'cash', 'person', 'other')
+    ),
+    CONSTRAINT cash_accounts_opening_balance_check CHECK (opening_balance >= 0)
+);
+
+ALTER TABLE expenses
+    ADD COLUMN IF NOT EXISTS payment_source TEXT NOT NULL DEFAULT 'company',
+    ADD COLUMN IF NOT EXISTS paid_by_name TEXT,
+    ADD COLUMN IF NOT EXISTS cash_account_id BIGINT,
+    ADD COLUMN IF NOT EXISTS paid_on DATE;
+
+ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_payment_source_check;
+
+ALTER TABLE expenses ADD CONSTRAINT expenses_payment_source_check CHECK (
+    payment_source IN ('company', 'person', 'unpaid')
+);
+
+ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_cash_account_fk;
+
+ALTER TABLE expenses ADD CONSTRAINT expenses_cash_account_fk
+    FOREIGN KEY (cash_account_id) REFERENCES cash_accounts (id) ON DELETE SET NULL;
+
+CREATE TABLE IF NOT EXISTS cash_transactions (
+    id BIGSERIAL PRIMARY KEY,
+    account_id BIGINT NOT NULL REFERENCES cash_accounts (id) ON DELETE RESTRICT,
+    occurred_on DATE NOT NULL,
+    amount NUMERIC(14, 2) NOT NULL CHECK (amount <> 0),
+    kind TEXT NOT NULL DEFAULT 'adjustment',
+    title TEXT NOT NULL,
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    CONSTRAINT cash_transactions_kind_check CHECK (
+        kind IN ('adjustment', 'transfer_in', 'transfer_out')
+    )
+);
+
+CREATE TABLE IF NOT EXISTS payables (
+    id BIGSERIAL PRIMARY KEY,
+    counterparty_name TEXT NOT NULL,
+    title TEXT NOT NULL,
+    amount NUMERIC(14, 2) NOT NULL CHECK (amount > 0),
+    paid_amount NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (paid_amount >= 0),
+    status TEXT NOT NULL DEFAULT 'open',
+    source_type TEXT NOT NULL DEFAULT 'manual',
+    expense_id BIGINT REFERENCES expenses (id) ON DELETE SET NULL,
+    incurred_on DATE NOT NULL,
+    due_on DATE,
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    CONSTRAINT payables_status_check CHECK (status IN ('open', 'partial', 'paid', 'cancelled')),
+    CONSTRAINT payables_source_type_check CHECK (source_type IN ('manual', 'expense', 'referral', 'salary', 'other')),
+    CONSTRAINT payables_paid_not_over_amount CHECK (paid_amount <= amount)
+);
+
+CREATE TABLE IF NOT EXISTS refunds (
+    id BIGSERIAL PRIMARY KEY,
+    payment_id BIGINT REFERENCES payments (id) ON DELETE SET NULL,
+    user_id BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    account_id BIGINT REFERENCES cash_accounts (id) ON DELETE SET NULL,
+    refunded_on DATE NOT NULL,
+    amount NUMERIC(14, 2) NOT NULL CHECK (amount > 0),
+    net_amount NUMERIC(14, 2) NOT NULL CHECK (net_amount > 0),
+    status TEXT NOT NULL DEFAULT 'succeeded',
+    reason TEXT,
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    CONSTRAINT refunds_status_check CHECK (status IN ('pending', 'succeeded', 'failed', 'cancelled'))
+);
+
+CREATE TABLE IF NOT EXISTS profit_withdrawals (
+    id BIGSERIAL PRIMARY KEY,
+    account_id BIGINT REFERENCES cash_accounts (id) ON DELETE SET NULL,
+    withdrawn_on DATE NOT NULL,
+    amount NUMERIC(14, 2) NOT NULL CHECK (amount > 0),
+    recipient_name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'succeeded',
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    CONSTRAINT profit_withdrawals_status_check CHECK (
+        status IN ('planned', 'succeeded', 'cancelled')
+    )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_cash_accounts_one_default
+    ON cash_accounts (is_default)
+    WHERE is_default = TRUE;
+
+CREATE INDEX IF NOT EXISTS idx_expenses_payment_source ON expenses (payment_source);
+
+CREATE INDEX IF NOT EXISTS idx_cash_transactions_account_day
+    ON cash_transactions (account_id, occurred_on DESC);
+
+CREATE INDEX IF NOT EXISTS idx_payables_status ON payables (status);
+
+CREATE INDEX IF NOT EXISTS idx_refunds_refunded_on ON refunds (refunded_on DESC);
+
+CREATE INDEX IF NOT EXISTS idx_profit_withdrawals_withdrawn_on
+    ON profit_withdrawals (withdrawn_on DESC);
+
+INSERT INTO cash_accounts (name, kind, currency, opening_balance, opened_on, active, is_default)
+SELECT 'Расчетный счет', 'bank', 'RUB', 0, CURRENT_DATE, TRUE, TRUE
+WHERE NOT EXISTS (SELECT 1 FROM cash_accounts WHERE is_default = TRUE);

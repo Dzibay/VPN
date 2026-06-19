@@ -20,6 +20,13 @@ from app.core.dependencies import (
 from app.core.exceptions import BadRequestError
 from app.core.time import moscow_today
 from app.domain.models.accounting import (
+    CashAccountCreateBody,
+    CashAccountItem,
+    CashAccountPatchBody,
+    CashAccountsListResponse,
+    CashTransactionCreateBody,
+    CashTransactionItem,
+    CashTransactionsListResponse,
     ExpenseCategoriesListResponse,
     ExpenseCategoryCreateBody,
     ExpenseCategoryItem,
@@ -33,27 +40,55 @@ from app.domain.models.accounting import (
     FinanceAccountingSummaryResponse,
     FinanceSettings,
     FinanceSettingsPatch,
+    PayableCreateBody,
+    PayableItem,
+    PayablePatchBody,
+    PayablePaymentBody,
+    PayablesListResponse,
+    ProfitWithdrawalCreateBody,
+    ProfitWithdrawalItem,
+    ProfitWithdrawalPatchBody,
+    ProfitWithdrawalsListResponse,
     RecurringExpenseCreateBody,
     RecurringExpenseItem,
     RecurringExpensePatchBody,
     RecurringExpensesListResponse,
+    RefundCreateBody,
+    RefundItem,
+    RefundPatchBody,
+    RefundsListResponse,
 )
 from app.domain.services.accounting_service import (
+    create_cash_account,
+    create_cash_transaction,
     create_category,
     create_expense,
+    create_payable,
+    create_profit_withdrawal,
     create_recurring_expense,
+    create_refund,
     delete_category,
     delete_expenses_by_ids,
     delete_recurring_expense,
     get_accounting_summary,
     get_finance_settings,
+    list_cash_accounts,
+    list_cash_transactions,
     list_categories,
     list_expenses,
+    list_payables,
+    list_profit_withdrawals,
     list_recurring_expenses,
+    list_refunds,
+    pay_payable,
+    update_cash_account,
     update_category,
     update_expense,
     update_finance_settings,
+    update_payable,
+    update_profit_withdrawal,
     update_recurring_expense,
+    update_refund,
 )
 
 accounting_router = APIRouter(
@@ -226,6 +261,11 @@ async def get_expenses(
 async def post_expense(session: SessionDep, body: ExpenseCreateBody) -> ExpenseItem:
     try:
         return await create_expense(session, body)
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Для расхода, оплаченного человеком, укажите кто оплатил",
+        ) from err
     except LookupError as err:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -245,12 +285,17 @@ async def patch_expense(
 ) -> ExpenseItem:
     try:
         return await update_expense(session, expense_id, body)
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Для расхода, оплаченного человеком, укажите кто оплатил",
+        ) from err
     except LookupError as err:
         code = err.args[0] if err.args else ""
-        if code == "category_not_found":
+        if code in {"category_not_found", "cash_account_not_found"}:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Категория не найдена",
+                detail="Категория или счет не найдены",
             ) from err
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -353,3 +398,183 @@ async def remove_recurring(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Шаблон не найден",
         ) from err
+
+
+# --------------------------------------------------------------------------- #
+# Счета, долги, возвраты, вывод прибыли
+# --------------------------------------------------------------------------- #
+@accounting_router.get("/cash-accounts", response_model=CashAccountsListResponse)
+async def get_cash_accounts(session: ReadonlySessionDep) -> CashAccountsListResponse:
+    return CashAccountsListResponse(items=await list_cash_accounts(session))
+
+
+@accounting_router.post(
+    "/cash-accounts",
+    response_model=CashAccountItem,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin)],
+)
+async def post_cash_account(session: SessionDep, body: CashAccountCreateBody) -> CashAccountItem:
+    return await create_cash_account(session, body)
+
+
+@accounting_router.patch(
+    "/cash-accounts/{account_id}",
+    response_model=CashAccountItem,
+    dependencies=[Depends(require_admin)],
+)
+async def patch_cash_account(
+    session: SessionDep,
+    account_id: Annotated[int, Path(ge=1)],
+    body: CashAccountPatchBody,
+) -> CashAccountItem:
+    try:
+        return await update_cash_account(session, account_id, body)
+    except LookupError as err:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Счет не найден") from err
+
+
+@accounting_router.get("/cash-transactions", response_model=CashTransactionsListResponse)
+async def get_cash_transactions(
+    session: ReadonlySessionDep,
+    limit: Annotated[int, Query(ge=1, le=5000)] = 200,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> CashTransactionsListResponse:
+    items, total = await list_cash_transactions(session, limit=limit, offset=offset)
+    return CashTransactionsListResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@accounting_router.post(
+    "/cash-transactions",
+    response_model=CashTransactionItem,
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_cash_transaction(
+    session: SessionDep,
+    body: CashTransactionCreateBody,
+) -> CashTransactionItem:
+    try:
+        return await create_cash_transaction(session, body)
+    except LookupError as err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Счет не найден") from err
+
+
+@accounting_router.get("/payables", response_model=PayablesListResponse)
+async def get_payables(
+    session: ReadonlySessionDep,
+    limit: Annotated[int, Query(ge=1, le=5000)] = 200,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    status_filter: Annotated[str | None, Query(alias="status")] = None,
+) -> PayablesListResponse:
+    items, total = await list_payables(
+        session,
+        limit=limit,
+        offset=offset,
+        status_filter=status_filter,
+    )
+    return PayablesListResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@accounting_router.post(
+    "/payables",
+    response_model=PayableItem,
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_payable(session: SessionDep, body: PayableCreateBody) -> PayableItem:
+    return await create_payable(session, body)
+
+
+@accounting_router.patch("/payables/{payable_id}", response_model=PayableItem)
+async def patch_payable(
+    session: SessionDep,
+    payable_id: Annotated[int, Path(ge=1)],
+    body: PayablePatchBody,
+) -> PayableItem:
+    try:
+        return await update_payable(session, payable_id, body)
+    except LookupError as err:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Долг не найден") from err
+
+
+@accounting_router.post("/payables/{payable_id}/payments", response_model=PayableItem)
+async def post_payable_payment(
+    session: SessionDep,
+    payable_id: Annotated[int, Path(ge=1)],
+    body: PayablePaymentBody,
+) -> PayableItem:
+    try:
+        return await pay_payable(session, payable_id, body)
+    except ValueError as err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Некорректная сумма выплаты") from err
+    except LookupError as err:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Долг или счет не найден") from err
+
+
+@accounting_router.get("/refunds", response_model=RefundsListResponse)
+async def get_refunds(
+    session: ReadonlySessionDep,
+    limit: Annotated[int, Query(ge=1, le=5000)] = 200,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> RefundsListResponse:
+    items, total = await list_refunds(session, limit=limit, offset=offset)
+    return RefundsListResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@accounting_router.post("/refunds", response_model=RefundItem, status_code=status.HTTP_201_CREATED)
+async def post_refund(session: SessionDep, body: RefundCreateBody) -> RefundItem:
+    try:
+        return await create_refund(session, body)
+    except LookupError as err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Счет не найден") from err
+
+
+@accounting_router.patch("/refunds/{refund_id}", response_model=RefundItem)
+async def patch_refund(
+    session: SessionDep,
+    refund_id: Annotated[int, Path(ge=1)],
+    body: RefundPatchBody,
+) -> RefundItem:
+    try:
+        return await update_refund(session, refund_id, body)
+    except LookupError as err:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Возврат не найден") from err
+
+
+@accounting_router.get("/profit-withdrawals", response_model=ProfitWithdrawalsListResponse)
+async def get_profit_withdrawals(
+    session: ReadonlySessionDep,
+    limit: Annotated[int, Query(ge=1, le=5000)] = 200,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> ProfitWithdrawalsListResponse:
+    items, total = await list_profit_withdrawals(session, limit=limit, offset=offset)
+    return ProfitWithdrawalsListResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@accounting_router.post(
+    "/profit-withdrawals",
+    response_model=ProfitWithdrawalItem,
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_profit_withdrawal(
+    session: SessionDep,
+    body: ProfitWithdrawalCreateBody,
+) -> ProfitWithdrawalItem:
+    try:
+        return await create_profit_withdrawal(session, body)
+    except LookupError as err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Счет не найден") from err
+
+
+@accounting_router.patch(
+    "/profit-withdrawals/{withdrawal_id}",
+    response_model=ProfitWithdrawalItem,
+)
+async def patch_profit_withdrawal(
+    session: SessionDep,
+    withdrawal_id: Annotated[int, Path(ge=1)],
+    body: ProfitWithdrawalPatchBody,
+) -> ProfitWithdrawalItem:
+    try:
+        return await update_profit_withdrawal(session, withdrawal_id, body)
+    except LookupError as err:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Вывод не найден") from err

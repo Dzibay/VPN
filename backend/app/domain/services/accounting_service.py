@@ -11,6 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.request_subject import get_request_subject
 from app.core.time import utc_now
 from app.domain.models.accounting import (
+    CashAccountCreateBody,
+    CashAccountItem,
+    CashAccountPatchBody,
+    CashTransactionCreateBody,
+    CashTransactionItem,
     ExpenseCategoryCreateBody,
     ExpenseCategoryItem,
     ExpenseCategoryPatchBody,
@@ -18,6 +23,7 @@ from app.domain.models.accounting import (
     ExpenseItem,
     ExpensePatchBody,
     FinanceAccountingSummaryResponse,
+    FinanceCashPosition,
     FinanceCategoryTotal,
     FinanceDeferredSnapshot,
     FinanceUnlockSchedule,
@@ -26,13 +32,30 @@ from app.domain.models.accounting import (
     FinanceSettingsPatch,
     FinanceTaxInfo,
     FinanceTotals,
+    PayableCreateBody,
+    PayableItem,
+    PayablePatchBody,
+    PayablePaymentBody,
+    ProfitWithdrawalCreateBody,
+    ProfitWithdrawalItem,
+    ProfitWithdrawalPatchBody,
     RecurringExpenseCreateBody,
     RecurringExpenseItem,
     RecurringExpensePatchBody,
+    RefundCreateBody,
+    RefundItem,
+    RefundPatchBody,
 )
 from app.infrastructure.persistence.models.app_setting import AppSetting
 from app.infrastructure.persistence.models.expense import Expense
 from app.infrastructure.persistence.models.expense_category import ExpenseCategory
+from app.infrastructure.persistence.models.finance import (
+    CashAccount,
+    CashTransaction,
+    Payable,
+    ProfitWithdrawal,
+    Refund,
+)
 from app.infrastructure.persistence.models.recurring_expense import RecurringExpense
 
 _FINANCE_SETTINGS_KEY = "finance"
@@ -148,6 +171,45 @@ async def get_accounting_summary(
     gross_one = _decimal_list(raw.get("revenue_gross_one_time"), n)
     expenses = _decimal_list(raw.get("expenses_total"), n)
 
+    refund_stmt = text(
+        """
+        WITH months AS (
+            SELECT gs::date AS m_start
+            FROM generate_series(
+                date_trunc('month', CAST(:p_from AS date))::timestamp,
+                date_trunc('month', CAST(:p_to AS date))::timestamp,
+                interval '1 month'
+            ) AS gs
+        ),
+        refunds_by_month AS (
+            SELECT
+                date_trunc('month', r.refunded_on)::date AS m_start,
+                SUM(r.amount)::numeric(14, 2) AS gross,
+                SUM(r.net_amount)::numeric(14, 2) AS net
+            FROM refunds r
+            WHERE r.status = 'succeeded'
+              AND date_trunc('month', r.refunded_on)::date
+                  BETWEEN date_trunc('month', CAST(:p_from AS date))::date
+                      AND date_trunc('month', CAST(:p_to AS date))::date
+            GROUP BY 1
+        )
+        SELECT jsonb_build_object(
+            'gross', COALESCE((
+                SELECT jsonb_agg(COALESCE(r.gross, 0)::text ORDER BY m.m_start)
+                FROM months m LEFT JOIN refunds_by_month r ON r.m_start = m.m_start
+            ), '[]'::jsonb),
+            'net', COALESCE((
+                SELECT jsonb_agg(COALESCE(r.net, 0)::text ORDER BY m.m_start)
+                FROM months m LEFT JOIN refunds_by_month r ON r.m_start = m.m_start
+            ), '[]'::jsonb)
+        ) AS payload
+        """
+    )
+    refund_row = (await session.execute(refund_stmt, {"p_from": date_from, "p_to": date_to})).one()
+    refund_raw = refund_row.payload if isinstance(refund_row.payload, dict) else {}
+    refunds_gross = _decimal_list(refund_raw.get("gross"), n)
+    refunds_net = _decimal_list(refund_raw.get("net"), n)
+
     earned_net = _decimal_list(def_raw.get("earned_net"), n)
     earned_gross = _decimal_list(def_raw.get("earned_gross"), n)
     deferred_net_end = _decimal_list(def_raw.get("deferred_net_end"), n)
@@ -159,23 +221,27 @@ async def get_accounting_summary(
     tax: list[Decimal] = []
     profit: list[Decimal] = []
     for i in range(n):
+        net_after_refunds = net[i] - refunds_net[i]
+        gross_after_refunds = gross[i] - refunds_gross[i]
         if tax_zero:
             base = Decimal(0)
         elif settings.tax_base == "gross":
-            base = gross[i]
+            base = gross_after_refunds
         elif settings.tax_base == "net":
-            base = net[i]
+            base = net_after_refunds
         else:  # profit
-            base = max(Decimal(0), net[i] - expenses[i])
+            base = max(Decimal(0), net_after_refunds - expenses[i])
         t = (base * rate) if not tax_zero else Decimal(0)
         if t < 0:
             t = Decimal(0)
         tax.append(t)
-        profit.append(net[i] - expenses[i] - t)
+        profit.append(net_after_refunds - expenses[i] - t)
 
     # Итоги
     total_gross = sum(gross, Decimal(0))
     total_net = sum(net, Decimal(0))
+    total_refunds = sum(refunds_net, Decimal(0))
+    total_net_after_refunds = total_net - total_refunds
     total_commission = sum(commission, Decimal(0))
     total_expenses = sum(expenses, Decimal(0))
     total_tax = sum(tax, Decimal(0))
@@ -242,6 +308,21 @@ async def get_accounting_summary(
         ],
     )
 
+    period_withdrawn = await _sum_decimal(
+        session,
+        select(func.coalesce(func.sum(ProfitWithdrawal.amount), 0)).where(
+            ProfitWithdrawal.status == "succeeded",
+            ProfitWithdrawal.withdrawn_on >= date_from,
+            ProfitWithdrawal.withdrawn_on <= date_to,
+        ),
+    )
+    cash_position = await _build_cash_position(
+        session,
+        as_of=date_to,
+        deferred=deferred,
+        tax_reserved=total_tax,
+    )
+
     return FinanceAccountingSummaryResponse(
         range_from=date_from,
         range_to=date_to,
@@ -254,15 +335,118 @@ async def get_accounting_summary(
             revenue_gross=_money_str(total_gross),
             revenue_net=_money_str(total_net),
             psp_commission=_money_str(total_commission),
+            refunds_total=_money_str(total_refunds),
+            revenue_net_after_refunds=_money_str(total_net_after_refunds),
             expenses_total=_money_str(total_expenses),
             tax=_money_str(total_tax),
             profit_net=_money_str(total_profit),
+            profit_withdrawn=_money_str(period_withdrawn),
             margin_percent=str(margin.quantize(Decimal("0.1"))),
             payment_count=payment_count,
         ),
         tax=FinanceTaxInfo(mode=settings.tax_mode, rate=str(rate), base=settings.tax_base),
         deferred=deferred,
+        cash_position=cash_position,
         unlock=unlock,
+    )
+
+
+async def _sum_decimal(session: AsyncSession, stmt) -> Decimal:
+    return _to_decimal(await session.scalar(stmt))
+
+
+async def _build_cash_position(
+    session: AsyncSession,
+    *,
+    as_of: date,
+    deferred: FinanceDeferredSnapshot,
+    tax_reserved: Decimal,
+) -> FinanceCashPosition:
+    opening = await _sum_decimal(
+        session,
+        select(func.coalesce(func.sum(CashAccount.opening_balance), 0)).where(
+            CashAccount.opened_on <= as_of
+        ),
+    )
+    adjustments = await _sum_decimal(
+        session,
+        select(func.coalesce(func.sum(CashTransaction.amount), 0)).where(
+            CashTransaction.occurred_on <= as_of
+        ),
+    )
+    company_expenses_paid = await _sum_decimal(
+        session,
+        select(func.coalesce(func.sum(Expense.amount), 0)).where(
+            Expense.payment_source == "company",
+            Expense.incurred_on <= as_of,
+        ),
+    )
+    unpaid_expenses = await _sum_decimal(
+        session,
+        select(func.coalesce(func.sum(Expense.amount), 0)).where(
+            Expense.payment_source == "unpaid",
+            Expense.incurred_on <= as_of,
+        ),
+    )
+    payables_open = await _sum_decimal(
+        session,
+        select(func.coalesce(func.sum(Payable.amount - Payable.paid_amount), 0)).where(
+            Payable.status.in_(("open", "partial"))
+        ),
+    )
+    payables_paid = await _sum_decimal(
+        session,
+        select(func.coalesce(func.sum(Payable.paid_amount), 0)).where(
+            Payable.status.in_(("partial", "paid"))
+        ),
+    )
+    refunds = await _sum_decimal(
+        session,
+        select(func.coalesce(func.sum(Refund.net_amount), 0)).where(
+            Refund.status == "succeeded",
+            Refund.refunded_on <= as_of,
+        ),
+    )
+    withdrawals = await _sum_decimal(
+        session,
+        select(func.coalesce(func.sum(ProfitWithdrawal.amount), 0)).where(
+            ProfitWithdrawal.status == "succeeded",
+            ProfitWithdrawal.withdrawn_on <= as_of,
+        ),
+    )
+
+    received = _to_decimal(deferred.received_net)
+    earned = _to_decimal(deferred.earned_net)
+    frozen = _to_decimal(deferred.deferred_net)
+    cash_balance = (
+        opening
+        + received
+        + adjustments
+        - company_expenses_paid
+        - payables_paid
+        - refunds
+        - withdrawals
+    )
+    reserve_total = frozen + payables_open + unpaid_expenses + tax_reserved
+    withdrawable = cash_balance - reserve_total
+    if withdrawable < 0:
+        withdrawable = Decimal(0)
+
+    return FinanceCashPosition(
+        as_of=as_of,
+        cash_balance=_money_str(cash_balance),
+        cash_accounts_total=_money_str(opening),
+        cash_adjustments=_money_str(adjustments),
+        received_net=_money_str(received),
+        earned_net=_money_str(earned),
+        deferred_net=_money_str(frozen),
+        payables_open=_money_str(payables_open),
+        unpaid_expenses=_money_str(unpaid_expenses),
+        refunds_succeeded=_money_str(refunds),
+        profit_withdrawn=_money_str(withdrawals),
+        tax_reserved=_money_str(tax_reserved),
+        reserve_total=_money_str(reserve_total),
+        withdrawable_profit=_money_str(withdrawable),
     )
 
 
@@ -373,16 +557,38 @@ async def list_expenses(
 
 async def create_expense(session: AsyncSession, body: ExpenseCreateBody) -> ExpenseItem:
     await _ensure_category_exists(session, body.category_id)
+    await _ensure_cash_account_exists(session, body.cash_account_id)
+    paid_by = (body.paid_by_name or "").strip() or None
+    if body.payment_source == "person" and not paid_by:
+        raise ValueError("paid_by_name_required")
     row = Expense(
         incurred_on=body.incurred_on,
         amount=body.amount,
         category_id=body.category_id,
         title=body.title.strip(),
         note=(body.note or None),
+        payment_source=body.payment_source,
+        paid_by_name=paid_by,
+        cash_account_id=body.cash_account_id if body.payment_source == "company" else None,
+        paid_on=body.paid_on if body.payment_source == "company" else None,
         created_by=_current_user_id(),
     )
     session.add(row)
     await session.flush()
+    if body.payment_source == "person":
+        session.add(
+            Payable(
+                counterparty_name=paid_by or "Сотрудник",
+                title=row.title,
+                amount=row.amount,
+                source_type="expense",
+                expense_id=row.id,
+                incurred_on=row.incurred_on,
+                note=row.note,
+                created_by=_current_user_id(),
+            )
+        )
+        await session.flush()
     await session.refresh(row)
     return ExpenseItem.model_validate(row)
 
@@ -407,6 +613,46 @@ async def update_expense(
         row.title = str(data["title"]).strip()
     if "note" in data:
         row.note = data["note"] or None
+    if "payment_source" in data:
+        row.payment_source = data["payment_source"]
+    if "paid_by_name" in data:
+        row.paid_by_name = (data["paid_by_name"] or "").strip() or None
+    if "cash_account_id" in data:
+        await _ensure_cash_account_exists(session, data["cash_account_id"])
+        row.cash_account_id = data["cash_account_id"]
+    if "paid_on" in data:
+        row.paid_on = data["paid_on"]
+    if row.payment_source == "person" and not row.paid_by_name:
+        raise ValueError("paid_by_name_required")
+    if row.payment_source != "company":
+        row.cash_account_id = None
+        row.paid_on = None
+    existing_payable = await session.scalar(
+        select(Payable).where(Payable.source_type == "expense", Payable.expense_id == row.id)
+    )
+    if row.payment_source == "person":
+        if existing_payable is None:
+            session.add(
+                Payable(
+                    counterparty_name=row.paid_by_name or "Сотрудник",
+                    title=row.title,
+                    amount=row.amount,
+                    source_type="expense",
+                    expense_id=row.id,
+                    incurred_on=row.incurred_on,
+                    note=row.note,
+                    created_by=_current_user_id(),
+                )
+            )
+        elif existing_payable.status != "paid":
+            existing_payable.counterparty_name = row.paid_by_name or existing_payable.counterparty_name
+            existing_payable.title = row.title
+            existing_payable.amount = row.amount
+            existing_payable.incurred_on = row.incurred_on
+            existing_payable.note = row.note
+            existing_payable.status = _payable_status(existing_payable.amount, existing_payable.paid_amount)
+    elif existing_payable is not None and existing_payable.status != "paid":
+        existing_payable.status = "cancelled"
     await session.flush()
     await session.refresh(row)
     return ExpenseItem.model_validate(row)
@@ -501,3 +747,312 @@ async def _ensure_category_exists(session: AsyncSession, category_id: int | None
         return
     if await session.get(ExpenseCategory, category_id) is None:
         raise LookupError("category_not_found")
+
+
+async def _ensure_cash_account_exists(session: AsyncSession, account_id: int | None) -> None:
+    if account_id is None:
+        return
+    if await session.get(CashAccount, account_id) is None:
+        raise LookupError("cash_account_not_found")
+
+
+# --------------------------------------------------------------------------- #
+# Счета и ручные кассовые корректировки
+# --------------------------------------------------------------------------- #
+async def list_cash_accounts(session: AsyncSession) -> list[CashAccountItem]:
+    rows = (
+        await session.scalars(
+            select(CashAccount).order_by(CashAccount.active.desc(), CashAccount.id.asc())
+        )
+    ).all()
+    return [CashAccountItem.model_validate(r) for r in rows]
+
+
+async def create_cash_account(session: AsyncSession, body: CashAccountCreateBody) -> CashAccountItem:
+    row = CashAccount(
+        name=body.name.strip(),
+        kind=body.kind,
+        currency=body.currency.strip() or "RUB",
+        opening_balance=body.opening_balance,
+        opened_on=body.opened_on,
+        active=body.active,
+        is_default=body.is_default,
+        created_by=_current_user_id(),
+    )
+    if body.is_default:
+        await session.execute(
+            text("UPDATE cash_accounts SET is_default = FALSE WHERE is_default = TRUE")
+        )
+    session.add(row)
+    await session.flush()
+    await session.refresh(row)
+    return CashAccountItem.model_validate(row)
+
+
+async def update_cash_account(
+    session: AsyncSession,
+    account_id: int,
+    patch: CashAccountPatchBody,
+) -> CashAccountItem:
+    row = await session.get(CashAccount, account_id)
+    if row is None:
+        raise LookupError("cash_account_not_found")
+    data = patch.model_dump(exclude_unset=True)
+    if data.get("is_default") is True:
+        await session.execute(
+            text("UPDATE cash_accounts SET is_default = FALSE WHERE is_default = TRUE AND id <> :id"),
+            {"id": account_id},
+        )
+    for key, value in data.items():
+        if key == "name":
+            value = str(value).strip()
+        if key == "currency":
+            value = str(value).strip() or "RUB"
+        setattr(row, key, value)
+    await session.flush()
+    await session.refresh(row)
+    return CashAccountItem.model_validate(row)
+
+
+async def list_cash_transactions(
+    session: AsyncSession,
+    *,
+    limit: int,
+    offset: int,
+) -> tuple[list[CashTransactionItem], int]:
+    total = int(await session.scalar(select(func.count()).select_from(CashTransaction)) or 0)
+    rows = (
+        await session.scalars(
+            select(CashTransaction)
+            .order_by(CashTransaction.occurred_on.desc(), CashTransaction.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    ).all()
+    return [CashTransactionItem.model_validate(r) for r in rows], total
+
+
+async def create_cash_transaction(
+    session: AsyncSession,
+    body: CashTransactionCreateBody,
+) -> CashTransactionItem:
+    await _ensure_cash_account_exists(session, body.account_id)
+    row = CashTransaction(
+        account_id=body.account_id,
+        occurred_on=body.occurred_on,
+        amount=body.amount,
+        kind=body.kind,
+        title=body.title.strip(),
+        note=(body.note or None),
+        created_by=_current_user_id(),
+    )
+    session.add(row)
+    await session.flush()
+    await session.refresh(row)
+    return CashTransactionItem.model_validate(row)
+
+
+# --------------------------------------------------------------------------- #
+# Долги, возвраты, вывод прибыли
+# --------------------------------------------------------------------------- #
+async def list_payables(
+    session: AsyncSession,
+    *,
+    limit: int,
+    offset: int,
+    status_filter: str | None = None,
+) -> tuple[list[PayableItem], int]:
+    conds = []
+    if status_filter:
+        conds.append(Payable.status == status_filter)
+    count_stmt = select(func.count()).select_from(Payable)
+    list_stmt = select(Payable)
+    if conds:
+        count_stmt = count_stmt.where(*conds)
+        list_stmt = list_stmt.where(*conds)
+    total = int(await session.scalar(count_stmt) or 0)
+    rows = (
+        await session.scalars(
+            list_stmt.order_by(Payable.status.asc(), Payable.incurred_on.desc(), Payable.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    ).all()
+    return [PayableItem.model_validate(r) for r in rows], total
+
+
+async def create_payable(session: AsyncSession, body: PayableCreateBody) -> PayableItem:
+    row = Payable(
+        counterparty_name=body.counterparty_name.strip(),
+        title=body.title.strip(),
+        amount=body.amount,
+        source_type=body.source_type,
+        expense_id=body.expense_id,
+        incurred_on=body.incurred_on,
+        due_on=body.due_on,
+        note=(body.note or None),
+        created_by=_current_user_id(),
+    )
+    session.add(row)
+    await session.flush()
+    await session.refresh(row)
+    return PayableItem.model_validate(row)
+
+
+def _payable_status(amount: Decimal, paid: Decimal) -> str:
+    if paid <= 0:
+        return "open"
+    if paid >= amount:
+        return "paid"
+    return "partial"
+
+
+async def update_payable(
+    session: AsyncSession,
+    payable_id: int,
+    patch: PayablePatchBody,
+) -> PayableItem:
+    row = await session.get(Payable, payable_id)
+    if row is None:
+        raise LookupError("payable_not_found")
+    data = patch.model_dump(exclude_unset=True)
+    for key, value in data.items():
+        if key in {"counterparty_name", "title"}:
+            value = str(value).strip()
+        if key == "note":
+            value = value or None
+        setattr(row, key, value)
+    if row.status != "cancelled":
+        row.status = _payable_status(row.amount, row.paid_amount)
+    await session.flush()
+    await session.refresh(row)
+    return PayableItem.model_validate(row)
+
+
+async def pay_payable(
+    session: AsyncSession,
+    payable_id: int,
+    body: PayablePaymentBody,
+) -> PayableItem:
+    row = await session.get(Payable, payable_id)
+    if row is None:
+        raise LookupError("payable_not_found")
+    if row.status == "cancelled":
+        raise ValueError("payable_cancelled")
+    await _ensure_cash_account_exists(session, body.account_id)
+    new_paid = row.paid_amount + body.amount
+    if new_paid > row.amount:
+        raise ValueError("payable_overpaid")
+    row.paid_amount = new_paid
+    row.status = _payable_status(row.amount, row.paid_amount)
+    await session.flush()
+    await session.refresh(row)
+    return PayableItem.model_validate(row)
+
+
+async def list_refunds(
+    session: AsyncSession,
+    *,
+    limit: int,
+    offset: int,
+) -> tuple[list[RefundItem], int]:
+    total = int(await session.scalar(select(func.count()).select_from(Refund)) or 0)
+    rows = (
+        await session.scalars(
+            select(Refund)
+            .order_by(Refund.refunded_on.desc(), Refund.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    ).all()
+    return [RefundItem.model_validate(r) for r in rows], total
+
+
+async def create_refund(session: AsyncSession, body: RefundCreateBody) -> RefundItem:
+    await _ensure_cash_account_exists(session, body.account_id)
+    row = Refund(
+        payment_id=body.payment_id,
+        user_id=body.user_id,
+        account_id=body.account_id,
+        refunded_on=body.refunded_on,
+        amount=body.amount,
+        net_amount=body.net_amount or body.amount,
+        status=body.status,
+        reason=(body.reason or None),
+        note=(body.note or None),
+        created_by=_current_user_id(),
+    )
+    session.add(row)
+    await session.flush()
+    await session.refresh(row)
+    return RefundItem.model_validate(row)
+
+
+async def update_refund(
+    session: AsyncSession,
+    refund_id: int,
+    patch: RefundPatchBody,
+) -> RefundItem:
+    row = await session.get(Refund, refund_id)
+    if row is None:
+        raise LookupError("refund_not_found")
+    data = patch.model_dump(exclude_unset=True)
+    for key, value in data.items():
+        setattr(row, key, value or None if key in {"reason", "note"} else value)
+    await session.flush()
+    await session.refresh(row)
+    return RefundItem.model_validate(row)
+
+
+async def list_profit_withdrawals(
+    session: AsyncSession,
+    *,
+    limit: int,
+    offset: int,
+) -> tuple[list[ProfitWithdrawalItem], int]:
+    total = int(await session.scalar(select(func.count()).select_from(ProfitWithdrawal)) or 0)
+    rows = (
+        await session.scalars(
+            select(ProfitWithdrawal)
+            .order_by(ProfitWithdrawal.withdrawn_on.desc(), ProfitWithdrawal.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    ).all()
+    return [ProfitWithdrawalItem.model_validate(r) for r in rows], total
+
+
+async def create_profit_withdrawal(
+    session: AsyncSession,
+    body: ProfitWithdrawalCreateBody,
+) -> ProfitWithdrawalItem:
+    await _ensure_cash_account_exists(session, body.account_id)
+    row = ProfitWithdrawal(
+        account_id=body.account_id,
+        withdrawn_on=body.withdrawn_on,
+        amount=body.amount,
+        recipient_name=body.recipient_name.strip(),
+        status=body.status,
+        note=(body.note or None),
+        created_by=_current_user_id(),
+    )
+    session.add(row)
+    await session.flush()
+    await session.refresh(row)
+    return ProfitWithdrawalItem.model_validate(row)
+
+
+async def update_profit_withdrawal(
+    session: AsyncSession,
+    withdrawal_id: int,
+    patch: ProfitWithdrawalPatchBody,
+) -> ProfitWithdrawalItem:
+    row = await session.get(ProfitWithdrawal, withdrawal_id)
+    if row is None:
+        raise LookupError("withdrawal_not_found")
+    data = patch.model_dump(exclude_unset=True)
+    for key, value in data.items():
+        setattr(row, key, value or None if key == "note" else value)
+    await session.flush()
+    await session.refresh(row)
+    return ProfitWithdrawalItem.model_validate(row)

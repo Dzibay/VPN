@@ -117,13 +117,28 @@ snap_raw AS (
     FROM thaw_frac tf
     WHERE tf.eval_d = (SELECT as_of FROM params)
 ),
+refund_snap AS (
+    SELECT
+        COALESCE(SUM(r.net_amount), 0)::numeric(14, 2) AS refunded_net,
+        COALESCE(SUM(r.amount), 0)::numeric(14, 2) AS refunded_gross
+    FROM refunds r
+    WHERE r.status = 'succeeded'
+      AND r.refunded_on <= (SELECT as_of FROM params)
+),
 snap AS (
     SELECT
-        received_net,
-        received_gross,
-        LEAST(earned_net_raw, received_net)::numeric(14, 2) AS earned_net,
-        LEAST(earned_gross_raw, received_gross)::numeric(14, 2) AS earned_gross
+        GREATEST(received_net - refunded_net, 0)::numeric(14, 2) AS received_net,
+        GREATEST(received_gross - refunded_gross, 0)::numeric(14, 2) AS received_gross,
+        LEAST(
+            GREATEST(earned_net_raw - refunded_net, 0),
+            GREATEST(received_net - refunded_net, 0)
+        )::numeric(14, 2) AS earned_net,
+        LEAST(
+            GREATEST(earned_gross_raw - refunded_gross, 0),
+            GREATEST(received_gross - refunded_gross, 0)
+        )::numeric(14, 2) AS earned_gross
     FROM snap_raw
+    CROSS JOIN refund_snap
 ),
 -- Как users_daily_stats.subscription_active_by_day, но только с хотя бы одной оплатой (months > 0).
 -- На графике «с активной подпиской» триал и продление без платежа тоже входят — число может быть выше.

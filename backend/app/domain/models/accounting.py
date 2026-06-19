@@ -10,6 +10,11 @@ from pydantic import BaseModel, Field, model_validator
 
 TaxMode = Literal["npd", "usn_income", "usn_profit", "none", "custom"]
 TaxBase = Literal["gross", "net", "profit"]
+CashAccountKind = Literal["bank", "psp", "cash", "person", "other"]
+ExpensePaymentSource = Literal["company", "person", "unpaid"]
+PayableStatus = Literal["open", "partial", "paid", "cancelled"]
+RefundStatus = Literal["pending", "succeeded", "failed", "cancelled"]
+ProfitWithdrawalStatus = Literal["planned", "succeeded", "cancelled"]
 
 
 # --------------------------------------------------------------------------- #
@@ -90,6 +95,10 @@ class ExpenseItem(BaseModel):
     category_id: int | None = None
     title: str
     note: str | None = None
+    payment_source: ExpensePaymentSource = "company"
+    paid_by_name: str | None = None
+    cash_account_id: int | None = None
+    paid_on: date | None = None
     created_at: datetime
 
 
@@ -99,6 +108,13 @@ class ExpenseCreateBody(BaseModel):
     category_id: int | None = Field(default=None, ge=1)
     title: str = Field(min_length=1, max_length=200)
     note: str | None = Field(default=None, max_length=2000)
+    payment_source: ExpensePaymentSource = Field(
+        default="company",
+        description="company — оплатили со счета; person — оплатил человек, создается долг; unpaid — начислено, но не оплачено",
+    )
+    paid_by_name: str | None = Field(default=None, max_length=200)
+    cash_account_id: int | None = Field(default=None, ge=1)
+    paid_on: date | None = None
 
 
 class ExpensePatchBody(BaseModel):
@@ -107,6 +123,10 @@ class ExpensePatchBody(BaseModel):
     category_id: int | None = Field(default=None, ge=1)
     title: str | None = Field(default=None, min_length=1, max_length=200)
     note: str | None = Field(default=None, max_length=2000)
+    payment_source: ExpensePaymentSource | None = None
+    paid_by_name: str | None = Field(default=None, max_length=200)
+    cash_account_id: int | None = Field(default=None, ge=1)
+    paid_on: date | None = None
 
     @model_validator(mode="after")
     def at_least_one_field(self) -> ExpensePatchBody:
@@ -128,6 +148,226 @@ class ExpensesBulkDeleteBody(BaseModel):
 
 class ExpensesBulkDeleteResponse(BaseModel):
     deleted_count: int
+
+
+# --------------------------------------------------------------------------- #
+# Управленческий cash/liability ledger
+# --------------------------------------------------------------------------- #
+class CashAccountItem(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    name: str
+    kind: CashAccountKind
+    currency: str
+    opening_balance: Decimal
+    opened_on: date
+    active: bool
+    is_default: bool
+    created_at: datetime
+
+
+class CashAccountCreateBody(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    kind: CashAccountKind = "bank"
+    currency: str = Field(default="RUB", max_length=8)
+    opening_balance: Decimal = Field(default=Decimal("0"), ge=0)
+    opened_on: date
+    active: bool = True
+    is_default: bool = False
+
+
+class CashAccountPatchBody(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    kind: CashAccountKind | None = None
+    currency: str | None = Field(default=None, max_length=8)
+    opening_balance: Decimal | None = Field(default=None, ge=0)
+    opened_on: date | None = None
+    active: bool | None = None
+    is_default: bool | None = None
+
+    @model_validator(mode="after")
+    def at_least_one_field(self) -> CashAccountPatchBody:
+        if not self.model_fields_set:
+            raise ValueError("Укажите хотя бы одно поле для обновления")
+        return self
+
+
+class CashAccountsListResponse(BaseModel):
+    items: list[CashAccountItem]
+
+
+class CashTransactionItem(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    account_id: int
+    occurred_on: date
+    amount: Decimal
+    kind: Literal["adjustment", "transfer_in", "transfer_out"]
+    title: str
+    note: str | None = None
+    created_at: datetime
+
+
+class CashTransactionCreateBody(BaseModel):
+    account_id: int = Field(ge=1)
+    occurred_on: date
+    amount: Decimal = Field(description="Плюс — поступление/корректировка вверх, минус — списание/корректировка вниз")
+    kind: Literal["adjustment", "transfer_in", "transfer_out"] = "adjustment"
+    title: str = Field(min_length=1, max_length=200)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class CashTransactionsListResponse(BaseModel):
+    items: list[CashTransactionItem]
+    total: int = Field(ge=0)
+    limit: int
+    offset: int
+
+
+class PayableItem(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    counterparty_name: str
+    title: str
+    amount: Decimal
+    paid_amount: Decimal
+    status: PayableStatus
+    source_type: Literal["manual", "expense", "referral", "salary", "other"]
+    expense_id: int | None = None
+    incurred_on: date
+    due_on: date | None = None
+    note: str | None = None
+    created_at: datetime
+
+
+class PayableCreateBody(BaseModel):
+    counterparty_name: str = Field(min_length=1, max_length=200)
+    title: str = Field(min_length=1, max_length=200)
+    amount: Decimal = Field(gt=0)
+    source_type: Literal["manual", "expense", "referral", "salary", "other"] = "manual"
+    expense_id: int | None = Field(default=None, ge=1)
+    incurred_on: date
+    due_on: date | None = None
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class PayablePatchBody(BaseModel):
+    counterparty_name: str | None = Field(default=None, min_length=1, max_length=200)
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    amount: Decimal | None = Field(default=None, gt=0)
+    status: PayableStatus | None = None
+    due_on: date | None = None
+    note: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def at_least_one_field(self) -> PayablePatchBody:
+        if not self.model_fields_set:
+            raise ValueError("Укажите хотя бы одно поле для обновления")
+        return self
+
+
+class PayablePaymentBody(BaseModel):
+    amount: Decimal = Field(gt=0)
+    paid_on: date
+    account_id: int | None = Field(default=None, ge=1)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class PayablesListResponse(BaseModel):
+    items: list[PayableItem]
+    total: int = Field(ge=0)
+    limit: int
+    offset: int
+
+
+class RefundItem(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    payment_id: int | None = None
+    user_id: int | None = None
+    account_id: int | None = None
+    refunded_on: date
+    amount: Decimal
+    net_amount: Decimal
+    status: RefundStatus
+    reason: str | None = None
+    note: str | None = None
+    created_at: datetime
+
+
+class RefundCreateBody(BaseModel):
+    payment_id: int | None = Field(default=None, ge=1)
+    user_id: int | None = Field(default=None, ge=1)
+    account_id: int | None = Field(default=None, ge=1)
+    refunded_on: date
+    amount: Decimal = Field(gt=0)
+    net_amount: Decimal | None = Field(default=None, gt=0)
+    status: RefundStatus = "succeeded"
+    reason: str | None = Field(default=None, max_length=500)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class RefundPatchBody(BaseModel):
+    status: RefundStatus | None = None
+    reason: str | None = Field(default=None, max_length=500)
+    note: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def at_least_one_field(self) -> RefundPatchBody:
+        if not self.model_fields_set:
+            raise ValueError("Укажите хотя бы одно поле для обновления")
+        return self
+
+
+class RefundsListResponse(BaseModel):
+    items: list[RefundItem]
+    total: int = Field(ge=0)
+    limit: int
+    offset: int
+
+
+class ProfitWithdrawalItem(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    account_id: int | None = None
+    withdrawn_on: date
+    amount: Decimal
+    recipient_name: str
+    status: ProfitWithdrawalStatus
+    note: str | None = None
+    created_at: datetime
+
+
+class ProfitWithdrawalCreateBody(BaseModel):
+    account_id: int | None = Field(default=None, ge=1)
+    withdrawn_on: date
+    amount: Decimal = Field(gt=0)
+    recipient_name: str = Field(min_length=1, max_length=200)
+    status: ProfitWithdrawalStatus = "succeeded"
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class ProfitWithdrawalPatchBody(BaseModel):
+    status: ProfitWithdrawalStatus | None = None
+    note: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def at_least_one_field(self) -> ProfitWithdrawalPatchBody:
+        if not self.model_fields_set:
+            raise ValueError("Укажите хотя бы одно поле для обновления")
+        return self
+
+
+class ProfitWithdrawalsListResponse(BaseModel):
+    items: list[ProfitWithdrawalItem]
+    total: int = Field(ge=0)
+    limit: int
+    offset: int
 
 
 # --------------------------------------------------------------------------- #
@@ -248,11 +488,33 @@ class FinanceTotals(BaseModel):
     revenue_gross: str
     revenue_net: str
     psp_commission: str
+    refunds_total: str = "0.00"
+    revenue_net_after_refunds: str = "0.00"
     expenses_total: str
     tax: str
     profit_net: str
+    profit_withdrawn: str = "0.00"
     margin_percent: str = Field(description="Маржа = чистая прибыль / валовая выручка, в процентах")
     payment_count: int = Field(ge=0)
+
+
+class FinanceCashPosition(BaseModel):
+    """Управленческий снимок: cash, заморозка, долги и доступность вывода."""
+
+    as_of: date
+    cash_balance: str
+    cash_accounts_total: str
+    cash_adjustments: str
+    received_net: str
+    earned_net: str
+    deferred_net: str
+    payables_open: str
+    unpaid_expenses: str
+    refunds_succeeded: str
+    profit_withdrawn: str
+    tax_reserved: str
+    withdrawable_profit: str
+    reserve_total: str
 
 
 class FinanceTaxInfo(BaseModel):
@@ -272,4 +534,5 @@ class FinanceAccountingSummaryResponse(BaseModel):
     totals: FinanceTotals
     tax: FinanceTaxInfo
     deferred: FinanceDeferredSnapshot
+    cash_position: FinanceCashPosition
     unlock: FinanceUnlockSchedule = Field(default_factory=FinanceUnlockSchedule)

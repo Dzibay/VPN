@@ -200,16 +200,20 @@ function categoryShare(value) {
 }
 
 const profitNegative = computed(() => num(totals.value?.profit_net) < 0)
+const cashPosition = computed(() => data.value?.cash_position ?? null)
+const withdrawableNegative = computed(() => num(cashPosition.value?.withdrawable_profit) <= 0)
 
 const kpiCards = computed(() => {
   const t = totals.value
   if (!t) return []
   return [
     { key: 'gross', label: 'Валовая выручка', value: money(t.revenue_gross), sub: `Чистая: ${money(t.revenue_net)} ₽`, tone: 'revenue' },
+    { key: 'refunds', label: 'Возвраты', value: money(t.refunds_total), sub: `Net после: ${money(t.revenue_net_after_refunds)} ₽`, tone: 'expense' },
     { key: 'commission', label: 'Комиссии PSP', value: money(t.psp_commission), sub: 'эквайринг', tone: 'muted' },
     { key: 'expenses', label: 'Расходы', value: money(t.expenses_total), sub: 'операционные', tone: 'expense' },
     { key: 'tax', label: 'Налог', value: money(t.tax), sub: tax.value?.mode === 'none' ? '—' : `${taxRatePercent.value}%`, tone: 'muted' },
     { key: 'profit', label: 'Чистая прибыль', value: money(t.profit_net), sub: `Маржа: ${t.margin_percent}%`, tone: profitNegative.value ? 'loss' : 'profit' },
+    { key: 'withdrawable', label: 'Можно вывести', value: money(cashPosition.value?.withdrawable_profit), sub: `Выведено: ${money(t.profit_withdrawn)} ₽`, tone: withdrawableNegative.value ? 'loss' : 'profit' },
   ]
 })
 
@@ -347,6 +351,38 @@ defineExpose({ reload: load })
       </div>
     </section>
 
+    <section
+      v-if="cashPosition"
+      class="money-position"
+      aria-label="Управленческая касса и доступность вывода"
+    >
+      <div class="mp-head">
+        <h3 class="mp-title">Касса и вывод прибыли</h3>
+        <span class="mp-asof">на {{ fmtAsOf(cashPosition.as_of) }}</span>
+      </div>
+      <div class="mp-cards">
+        <article class="mp-card mp-card--received">
+          <p class="mp-label">Остаток денег</p>
+          <p class="mp-value">{{ money(cashPosition.cash_balance) }}&nbsp;<span class="mp-cur">₽</span></p>
+          <p class="mp-sub">Поступления − расходы − возвраты − долги − выводы</p>
+        </article>
+        <article class="mp-card mp-card--frozen">
+          <p class="mp-label">Резервы и обязательства</p>
+          <p class="mp-value">{{ money(cashPosition.reserve_total) }}&nbsp;<span class="mp-cur">₽</span></p>
+          <p class="mp-sub">
+            Заморозка {{ money(cashPosition.deferred_net) }} · долги {{ money(cashPosition.payables_open) }} · налог {{ money(cashPosition.tax_reserved) }}
+          </p>
+        </article>
+        <article class="mp-card mp-card--free">
+          <p class="mp-label">Доступно к выводу</p>
+          <p class="mp-value">{{ money(cashPosition.withdrawable_profit) }}&nbsp;<span class="mp-cur">₽</span></p>
+          <p class="mp-sub">
+            Неоплаченные расходы: {{ money(cashPosition.unpaid_expenses) }} · уже выведено {{ money(cashPosition.profit_withdrawn) }}
+          </p>
+        </article>
+      </div>
+    </section>
+
     <div class="grid-2">
       <section class="panel pl-panel" aria-label="Отчёт о прибылях и убытках">
         <h3 class="panel-title">Прибыли и убытки (P&amp;L)</h3>
@@ -363,6 +399,14 @@ defineExpose({ reload: load })
             <tr class="pl-subtotal">
               <td class="pl-name">= Чистая выручка</td>
               <td class="pl-amount">{{ money(totals.revenue_net) }} ₽</td>
+            </tr>
+            <tr>
+              <td class="pl-name">− Возвраты клиентам</td>
+              <td class="pl-amount pl-neg">−{{ money(totals.refunds_total) }} ₽</td>
+            </tr>
+            <tr class="pl-subtotal">
+              <td class="pl-name">= Чистая выручка после возвратов</td>
+              <td class="pl-amount">{{ money(totals.revenue_net_after_refunds) }} ₽</td>
             </tr>
             <tr>
               <td class="pl-name">− Операционные расходы</td>

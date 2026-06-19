@@ -27,6 +27,8 @@ const categoriesById = computed(() => {
   return m
 })
 const activeCategories = computed(() => categories.value.filter((c) => !c.archived))
+const cashAccounts = ref([])
+const activeCashAccounts = computed(() => cashAccounts.value.filter((a) => a.active))
 
 // --- разовые ---
 const expenses = ref([])
@@ -53,7 +55,7 @@ const bulk = useAdminTableBulkSelect({
   rowIdsOnPage: expRowIdsOnPage,
   enabled: isAdmin,
 })
-const expTableColspan = computed(() => 5 + (bulk.canBulkSelect ? 1 : 0))
+const expTableColspan = computed(() => 7 + (bulk.canBulkSelect ? 1 : 0))
 
 // --- повторяющиеся ---
 const recurring = ref([])
@@ -70,7 +72,18 @@ const recFormError = ref(null)
 const recForm = ref(blankRecurringForm())
 
 function blankExpenseForm() {
-  return { id: null, incurred_on: mskTodayIso(), amount: '', category_id: '', title: '', note: '' }
+  return {
+    id: null,
+    incurred_on: mskTodayIso(),
+    amount: '',
+    category_id: '',
+    title: '',
+    payment_source: 'company',
+    paid_by_name: '',
+    cash_account_id: '',
+    paid_on: mskTodayIso(),
+    note: '',
+  }
 }
 function blankRecurringForm() {
   return {
@@ -114,6 +127,15 @@ function categoryColor(id) {
   if (id == null) return '#94a3b8'
   return categoriesById.value.get(id)?.color ?? '#94a3b8'
 }
+function paymentSourceLabel(row) {
+  if (row.payment_source === 'person') return `Оплатил: ${row.paid_by_name || 'человек'}`
+  if (row.payment_source === 'unpaid') return 'Начислено, не оплачено'
+  return 'С расчетника'
+}
+function accountLabel(id) {
+  if (id == null) return 'По умолчанию'
+  return cashAccounts.value.find((a) => Number(a.id) === Number(id))?.name ?? 'Счет'
+}
 
 function onExpenseRowClick(row, event) {
   if (!bulk.selectionMode) return
@@ -130,6 +152,10 @@ async function loadCategories() {
   const data = await fetchJson('/api/admin/accounting/categories')
   categories.value = Array.isArray(data?.items) ? data.items : []
 }
+async function loadCashAccounts() {
+  const data = await fetchJson('/api/admin/accounting/cash-accounts')
+  cashAccounts.value = Array.isArray(data?.items) ? data.items : []
+}
 async function loadExpenses() {
   const params = new URLSearchParams({ limit: String(expLimit), offset: String(expOffset.value) })
   const data = await fetchJson(`/api/admin/accounting/expenses?${params.toString()}`)
@@ -145,7 +171,7 @@ async function loadAll() {
   loading.value = true
   error.value = null
   try {
-    await Promise.all([loadCategories(), loadExpenses(), loadRecurring()])
+    await Promise.all([loadCategories(), loadCashAccounts(), loadExpenses(), loadRecurring()])
   } catch (e) {
     error.value = e.message || String(e)
   } finally {
@@ -166,6 +192,10 @@ function openExpenseEdit(row) {
     amount: String(row.amount),
     category_id: row.category_id ?? '',
     title: row.title ?? '',
+    payment_source: row.payment_source || 'company',
+    paid_by_name: row.paid_by_name ?? '',
+    cash_account_id: row.cash_account_id ?? '',
+    paid_on: row.paid_on ? String(row.paid_on).slice(0, 10) : String(row.incurred_on).slice(0, 10),
     note: row.note ?? '',
   }
   expFormError.value = null
@@ -196,7 +226,15 @@ async function submitExpense() {
     amount,
     category_id: f.category_id === '' ? null : Number(f.category_id),
     title: String(f.title).trim(),
+    payment_source: f.payment_source,
+    paid_by_name: f.payment_source === 'person' ? String(f.paid_by_name).trim() : null,
+    cash_account_id: f.payment_source === 'company' && f.cash_account_id !== '' ? Number(f.cash_account_id) : null,
+    paid_on: f.payment_source === 'company' ? f.paid_on || f.incurred_on : null,
     note: String(f.note).trim() || null,
+  }
+  if (f.payment_source === 'person' && !body.paid_by_name) {
+    expFormError.value = 'Укажите, кто оплатил расход.'
+    return
   }
   expSaving.value = true
   expFormError.value = null
@@ -411,6 +449,8 @@ defineExpose({ reload: loadAll })
             <th>Дата</th>
             <th>Категория</th>
             <th>Название</th>
+            <th>Оплата</th>
+            <th>Счет</th>
             <th class="num">Сумма, ₽</th>
             <th class="th-actions">Действия</th>
           </tr>
@@ -446,6 +486,12 @@ defineExpose({ reload: loadAll })
               <span class="exp-title">{{ row.title }}</span>
               <span v-if="row.note" class="exp-note" :title="row.note">{{ row.note }}</span>
             </td>
+            <td>
+              <span class="pill" :class="row.payment_source === 'company' ? 'pill--on' : 'pill--off'">
+                {{ paymentSourceLabel(row) }}
+              </span>
+            </td>
+            <td class="date-cell">{{ row.payment_source === 'company' ? accountLabel(row.cash_account_id) : '—' }}</td>
             <td class="num">{{ money(row.amount) }}</td>
             <td class="td-actions">
               <button type="button" class="btn-icon" title="Редактировать" @click="openExpenseEdit(row)">✎</button>
@@ -554,6 +600,31 @@ defineExpose({ reload: loadAll })
       <label class="field">
         <span>Сумма, ₽</span>
         <input v-model="expForm.amount" type="text" inputmode="decimal" class="input-like" placeholder="Например 1500" />
+      </label>
+      <label class="field">
+        <span>Кто оплатил</span>
+        <select v-model="expForm.payment_source" class="input-like">
+          <option value="company">Оплата с расчетника / счета компании</option>
+          <option value="person">Оплатил человек, создать долг организации</option>
+          <option value="unpaid">Начислено, пока не оплачено</option>
+        </select>
+      </label>
+      <div v-if="expForm.payment_source === 'company'" class="field-row">
+        <label class="field">
+          <span>Счет списания</span>
+          <select v-model="expForm.cash_account_id" class="input-like">
+            <option value="">Дефолтный расчетный счет</option>
+            <option v-for="a in activeCashAccounts" :key="a.id" :value="a.id">{{ a.name }}</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Дата оплаты</span>
+          <input v-model="expForm.paid_on" type="date" class="input-like" />
+        </label>
+      </div>
+      <label v-if="expForm.payment_source === 'person'" class="field">
+        <span>Кто оплатил</span>
+        <input v-model="expForm.paid_by_name" type="text" class="input-like" placeholder="Напр. Александр" />
       </label>
       <label class="field">
         <span>Комментарий (необязательно)</span>
