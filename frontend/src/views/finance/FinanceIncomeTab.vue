@@ -24,6 +24,8 @@ const error = ref(null)
  * }>}
  */
 const summary = ref(null)
+/** Дневная сводка для средних (UTC); при режиме «По дням» совпадает с summary. */
+const dailySummary = ref(null)
 
 /** «cash» — вся сумма в месяце платежа; «spread» — net_amount/months по месяцам подписки; «daily» — по дням UTC. */
 const chartDistribution = ref(/** @type {'cash' | 'spread' | 'daily'} */ ('daily'))
@@ -112,17 +114,89 @@ const totalFormatted = computed(() => {
     ? summary.value?.grand_total
     : summary.value?.grand_total_gross ?? summary.value?.grand_total
   const n = rawTotal != null ? Number(String(rawTotal).replace(',', '.')) : 0
-  if (!Number.isFinite(n)) return '0,00'
-  return n.toLocaleString('ru-RU', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
+  return formatMoney(n)
 })
 
 const paymentCountLabel = computed(() => {
   const n = summary.value?.payment_count
   if (n == null || !Number.isFinite(Number(n))) return '0'
   return Number(n).toLocaleString('ru-RU')
+})
+
+function formatMoney(n) {
+  if (!Number.isFinite(n)) return '0,00'
+  return n.toLocaleString('ru-RU', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
+function utcTodayIso() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function shiftUtcDay(isoDay, deltaDays) {
+  const t = Date.parse(`${String(isoDay).slice(0, 10)}T00:00:00Z`)
+  if (Number.isNaN(t)) return isoDay
+  return new Date(t + deltaDays * 86400000).toISOString().slice(0, 10)
+}
+
+function daysBetweenInclusive(fromIso, toIso) {
+  const a = Date.parse(`${String(fromIso).slice(0, 10)}T00:00:00Z`)
+  const b = Date.parse(`${String(toIso).slice(0, 10)}T00:00:00Z`)
+  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return 1
+  return Math.floor((b - a) / 86400000) + 1
+}
+
+function dailyAmountsFromSummary(s, useNet) {
+  if (!s?.days?.length) return []
+  const raw = useNet ? s.cash : s.cash_gross ?? s.cash
+  if (!raw || typeof raw !== 'object') return []
+  const sub = parseAmounts(raw.subscription)
+  const one = parseAmounts(raw.one_time)
+  return s.days.map((day, i) => ({
+    day: String(day).slice(0, 10),
+    amount: (sub[i] || 0) + (one[i] || 0),
+  }))
+}
+
+const averageIncome = computed(() => {
+  const ds = dailySummary.value
+  if (!ds?.days?.length) return null
+
+  const today = utcTodayIso()
+  const firstDay = String(ds.days[0]).slice(0, 10)
+  const dayRows = dailyAmountsFromSummary(ds, useNetAmount.value)
+  const grandRaw = useNetAmount.value
+    ? ds.grand_total
+    : ds.grand_total_gross ?? ds.grand_total
+  const grand = Number(String(grandRaw ?? '').replace(',', '.'))
+
+  const weekFrom = shiftUtcDay(today, -6)
+  const monthFrom = shiftUtcDay(today, -29)
+
+  function sumFrom(fromDay) {
+    return dayRows
+      .filter((r) => r.day >= fromDay && r.day <= today)
+      .reduce((s, r) => s + r.amount, 0)
+  }
+
+  const allSpan = daysBetweenInclusive(firstDay, today)
+  return {
+    all: Number.isFinite(grand) && allSpan > 0 ? grand / allSpan : 0,
+    month: sumFrom(monthFrom) / 30,
+    week: sumFrom(weekFrom) / 7,
+  }
+})
+
+const averageIncomeFormatted = computed(() => {
+  const a = averageIncome.value
+  if (!a) return null
+  return {
+    all: formatMoney(a.all),
+    month: formatMoney(a.month),
+    week: formatMoney(a.week),
+  }
 })
 
 const financeChartLabels = computed(() => {
@@ -185,14 +259,27 @@ async function load() {
   loading.value = true
   error.value = null
   summary.value = null
+  dailySummary.value = null
   const granularity = isDailyView.value ? 'day' : 'month'
   try {
-    summary.value = await fetchJson(
-      `/api/admin/payments/finance-summary?granularity=${granularity}`,
-    )
+    if (isDailyView.value) {
+      const data = await fetchJson(
+        `/api/admin/payments/finance-summary?granularity=day`,
+      )
+      summary.value = data
+      dailySummary.value = data
+    } else {
+      const [chartData, dayData] = await Promise.all([
+        fetchJson(`/api/admin/payments/finance-summary?granularity=${granularity}`),
+        fetchJson('/api/admin/payments/finance-summary?granularity=day'),
+      ])
+      summary.value = chartData
+      dailySummary.value = dayData
+    }
   } catch (e) {
     error.value = e.message || String(e)
     summary.value = null
+    dailySummary.value = null
   } finally {
     loading.value = false
   }
@@ -260,15 +347,39 @@ onMounted(() => {
   <p v-else-if="error" class="msg-err">{{ error }}</p>
 
   <template v-else-if="summary">
-    <section class="total-card" aria-live="polite">
-      <p class="total-label">{{ totalLabel }}</p>
-      <p class="total-value">{{ totalFormatted }}&nbsp;₽</p>
-      <label class="fee-row">
-        <input v-model="useNetAmount" type="checkbox" class="fee-input" />
-        <span class="fee-label">Учитывать комиссию</span>
-      </label>
-      <p class="total-meta">{{ paymentCountLabel }} записей</p>
-    </section>
+    <div class="stats-row">
+      <section class="total-card" aria-live="polite">
+        <p class="total-label">{{ totalLabel }}</p>
+        <p class="total-value">{{ totalFormatted }}&nbsp;₽</p>
+        <label class="fee-row">
+          <input v-model="useNetAmount" type="checkbox" class="fee-input" />
+          <span class="fee-label">Учитывать комиссию</span>
+        </label>
+        <p class="total-meta">{{ paymentCountLabel }} записей</p>
+      </section>
+
+      <section
+        v-if="averageIncomeFormatted"
+        class="avg-card"
+        aria-label="Средний дневной доход"
+      >
+        <p class="total-label">Средний доход в день</p>
+        <dl class="avg-grid">
+          <div class="avg-item">
+            <dt class="avg-key">За всё время</dt>
+            <dd class="avg-val">{{ averageIncomeFormatted.all }}&nbsp;₽</dd>
+          </div>
+          <div class="avg-item">
+            <dt class="avg-key">30 дней</dt>
+            <dd class="avg-val">{{ averageIncomeFormatted.month }}&nbsp;₽</dd>
+          </div>
+          <div class="avg-item">
+            <dt class="avg-key">7 дней</dt>
+            <dd class="avg-val">{{ averageIncomeFormatted.week }}&nbsp;₽</dd>
+          </div>
+        </dl>
+      </section>
+    </div>
 
     <div v-if="!periodKeys.length" class="empty-box">
       <p class="muted">Платежей пока нет — график появится после первых оплат.</p>
@@ -351,12 +462,73 @@ onMounted(() => {
 }
 
 .total-card {
-  margin: 0 0 1.25rem;
+  margin: 0;
   padding: 1rem 1.1rem;
   border-radius: 12px;
   border: 1px solid var(--card-border);
   background: var(--surface-glass);
-  max-width: 36rem;
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  margin: 0 0 1.25rem;
+  align-items: stretch;
+}
+
+.avg-card {
+  margin: 0;
+  padding: 1rem 1.1rem;
+  border-radius: 12px;
+  border: 1px solid var(--card-border);
+  background: var(--surface-glass);
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.avg-hint {
+  margin: 0 0 0.65rem;
+  font-size: 0.76rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.avg-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem 0.75rem;
+  margin: 0;
+}
+
+.avg-item {
+  min-width: 0;
+}
+
+.avg-key {
+  margin: 0 0 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.avg-val {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-h);
+  letter-spacing: -0.01em;
+}
+
+@media (max-width: 720px) {
+  .avg-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .total-label {
