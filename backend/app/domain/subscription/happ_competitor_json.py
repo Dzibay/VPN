@@ -13,6 +13,7 @@ from typing import Any
 from app.domain.servers.reality_defaults import normalize_reality_spider_x
 from app.domain.subscription.build import (
     _XRAY_VLESS_STREAM_SETTINGS_SOCKOPT,
+    _subscription_utls_fingerprint,
     _xhttp_extra,
     _xhttp_path_for_server,
     _xhttp_vkcdn_extra,
@@ -103,12 +104,14 @@ def server_to_competitor_vless_outbound(
             s,
             client_uuid=client_uuid,
             tag=tag,
+            client_fingerprint=client_fingerprint,
         )
     if kind == "vless_vk_cdn_xhttp":
         return server_to_competitor_vless_vkcdn_xhttp_outbound(
             s,
             client_uuid=client_uuid,
             tag=tag,
+            client_fingerprint=client_fingerprint,
         )
     return server_to_competitor_vless_reality_outbound(
         s,
@@ -207,6 +210,7 @@ def server_to_competitor_vless_xhttp_outbound(
     *,
     client_uuid: str,
     tag: str,
+    client_fingerprint: str,
 ) -> dict[str, Any] | None:
     host = (s.host or "").strip()
     uid = (client_uuid or "").strip()
@@ -231,7 +235,7 @@ def server_to_competitor_vless_xhttp_outbound(
             "security": "tls",
             "tlsSettings": {
                 "serverName": sni,
-                "fingerprint": "chrome",
+                "fingerprint": _subscription_utls_fingerprint(client_fingerprint),
                 "allowInsecure": False,
                 "alpn": ["h3", "h2", "http/1.1"],
             },
@@ -250,6 +254,7 @@ def server_to_competitor_vless_vkcdn_xhttp_outbound(
     *,
     client_uuid: str,
     tag: str,
+    client_fingerprint: str,
 ) -> dict[str, Any] | None:
     cdn = (s.cdn_domain or "").strip().rstrip(".")
     uid = (client_uuid or "").strip()
@@ -273,7 +278,7 @@ def server_to_competitor_vless_vkcdn_xhttp_outbound(
             "security": "tls",
             "tlsSettings": {
                 "serverName": cdn,
-                "fingerprint": "chrome",
+                "fingerprint": _subscription_utls_fingerprint(client_fingerprint),
                 "allowInsecure": False,
                 "alpn": ["h3", "h2", "http/1.1"],
             },
@@ -302,7 +307,7 @@ def server_to_competitor_vless_reality_outbound(
     if not sid:
         return None
     flow = (s.vless_flow or "").strip() or "xtls-rprx-vision"
-    fp = (client_fingerprint or "").strip() or "chrome"
+    fp = _subscription_utls_fingerprint(client_fingerprint)
     sni = _primary_sni(s.reality_server_names, s.reality_dest)
     if not sni:
         return None

@@ -12,7 +12,7 @@ Clash (``clash`` / ``hiddify`` в UA): YAML — отдельно в эндпои
 (``subscription_servers_for_delivery``).
 
 Параметр ``fp`` (uTLS) в ``vless://`` и поле ``fingerprint`` в JSON узла: при каждой
-выдаче подписки случайно выбирается из chrome / firefox / safari / edge (не из БД).
+выдаче подписки случайно выбирается из firefox / safari / edge (не из БД).
 """
 
 from __future__ import annotations
@@ -49,11 +49,15 @@ _AUTO_BALANCER_PROBE_URL = "https://www.gstatic.com/generate_204"
 _AUTO_YOUTUBE_BALANCER_PROBE_URL = "https://www.youtube.com/generate_204"
 
 # uTLS fingerprint в vless:// и Clash: не из БД, а случайный на каждую выдачу подписки (DPI).
-_SUBSCRIPTION_UTLS_FP_CHOICES: tuple[str, ...] = ("chrome", "firefox", "safari", "edge")
+_SUBSCRIPTION_UTLS_FP_CHOICES: tuple[str, ...] = ("firefox", "safari", "edge")
 
 
 def _random_subscription_utls_fingerprint() -> str:
     return secrets.choice(_SUBSCRIPTION_UTLS_FP_CHOICES)
+
+
+def _subscription_utls_fingerprint(client_fingerprint: str) -> str:
+    return (client_fingerprint or "").strip() or _SUBSCRIPTION_UTLS_FP_CHOICES[0]
 
 
 # Совпадает с install_xray_on_remote.sh (inbound sockopt); для сборки Xray JSON на клиенте.
@@ -176,7 +180,7 @@ def _vless_reality_share_uri(
         log.warning("Пропуск узла id=%s: пустой reality_short_id", s.id)
         return None
     flow = (s.vless_flow or "").strip() or "xtls-rprx-vision"
-    fp = (client_fingerprint or "").strip() or "chrome"
+    fp = _subscription_utls_fingerprint(client_fingerprint)
     sni = _primary_sni(s.reality_server_names, s.reality_dest)
     if not sni:
         log.warning("Пропуск узла id=%s: не удалось вывести SNI", s.id)
@@ -316,6 +320,7 @@ def _vless_xhttp_share_uri(
     *,
     client_uuid: str,
     exit_ids_referenced: set[int],
+    client_fingerprint: str,
     fragment_override: str | None = None,
 ) -> str | None:
     host = (s.host or "").strip()
@@ -332,7 +337,7 @@ def _vless_xhttp_share_uri(
         "path": path,
         "mode": "packet-up",
         "sni": sni,
-        "fp": "chrome",
+        "fp": _subscription_utls_fingerprint(client_fingerprint),
         "alpn": "h3,h2,http/1.1",
         "extra": json.dumps(_xhttp_extra(path), separators=(",", ":"), ensure_ascii=False),
     }
@@ -354,6 +359,7 @@ def _vless_vkcdn_xhttp_share_uri(
     *,
     client_uuid: str,
     exit_ids_referenced: set[int],
+    client_fingerprint: str,
     fragment_override: str | None = None,
 ) -> str | None:
     cdn = (s.cdn_domain or "").strip().rstrip(".")
@@ -369,7 +375,7 @@ def _vless_vkcdn_xhttp_share_uri(
         "path": path,
         "mode": "packet-up",
         "sni": cdn,
-        "fp": "chrome",
+        "fp": _subscription_utls_fingerprint(client_fingerprint),
         "alpn": "h3,h2,http/1.1",
         "extra": json.dumps(_xhttp_vkcdn_extra(path), separators=(",", ":"), ensure_ascii=False),
     }
@@ -501,7 +507,7 @@ def _server_to_subscription_dict(
             "path": path,
             "mode": "packet-up",
             "alpn": ["h3", "h2", "http/1.1"],
-            "fingerprint": "chrome",
+            "fingerprint": _subscription_utls_fingerprint(client_fingerprint),
             "xhttp_extra": _xhttp_extra(path),
         }
     if kind == "vless_vk_cdn_xhttp":
@@ -523,7 +529,7 @@ def _server_to_subscription_dict(
             "path": path,
             "mode": "packet-up",
             "alpn": ["h3", "h2", "http/1.1"],
-            "fingerprint": "chrome",
+            "fingerprint": _subscription_utls_fingerprint(client_fingerprint),
             "xhttp_extra": _xhttp_vkcdn_extra(path),
             "origin_domain": (s.origin_domain or "").strip().rstrip("."),
         }
@@ -541,7 +547,7 @@ def _server_to_subscription_dict(
         "network": "tcp",
         "security": "reality",
         "sni": sni,
-        "fingerprint": (client_fingerprint or "").strip() or "chrome",
+        "fingerprint": _subscription_utls_fingerprint(client_fingerprint),
         "public_key": s.reality_public_key,
         "short_id": s.reality_short_id,
         "dest": s.reality_dest,
@@ -609,12 +615,14 @@ def _subscription_uri_and_fingerprint_by_server_id(
                 s,
                 client_uuid=client_uuid,
                 exit_ids_referenced=ctx.exit_ids_referenced,
+                client_fingerprint=fp,
             )
         elif kind == "vless_vk_cdn_xhttp":
             uri_by_id[s.id] = _vless_vkcdn_xhttp_share_uri(
                 s,
                 client_uuid=client_uuid,
                 exit_ids_referenced=ctx.exit_ids_referenced,
+                client_fingerprint=fp,
             )
         else:
             uri_by_id[s.id] = _vless_reality_share_uri(
@@ -734,6 +742,7 @@ def _auto_best_share_uri(
             best,
             client_uuid=client_uuid,
             exit_ids_referenced=exit_ids_referenced,
+            client_fingerprint=fp_by_id[best.id],
             fragment_override=remark,
         )
     if kind == "vless_vk_cdn_xhttp":
@@ -741,6 +750,7 @@ def _auto_best_share_uri(
             best,
             client_uuid=client_uuid,
             exit_ids_referenced=exit_ids_referenced,
+            client_fingerprint=fp_by_id[best.id],
             fragment_override=remark,
         )
     return _vless_reality_share_uri(
@@ -828,7 +838,7 @@ def _append_clash_proxy(
                 "tls": True,
                 "udp": True,
                 "servername": sni,
-                "client-fingerprint": "chrome",
+                "client-fingerprint": _subscription_utls_fingerprint(client_fingerprint),
                 "alpn": ["h3", "h2", "http/1.1"],
                 "xhttp-opts": {
                     "path": path,
@@ -853,7 +863,7 @@ def _append_clash_proxy(
                 "tls": True,
                 "udp": True,
                 "servername": cdn,
-                "client-fingerprint": "chrome",
+                "client-fingerprint": _subscription_utls_fingerprint(client_fingerprint),
                 "alpn": ["h3", "h2", "http/1.1"],
                 "xhttp-opts": {
                     "path": path,
@@ -867,7 +877,7 @@ def _append_clash_proxy(
     pbk = (s.reality_public_key or "").strip()
     sid = (s.reality_short_id or "").strip()
     flow = (s.vless_flow or "").strip() or "xtls-rprx-vision"
-    fp = (client_fingerprint or "").strip() or "chrome"
+    fp = _subscription_utls_fingerprint(client_fingerprint)
     sni = _primary_sni(s.reality_server_names, s.reality_dest)
     spx = normalize_reality_spider_x(s.reality_spider_x)
     proxies.append(
