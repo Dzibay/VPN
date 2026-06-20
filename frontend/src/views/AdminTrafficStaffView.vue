@@ -5,18 +5,18 @@ import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AppRefreshButton from '../components/AppRefreshButton.vue'
 import { fetchJson } from '../api/client.js'
 import { chartSeriesRgb } from '../utils/adminChartTheme.js'
-import { formatTrafficBytes } from '../utils/formatTraffic.js'
 
 /** @typedef {{ server_id: number; name: string | null; host: string; delta_inbound_bytes: number[] }} ServerSeries */
 
 const loading = ref(false)
 const error = ref(null)
-const days = ref(90)
+const days = ref(30)
 
 /** @type {import('vue').Ref<{ dates: string[]; total_delta_inbound_bytes: number[]; servers: ServerSeries[] } | null>} */
 const bundle = ref(null)
 
 const dayOptions = [
+  { value: 7, label: '7 дней' },
   { value: 30, label: '30 дней' },
   { value: 60, label: '60 дней' },
   { value: 90, label: '90 дней' },
@@ -66,6 +66,15 @@ function serverLabel(s) {
   return host || `Узел ${s.server_id}`
 }
 
+function serverHasInboundTraffic(s) {
+  return (s.delta_inbound_bytes ?? []).some((v) => Number(v) > 0)
+}
+
+/** Узлы с ненулевым входящим трафиком (выходные — полностью нулевые). */
+const activeServers = computed(() =>
+  (bundle.value?.servers ?? []).filter(serverHasInboundTraffic),
+)
+
 const chartLabels = computed(() =>
   (bundle.value?.dates ?? []).map((d) => formatTrafficDayLabel(d)),
 )
@@ -82,7 +91,7 @@ const chartDatasets = computed(() => {
     borderWidth: 2.75,
   }
 
-  const perServer = (data.servers ?? []).map((s, idx) => ({
+  const perServer = activeServers.value.map((s, idx) => ({
     label: serverLabel(s),
     data: (s.delta_inbound_bytes ?? []).map(bytesToGib),
     rgb: /** @type {[number, number, number]} */ ([
@@ -117,11 +126,8 @@ function registrationTooltipLabel(ctx) {
   const bytes =
     ctx.datasetIndex === 0
       ? bundle.value?.total_delta_inbound_bytes?.[i]
-      : bundle.value?.servers?.[ctx.datasetIndex - 1]?.delta_inbound_bytes?.[i]
-  const gib = bytesToGib(bytes)
-  const gibStr = formatChartYTick(gib)
-  const bytesStr = formatTrafficBytes(bytes)
-  return `${ctx.dataset.label}: ${gibStr} (${bytesStr})`
+      : activeServers.value[ctx.datasetIndex - 1]?.delta_inbound_bytes?.[i]
+  return `${ctx.dataset.label}: ${formatChartYTick(bytesToGib(bytes))}`
 }
 
 async function load() {
