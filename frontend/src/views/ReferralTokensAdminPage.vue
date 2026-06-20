@@ -74,15 +74,20 @@ const tokenRegDatasets = computed(() => {
     borderWidth: 2.75,
   }
 
-  const perToken = (data.tokens ?? []).map((t, idx) => ({
-    label: `${t.token} (${t.registrations_count} рег.)`,
-    data: t.registrations_by_day ?? [],
-    rgb: /** @type {[number, number, number]} */ ([
-      ...TOKEN_LINE_RGB[idx % TOKEN_LINE_RGB.length],
-    ]),
-    filled: false,
-    borderWidth: 1.75,
-  }))
+  const perToken = (data.tokens ?? []).map((t, idx) => {
+    const row = rows.value.find((r) => r.id === t.referral_link_id)
+    const isUser = row?.owner_kind === 'user'
+    return {
+      label: `${t.token} (${t.registrations_count} рег.)`,
+      data: t.registrations_by_day ?? [],
+      rgb: /** @type {[number, number, number]} */ ([
+        ...TOKEN_LINE_RGB[idx % TOKEN_LINE_RGB.length],
+      ]),
+      filled: false,
+      borderWidth: 1.75,
+      hidden: isUser,
+    }
+  })
 
   return [total, ...perToken]
 })
