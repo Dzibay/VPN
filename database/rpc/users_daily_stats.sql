@@ -19,6 +19,8 @@ RETURNS TABLE (
     users_cumulative_traffic_over_100_mbit_count bigint,
     persistent_traffic_users_count bigint,
     users_with_payment_count bigint,
+    payments_first_count bigint,
+    payments_repeat_count bigint,
     active_users_with_payment_count bigint,
     users_with_active_subscription_count bigint
 )
@@ -70,6 +72,23 @@ new_payers_by_day AS (
         COUNT(*)::bigint AS users_with_payment_count
     FROM first_payment fp
     GROUP BY fp.first_pay_day
+),
+pay_split AS (
+    SELECT
+        (p.created_at AT TIME ZONE 'Europe/Moscow')::date AS d,
+        ROW_NUMBER() OVER (
+            PARTITION BY p.user_id ORDER BY p.created_at ASC, p.id ASC
+        ) AS payment_num
+    FROM payments p
+    INNER JOIN eligible_users eu ON eu.id = p.user_id
+),
+payments_by_day AS (
+    SELECT
+        d,
+        COUNT(*) FILTER (WHERE payment_num = 1)::bigint AS payments_first_count,
+        COUNT(*) FILTER (WHERE payment_num > 1)::bigint AS payments_repeat_count
+    FROM pay_split
+    GROUP BY d
 ),
 latest_traffic AS (
     SELECT DISTINCT ON (t.user_id, t.server_id)
@@ -261,6 +280,8 @@ merged AS (
         COALESCE(p.persistent_traffic_users_count, 0)::bigint
             AS persistent_traffic_users_count,
         COALESCE(np.users_with_payment_count, 0)::bigint AS users_with_payment_count,
+        COALESCE(pb.payments_first_count, 0)::bigint AS payments_first_count,
+        COALESCE(pb.payments_repeat_count, 0)::bigint AS payments_repeat_count,
         COALESCE(apay.active_users_with_payment_count, 0)::bigint
             AS active_users_with_payment_count,
         COALESCE(sub.users_with_active_subscription_count, 0)::bigint
@@ -273,6 +294,7 @@ merged AS (
     LEFT JOIN persistent_traffic_users_by_day p ON p.cal_day = dc.cal_day
     LEFT JOIN active_users_with_payment_by_day apay ON apay.cal_day = dc.cal_day
     LEFT JOIN new_payers_by_day np ON np.pay_day = dc.cal_day
+    LEFT JOIN payments_by_day pb ON pb.d = dc.cal_day
     LEFT JOIN subscription_active_by_day sub ON sub.cal_day = dc.cal_day
 ),
 undated AS (
@@ -285,6 +307,8 @@ undated AS (
         0::bigint AS users_cumulative_traffic_over_100_mbit_count,
         0::bigint AS persistent_traffic_users_count,
         0::bigint AS users_with_payment_count,
+        0::bigint AS payments_first_count,
+        0::bigint AS payments_repeat_count,
         0::bigint AS active_users_with_payment_count,
         0::bigint AS users_with_active_subscription_count
     FROM (
@@ -309,6 +333,8 @@ SELECT
     u.users_cumulative_traffic_over_100_mbit_count,
     u.persistent_traffic_users_count,
     u.users_with_payment_count,
+    u.payments_first_count,
+    u.payments_repeat_count,
     u.active_users_with_payment_count,
     u.users_with_active_subscription_count
 FROM (

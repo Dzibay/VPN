@@ -152,6 +152,22 @@ class UserStatsByDateRow(BaseModel):
             "При hour — 0."
         ),
     )
+    payments_first_count: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "При granularity=day — число платежей (строк payments), которые являются "
+            "первой оплатой пользователя в этот календарный день МСК. При hour — 0."
+        ),
+    )
+    payments_repeat_count: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "При granularity=day — число повторных платежей (не первая оплата пользователя) "
+            "в этот календарный день МСК. При hour — 0."
+        ),
+    )
     active_users_with_payment_count: int = Field(
         default=0,
         ge=0,

@@ -6,7 +6,7 @@ import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import Chart from '../utils/chartSetup.js'
 import { adminChartTheme, chartTooltipColors, rgba, resolveBackgroundCss } from '../utils/adminChartTheme.js'
 
-/** @typedef {{ label: string; data: number[]; rgb: [number, number, number]; filled?: boolean; borderWidth?: number }} LineSeries */
+/** @typedef {{ label: string; data: number[]; rgb: [number, number, number]; filled?: boolean; borderWidth?: number; hidden?: boolean }} LineSeries */
 
 const props = defineProps({
   ariaLabel: { type: String, required: true },
@@ -31,13 +31,9 @@ const props = defineProps({
   formatYTick: { type: Function, default: null },
   /**
    * Вертикальные отметки: индекс точки по оси X + подпись для подсказки + цвет линии.
-   * @type {import('vue').PropType<Array<{ index: number; title: string; color: string }>>}
+   * @type {import('vue').PropType<Array<{ index: number; title: string; color: string; kind?: string }>>}
    */
-  /**
-   * Подписи в легенде, исключённые с графика (показываются зачёркнутыми).
-   * @type {import('vue').PropType<string[]>}
-   */
-  excludedLegendLabels: { type: Array, default: () => [] },
+  eventMarkers: { type: Array, default: () => [] },
 })
 
 const canvasEl = ref(null)
@@ -86,6 +82,7 @@ function drawChart() {
     return {
       label: ds.label,
       data: ds.data,
+      hidden: ds.hidden === true,
       borderColor: rgba(rgb, idx === 0 ? 0.95 : 0.94),
       borderWidth: bw,
       tension: 0.35,
@@ -297,20 +294,6 @@ defineExpose({ drawChart, destroyChart })
     <div v-else class="admin-chart-wrap admin-chart-wrap--tall">
       <canvas ref="canvasEl" :aria-label="ariaLabel" />
     </div>
-    <div
-      v-if="!loading && !error && hasData && excludedLegendLabels.length"
-      class="chart-legend-excluded"
-      aria-label="Узлы, исключённые с графика"
-    >
-      <span
-        v-for="label in excludedLegendLabels"
-        :key="label"
-        class="chart-legend-excluded-item"
-      >
-        <span class="chart-legend-excluded-dot" aria-hidden="true" />
-        <s>{{ label }}</s>
-      </span>
-    </div>
   </div>
 </template>
 
@@ -377,37 +360,5 @@ defineExpose({ drawChart, destroyChart })
   font-size: 0.9rem;
   line-height: 1.5;
   margin: 0;
-}
-
-.chart-legend-excluded {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem 1rem;
-  margin-top: 0.65rem;
-  padding-top: 0.55rem;
-  border-top: 1px dashed var(--card-border);
-}
-
-.chart-legend-excluded-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--muted);
-}
-
-.chart-legend-excluded-item s {
-  text-decoration: line-through;
-  text-decoration-thickness: 1.5px;
-}
-
-.chart-legend-excluded-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--muted);
-  opacity: 0.45;
-  flex-shrink: 0;
 }
 </style>

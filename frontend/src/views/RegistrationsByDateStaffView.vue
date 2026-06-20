@@ -8,7 +8,7 @@ import PayExpDayDetailPanel from '../components/PayExpDayDetailPanel.vue'
 import { fetchJson } from '../api/client.js'
 import { mapStaffChartEventsToMarkers } from '../utils/chartStaffMarkersPlugin.js'
 import { useUsersDailyStatsChart } from '../composables/useUsersDailyStatsChart.js'
-import { chartSeriesRgb, rgba } from '../utils/adminChartTheme.js'
+import { chartSeriesRgb, rgba, rgbTupleFromVar } from '../utils/adminChartTheme.js'
 import {
   formatMskCalendarDayShort,
   formatMskDateTimeShort,
@@ -130,6 +130,84 @@ const chartEventMarkers = computed(() =>
     chartEvents.value,
   ),
 )
+
+/** Суточные приросты (не накопительно) — те же 30 дней МСК, что и основной график. */
+const dailyDeltaPoints = computed(() =>
+  granularity.value === 'day' ? chartPoints.value : [],
+)
+
+const dailyDeltaLabels = computed(() =>
+  dailyDeltaPoints.value.map((p) => formatMskCalendarDayShort(p.iso)),
+)
+
+const dailyDeltaDatasets = computed(() => {
+  const pts = dailyDeltaPoints.value
+  if (!pts.length) return []
+  return [
+    {
+      label: 'Регистрации',
+      data: pts.map((p) => p.dayUsers),
+      rgb: rgbTupleFromVar('--accent', '#58d68d'),
+      filled: true,
+    },
+    {
+      label: 'Подключения устройств',
+      data: pts.map((p) => p.dayDevices),
+      rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.device]),
+      filled: false,
+    },
+    {
+      label: 'Новые с трафиком',
+      data: pts.map((p) => p.dayTraffic),
+      rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.traffic]),
+      filled: false,
+    },
+    {
+      label: 'Оплаты',
+      data: pts.map((p) => p.dayPaymentsFirst),
+      rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.payment]),
+      filled: false,
+    },
+    {
+      label: 'Повторные оплаты',
+      data: pts.map((p) => p.dayPaymentsRepeat),
+      rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.persistent]),
+      filled: false,
+    },
+  ]
+})
+
+const dailyDeltaHasData = computed(() =>
+  dailyDeltaPoints.value.some(
+    (p) =>
+      p.dayUsers > 0 ||
+      p.dayDevices > 0 ||
+      p.dayTraffic > 0 ||
+      p.dayPaymentsFirst > 0 ||
+      p.dayPaymentsRepeat > 0,
+  ),
+)
+
+const dailyDeltaAriaLabel =
+  'По дням МСК: суточные регистрации, подключения устройств, новые пользователи с трафиком, первые и повторные оплаты'
+
+function dailyDeltaTooltipTitle(i) {
+  const p = dailyDeltaPoints.value[i]
+  if (!p) return ''
+  return `${formatMskCalendarDayShort(p.iso)} (МСК)`
+}
+
+/** @param {import('chart.js').TooltipItem<'line'>} ctx */
+function dailyDeltaTooltipLabel(ctx) {
+  const v = ctx.parsed.y
+  return `${ctx.dataset.label}: ${Number(v).toLocaleString('ru-RU')}`
+}
+
+function dailyDeltaFormatYTick(v) {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return ''
+  return n.toLocaleString('ru-RU')
+}
 
 /**
  * @typedef {{
@@ -484,6 +562,28 @@ watch(payExpMonth, () => {
           записей с датой или временем.
         </p>
         <p v-else class="empty-hint">Нет данных для графика.</p>
+      </template>
+    </AdminLineChartPanel>
+
+    <AdminLineChartPanel
+      v-if="granularity === 'day'"
+      title="Пользователи по дням"
+      unit-label="за сутки"
+      hint=""
+      :aria-label="dailyDeltaAriaLabel"
+      :loading="loading"
+      :error="error"
+      :has-data="dailyDeltaHasData"
+      y-title="Пользователей"
+      y-grace="8%"
+      :labels="dailyDeltaLabels"
+      :datasets="dailyDeltaDatasets"
+      :format-y-tick="dailyDeltaFormatYTick"
+      :get-tooltip-title="dailyDeltaTooltipTitle"
+      :get-tooltip-label="dailyDeltaTooltipLabel"
+    >
+      <template #empty>
+        <p class="empty-hint">Нет данных за выбранный период.</p>
       </template>
     </AdminLineChartPanel>
 
