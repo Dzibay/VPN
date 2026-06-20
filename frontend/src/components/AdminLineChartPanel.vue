@@ -33,7 +33,11 @@ const props = defineProps({
    * Вертикальные отметки: индекс точки по оси X + подпись для подсказки + цвет линии.
    * @type {import('vue').PropType<Array<{ index: number; title: string; color: string }>>}
    */
-  eventMarkers: { type: Array, default: () => [] },
+  /**
+   * Подписи в легенде, исключённые с графика (показываются зачёркнутыми).
+   * @type {import('vue').PropType<string[]>}
+   */
+  excludedLegendLabels: { type: Array, default: () => [] },
 })
 
 const canvasEl = ref(null)
@@ -293,6 +297,20 @@ defineExpose({ drawChart, destroyChart })
     <div v-else class="admin-chart-wrap admin-chart-wrap--tall">
       <canvas ref="canvasEl" :aria-label="ariaLabel" />
     </div>
+    <div
+      v-if="!loading && !error && hasData && excludedLegendLabels.length"
+      class="chart-legend-excluded"
+      aria-label="Узлы, исключённые с графика"
+    >
+      <span
+        v-for="label in excludedLegendLabels"
+        :key="label"
+        class="chart-legend-excluded-item"
+      >
+        <span class="chart-legend-excluded-dot" aria-hidden="true" />
+        <s>{{ label }}</s>
+      </span>
+    </div>
   </div>
 </template>
 
@@ -359,5 +377,37 @@ defineExpose({ drawChart, destroyChart })
   font-size: 0.9rem;
   line-height: 1.5;
   margin: 0;
+}
+
+.chart-legend-excluded {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin-top: 0.65rem;
+  padding-top: 0.55rem;
+  border-top: 1px dashed var(--card-border);
+}
+
+.chart-legend-excluded-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.chart-legend-excluded-item s {
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+
+.chart-legend-excluded-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0.45;
+  flex-shrink: 0;
 }
 </style>

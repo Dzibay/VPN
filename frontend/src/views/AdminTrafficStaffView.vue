@@ -12,7 +12,7 @@ const loading = ref(false)
 const error = ref(null)
 const days = ref(30)
 
-/** @type {import('vue').Ref<{ dates: string[]; total_delta_inbound_bytes: number[]; servers: ServerSeries[] } | null>} */
+/** @type {import('vue').Ref<{ dates: string[]; total_delta_inbound_bytes: number[]; servers: ServerSeries[]; exit_server_ids?: number[] } | null>} */
 const bundle = ref(null)
 
 const dayOptions = [
@@ -66,14 +66,36 @@ function serverLabel(s) {
   return host || `Узел ${s.server_id}`
 }
 
-function serverHasInboundTraffic(s) {
-  return (s.delta_inbound_bytes ?? []).some((v) => Number(v) > 0)
-}
-
-/** Узлы с ненулевым входящим трафиком (выходные — полностью нулевые). */
-const activeServers = computed(() =>
-  (bundle.value?.servers ?? []).filter(serverHasInboundTraffic),
+const exitServerIdSet = computed(
+  () => new Set((bundle.value?.exit_server_ids ?? []).map((id) => Number(id))),
 )
+
+/** Узлы на графике — все, кроме текущих каскадных exit. */
+const chartServers = computed(() =>
+  (bundle.value?.servers ?? []).filter((s) => !exitServerIdSet.value.has(s.server_id)),
+)
+
+/** Выходные узлы — зачёркнуты в легенде, линий нет. */
+const excludedExitServers = computed(() =>
+  (bundle.value?.servers ?? []).filter((s) => exitServerIdSet.value.has(s.server_id)),
+)
+
+const excludedLegendLabels = computed(() =>
+  excludedExitServers.value.map((s) => serverLabel(s)),
+)
+
+const chartTotalGib = computed(() => {
+  const n = bundle.value?.dates?.length ?? 0
+  if (!n) return []
+  const totals = Array.from({ length: n }, () => 0)
+  for (const s of chartServers.value) {
+    const deltas = s.delta_inbound_bytes ?? []
+    for (let i = 0; i < n; i++) {
+      totals[i] += Number(deltas[i] || 0)
+    }
+  }
+  return totals.map(bytesToGib)
+})
 
 const chartLabels = computed(() =>
   (bundle.value?.dates ?? []).map((d) => formatTrafficDayLabel(d)),
@@ -85,13 +107,13 @@ const chartDatasets = computed(() => {
 
   const total = {
     label: 'Суммарно (входящий)',
-    data: (data.total_delta_inbound_bytes ?? []).map(bytesToGib),
+    data: chartTotalGib.value,
     rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.traffic]),
     filled: true,
     borderWidth: 2.75,
   }
 
-  const perServer = activeServers.value.map((s, idx) => ({
+  const perServer = chartServers.value.map((s, idx) => ({
     label: serverLabel(s),
     data: (s.delta_inbound_bytes ?? []).map(bytesToGib),
     rgb: /** @type {[number, number, number]} */ ([
@@ -107,8 +129,7 @@ const chartDatasets = computed(() => {
 const hasData = computed(() => {
   const data = bundle.value
   if (!data?.dates?.length) return false
-  const total = data.total_delta_inbound_bytes ?? []
-  return total.some((v) => Number(v) > 0)
+  return chartTotalGib.value.some((v) => Number(v) > 0)
 })
 
 const chartAriaLabel =
@@ -123,10 +144,11 @@ function registrationTooltipTitle(i) {
 /** @param {import('chart.js').TooltipItem<'line'>} ctx */
 function registrationTooltipLabel(ctx) {
   const i = ctx.dataIndex
-  const bytes =
-    ctx.datasetIndex === 0
-      ? bundle.value?.total_delta_inbound_bytes?.[i]
-      : activeServers.value[ctx.datasetIndex - 1]?.delta_inbound_bytes?.[i]
+  if (ctx.datasetIndex === 0) {
+    const gib = chartTotalGib.value[i]
+    return `${ctx.dataset.label}: ${formatChartYTick(gib)}`
+  }
+  const bytes = chartServers.value[ctx.datasetIndex - 1]?.delta_inbound_bytes?.[i]
   return `${ctx.dataset.label}: ${formatChartYTick(bytesToGib(bytes))}`
 }
 
@@ -182,6 +204,7 @@ onMounted(() => {
       y-grace="8%"
       :labels="chartLabels"
       :datasets="chartDatasets"
+      :excluded-legend-labels="excludedLegendLabels"
       :format-y-tick="formatChartYTick"
       :get-tooltip-title="registrationTooltipTitle"
       :get-tooltip-label="registrationTooltipLabel"

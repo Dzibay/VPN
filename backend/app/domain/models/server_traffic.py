@@ -117,6 +117,13 @@ class AllServersInboundTrafficDailySummary(BaseModel):
         description="Сумма delta_inbound_bytes по всем узлам за каждый день",
     )
     servers: list[ServerInboundTrafficDailySeries] = Field(default_factory=list)
+    exit_server_ids: list[int] = Field(
+        default_factory=list,
+        description=(
+            "Id узлов, сейчас используемых как каскадный exit (cascade_next_server_id); "
+            "на графике обычно скрывают, но данные в servers сохраняются"
+        ),
+    )
 
 
 class UserTrafficCollectEnqueueResponse(BaseModel):

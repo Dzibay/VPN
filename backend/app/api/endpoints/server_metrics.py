@@ -37,7 +37,7 @@ async def enqueue_user_traffic_collect_all() -> UserTrafficCollectAllEnqueueResp
     "/user-traffic/daily-summary-all",
     response_model=AllServersInboundTrafficDailySummary,
     dependencies=[Depends(require_admin)],
-    summary="Дневной ряд входящего трафика (down_bytes) по всем узлам и суммарно, не накопительно",
+    summary="Дневной ряд входящего трафика (down_bytes) по узлам и суммарно; exit_server_ids — каскадные exit",
 )
 async def get_all_servers_inbound_traffic_daily_summary(
     response: Response,

@@ -445,6 +445,16 @@ def _daily_deltas_from_user_series(
     return day_delta
 
 
+def _cascade_exit_server_ids(db: Session) -> list[int]:
+    """Id узлов, на которые ссылается cascade_next_server_id (текущие exit в каскаде)."""
+    rows = db.execute(
+        select(Server.cascade_next_server_id)
+        .where(Server.cascade_next_server_id.isnot(None))
+        .distinct(),
+    ).all()
+    return sorted({int(r[0]) for r in rows if r[0] is not None})
+
+
 def _all_servers_inbound_traffic_daily_blocking(
     db: Session,
     days: int,
@@ -511,6 +521,7 @@ def _all_servers_inbound_traffic_daily_blocking(
         dates=dates,
         total_delta_inbound_bytes=[int(total_by_day[d]) for d in dates],
         servers=server_series,
+        exit_server_ids=_cascade_exit_server_ids(db),
     )
 
 
