@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AdminHighlightListLink from '../components/AdminHighlightListLink.vue'
+import AdminLineChartPanel from '../components/AdminLineChartPanel.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
 import AdminTableWrap from '../components/AdminTableWrap.vue'
@@ -10,6 +11,7 @@ import AppRefreshButton from '../components/AppRefreshButton.vue'
 import RowActionsDropdown from '../components/RowActionsDropdown.vue'
 import StatWidget from '../components/StatWidget.vue'
 import { fetchJson, sitePublicUrl } from '../api/client.js'
+import { chartSeriesRgb } from '../utils/adminChartTheme.js'
 import { useTableSort } from '../utils/adminTableSort.js'
 import { formatMskApiDateTime } from '../utils/mskDate.js'
 
@@ -21,6 +23,136 @@ const error = ref(null)
 const trafficStats = ref(null)
 const trafficStatsLoading = ref(false)
 const trafficStatsError = ref(null)
+
+const tokenTrafficDays = ref(30)
+/** @type {import('vue').Ref<{ dates: string[]; min_registrations: number; total_delta_bytes: number[]; tokens: Array<{ referral_link_id: number; token: string; registrations_count: number; delta_bytes: number[] }> } | null>} */
+const tokenTrafficBundle = ref(null)
+const tokenTrafficLoading = ref(false)
+const tokenTrafficError = ref(null)
+
+const tokenTrafficDayOptions = [
+  { value: 7, label: '7 дней' },
+  { value: 30, label: '30 дней' },
+  { value: 60, label: '60 дней' },
+  { value: 90, label: '90 дней' },
+]
+
+const TOKEN_LINE_RGB = [
+  [56, 189, 248],
+  [167, 139, 250],
+  [129, 140, 248],
+  [45, 212, 191],
+  [52, 211, 153],
+  [244, 114, 182],
+  [245, 158, 11],
+  [236, 72, 153],
+  [34, 197, 94],
+  [251, 146, 60],
+  [99, 102, 241],
+  [20, 184, 166],
+]
+
+function formatTrafficDayLabel(trafficDate) {
+  const s = String(trafficDate ?? '').trim().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return s || '—'
+  const [y, m, d] = s.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  })
+}
+
+function bytesToGib(bytes) {
+  return Number(bytes || 0) / 1024 ** 3
+}
+
+function formatChartYTick(v) {
+  const gib = Number(v)
+  if (!Number.isFinite(gib)) return '—'
+  if (gib >= 100) return `${Math.round(gib)} ГиБ`
+  if (gib >= 10) return `${Math.round(gib * 10) / 10} ГиБ`
+  return `${Math.round(gib * 100) / 100} ГиБ`
+}
+
+const tokenTrafficLabels = computed(() =>
+  (tokenTrafficBundle.value?.dates ?? []).map((d) => formatTrafficDayLabel(d)),
+)
+
+const tokenTrafficTotalGib = computed(() =>
+  (tokenTrafficBundle.value?.total_delta_bytes ?? []).map(bytesToGib),
+)
+
+const tokenTrafficDatasets = computed(() => {
+  const data = tokenTrafficBundle.value
+  if (!data?.dates?.length) return []
+
+  const total = {
+    label: 'Суммарно',
+    data: tokenTrafficTotalGib.value,
+    rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.traffic]),
+    filled: true,
+    borderWidth: 2.75,
+  }
+
+  const perToken = (data.tokens ?? []).map((t, idx) => ({
+    label: `${t.token} (${t.registrations_count} рег.)`,
+    data: (t.delta_bytes ?? []).map(bytesToGib),
+    rgb: /** @type {[number, number, number]} */ ([
+      ...TOKEN_LINE_RGB[idx % TOKEN_LINE_RGB.length],
+    ]),
+    filled: false,
+    borderWidth: 1.75,
+  }))
+
+  return [total, ...perToken]
+})
+
+const tokenTrafficHasData = computed(() => {
+  const data = tokenTrafficBundle.value
+  if (!data?.dates?.length) return false
+  return (data.tokens ?? []).some((t) => (t.delta_bytes ?? []).some((v) => Number(v) > 0))
+})
+
+const tokenTrafficChartHint = computed(() => {
+  const minReg = tokenTrafficBundle.value?.min_registrations ?? 10
+  const count = tokenTrafficBundle.value?.tokens?.length ?? 0
+  return `Токены с более чем ${minReg} регистрациями (${count} на графике)`
+})
+
+const tokenTrafficAriaLabel =
+  'По дням UTC: суточный трафик up+down пользователей по реферальным токенам с более чем 10 регистрациями'
+
+function tokenTrafficTooltipTitle(i) {
+  const d = tokenTrafficBundle.value?.dates?.[i]
+  if (!d) return tokenTrafficLabels.value[i] ?? ''
+  return `${formatTrafficDayLabel(d)} (UTC)`
+}
+
+/** @param {import('chart.js').TooltipItem<'line'>} ctx */
+function tokenTrafficTooltipLabel(ctx) {
+  const i = ctx.dataIndex
+  if (ctx.datasetIndex === 0) {
+    return `${ctx.dataset.label}: ${formatChartYTick(tokenTrafficTotalGib.value[i])}`
+  }
+  const bytes = tokenTrafficBundle.value?.tokens?.[ctx.datasetIndex - 1]?.delta_bytes?.[i]
+  return `${ctx.dataset.label}: ${formatChartYTick(bytesToGib(bytes))}`
+}
+
+async function loadTokenTrafficChart() {
+  tokenTrafficLoading.value = true
+  tokenTrafficError.value = null
+  try {
+    tokenTrafficBundle.value = await fetchJson(
+      `/api/referral-links/traffic-by-day?days=${encodeURIComponent(tokenTrafficDays.value)}&min_registrations=10`,
+    )
+  } catch (e) {
+    tokenTrafficError.value = e.message || String(e)
+    tokenTrafficBundle.value = null
+  } finally {
+    tokenTrafficLoading.value = false
+  }
+}
 
 const modalOpen = ref(false)
 const creating = ref(false)
@@ -65,7 +197,7 @@ async function load() {
 }
 
 async function reloadAll() {
-  await Promise.all([load(), loadTrafficStats()])
+  await Promise.all([load(), loadTrafficStats(), loadTokenTrafficChart()])
 }
 
 function openModal() {
@@ -259,6 +391,10 @@ async function removeReferral(r) {
   }
 }
 
+watch(tokenTrafficDays, () => {
+  void loadTokenTrafficChart()
+})
+
 watch(
   () =>
     `${loading.value}:${
@@ -293,7 +429,10 @@ onMounted(() => {
       <div class="head-row">
         <h2 class="section-heading">Конверсия по токенам</h2>
         <div class="head-actions">
-          <AppRefreshButton :busy="loading || trafficStatsLoading" @click="reloadAll" />
+          <AppRefreshButton
+            :busy="loading || trafficStatsLoading || tokenTrafficLoading"
+            @click="reloadAll"
+          />
           <button type="button" class="btn-primary" @click="openModal">
             Новый токен
           </button>
@@ -405,6 +544,45 @@ onMounted(() => {
         </StatWidget>
       </div>
       <p v-if="copyHint" class="copy-hint">{{ copyHint }}</p>
+    </section>
+
+    <section class="token-traffic-chart" aria-label="График трафика по реферальным токенам">
+      <div class="chart-toolbar">
+        <label class="days-field">
+          <span class="days-label">Период</span>
+          <select
+            v-model.number="tokenTrafficDays"
+            class="days-select"
+            :disabled="tokenTrafficLoading"
+          >
+            <option v-for="o in tokenTrafficDayOptions" :key="o.value" :value="o.value">
+              {{ o.label }}
+            </option>
+          </select>
+        </label>
+      </div>
+      <AdminLineChartPanel
+        title="Трафик по токенам"
+        unit-label="ГиБ / сутки"
+        :hint="tokenTrafficChartHint"
+        :aria-label="tokenTrafficAriaLabel"
+        :loading="tokenTrafficLoading"
+        :error="tokenTrafficError"
+        :has-data="tokenTrafficHasData"
+        y-title="ГиБ за сутки"
+        y-grace="8%"
+        :labels="tokenTrafficLabels"
+        :datasets="tokenTrafficDatasets"
+        :format-y-tick="formatChartYTick"
+        :get-tooltip-title="tokenTrafficTooltipTitle"
+        :get-tooltip-label="tokenTrafficTooltipLabel"
+      >
+        <template #empty>
+          <p class="empty-hint">
+            Нет данных о трафике по токенам с более чем 10 регистрациями за выбранный период.
+          </p>
+        </template>
+      </AdminLineChartPanel>
     </section>
 
     <div
@@ -784,6 +962,45 @@ onMounted(() => {
   font-size: 0.82rem;
   color: var(--accent);
   font-weight: 600;
+}
+.token-traffic-chart {
+  margin-bottom: 1rem;
+}
+.chart-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.35rem;
+}
+.days-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.days-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.days-select {
+  min-width: 8.5rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+}
+.empty-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  max-width: 42rem;
 }
 .table-filter-hint {
   margin: 0 0 0.65rem;

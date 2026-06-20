@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -48,6 +48,33 @@ class ReferralTrafficOverviewStats(BaseModel):
     user_referrals: ReferralTrafficBreakdown = Field(
         description="Пользователи, пришедшие по ссылке с владельцем (referral_links.owner_user_id IS NOT NULL)",
     )
+
+
+class ReferralTokenTrafficDailySeries(BaseModel):
+    """Суточный прирост суммарного трафика (up+down) пользователей, пришедших по одному токену."""
+
+    referral_link_id: int
+    token: str
+    registrations_count: int = Field(ge=0)
+    delta_bytes: list[int] = Field(
+        default_factory=list,
+        description="По дням dates: суточный прирост up+down (не накопительно)",
+    )
+
+
+class ReferralTokensTrafficDailySummary(BaseModel):
+    """Суточный трафик по реферальным токенам с числом регистраций выше порога."""
+
+    dates: list[date] = Field(default_factory=list)
+    min_registrations: int = Field(
+        ge=0,
+        description="Порог registrations_count: в ответ попадают только токены строго выше этого значения",
+    )
+    total_delta_bytes: list[int] = Field(
+        default_factory=list,
+        description="Сумма delta_bytes по всем включённым токенам за каждый день",
+    )
+    tokens: list[ReferralTokenTrafficDailySeries] = Field(default_factory=list)
 
 
 class ReferralFunnelSummary(BaseModel):

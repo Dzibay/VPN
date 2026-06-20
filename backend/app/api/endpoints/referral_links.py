@@ -21,6 +21,7 @@ from app.domain.models.referral_links import (
     ReferralLinkUpdate,
     ReferralMeResponse,
     ReferralTrackClickBody,
+    ReferralTokensTrafficDailySummary,
     ReferralTrafficOverviewStats,
 )
 from app.domain.referrals.funnel import referral_funnel_compute
@@ -38,6 +39,7 @@ from app.domain.services.referral_links_service import (
     referral_me_for_user,
     referral_me_user_id_from_bearer,
     referral_traffic_overview_stats,
+    referral_tokens_traffic_daily_summary,
 )
 
 staff_router = APIRouter(
@@ -68,6 +70,36 @@ async def referral_traffic_stats(
     session: ReadonlySessionDep,
 ) -> ReferralTrafficOverviewStats:
     return await referral_traffic_overview_stats(session)
+
+
+@staff_router.get(
+    "/traffic-by-day",
+    response_model=ReferralTokensTrafficDailySummary,
+    summary=(
+        "Суточный трафик (up+down) пользователей по реферальным токенам "
+        "с registrations_count выше порога"
+    ),
+)
+async def referral_tokens_traffic_by_day(
+    response: Response,
+    days: int = Query(
+        30,
+        ge=1,
+        le=366,
+        description="Глубина окна в календарных днях UTC от сегодня включительно",
+    ),
+    min_registrations: int = Query(
+        10,
+        ge=0,
+        le=1_000_000,
+        description="Включать только токены с registrations_count строго больше этого значения",
+    ),
+) -> ReferralTokensTrafficDailySummary:
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return await referral_tokens_traffic_daily_summary(
+        days=days,
+        min_registrations=min_registrations,
+    )
 
 
 @staff_router.get(
