@@ -10,6 +10,7 @@ from app.config import settings
 from app.core.dependencies import ReadonlySessionDep, require_admin
 from app.domain.models.server_metrics import ServerMetricsFromPrometheus
 from app.domain.models.server_traffic import (
+    AllServersInboundTrafficDailySummary,
     ServerTrafficDailySummary,
     ServerUserTrafficBundle,
     UserTrafficCollectAllEnqueueResponse,
@@ -30,6 +31,25 @@ router = APIRouter(prefix="/servers", tags=["admin"])
 )
 async def enqueue_user_traffic_collect_all() -> UserTrafficCollectAllEnqueueResponse:
     return server_metrics_service.enqueue_user_traffic_collect_all()
+
+
+@router.get(
+    "/user-traffic/daily-summary-all",
+    response_model=AllServersInboundTrafficDailySummary,
+    dependencies=[Depends(require_admin)],
+    summary="Дневной ряд входящего трафика (down_bytes) по всем узлам и суммарно, не накопительно",
+)
+async def get_all_servers_inbound_traffic_daily_summary(
+    response: Response,
+    days: int = Query(
+        90,
+        ge=1,
+        le=366,
+        description="Глубина окна в календарных днях UTC от сегодня включительно",
+    ),
+) -> AllServersInboundTrafficDailySummary:
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return await server_metrics_service.all_servers_inbound_traffic_daily_db_only(days=days)
 
 
 @router.get(

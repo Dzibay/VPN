@@ -96,6 +96,29 @@ class ServerTrafficDailySummary(BaseModel):
     points: list[ServerTrafficDailyPoint] = Field(default_factory=list)
 
 
+class ServerInboundTrafficDailySeries(BaseModel):
+    """Суточный прирост входящего трафика (down_bytes) по одному узлу."""
+
+    server_id: int
+    name: str | None = None
+    host: str
+    delta_inbound_bytes: list[int] = Field(
+        default_factory=list,
+        description="По дням dates: суточный прирост down_bytes (не накопительно)",
+    )
+
+
+class AllServersInboundTrafficDailySummary(BaseModel):
+    """Суточный входящий трафик по всем узлам: сумма и отдельные линии."""
+
+    dates: list[date] = Field(default_factory=list)
+    total_delta_inbound_bytes: list[int] = Field(
+        default_factory=list,
+        description="Сумма delta_inbound_bytes по всем узлам за каждый день",
+    )
+    servers: list[ServerInboundTrafficDailySeries] = Field(default_factory=list)
+
+
 class UserTrafficCollectEnqueueResponse(BaseModel):
     server_id: int
     job_id: str = Field(description="RQ job id — опрос GET .../collect-jobs/{job_id}")

@@ -40,6 +40,7 @@ const ReferralTokensAdminPage = () =>
 const RegistrationsByDateStaffView = () =>
   import('../views/RegistrationsByDateStaffView.vue')
 const ServerAnalyticsView = () => import('../views/ServerAnalyticsView.vue')
+const AdminTrafficStaffView = () => import('../views/AdminTrafficStaffView.vue')
 const UserAnalyticsView = () => import('../views/UserAnalyticsView.vue')
 const UsersAnalyticsStaffView = () =>
   import('../views/UsersAnalyticsStaffView.vue')
@@ -242,6 +243,11 @@ const routes = [
     path: '/admin/analytics',
     name: 'admin-analytics',
     component: ServerAnalyticsView,
+  },
+  {
+    path: '/admin/traffic',
+    name: 'admin-traffic',
+    component: AdminTrafficStaffView,
   },
   { path: '/admin/users-analytics', redirect: '/admin/users/analytics' },
   {

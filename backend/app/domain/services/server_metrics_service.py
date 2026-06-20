@@ -29,6 +29,8 @@ from app.domain.models.server_metrics import (
 )
 from app.core.time import utc_today
 from app.domain.models.server_traffic import (
+    AllServersInboundTrafficDailySummary,
+    ServerInboundTrafficDailySeries,
     ServerTrafficDailyPoint,
     ServerTrafficDailySummary,
     ServerUserTrafficBundle,
@@ -425,3 +427,95 @@ async def server_traffic_daily_summary_db_only(
     days: int = 90,
 ) -> ServerTrafficDailySummary:
     return await run_blocking_with_session(_server_traffic_daily_summary_blocking, server_id, days)
+
+
+def _daily_deltas_from_user_series(
+    by_user: dict[int, list[tuple[date, int]]],
+    grid: list[date],
+    start: date,
+) -> dict[date, int]:
+    day_delta: dict[date, int] = defaultdict(int)
+    for _uid, series in by_user.items():
+        vals = _forward_fill_totals_on_grid(series, grid)
+        for i in range(1, len(grid)):
+            d = grid[i]
+            if d < start:
+                continue
+            day_delta[d] += max(0, vals[i] - vals[i - 1])
+    return day_delta
+
+
+def _all_servers_inbound_traffic_daily_blocking(
+    db: Session,
+    days: int,
+) -> AllServersInboundTrafficDailySummary:
+    """Суточные дельты down_bytes по узлам и суммарно (не накопительно)."""
+    span = max(1, min(int(days), 366))
+    today = utc_today()
+    start = today - timedelta(days=span - 1)
+    day_before_start = start - timedelta(days=1)
+    grid = _inclusive_date_range(day_before_start, today)
+    dates = _inclusive_date_range(start, today)
+    if not grid:
+        return AllServersInboundTrafficDailySummary()
+
+    servers = db.execute(
+        select(Server.id, Server.name, Server.host).order_by(Server.id.asc()),
+    ).all()
+
+    stmt = (
+        select(
+            UserServerTraffic.server_id,
+            UserServerTraffic.user_id,
+            UserServerTraffic.traffic_date,
+            UserServerTraffic.down_bytes,
+        )
+        .order_by(
+            UserServerTraffic.server_id.asc(),
+            UserServerTraffic.user_id.asc(),
+            UserServerTraffic.traffic_date.asc(),
+        )
+    )
+    raw_rows = db.execute(stmt).all()
+
+    by_server_user: dict[int, dict[int, list[tuple[date, int]]]] = defaultdict(
+        lambda: defaultdict(list),
+    )
+    for sid_raw, uid_raw, traffic_d, down_raw in raw_rows:
+        by_server_user[int(sid_raw)][int(uid_raw)].append(
+            (traffic_d, int(down_raw or 0)),
+        )
+
+    total_by_day = {d: 0 for d in dates}
+    server_series: list[ServerInboundTrafficDailySeries] = []
+
+    for srv_id, srv_name, srv_host in servers:
+        by_user = by_server_user.get(int(srv_id), {})
+        if by_user:
+            day_delta = _daily_deltas_from_user_series(by_user, grid, start)
+            deltas = [int(day_delta.get(d, 0)) for d in dates]
+        else:
+            deltas = [0 for _ in dates]
+        for d, val in zip(dates, deltas, strict=True):
+            total_by_day[d] += val
+        server_series.append(
+            ServerInboundTrafficDailySeries(
+                server_id=int(srv_id),
+                name=srv_name,
+                host=str(srv_host or ""),
+                delta_inbound_bytes=deltas,
+            ),
+        )
+
+    return AllServersInboundTrafficDailySummary(
+        dates=dates,
+        total_delta_inbound_bytes=[int(total_by_day[d]) for d in dates],
+        servers=server_series,
+    )
+
+
+async def all_servers_inbound_traffic_daily_db_only(
+    *,
+    days: int = 90,
+) -> AllServersInboundTrafficDailySummary:
+    return await run_blocking_with_session(_all_servers_inbound_traffic_daily_blocking, days)

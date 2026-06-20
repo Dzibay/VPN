@@ -47,6 +47,12 @@ export const ADMIN_NAV_DEFINITION = [
     access: 'admin_only',
   },
   {
+    routeName: 'admin-traffic',
+    label: 'Трафик',
+    path: '/admin/traffic',
+    access: 'admin_only',
+  },
+  {
     routeName: 'admin-funnel',
     label: 'Воронка',
     path: '/admin/funnel',
