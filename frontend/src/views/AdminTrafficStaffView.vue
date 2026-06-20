@@ -4,16 +4,27 @@ import AdminLineChartPanel from '../components/AdminLineChartPanel.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AppRefreshButton from '../components/AppRefreshButton.vue'
 import { fetchJson } from '../api/client.js'
-import { chartSeriesRgb } from '../utils/adminChartTheme.js'
+import { chartSeriesRgb, rgbTupleFromVar } from '../utils/adminChartTheme.js'
+import {
+  addCalendarDayIso,
+  formatMskCalendarDayShort,
+  mskTodayIso,
+  subtractCalendarDaysIso,
+} from '../utils/mskDate.js'
 
 /** @typedef {{ server_id: number; name: string | null; host: string; delta_inbound_bytes: number[] }} ServerSeries */
+/** @typedef {{ stats_date: string | null; users_count: number; users_with_traffic_count: number; subscription_devices_users_count: number }} DailyStatsRow */
 
 const loading = ref(false)
-const error = ref(null)
+const trafficError = ref(null)
+const userStatsError = ref(null)
 const days = ref(30)
 
 /** @type {import('vue').Ref<{ dates: string[]; total_delta_inbound_bytes: number[]; servers: ServerSeries[]; exit_server_ids?: number[] } | null>} */
 const bundle = ref(null)
+
+/** @type {import('vue').Ref<DailyStatsRow[]>} */
+const userStatsRows = ref([])
 
 const dayOptions = [
   { value: 7, label: '7 дней' },
@@ -57,6 +68,12 @@ function formatChartYTick(v) {
   if (gib >= 100) return `${Math.round(gib)} ГиБ`
   if (gib >= 10) return `${Math.round(gib * 10) / 10} ГиБ`
   return `${Math.round(gib * 100) / 100} ГиБ`
+}
+
+function formatCountYTick(v) {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return ''
+  return n.toLocaleString('ru-RU')
 }
 
 function serverLabel(s) {
@@ -152,19 +169,107 @@ function registrationTooltipLabel(ctx) {
   return `${ctx.dataset.label}: ${formatChartYTick(bytesToGib(bytes))}`
 }
 
+/** Суточные метрики за последние ``days`` календарных дней МСК (не накопительно). */
+const userStatsPoints = computed(() => {
+  const rows = userStatsRows.value.filter(
+    (r) => r.stats_date != null && String(r.stats_date).trim() !== '',
+  )
+  const endIso = mskTodayIso()
+  const startIso = subtractCalendarDaysIso(endIso, Math.max(0, days.value - 1))
+  const map = new Map(
+    rows.map((r) => [String(r.stats_date).slice(0, 10), r]),
+  )
+  const out = []
+  let iso = startIso
+  while (iso <= endIso) {
+    const row = map.get(iso)
+    out.push({
+      iso,
+      registrations: Number(row?.users_count) || 0,
+      connections: Number(row?.subscription_devices_users_count) || 0,
+      withTraffic: Number(row?.users_with_traffic_count) || 0,
+    })
+    if (iso === endIso) break
+    iso = addCalendarDayIso(iso)
+  }
+  return out
+})
+
+const userStatsLabels = computed(() =>
+  userStatsPoints.value.map((p) => formatMskCalendarDayShort(p.iso)),
+)
+
+const userStatsDatasets = computed(() => {
+  const pts = userStatsPoints.value
+  if (!pts.length) return []
+  return [
+    {
+      label: 'Регистрации',
+      data: pts.map((p) => p.registrations),
+      rgb: rgbTupleFromVar('--accent', '#58d68d'),
+      filled: true,
+    },
+    {
+      label: 'Подключения устройств',
+      data: pts.map((p) => p.connections),
+      rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.device]),
+      filled: false,
+    },
+    {
+      label: 'Новые с трафиком',
+      data: pts.map((p) => p.withTraffic),
+      rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.traffic]),
+      filled: false,
+    },
+  ]
+})
+
+const userStatsHasData = computed(() =>
+  userStatsPoints.value.some(
+    (p) => p.registrations > 0 || p.connections > 0 || p.withTraffic > 0,
+  ),
+)
+
+const userStatsAriaLabel =
+  'По дням МСК: регистрации, первые подключения устройств и новые пользователи с ненулевым трафиком за сутки'
+
+function userStatsTooltipTitle(i) {
+  const p = userStatsPoints.value[i]
+  if (!p) return ''
+  return `${formatMskCalendarDayShort(p.iso)} (МСК)`
+}
+
+/** @param {import('chart.js').TooltipItem<'line'>} ctx */
+function userStatsTooltipLabel(ctx) {
+  const v = ctx.parsed.y
+  return `${ctx.dataset.label}: ${formatCountYTick(v)}`
+}
+
 async function load() {
   loading.value = true
-  error.value = null
-  try {
-    bundle.value = await fetchJson(
-      `/api/servers/user-traffic/daily-summary-all?days=${encodeURIComponent(days.value)}`,
-    )
-  } catch (e) {
-    error.value = e.message || String(e)
+  trafficError.value = null
+  userStatsError.value = null
+  const daysParam = encodeURIComponent(days.value)
+  const [trafficRes, statsRes] = await Promise.allSettled([
+    fetchJson(`/api/servers/user-traffic/daily-summary-all?days=${daysParam}`),
+    fetchJson('/api/users/daily-stats?granularity=day'),
+  ])
+  if (trafficRes.status === 'fulfilled') {
+    bundle.value = trafficRes.value
+  } else {
+    trafficError.value =
+      trafficRes.reason?.message || String(trafficRes.reason)
     bundle.value = null
-  } finally {
-    loading.value = false
   }
+  if (statsRes.status === 'fulfilled') {
+    const rows = statsRes.value?.stats_by_date
+    userStatsRows.value = Array.isArray(rows) ? rows : []
+  } else {
+    userStatsError.value =
+      statsRes.reason?.message || String(statsRes.reason)
+    userStatsRows.value = []
+  }
+  loading.value = false
 }
 
 watch(days, () => {
@@ -198,7 +303,7 @@ onMounted(() => {
       hint=""
       :aria-label="chartAriaLabel"
       :loading="loading"
-      :error="error"
+      :error="trafficError"
       :has-data="hasData"
       y-title="ГиБ за сутки"
       y-grace="8%"
@@ -214,6 +319,27 @@ onMounted(() => {
           Нет данных о трафике за выбранный период. Убедитесь, что выполняется сбор
           трафика с узлов (задачи RQ или страница «Нагрузка»).
         </p>
+      </template>
+    </AdminLineChartPanel>
+
+    <AdminLineChartPanel
+      title="Пользователи по дням"
+      unit-label="за сутки"
+      hint="Календарные дни Europe/Moscow. Регистрации — новые учётные пользователи; подключения — первое устройство в subscription_devices; новые с трафиком — зарегистрированные в этот день с ненулевым суммарным трафиком."
+      :aria-label="userStatsAriaLabel"
+      :loading="loading"
+      :error="userStatsError"
+      :has-data="userStatsHasData"
+      y-title="Пользователей"
+      y-grace="8%"
+      :labels="userStatsLabels"
+      :datasets="userStatsDatasets"
+      :format-y-tick="formatCountYTick"
+      :get-tooltip-title="userStatsTooltipTitle"
+      :get-tooltip-label="userStatsTooltipLabel"
+    >
+      <template #empty>
+        <p class="empty-hint">Нет данных о регистрациях и подключениях за выбранный период.</p>
       </template>
     </AdminLineChartPanel>
   </AdminStaffShell>
