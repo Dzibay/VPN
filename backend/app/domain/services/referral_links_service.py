@@ -32,14 +32,13 @@ from app.domain.referrals.task_bonus_days import (
 )
 from app.domain.models.referral_links import (
     ReferralTrafficBreakdown,
-    ReferralTokensTrafficDailySummary,
+    ReferralTokensRegistrationsDailySummary,
     ReferralTrafficOverviewStats,
 )
-from app.domain.referrals.traffic_daily import referral_tokens_traffic_daily_blocking
+from app.domain.referrals.registrations_daily import referral_tokens_registrations_daily
 from app.domain.users.stats_qualification import user_counts_in_admin_stats
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.user import User
-from app.infrastructure.database.blocking import run_blocking_with_session
 
 
 def _traffic_breakdown_from_row(row: object, prefix: str) -> ReferralTrafficBreakdown:
@@ -91,14 +90,15 @@ async def referral_traffic_overview_stats(session: AsyncSession) -> ReferralTraf
     )
 
 
-async def referral_tokens_traffic_daily_summary(
+async def referral_tokens_registrations_daily_summary(
+    session: AsyncSession,
     *,
     days: int = 30,
     min_registrations: int = 10,
-) -> ReferralTokensTrafficDailySummary:
-    """Суточный трафик по токенам с registrations_count > min_registrations."""
-    return await run_blocking_with_session(
-        referral_tokens_traffic_daily_blocking,
+) -> ReferralTokensRegistrationsDailySummary:
+    """Регистрации по дням МСК для токенов с registrations_count > min_registrations."""
+    return await referral_tokens_registrations_daily(
+        session,
         days=days,
         min_registrations=min_registrations,
     )

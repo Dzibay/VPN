@@ -11,9 +11,9 @@ import AppRefreshButton from '../components/AppRefreshButton.vue'
 import RowActionsDropdown from '../components/RowActionsDropdown.vue'
 import StatWidget from '../components/StatWidget.vue'
 import { fetchJson, sitePublicUrl } from '../api/client.js'
-import { chartSeriesRgb } from '../utils/adminChartTheme.js'
+import { rgbTupleFromVar } from '../utils/adminChartTheme.js'
 import { useTableSort } from '../utils/adminTableSort.js'
-import { formatMskApiDateTime } from '../utils/mskDate.js'
+import { formatMskApiDateTime, formatMskCalendarDayShort } from '../utils/mskDate.js'
 
 const route = useRoute()
 const rows = ref([])
@@ -24,13 +24,13 @@ const trafficStats = ref(null)
 const trafficStatsLoading = ref(false)
 const trafficStatsError = ref(null)
 
-const tokenTrafficDays = ref(30)
-/** @type {import('vue').Ref<{ dates: string[]; min_registrations: number; total_delta_bytes: number[]; tokens: Array<{ referral_link_id: number; token: string; registrations_count: number; delta_bytes: number[] }> } | null>} */
-const tokenTrafficBundle = ref(null)
-const tokenTrafficLoading = ref(false)
-const tokenTrafficError = ref(null)
+const tokenRegDays = ref(30)
+/** @type {import('vue').Ref<{ dates: string[]; min_registrations: number; total_registrations_by_day: number[]; tokens: Array<{ referral_link_id: number; token: string; registrations_count: number; registrations_by_day: number[] }> } | null>} */
+const tokenRegBundle = ref(null)
+const tokenRegLoading = ref(false)
+const tokenRegError = ref(null)
 
-const tokenTrafficDayOptions = [
+const tokenRegDayOptions = [
   { value: 7, label: '7 дней' },
   { value: 30, label: '30 дней' },
   { value: 60, label: '60 дней' },
@@ -52,52 +52,31 @@ const TOKEN_LINE_RGB = [
   [20, 184, 166],
 ]
 
-function formatTrafficDayLabel(trafficDate) {
-  const s = String(trafficDate ?? '').trim().slice(0, 10)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return s || '—'
-  const [y, m, d] = s.split('-').map(Number)
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'short',
-    timeZone: 'UTC',
-  })
+function formatRegChartYTick(v) {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return '—'
+  return n.toLocaleString('ru-RU')
 }
 
-function bytesToGib(bytes) {
-  return Number(bytes || 0) / 1024 ** 3
-}
-
-function formatChartYTick(v) {
-  const gib = Number(v)
-  if (!Number.isFinite(gib)) return '—'
-  if (gib >= 100) return `${Math.round(gib)} ГиБ`
-  if (gib >= 10) return `${Math.round(gib * 10) / 10} ГиБ`
-  return `${Math.round(gib * 100) / 100} ГиБ`
-}
-
-const tokenTrafficLabels = computed(() =>
-  (tokenTrafficBundle.value?.dates ?? []).map((d) => formatTrafficDayLabel(d)),
+const tokenRegLabels = computed(() =>
+  (tokenRegBundle.value?.dates ?? []).map((d) => formatMskCalendarDayShort(d)),
 )
 
-const tokenTrafficTotalGib = computed(() =>
-  (tokenTrafficBundle.value?.total_delta_bytes ?? []).map(bytesToGib),
-)
-
-const tokenTrafficDatasets = computed(() => {
-  const data = tokenTrafficBundle.value
+const tokenRegDatasets = computed(() => {
+  const data = tokenRegBundle.value
   if (!data?.dates?.length) return []
 
   const total = {
     label: 'Суммарно',
-    data: tokenTrafficTotalGib.value,
-    rgb: /** @type {[number, number, number]} */ ([...chartSeriesRgb.traffic]),
+    data: data.total_registrations_by_day ?? [],
+    rgb: rgbTupleFromVar('--accent', '#58d68d'),
     filled: true,
     borderWidth: 2.75,
   }
 
   const perToken = (data.tokens ?? []).map((t, idx) => ({
     label: `${t.token} (${t.registrations_count} рег.)`,
-    data: (t.delta_bytes ?? []).map(bytesToGib),
+    data: t.registrations_by_day ?? [],
     rgb: /** @type {[number, number, number]} */ ([
       ...TOKEN_LINE_RGB[idx % TOKEN_LINE_RGB.length],
     ]),
@@ -108,49 +87,47 @@ const tokenTrafficDatasets = computed(() => {
   return [total, ...perToken]
 })
 
-const tokenTrafficHasData = computed(() => {
-  const data = tokenTrafficBundle.value
+const tokenRegHasData = computed(() => {
+  const data = tokenRegBundle.value
   if (!data?.dates?.length) return false
-  return (data.tokens ?? []).some((t) => (t.delta_bytes ?? []).some((v) => Number(v) > 0))
+  return (data.tokens ?? []).some((t) =>
+    (t.registrations_by_day ?? []).some((v) => Number(v) > 0),
+  )
 })
 
-const tokenTrafficChartHint = computed(() => {
-  const minReg = tokenTrafficBundle.value?.min_registrations ?? 10
-  const count = tokenTrafficBundle.value?.tokens?.length ?? 0
-  return `Токены с более чем ${minReg} регистрациями (${count} на графике)`
+const tokenRegChartHint = computed(() => {
+  const minReg = tokenRegBundle.value?.min_registrations ?? 10
+  const count = tokenRegBundle.value?.tokens?.length ?? 0
+  return `Токены с более чем ${minReg} регистрациями (${count} на графике). Суточные регистрации по календарным дням Europe/Moscow.`
 })
 
-const tokenTrafficAriaLabel =
-  'По дням UTC: суточный трафик up+down пользователей по реферальным токенам с более чем 10 регистрациями'
+const tokenRegAriaLabel =
+  'По дням МСК: число регистраций по реферальным токенам с более чем 10 регистрациями'
 
-function tokenTrafficTooltipTitle(i) {
-  const d = tokenTrafficBundle.value?.dates?.[i]
-  if (!d) return tokenTrafficLabels.value[i] ?? ''
-  return `${formatTrafficDayLabel(d)} (UTC)`
+function tokenRegTooltipTitle(i) {
+  const d = tokenRegBundle.value?.dates?.[i]
+  if (!d) return tokenRegLabels.value[i] ?? ''
+  return `${formatMskCalendarDayShort(d)} (МСК)`
 }
 
 /** @param {import('chart.js').TooltipItem<'line'>} ctx */
-function tokenTrafficTooltipLabel(ctx) {
-  const i = ctx.dataIndex
-  if (ctx.datasetIndex === 0) {
-    return `${ctx.dataset.label}: ${formatChartYTick(tokenTrafficTotalGib.value[i])}`
-  }
-  const bytes = tokenTrafficBundle.value?.tokens?.[ctx.datasetIndex - 1]?.delta_bytes?.[i]
-  return `${ctx.dataset.label}: ${formatChartYTick(bytesToGib(bytes))}`
+function tokenRegTooltipLabel(ctx) {
+  const raw = ctx.parsed.y
+  return `${ctx.dataset.label}: ${formatRegChartYTick(raw)}`
 }
 
-async function loadTokenTrafficChart() {
-  tokenTrafficLoading.value = true
-  tokenTrafficError.value = null
+async function loadTokenRegChart() {
+  tokenRegLoading.value = true
+  tokenRegError.value = null
   try {
-    tokenTrafficBundle.value = await fetchJson(
-      `/api/referral-links/traffic-by-day?days=${encodeURIComponent(tokenTrafficDays.value)}&min_registrations=10`,
+    tokenRegBundle.value = await fetchJson(
+      `/api/referral-links/registrations-by-day?days=${encodeURIComponent(tokenRegDays.value)}&min_registrations=10`,
     )
   } catch (e) {
-    tokenTrafficError.value = e.message || String(e)
-    tokenTrafficBundle.value = null
+    tokenRegError.value = e.message || String(e)
+    tokenRegBundle.value = null
   } finally {
-    tokenTrafficLoading.value = false
+    tokenRegLoading.value = false
   }
 }
 
@@ -197,7 +174,7 @@ async function load() {
 }
 
 async function reloadAll() {
-  await Promise.all([load(), loadTrafficStats(), loadTokenTrafficChart()])
+  await Promise.all([load(), loadTrafficStats(), loadTokenRegChart()])
 }
 
 function openModal() {
@@ -391,8 +368,8 @@ async function removeReferral(r) {
   }
 }
 
-watch(tokenTrafficDays, () => {
-  void loadTokenTrafficChart()
+watch(tokenRegDays, () => {
+  void loadTokenRegChart()
 })
 
 watch(
@@ -430,7 +407,7 @@ onMounted(() => {
         <h2 class="section-heading">Конверсия по токенам</h2>
         <div class="head-actions">
           <AppRefreshButton
-            :busy="loading || trafficStatsLoading || tokenTrafficLoading"
+            :busy="loading || trafficStatsLoading || tokenRegLoading"
             @click="reloadAll"
           />
           <button type="button" class="btn-primary" @click="openModal">
@@ -546,40 +523,40 @@ onMounted(() => {
       <p v-if="copyHint" class="copy-hint">{{ copyHint }}</p>
     </section>
 
-    <section class="token-traffic-chart" aria-label="График трафика по реферальным токенам">
+    <section class="token-reg-chart" aria-label="График регистраций по реферальным токенам">
       <div class="chart-toolbar">
         <label class="days-field">
           <span class="days-label">Период</span>
           <select
-            v-model.number="tokenTrafficDays"
+            v-model.number="tokenRegDays"
             class="days-select"
-            :disabled="tokenTrafficLoading"
+            :disabled="tokenRegLoading"
           >
-            <option v-for="o in tokenTrafficDayOptions" :key="o.value" :value="o.value">
+            <option v-for="o in tokenRegDayOptions" :key="o.value" :value="o.value">
               {{ o.label }}
             </option>
           </select>
         </label>
       </div>
       <AdminLineChartPanel
-        title="Трафик по токенам"
-        unit-label="ГиБ / сутки"
-        :hint="tokenTrafficChartHint"
-        :aria-label="tokenTrafficAriaLabel"
-        :loading="tokenTrafficLoading"
-        :error="tokenTrafficError"
-        :has-data="tokenTrafficHasData"
-        y-title="ГиБ за сутки"
+        title="Регистрации по токенам"
+        unit-label="рег. / сутки"
+        :hint="tokenRegChartHint"
+        :aria-label="tokenRegAriaLabel"
+        :loading="tokenRegLoading"
+        :error="tokenRegError"
+        :has-data="tokenRegHasData"
+        y-title="Регистрации за сутки"
         y-grace="8%"
-        :labels="tokenTrafficLabels"
-        :datasets="tokenTrafficDatasets"
-        :format-y-tick="formatChartYTick"
-        :get-tooltip-title="tokenTrafficTooltipTitle"
-        :get-tooltip-label="tokenTrafficTooltipLabel"
+        :labels="tokenRegLabels"
+        :datasets="tokenRegDatasets"
+        :format-y-tick="formatRegChartYTick"
+        :get-tooltip-title="tokenRegTooltipTitle"
+        :get-tooltip-label="tokenRegTooltipLabel"
       >
         <template #empty>
           <p class="empty-hint">
-            Нет данных о трафике по токенам с более чем 10 регистрациями за выбранный период.
+            Нет регистраций по токенам с более чем 10 регистрациями за выбранный период.
           </p>
         </template>
       </AdminLineChartPanel>
@@ -963,7 +940,7 @@ onMounted(() => {
   color: var(--accent);
   font-weight: 600;
 }
-.token-traffic-chart {
+.token-reg-chart {
   margin-bottom: 1rem;
 }
 .chart-toolbar {

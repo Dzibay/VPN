@@ -50,31 +50,31 @@ class ReferralTrafficOverviewStats(BaseModel):
     )
 
 
-class ReferralTokenTrafficDailySeries(BaseModel):
-    """Суточный прирост суммарного трафика (up+down) пользователей, пришедших по одному токену."""
+class ReferralTokenRegistrationsDailySeries(BaseModel):
+    """Число регистраций по календарным дням Europe/Moscow для одного токена."""
 
     referral_link_id: int
     token: str
     registrations_count: int = Field(ge=0)
-    delta_bytes: list[int] = Field(
+    registrations_by_day: list[int] = Field(
         default_factory=list,
-        description="По дням dates: суточный прирост up+down (не накопительно)",
+        description="По дням dates: число регистраций за сутки (не накопительно)",
     )
 
 
-class ReferralTokensTrafficDailySummary(BaseModel):
-    """Суточный трафик по реферальным токенам с числом регистраций выше порога."""
+class ReferralTokensRegistrationsDailySummary(BaseModel):
+    """Регистрации по дням для реферальных токенов с числом регистраций выше порога."""
 
     dates: list[date] = Field(default_factory=list)
     min_registrations: int = Field(
         ge=0,
         description="Порог registrations_count: в ответ попадают только токены строго выше этого значения",
     )
-    total_delta_bytes: list[int] = Field(
+    total_registrations_by_day: list[int] = Field(
         default_factory=list,
-        description="Сумма delta_bytes по всем включённым токенам за каждый день",
+        description="Сумма registrations_by_day по всем включённым токенам за каждый день",
     )
-    tokens: list[ReferralTokenTrafficDailySeries] = Field(default_factory=list)
+    tokens: list[ReferralTokenRegistrationsDailySeries] = Field(default_factory=list)
 
 
 class ReferralFunnelSummary(BaseModel):
