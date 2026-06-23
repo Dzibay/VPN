@@ -118,6 +118,16 @@ gemini_domains = [
     "domain:proactivebackend-pa.googleapis.com",
 ]
 _google_geosites = ("geosite:youtube", "geosite:google")
+_youtube_extra_domains = (
+    "domain:googlevideo.com",
+    "domain:ytimg.com",
+    "domain:youtubei.googleapis.com",
+    "domain:youtube.googleapis.com",
+    "domain:ggpht.com",
+    "domain:gvt1.com",
+    "domain:googleusercontent.com",
+)
+_warp_route_domains = list(_google_geosites) + list(_youtube_extra_domains)
 
 warp_outbound = None
 if not google_via_exit:
@@ -151,8 +161,16 @@ google_direct_domains = []
 if not google_via_exit:
     if warp_outbound:
         youtube_warp_rules = [
-            {"type": "field", "outboundTag": "warp", "domain": list(_google_geosites)},
+            {"type": "field", "outboundTag": "warp", "domain": list(_warp_route_domains)},
             {"type": "field", "outboundTag": "warp", "ip": ["geoip:google"]},
+            # QUIC/UDP 443 на Google IP — в warp, иначе уходит в egress-cascade (catch-all).
+            {
+                "type": "field",
+                "outboundTag": "warp",
+                "network": "udp",
+                "port": "443",
+                "ip": ["geoip:google"],
+            },
         ]
         google_direct_domains = list(gemini_domains)
     else:
@@ -271,7 +289,7 @@ if warp_outbound:
             "type": "field",
             "inboundTag": ["dns-inbound"],
             "outboundTag": "warp",
-            "domain": list(_google_geosites),
+            "domain": list(_warp_route_domains),
         }
     )
 dns_rules.append(

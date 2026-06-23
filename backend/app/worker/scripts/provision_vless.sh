@@ -204,6 +204,17 @@ gemini_domains = [
     "domain:proactivebackend-pa.googleapis.com",
 ]
 _google_geosites = ("geosite:youtube", "geosite:google")
+# Доп. домены видео/CDN — не всегда попадают в sniff до первого пакета.
+_youtube_extra_domains = (
+    "domain:googlevideo.com",
+    "domain:ytimg.com",
+    "domain:youtubei.googleapis.com",
+    "domain:youtube.googleapis.com",
+    "domain:ggpht.com",
+    "domain:gvt1.com",
+    "domain:googleusercontent.com",
+)
+_warp_route_domains = list(_google_geosites) + list(_youtube_extra_domains)
 gemini_tag = "egress-cascade" if cascade else "direct"
 
 warp_outbound = None
@@ -224,7 +235,7 @@ if google_via_exit:
 elif not cascade:
     if warp_outbound:
         google_rules = [
-            {"type": "field", "outboundTag": "warp", "domain": list(_google_geosites)},
+            {"type": "field", "outboundTag": "warp", "domain": list(_warp_route_domains)},
             {"type": "field", "outboundTag": "warp", "ip": ["geoip:google"]},
             {"type": "field", "outboundTag": "direct", "domain": gemini_domains},
         ]

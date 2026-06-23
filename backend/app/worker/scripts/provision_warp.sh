@@ -225,7 +225,6 @@ settings: dict[str, object] = {
             "publicKey": pub,
             "endpoint": "%s:%s" % (host, port),
             "allowedIPs": ["0.0.0.0/0", "::/0"],
-            "keepAlive": 25,
         }
     ],
     "mtu": 1280,
