@@ -346,6 +346,28 @@ def _is_youtube_warp_entry_server(server: Server) -> bool:
     return _google_routing_mode_for_server(server) == "entry"
 
 
+def _heal_stuck_background_provision(db: Session, server: Server) -> None:
+    """Вернуть success после фонового sync_clients/warp_monitor (до fix manage_provision_status)."""
+    if not server.provision_ready or server.provision_status != "running":
+        return
+    if int(server.provision_progress or 0) < 96:
+        return
+    detail = (server.provision_detail or "").lower()
+    if "завершено" not in detail:
+        return
+    log.info(
+        "Восстановление provision_status после фонового SSH server_id=%s (было %s%%)",
+        server.id,
+        server.provision_progress,
+    )
+    server.provision_status = "success"
+    server.provision_step = "Установка завершена"
+    server.provision_progress = 100
+    server.provision_error = None
+    server.provision_detail = "Сервер готов к работе; проверьте DNS/CDN и обновите подписку"
+    db.commit()
+
+
 def _run_warp_monitor_ssh(db: Session, server: Server) -> None:
     """Отдельный SSH-прогон: WARP + textfile metrics (после dynamic sync без полного config)."""
     if not _is_youtube_warp_entry_server(server):
@@ -355,7 +377,12 @@ def _run_warp_monitor_ssh(db: Session, server: Server) -> None:
         server.id,
         server.host,
     )
-    _run_ssh_remote_provision(db, server, component="warp_monitor")
+    _run_ssh_remote_provision(
+        db,
+        server,
+        component="warp_monitor",
+        manage_provision_status=False,
+    )
 
 
 def _vless_grpc_env_lines(db: Session, server: Server, *, cfg: Settings) -> str:
@@ -581,15 +608,22 @@ def _cascade_xray_env_for_ru_entry(db: Session, server: Server) -> str:
     return "".join(lines)
 
 
-def _run_ssh_remote_provision(db: Session, server: Server, *, component: ProvisionComponent) -> None:
-    _set_provision_progress(
-        db,
-        server,
-        step="Подготовка сценария установки",
-        progress=8,
-        detail="Собираем переменные окружения и SSH payload",
-        status="running",
-    )
+def _run_ssh_remote_provision(
+    db: Session,
+    server: Server,
+    *,
+    component: ProvisionComponent,
+    manage_provision_status: bool = True,
+) -> None:
+    if manage_provision_status:
+        _set_provision_progress(
+            db,
+            server,
+            step="Подготовка сценария установки",
+            progress=8,
+            detail="Собираем переменные окружения и SSH payload",
+            status="running",
+        )
     script_body = _remote_script_payload()
     # Иначе на удалённой стороне TERM пустой → tput в сторонних скриптах (install-release.sh) даёт ошибку и ненулевой exit.
     remote_env = 'export TERM="${TERM:-xterm-256color}"\n'
@@ -668,13 +702,14 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
         server.host,
         int(settings.provision_subprocess_timeout),
     )
-    _set_provision_progress(
-        db,
-        server,
-        step="SSH-подключение к VPS",
-        progress=12,
-        detail=f"Подключаемся к {server.host} и запускаем установочный сценарий",
-    )
+    if manage_provision_status:
+        _set_provision_progress(
+            db,
+            server,
+            step="SSH-подключение к VPS",
+            progress=12,
+            detail=f"Подключаемся к {server.host} и запускаем установочный сценарий",
+        )
 
     progress_lock = threading.Lock()
     last_progress = {"value": 12, "ts": 0.0}
@@ -682,6 +717,8 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
     def _on_ssh_output(_stream: str, line: str) -> None:
         if "[warp]" in line.lower():
             log.info("SSH server_id=%s warp: %s", server.id, line.rstrip()[:500])
+        if not manage_provision_status:
+            return
         parsed = _progress_from_remote_line(line)
         if parsed is None:
             return
@@ -733,15 +770,16 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
             )
         detail = _format_ssh_capture(stdout_t, stderr_t)
         friendly = _friendly_provision_error(detail)
-        _set_provision_progress(
-            db,
-            server,
-            step="Ошибка установки",
-            progress=100,
-            detail=friendly,
-            status="failed",
-            error=friendly,
-        )
+        if manage_provision_status:
+            _set_provision_progress(
+                db,
+                server,
+                step="Ошибка установки",
+                progress=100,
+                detail=friendly,
+                status="failed",
+                error=friendly,
+            )
         raise RuntimeError(
             f"ssh завершился с кодом {rc}\n"
             + (
@@ -886,12 +924,21 @@ def sync_xray_clients_to_server(server_id: int) -> None:
                 server.proxy_kind,
             )
             return
-        if server.provision_status in ("queued", "running"):
+        if server.provision_status == "queued":
             log.warning(
-                "sync_xray_clients: пропуск id=%s (идёт установка/очередь)",
+                "sync_xray_clients: пропуск id=%s (в очереди установки)",
                 server_id,
             )
             return
+        if server.provision_status == "running":
+            _heal_stuck_background_provision(db, server)
+            db.refresh(server)
+            if server.provision_status == "running":
+                log.warning(
+                    "sync_xray_clients: пропуск id=%s (идёт установка)",
+                    server_id,
+                )
+                return
         if (settings.provision_command or "").strip():
             raise RuntimeError(
                 "Задан provision_command: SSH-синхронизация списка клиентов Xray недоступна",
@@ -912,7 +959,12 @@ def sync_xray_clients_to_server(server_id: int) -> None:
                 "sync_xray_clients: динамическое обновление не удалось — %s. Выполняется полное (config + restart).",
                 dyn_err,
             )
-        _run_ssh_remote_provision(db, server, component="sync_clients")
+        _run_ssh_remote_provision(
+            db,
+            server,
+            component="sync_clients",
+            manage_provision_status=False,
+        )
     finally:
         db.close()
 
