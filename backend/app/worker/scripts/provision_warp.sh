@@ -144,14 +144,14 @@ _warp_ensure_credentials() {
     cd "$dir"
     if [[ ! -f wgcf-account.toml ]]; then
       echo "[warp] регистрация аккаунта Cloudflare WARP…"
-      if ! "$wgcf" register --accept-tos; then
-        echo "[warp] wgcf register не удался" >&2
+      if ! reg_out=$("$wgcf" register --accept-tos 2>&1); then
+        echo "[warp] wgcf register не удался: ${reg_out:-(нет вывода)}" >&2
         exit 1
       fi
     fi
     echo "[warp] генерация WireGuard-профиля…"
-    if ! "$wgcf" generate; then
-      echo "[warp] wgcf generate не удался" >&2
+    if ! gen_out=$("$wgcf" generate 2>&1); then
+      echo "[warp] wgcf generate не удался: ${gen_out:-(нет вывода)}" >&2
       exit 1
     fi
   )

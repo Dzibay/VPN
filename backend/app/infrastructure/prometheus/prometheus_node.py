@@ -97,17 +97,18 @@ _QUERIES: dict[str, str] = {
 }
 
 # Textfile collector (vpn-warp-check.sh на узлах с google_routing_mode=entry).
+# Плейсholder {instance} — подставляется через format_query_with_instance().
 _WARP_INSTANT: dict[str, str] = {
-    "profile_ok": 'vpn_warp_profile_ok{{instance="{i}"}}',
-    "outbound_ok": 'vpn_warp_outbound_ok{{instance="{i}"}}',
-    "endpoint_ok": 'vpn_warp_endpoint_reachable{{instance="{i}"}}',
-    "cf_api_ok": 'vpn_warp_cf_api_ok{{instance="{i}"}}',
-    "warp_plus": 'vpn_warp_warp_plus{{instance="{i}"}}',
-    "probe_ok": 'vpn_warp_probe_ok{{instance="{i}"}}',
-    "probe_latency_ms": 'vpn_warp_probe_latency_ms{{instance="{i}"}}',
-    "last_check_ts": 'vpn_warp_last_check_timestamp{{instance="{i}"}}',
-    "quota_bytes": 'vpn_warp_quota_bytes{{instance="{i}"}}',
-    "premium_data_bytes": 'vpn_warp_premium_data_bytes{{instance="{i}"}}',
+    "profile_ok": 'vpn_warp_profile_ok{instance="{instance}"}',
+    "outbound_ok": 'vpn_warp_outbound_ok{instance="{instance}"}',
+    "endpoint_ok": 'vpn_warp_endpoint_reachable{instance="{instance}"}',
+    "cf_api_ok": 'vpn_warp_cf_api_ok{instance="{instance}"}',
+    "warp_plus": 'vpn_warp_warp_plus{instance="{instance}"}',
+    "probe_ok": 'vpn_warp_probe_ok{instance="{instance}"}',
+    "probe_latency_ms": 'vpn_warp_probe_latency_ms{instance="{instance}"}',
+    "last_check_ts": 'vpn_warp_last_check_timestamp{instance="{instance}"}',
+    "quota_bytes": 'vpn_warp_quota_bytes{instance="{instance}"}',
+    "premium_data_bytes": 'vpn_warp_premium_data_bytes{instance="{instance}"}',
 }
 
 
@@ -229,7 +230,7 @@ def fetch_warp_status_from_prometheus(instance: str) -> dict[str, Any]:
         _circuit_check()
         timeout = min(float(settings.prometheus_timeout_seconds), 15.0)
         with _prometheus_http_client(timeout) as client:
-            q = format_query_with_instance('vpn_warp_info{{instance="{i}"}}', inst)
+            q = format_query_with_instance('vpn_warp_info{instance="{instance}"}', inst)
             labels = _query_instant_vector_labels(client, q)
             if labels:
                 account_type = labels[0].get("account_type") or None
