@@ -30,6 +30,11 @@ const tokenRegBundle = ref(null)
 const tokenRegLoading = ref(false)
 const tokenRegError = ref(null)
 
+/** @type {import('vue').Ref<{ dates: string[]; direct: number[]; direct_bot: number[]; direct_site: number[]; channel_links: number[]; user_referrals: number[]; total_registrations_by_day: number[] } | null>} */
+const sourceRegBundle = ref(null)
+const sourceRegLoading = ref(false)
+const sourceRegError = ref(null)
+
 const tokenRegDayOptions = [
   { value: 7, label: '7 дней' },
   { value: 30, label: '30 дней' },
@@ -51,6 +56,14 @@ const TOKEN_LINE_RGB = [
   [99, 102, 241],
   [20, 184, 166],
 ]
+
+const SOURCE_LINE_RGB = {
+  direct: [148, 163, 184],
+  direct_bot: [56, 189, 248],
+  direct_site: [167, 139, 250],
+  channel_links: [52, 211, 153],
+  user_referrals: [245, 158, 11],
+}
 
 function formatRegChartYTick(v) {
   const n = Number(v)
@@ -136,6 +149,81 @@ async function loadTokenRegChart() {
   }
 }
 
+const sourceRegLabels = computed(() =>
+  (sourceRegBundle.value?.dates ?? []).map((d) => formatMskCalendarDayShort(d)),
+)
+
+const sourceRegDatasets = computed(() => {
+  const data = sourceRegBundle.value
+  if (!data?.dates?.length) return []
+
+  const total = {
+    label: 'Суммарно',
+    data: data.total_registrations_by_day ?? [],
+    rgb: rgbTupleFromVar('--accent', '#58d68d'),
+    filled: true,
+    borderWidth: 2.75,
+  }
+
+  const series = [
+    { key: 'direct', label: 'Прямой трафик' },
+    { key: 'direct_bot', label: 'Прямой трафик бота' },
+    { key: 'direct_site', label: 'Прямой трафик сайта' },
+    { key: 'channel_links', label: 'По созданным ссылкам' },
+    { key: 'user_referrals', label: 'Приглашения пользователей' },
+  ]
+
+  const perSource = series.map(({ key, label }) => ({
+    label,
+    data: data[key] ?? [],
+    rgb: /** @type {[number, number, number]} */ ([...SOURCE_LINE_RGB[key]]),
+    filled: false,
+    borderWidth: 1.75,
+  }))
+
+  return [total, ...perSource]
+})
+
+const sourceRegHasData = computed(() => {
+  const data = sourceRegBundle.value
+  if (!data?.dates?.length) return false
+  const keys = ['direct', 'direct_bot', 'direct_site', 'channel_links', 'user_referrals']
+  return keys.some((key) => (data[key] ?? []).some((v) => Number(v) > 0))
+})
+
+const sourceRegChartHint =
+  'Суточные регистрации по источникам трафика. Календарные дни Europe/Moscow.'
+
+const sourceRegAriaLabel =
+  'По дням МСК: число регистраций по источникам — прямой трафик, созданные ссылки, приглашения'
+
+function sourceRegTooltipTitle(i) {
+  const d = sourceRegBundle.value?.dates?.[i]
+  if (!d) return sourceRegLabels.value[i] ?? ''
+  return `${formatMskCalendarDayShort(d)} (МСК)`
+}
+
+/** @param {import('chart.js').TooltipItem<'line'>} ctx */
+function sourceRegTooltipLabel(ctx) {
+  const raw = ctx.parsed.y
+  return `${ctx.dataset.label}: ${formatRegChartYTick(raw)}`
+}
+
+async function loadSourceRegChart() {
+  sourceRegLoading.value = true
+  sourceRegError.value = null
+  try {
+    sourceRegBundle.value = await fetchJson(
+      `/api/referral-links/traffic-registrations-by-day?days=${encodeURIComponent(tokenRegDays.value)}`,
+    )
+  } catch (e) {
+    sourceRegError.value = e.message || String(e)
+    sourceRegBundle.value = null
+  } finally {
+    sourceRegLoading.value = false
+  }
+}
+
 const modalOpen = ref(false)
 const creating = ref(false)
 const createError = ref(null)
@@ -179,7 +267,7 @@ async function load() {
 }
 
 async function reloadAll() {
-  await Promise.all([load(), loadTrafficStats(), loadTokenRegChart()])
+  await Promise.all([load(), loadTrafficStats(), loadTokenRegChart(), loadSourceRegChart()])
 }
 
 function openModal() {
@@ -375,6 +463,7 @@ async function removeReferral(r) {
 
 watch(tokenRegDays, () => {
   void loadTokenRegChart()
+  void loadSourceRegChart()
 })
 
 watch(
@@ -412,7 +501,7 @@ onMounted(() => {
         <h2 class="section-heading">Конверсия по токенам</h2>
         <div class="head-actions">
           <AppRefreshButton
-            :busy="loading || trafficStatsLoading || tokenRegLoading"
+            :busy="loading || trafficStatsLoading || tokenRegLoading || sourceRegLoading"
             @click="reloadAll"
           />
           <button type="button" class="btn-primary" @click="openModal">
@@ -528,14 +617,14 @@ onMounted(() => {
       <p v-if="copyHint" class="copy-hint">{{ copyHint }}</p>
     </section>
 
-    <section class="token-reg-chart" aria-label="График регистраций по реферальным токенам">
+    <section class="token-reg-chart" aria-label="Графики регистраций">
       <div class="chart-toolbar">
         <label class="days-field">
           <span class="days-label">Период</span>
           <select
             v-model.number="tokenRegDays"
             class="days-select"
-            :disabled="tokenRegLoading"
+            :disabled="tokenRegLoading || sourceRegLoading"
           >
             <option v-for="o in tokenRegDayOptions" :key="o.value" :value="o.value">
               {{ o.label }}
@@ -562,6 +651,29 @@ onMounted(() => {
         <template #empty>
           <p class="empty-hint">
             Нет регистраций по токенам с более чем 10 регистрациями за выбранный период.
+          </p>
+        </template>
+      </AdminLineChartPanel>
+      <AdminLineChartPanel
+        class="source-reg-chart-panel"
+        title="Регистрации по источникам"
+        unit-label="рег. / сутки"
+        :hint="sourceRegChartHint"
+        :aria-label="sourceRegAriaLabel"
+        :loading="sourceRegLoading"
+        :error="sourceRegError"
+        :has-data="sourceRegHasData"
+        y-title="Регистрации за сутки"
+        y-grace="8%"
+        :labels="sourceRegLabels"
+        :datasets="sourceRegDatasets"
+        :format-y-tick="formatRegChartYTick"
+        :get-tooltip-title="sourceRegTooltipTitle"
+        :get-tooltip-label="sourceRegTooltipLabel"
+      >
+        <template #empty>
+          <p class="empty-hint">
+            Нет регистраций по источникам трафика за выбранный период.
           </p>
         </template>
       </AdminLineChartPanel>
@@ -947,6 +1059,9 @@ onMounted(() => {
 }
 .token-reg-chart {
   margin-bottom: 1rem;
+}
+.source-reg-chart-panel {
+  margin-top: 0.75rem;
 }
 .chart-toolbar {
   display: flex;

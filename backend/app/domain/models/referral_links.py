@@ -62,6 +62,36 @@ class ReferralTokenRegistrationsDailySeries(BaseModel):
     )
 
 
+class ReferralTrafficRegistrationsDailySummary(BaseModel):
+    """Суточные регистрации по источникам трафика (календарные дни Europe/Moscow)."""
+
+    dates: list[date] = Field(default_factory=list)
+    direct: list[int] = Field(
+        default_factory=list,
+        description="Прямой трафик: пользователи без referral_link_id",
+    )
+    direct_bot: list[int] = Field(
+        default_factory=list,
+        description="Прямой трафик бота: без referral_link_id, с telegram_id",
+    )
+    direct_site: list[int] = Field(
+        default_factory=list,
+        description="Прямой трафик сайта: без referral_link_id, без telegram_id",
+    )
+    channel_links: list[int] = Field(
+        default_factory=list,
+        description="По созданным ссылкам: referral_links.owner_user_id IS NULL",
+    )
+    user_referrals: list[int] = Field(
+        default_factory=list,
+        description="Приглашения пользователей: referral_links.owner_user_id IS NOT NULL",
+    )
+    total_registrations_by_day: list[int] = Field(
+        default_factory=list,
+        description="Сумма всех источников за каждый день",
+    )
+
+
 class ReferralTokensRegistrationsDailySummary(BaseModel):
     """Регистрации по дням для реферальных токенов с числом регистраций выше порога."""
 

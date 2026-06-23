@@ -34,8 +34,12 @@ from app.domain.models.referral_links import (
     ReferralTrafficBreakdown,
     ReferralTokensRegistrationsDailySummary,
     ReferralTrafficOverviewStats,
+    ReferralTrafficRegistrationsDailySummary,
 )
-from app.domain.referrals.registrations_daily import referral_tokens_registrations_daily
+from app.domain.referrals.registrations_daily import (
+    referral_tokens_registrations_daily,
+    referral_traffic_registrations_daily,
+)
 from app.domain.users.stats_qualification import user_counts_in_admin_stats
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.user import User
@@ -102,6 +106,15 @@ async def referral_tokens_registrations_daily_summary(
         days=days,
         min_registrations=min_registrations,
     )
+
+
+async def referral_traffic_registrations_daily_summary(
+    session: AsyncSession,
+    *,
+    days: int = 30,
+) -> ReferralTrafficRegistrationsDailySummary:
+    """Регистрации по дням МСК с разбивкой по источникам трафика."""
+    return await referral_traffic_registrations_daily(session, days=days)
 
 
 async def list_staff_referral_links(session: AsyncSession, cfg: object) -> list:

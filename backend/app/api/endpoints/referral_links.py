@@ -23,6 +23,7 @@ from app.domain.models.referral_links import (
     ReferralTrackClickBody,
     ReferralTokensRegistrationsDailySummary,
     ReferralTrafficOverviewStats,
+    ReferralTrafficRegistrationsDailySummary,
 )
 from app.domain.referrals.funnel import referral_funnel_compute
 from app.domain.referrals.public_links import referral_link_to_response
@@ -40,6 +41,7 @@ from app.domain.services.referral_links_service import (
     referral_me_user_id_from_bearer,
     referral_tokens_registrations_daily_summary,
     referral_traffic_overview_stats,
+    referral_traffic_registrations_daily_summary,
 )
 
 staff_router = APIRouter(
@@ -70,6 +72,28 @@ async def referral_traffic_stats(
     session: ReadonlySessionDep,
 ) -> ReferralTrafficOverviewStats:
     return await referral_traffic_overview_stats(session)
+
+
+@staff_router.get(
+    "/traffic-registrations-by-day",
+    response_model=ReferralTrafficRegistrationsDailySummary,
+    summary=(
+        "Регистрации по календарным дням Europe/Moscow с разбивкой по источникам: "
+        "прямой трафик, созданные ссылки, приглашения пользователей"
+    ),
+)
+async def referral_traffic_registrations_by_day(
+    session: ReadonlySessionDep,
+    response: Response,
+    days: int = Query(
+        30,
+        ge=1,
+        le=366,
+        description="Глубина окна в календарных днях Europe/Moscow от сегодня включительно",
+    ),
+) -> ReferralTrafficRegistrationsDailySummary:
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return await referral_traffic_registrations_daily_summary(session, days=days)
 
 
 @staff_router.get(
