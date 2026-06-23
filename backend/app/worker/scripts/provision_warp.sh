@@ -143,10 +143,35 @@ _warp_write_outbound_json() {
   local out="$2"
   python3 - "$profile" "$out" <<'PY'
 import json
+import os
 import re
 import sys
 
 profile_path, out_path = sys.argv[1], sys.argv[2]
+warp_dir = os.path.dirname(profile_path)
+account_path = os.path.join(warp_dir, "wgcf-account.toml")
+
+def read_toml(path: str) -> dict[str, str]:
+    data: dict[str, str] = {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                data[k.strip()] = v.strip().strip("'\"")
+    except OSError:
+        pass
+    return data
+
+def warp_reserved_from_device_id(device_id: str) -> list[int] | None:
+    # Cloudflare WARP: 3 байта WireGuard Reserved из UUID device_id (wgcf).
+    hex_id = re.sub(r"[^0-9a-fA-F]", "", device_id or "")
+    if len(hex_id) < 6:
+        return None
+    return [int(hex_id[i : i + 2], 16) for i in range(0, 6, 2)]
+
 section = None
 data: dict[str, dict[str, str]] = {}
 with open(profile_path, encoding="utf-8") as f:
@@ -171,37 +196,57 @@ endpoint = peer.get("endpoint", "engage.cloudflareclient.com:2408").strip()
 if not secret or not pub:
     raise SystemExit("wgcf-profile.conf: нет PrivateKey или PublicKey")
 
-addrs = []
+addrs: list[str] = []
 for part in iface.get("address", "").split(","):
-    p = part.strip().split("/")[0].strip()
-    if p:
+    p = part.strip()
+    if not p:
+        continue
+    if "/" in p:
         addrs.append(p)
+    elif ":" in p:
+        addrs.append(f"{p}/128")
+    else:
+        addrs.append(f"{p}/32")
 if not addrs:
-    addrs = ["172.16.0.2"]
+    addrs = ["172.16.0.2/32"]
 
 host, _, port = endpoint.rpartition(":")
 if not port:
     host, port = endpoint, "2408"
 
+acc = read_toml(account_path)
+reserved = warp_reserved_from_device_id(acc.get("device_id", ""))
+
+settings: dict[str, object] = {
+    "secretKey": secret,
+    "address": addrs,
+    "peers": [
+        {
+            "publicKey": pub,
+            "endpoint": "%s:%s" % (host, port),
+            "allowedIPs": ["0.0.0.0/0", "::/0"],
+            "keepAlive": 25,
+        }
+    ],
+    "mtu": 1280,
+    "domainStrategy": "ForceIPv4",
+}
+if reserved is not None:
+    settings["reserved"] = reserved
+
 outbound = {
     "tag": "warp",
     "protocol": "wireguard",
-    "settings": {
-        "secretKey": secret,
-        "address": addrs,
-        "peers": [
-            {
-                "publicKey": pub,
-                "endpoint": "%s:%s" % (host, port),
-                "keepAlive": 25,
-            }
-        ],
-        "mtu": 1280,
-    },
+    "settings": settings,
 }
 
 with open(out_path, "w", encoding="utf-8") as f:
     json.dump(outbound, f, indent=2, ensure_ascii=False)
+
+if reserved is not None:
+    print("[warp] outbound.json: reserved=%s (из device_id)" % reserved, flush=True)
+else:
+    print("[warp] outbound.json: reserved не вычислен (нет device_id в wgcf-account.toml)", flush=True)
 PY
 }
 
@@ -226,7 +271,7 @@ _warp_ensure_credentials() {
   mkdir -p "$dir"
 
   if [[ -f "$profile" && -f "$outbound" ]]; then
-    echo "[warp] профиль уже есть: $profile"
+    echo "[warp] профиль уже есть: $profile (обновляем outbound.json для Xray)"
     _warp_write_outbound_json "$profile" "$outbound"
     return 0
   fi

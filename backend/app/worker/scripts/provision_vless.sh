@@ -485,6 +485,10 @@ _xray_install() {
   if [[ "${VPN_CASCADE_ENABLED:-0}" == "1" && "${VPN_CASCADE_RU_DIRECT:-1}" != "0" ]]; then
     _xray_ensure_geo_dats || exit 1
   fi
+  _google_mode_lc=$(echo "${VPN_GOOGLE_ROUTING_MODE:-exit}" | tr '[:upper:]' '[:lower:]')
+  if [[ "$_google_mode_lc" == "entry" ]]; then
+    _xray_ensure_geo_dats || exit 1
+  fi
 
   echo "[xray] запись $CFG (VLESS REALITY → ${VPN_REALITY_DEST})…"
   _write_xray_config
