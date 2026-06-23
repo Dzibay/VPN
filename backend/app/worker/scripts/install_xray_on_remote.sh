@@ -93,12 +93,11 @@ case "$COMPONENT" in
     ;;
 esac
 
-# YouTube entry: WARP + textfile metrics (idempotent; дублирует вызовы из write config).
+# YouTube entry: WARP credentials уже в _write_xray_config; здесь только мониторинг (без повторного register).
 case "$COMPONENT" in
   all|xray|vless|sync_clients)
     _mode_lc=$(echo "${VPN_GOOGLE_ROUTING_MODE:-exit}" | tr '[:upper:]' '[:lower:]')
     if [[ "$_mode_lc" == "entry" ]]; then
-      _warp_ensure_if_youtube_entry || true
       _warp_install_monitor || true
     fi
     ;;

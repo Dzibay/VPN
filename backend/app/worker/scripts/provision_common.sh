@@ -129,18 +129,36 @@ _ne_install() {
   esac
 
   echo "[node_exporter] v${NE_VER} (${NE_ARCH}), listen ${NE_LH}:${NE_PORT}…"
-  local TMP
-  TMP=$(mktemp -d)
-  local URL="https://github.com/prometheus/node_exporter/releases/download/v${NE_VER}/node_exporter-${NE_VER}.linux-${NE_ARCH}.tar.gz"
-  curl -fsSL "$URL" -o "$TMP/ne.tar.gz"
-  tar xzf "$TMP/ne.tar.gz" -C "$TMP"
-  if command -v install >/dev/null 2>&1; then
-    install -m 755 "$TMP/node_exporter-${NE_VER}.linux-${NE_ARCH}/node_exporter" "$NE_BIN"
+  if [[ ! -x "$NE_BIN" ]]; then
+    local TMP URL attempt dl_ok=0
+    TMP=$(mktemp -d)
+    URL="https://github.com/prometheus/node_exporter/releases/download/v${NE_VER}/node_exporter-${NE_VER}.linux-${NE_ARCH}.tar.gz"
+    for attempt in 1 2 3; do
+      if [[ "$attempt" -gt 1 ]]; then
+        echo "[node_exporter] повтор загрузки ($attempt/3)…"
+        sleep "$((attempt * 3))"
+      fi
+      if curl -fsSL --connect-timeout 30 --max-time 300 "$URL" -o "$TMP/ne.tar.gz"; then
+        dl_ok=1
+        break
+      fi
+    done
+    if [[ "$dl_ok" -ne 1 ]]; then
+      rm -rf "$TMP"
+      echo "[node_exporter] загрузка не удалась (curl timeout) — метрики пропущены, Xray не затронут" >&2
+      return 0
+    fi
+    tar xzf "$TMP/ne.tar.gz" -C "$TMP"
+    if command -v install >/dev/null 2>&1; then
+      install -m 755 "$TMP/node_exporter-${NE_VER}.linux-${NE_ARCH}/node_exporter" "$NE_BIN"
+    else
+      cp -f "$TMP/node_exporter-${NE_VER}.linux-${NE_ARCH}/node_exporter" "$NE_BIN"
+      chmod 755 "$NE_BIN"
+    fi
+    rm -rf "$TMP"
   else
-    cp -f "$TMP/node_exporter-${NE_VER}.linux-${NE_ARCH}/node_exporter" "$NE_BIN"
-    chmod 755 "$NE_BIN"
+    echo "[node_exporter] бинарник уже есть: $NE_BIN"
   fi
-  rm -rf "$TMP"
 
   local NE_TEXTFILE_DIR="${VPN_NODE_EXPORTER_TEXTFILE_DIR:-/var/lib/node_exporter/textfile}"
   mkdir -p "$NE_TEXTFILE_DIR"

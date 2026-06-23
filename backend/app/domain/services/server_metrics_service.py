@@ -188,7 +188,8 @@ def _warp_status_detail(raw: dict[str, object]) -> str:
         hints: list[str] = []
         if raw.get("profile_ok") is False:
             hints.append(
-                "нет wgcf-профиля — нажмите «Обновить всё» (нужен wgcf ≥2.2.28; старый register падает с 500 от CF API)"
+                "нет wgcf-профиля — «Обновить всё»; если в логах TLS handshake timeout до api.cloudflareclient.com, "
+                "WARP с этого VPS недоступен (блокировка/фильтрация CF) — используйте google_routing_mode=exit или другой хостинг"
             )
         elif raw.get("account_ok") is False:
             hints.append("wgcf register не создал wgcf-account.toml — проверьте DNS и доступ к api.cloudflareclient.com")

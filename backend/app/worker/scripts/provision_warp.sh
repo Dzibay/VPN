@@ -44,7 +44,21 @@ _warp_install_wgcf() {
   fi
   url="https://github.com/ViRb3/wgcf/releases/download/v${ver}/wgcf_${ver}_linux_${arch}"
   echo "[warp] загрузка wgcf v${ver} (${arch})…"
-  curl -fsSL --connect-timeout 30 --max-time 180 "$url" -o "$bin"
+  local attempt dl_ok=0
+  for attempt in 1 2 3; do
+    if [[ "$attempt" -gt 1 ]]; then
+      echo "[warp] повтор загрузки wgcf ($attempt/3)…"
+      sleep "$((attempt * 3))"
+    fi
+    if curl -fsSL --connect-timeout 30 --max-time 180 "$url" -o "$bin"; then
+      dl_ok=1
+      break
+    fi
+  done
+  if [[ "$dl_ok" -ne 1 ]]; then
+    echo "[warp] загрузка wgcf не удалась (curl timeout)" >&2
+    return 1
+  fi
   chmod 755 "$bin"
   echo "$ver" > "$ver_file"
 }
@@ -63,30 +77,48 @@ _warp_run_wgcf() {
   return "$rc"
 }
 
+_warp_account_valid() {
+  local f="$1"
+  [[ -f "$f" ]] || return 1
+  grep -qE '^device_id\s*=' "$f" 2>/dev/null || return 1
+  grep -qE '^access_token\s*=' "$f" 2>/dev/null || return 1
+  return 0
+}
+
 _warp_register_or_update() {
   local wgcf="$1"
-  local rc=0
-  if [[ ! -f wgcf-account.toml ]]; then
+  local rc=0 attempt max_attempts=3
+  max_attempts="${VPN_WARP_REGISTER_RETRIES:-3}"
+  if [[ ! -f wgcf-account.toml ]] || ! _warp_account_valid wgcf-account.toml; then
+    rm -f wgcf-account.toml wgcf-profile.conf 2>/dev/null || true
     echo "[warp] регистрация аккаунта Cloudflare WARP…"
-    _warp_run_wgcf "$wgcf" register --accept-tos || rc=$?
-    if [[ -f wgcf-account.toml ]]; then
-      if [[ "$rc" -ne 0 ]]; then
-        echo "[warp] register: код $rc, но wgcf-account.toml создан — продолжаем (известный баг CF API 500)" >&2
+    for attempt in $(seq 1 "$max_attempts"); do
+      if [[ "$attempt" -gt 1 ]]; then
+        echo "[warp] повтор register ($attempt/$max_attempts)…"
+        sleep "$((attempt * 5))"
       fi
-      return 0
-    fi
-    echo "[warp] wgcf register не удался (нет wgcf-account.toml)" >&2
+      rc=0
+      _warp_run_wgcf "$wgcf" register --accept-tos || rc=$?
+      if _warp_account_valid wgcf-account.toml; then
+        if [[ "$rc" -ne 0 ]]; then
+          echo "[warp] register: код $rc, но wgcf-account.toml валиден — продолжаем (известный баг CF API 500)" >&2
+        fi
+        return 0
+      fi
+    done
+    echo "[warp] wgcf register не удался (нет валидного wgcf-account.toml после ${max_attempts} попыток)" >&2
+    echo "[warp] проверьте с VPS: curl -v --max-time 20 https://api.cloudflareclient.com/" >&2
     return 1
   fi
   echo "[warp] аккаунт есть — wgcf update…"
   _warp_run_wgcf "$wgcf" update --accept-tos || rc=$?
-  if [[ -f wgcf-account.toml ]]; then
+  if _warp_account_valid wgcf-account.toml; then
     if [[ "$rc" -ne 0 ]]; then
       echo "[warp] update: код $rc, wgcf-account.toml на месте — продолжаем" >&2
     fi
     return 0
   fi
-  echo "[warp] wgcf update не удался (нет wgcf-account.toml)" >&2
+  echo "[warp] wgcf update не удался (нет валидного wgcf-account.toml)" >&2
   return 1
 }
 
@@ -230,7 +262,6 @@ _warp_ensure_if_youtube_entry() {
   else
     echo "[warp] предупреждение: WARP недоступен — YouTube/Google пойдут direct (fallback)" >&2
   fi
-  _warp_install_monitor || true
   return 0
 }
 
