@@ -31,17 +31,79 @@ _warp_linux_arch() {
 }
 
 _warp_install_wgcf() {
-  local arch ver bin url
+  local arch ver bin url ver_file
   arch=$(_warp_linux_arch) || return 1
   bin=$(_warp_wgcf_bin)
-  if [[ -x "$bin" ]]; then
+  ver="${VPN_WGCF_VERSION:-2.2.31}"
+  ver_file="${bin}.version"
+  if [[ -x "$bin" && -f "$ver_file" && "$(cat "$ver_file" 2>/dev/null)" == "$ver" ]]; then
     return 0
   fi
-  ver="${VPN_WGCF_VERSION:-2.2.22}"
+  if [[ -x "$bin" ]]; then
+    echo "[warp] обновление wgcf до v${ver} (было $(cat "$ver_file" 2>/dev/null || echo '?'))…"
+  fi
   url="https://github.com/ViRb3/wgcf/releases/download/v${ver}/wgcf_${ver}_linux_${arch}"
   echo "[warp] загрузка wgcf v${ver} (${arch})…"
   curl -fsSL --connect-timeout 30 --max-time 180 "$url" -o "$bin"
   chmod 755 "$bin"
+  echo "$ver" > "$ver_file"
+}
+
+_warp_run_wgcf() {
+  # wgcf ≥2.2.28: register/update могут вернуть 500 от CF API, но файл всё равно создаётся.
+  local wgcf="$1"
+  shift
+  local out rc=0
+  out=$("$wgcf" "$@" 2>&1) || rc=$?
+  if [[ -n "$out" ]]; then
+    while IFS= read -r line; do
+      echo "[warp] wgcf $*: ${line}"
+    done <<< "$out"
+  fi
+  return "$rc"
+}
+
+_warp_register_or_update() {
+  local wgcf="$1"
+  local rc=0
+  if [[ ! -f wgcf-account.toml ]]; then
+    echo "[warp] регистрация аккаунта Cloudflare WARP…"
+    _warp_run_wgcf "$wgcf" register --accept-tos || rc=$?
+    if [[ -f wgcf-account.toml ]]; then
+      if [[ "$rc" -ne 0 ]]; then
+        echo "[warp] register: код $rc, но wgcf-account.toml создан — продолжаем (известный баг CF API 500)" >&2
+      fi
+      return 0
+    fi
+    echo "[warp] wgcf register не удался (нет wgcf-account.toml)" >&2
+    return 1
+  fi
+  echo "[warp] аккаунт есть — wgcf update…"
+  _warp_run_wgcf "$wgcf" update --accept-tos || rc=$?
+  if [[ -f wgcf-account.toml ]]; then
+    if [[ "$rc" -ne 0 ]]; then
+      echo "[warp] update: код $rc, wgcf-account.toml на месте — продолжаем" >&2
+    fi
+    return 0
+  fi
+  echo "[warp] wgcf update не удался (нет wgcf-account.toml)" >&2
+  return 1
+}
+
+_warp_generate_profile() {
+  local wgcf="$1"
+  local profile="$2"
+  local rc=0
+  echo "[warp] генерация WireGuard-профиля…"
+  _warp_run_wgcf "$wgcf" generate || rc=$?
+  if [[ -f "$profile" || -f wgcf-profile.conf ]]; then
+    if [[ "$rc" -ne 0 ]]; then
+      echo "[warp] generate: код $rc, но профиль создан — продолжаем" >&2
+    fi
+    return 0
+  fi
+  echo "[warp] wgcf generate не удался (нет wgcf-profile.conf)" >&2
+  return 1
 }
 
 _warp_write_outbound_json() {
@@ -142,18 +204,8 @@ _warp_ensure_credentials() {
 
   (
     cd "$dir"
-    if [[ ! -f wgcf-account.toml ]]; then
-      echo "[warp] регистрация аккаунта Cloudflare WARP…"
-      if ! reg_out=$("$wgcf" register --accept-tos 2>&1); then
-        echo "[warp] wgcf register не удался: ${reg_out:-(нет вывода)}" >&2
-        exit 1
-      fi
-    fi
-    echo "[warp] генерация WireGuard-профиля…"
-    if ! gen_out=$("$wgcf" generate 2>&1); then
-      echo "[warp] wgcf generate не удался: ${gen_out:-(нет вывода)}" >&2
-      exit 1
-    fi
+    _warp_register_or_update "$wgcf" || exit 1
+    _warp_generate_profile "$wgcf" "$profile" || exit 1
   )
 
   if [[ ! -f "$profile" ]]; then
@@ -261,10 +313,16 @@ if __import__("os").path.isfile(account_toml):
 
 t0 = time.perf_counter()
 try:
-    with socket.create_connection((ep_host, int(ep_port)), timeout=4.0):
-        endpoint_ok = 1
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(4.0)
+    sock.sendto(b"\x00", (ep_host, int(ep_port)))
+    endpoint_ok = 1
 except OSError:
-    endpoint_ok = 0
+    try:
+        with socket.create_connection((ep_host, int(ep_port)), timeout=4.0):
+            endpoint_ok = 1
+    except OSError:
+        endpoint_ok = 0
 
 t1 = time.perf_counter()
 try:

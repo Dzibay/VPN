@@ -101,6 +101,7 @@ _QUERIES: dict[str, str] = {
 _WARP_INSTANT: dict[str, str] = {
     "profile_ok": 'vpn_warp_profile_ok{instance="{instance}"}',
     "outbound_ok": 'vpn_warp_outbound_ok{instance="{instance}"}',
+    "account_ok": 'vpn_warp_account_ok{instance="{instance}"}',
     "endpoint_ok": 'vpn_warp_endpoint_reachable{instance="{instance}"}',
     "cf_api_ok": 'vpn_warp_cf_api_ok{instance="{instance}"}',
     "warp_plus": 'vpn_warp_warp_plus{instance="{instance}"}',
@@ -226,6 +227,7 @@ def fetch_warp_status_from_prometheus(instance: str) -> dict[str, Any]:
 
     account_type: str | None = None
     license_name: str | None = None
+    last_error: str | None = None
     try:
         _circuit_check()
         timeout = min(float(settings.prometheus_timeout_seconds), 15.0)
@@ -235,8 +237,17 @@ def fetch_warp_status_from_prometheus(instance: str) -> dict[str, Any]:
             if labels:
                 account_type = labels[0].get("account_type") or None
                 license_name = labels[0].get("license") or None
+            err_q = format_query_with_instance('vpn_warp_last_error{instance="{instance}"}', inst)
+            err_labels = _query_instant_vector_labels(client, err_q)
+            if err_labels:
+                last_error = err_labels[0].get("message") or None
     except Exception as e:
         log.warning("Prometheus warp_info: %s", e)
+
+    if account_type == "unknown":
+        account_type = None
+    if license_name == "unknown":
+        license_name = None
 
     last_ts = _num("last_check_ts")
     quota = _num("quota_bytes")
@@ -250,15 +261,18 @@ def fetch_warp_status_from_prometheus(instance: str) -> dict[str, Any]:
     profile_ok = _flag("profile_ok")
     endpoint_ok = _flag("endpoint_ok")
     cf_ok = _flag("cf_api_ok")
+    account_ok = _flag("account_ok")
     overall: bool | None = None
     if profile_ok is not None or endpoint_ok is not None:
-        overall = bool(profile_ok) and bool(endpoint_ok) and bool(cf_ok if cf_ok is not None else True)
+        # CF API — для квот/типа аккаунта; маршрутизация зависит от профиля + endpoint.
+        overall = bool(profile_ok) and bool(endpoint_ok)
 
     return {
         "monitored": profile_ok is not None or endpoint_ok is not None,
         "overall_ok": overall,
         "profile_ok": profile_ok,
         "outbound_ok": _flag("outbound_ok"),
+        "account_ok": account_ok,
         "endpoint_ok": endpoint_ok,
         "cf_api_ok": cf_ok,
         "warp_plus": _flag("warp_plus"),
@@ -269,6 +283,7 @@ def fetch_warp_status_from_prometheus(instance: str) -> dict[str, Any]:
         ),
         "account_type": account_type,
         "license": license_name,
+        "last_error": last_error,
         "quota_bytes": quota if quota_known else None,
         "premium_data_bytes": used if used_known else None,
         "quota_remaining_bytes": quota_remaining,

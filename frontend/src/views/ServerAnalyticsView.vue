@@ -1200,7 +1200,12 @@ onBeforeUnmount(() => {
         <span>endpoint: {{ warpStatus.endpoint_ok ? '✓' : '✗' }}</span>
         <span>CF API: {{ warpStatus.cf_api_ok ? '✓' : '✗' }}</span>
         <span>профиль: {{ warpStatus.profile_ok ? '✓' : '✗' }}</span>
-        <span v-if="warpStatus.account_type">тип: {{ warpStatus.account_type }}</span>
+        <span v-if="warpStatus.account_ok != null">
+          wgcf: {{ warpStatus.account_ok ? '✓' : '✗' }}
+        </span>
+        <span v-if="warpStatus.account_type && warpStatus.account_type !== 'unknown'">
+          тип: {{ warpStatus.account_type }}
+        </span>
         <span v-if="warpStatus.warp_plus">WARP+</span>
         <span v-if="warpStatus.quota_bytes != null">
           лимит: {{ formatBytesHuman(warpStatus.quota_bytes) }}

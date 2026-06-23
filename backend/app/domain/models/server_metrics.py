@@ -100,6 +100,10 @@ class ServerWarpStatusRead(BaseModel):
     )
     profile_ok: bool | None = None
     outbound_ok: bool | None = None
+    account_ok: bool | None = Field(
+        None,
+        description="wgcf-account.toml присутствует на узле",
+    )
     endpoint_ok: bool | None = None
     cf_api_ok: bool | None = None
     warp_plus: bool | None = None
@@ -125,6 +129,10 @@ class ServerWarpStatusRead(BaseModel):
     quota_remaining_bytes: int | None = Field(
         None,
         description="Остаток quota − used, если оба известны",
+    )
+    last_error: str | None = Field(
+        None,
+        description="Последняя ошибка CF API из vpn_warp_last_error",
     )
     detail: str = Field(
         default="",

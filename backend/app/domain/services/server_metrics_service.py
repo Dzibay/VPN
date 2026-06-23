@@ -185,6 +185,21 @@ def _warp_status_detail(raw: dict[str, object]) -> str:
         parts.append("WARP в порядке")
     else:
         parts.append("Есть проблемы с WARP")
+        hints: list[str] = []
+        if raw.get("profile_ok") is False:
+            hints.append(
+                "нет wgcf-профиля — нажмите «Обновить всё» (нужен wgcf ≥2.2.28; старый register падает с 500 от CF API)"
+            )
+        elif raw.get("account_ok") is False:
+            hints.append("wgcf register не создал wgcf-account.toml — проверьте DNS и доступ к api.cloudflareclient.com")
+        if raw.get("endpoint_ok") is False:
+            hints.append("UDP/TCP до engage.cloudflareclient.com:2408 недоступен — WARP WireGuard не заработает")
+        if raw.get("cf_api_ok") is False and raw.get("account_ok"):
+            hints.append("CF API не ответил — токен wgcf устарел, выполните provision повторно")
+        if raw.get("youtube_probe_ok") is False:
+            hints.append("YouTube с VPS напрямую недоступен (probe timeout) — отдельно от WARP")
+        if hints:
+            parts.append("; ".join(hints))
     if raw.get("account_type"):
         parts.append(f"аккаунт {raw['account_type']}")
     if raw.get("warp_plus"):
@@ -200,8 +215,10 @@ def _warp_status_detail(raw: dict[str, object]) -> str:
         )
     elif used is not None:
         parts.append(f"использовано premium {_format_bytes_human(int(used))}")
-    else:
+    elif raw.get("profile_ok"):
         parts.append("лимиты CF API не отдаются (типично для free WARP)")
+    if raw.get("last_error"):
+        parts.append(f"ошибка CF: {raw['last_error']}")
     if raw.get("last_check_at") is not None:
         parts.append(f"проверка {raw['last_check_at']}")
     return ". ".join(parts) + "."
@@ -245,6 +262,7 @@ async def get_server_warp_status(
         overall_ok=raw.get("overall_ok"),
         profile_ok=raw.get("profile_ok"),
         outbound_ok=raw.get("outbound_ok"),
+        account_ok=raw.get("account_ok"),
         endpoint_ok=raw.get("endpoint_ok"),
         cf_api_ok=raw.get("cf_api_ok"),
         warp_plus=raw.get("warp_plus"),
@@ -253,6 +271,7 @@ async def get_server_warp_status(
         last_check_at=raw.get("last_check_at"),
         account_type=raw.get("account_type"),
         license=raw.get("license"),
+        last_error=raw.get("last_error"),
         quota_bytes=int(raw["quota_bytes"]) if raw.get("quota_bytes") is not None else None,
         premium_data_bytes=(
             int(raw["premium_data_bytes"]) if raw.get("premium_data_bytes") is not None else None
