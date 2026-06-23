@@ -17,7 +17,7 @@ set -euo pipefail
 COMPONENT="${VPN_PROVISION_COMPONENT:-all}"
 PROXY_KIND="${VPN_PROXY_KIND:-vless}"
 
-echo "[provision] component=${COMPONENT} proxy=${PROXY_KIND} host=$(hostname) id=${VPN_SERVER_ID:-?}"
+echo "[provision] component=${COMPONENT} proxy=${PROXY_KIND} host=$(hostname) id=${VPN_SERVER_ID:-?} bundle=warp-monitor-v1"
 
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
   echo "[provision] нужен root" >&2
@@ -66,6 +66,10 @@ case "$COMPONENT" in
   fair_egress)
     VPN_INSTALL_FAIR_EGRESS=1 _egress_fairness_install
     ;;
+  warp_monitor)
+    _warp_ensure_if_youtube_entry || true
+    _warp_install_monitor || true
+    ;;
   prometheus|node_exporter)
     _ne_install
     ;;
@@ -86,6 +90,17 @@ case "$COMPONENT" in
     fi
     _egress_fairness_install
     _ne_install
+    ;;
+esac
+
+# YouTube entry: WARP + textfile metrics (idempotent; дублирует вызовы из write config).
+case "$COMPONENT" in
+  all|xray|vless|sync_clients)
+    _mode_lc=$(echo "${VPN_GOOGLE_ROUTING_MODE:-exit}" | tr '[:upper:]' '[:lower:]')
+    if [[ "$_mode_lc" == "entry" ]]; then
+      _warp_ensure_if_youtube_entry || true
+      _warp_install_monitor || true
+    fi
     ;;
 esac
 

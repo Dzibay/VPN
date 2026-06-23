@@ -255,6 +255,7 @@ ProvisionComponent = Literal[
     "hysteria2",
     "prometheus",
     "fair_egress",
+    "warp_monitor",
     "cleanup",
     "sync_clients",
 ]
@@ -339,6 +340,22 @@ def _google_routing_mode_for_server(server: Server) -> str:
 
 def _google_routing_env_line(server: Server) -> str:
     return f"export VPN_GOOGLE_ROUTING_MODE={shlex.quote(_google_routing_mode_for_server(server))}\n"
+
+
+def _is_youtube_warp_entry_server(server: Server) -> bool:
+    return _google_routing_mode_for_server(server) == "entry"
+
+
+def _run_warp_monitor_ssh(db: Session, server: Server) -> None:
+    """Отдельный SSH-прогон: WARP + textfile metrics (после dynamic sync без полного config)."""
+    if not _is_youtube_warp_entry_server(server):
+        return
+    log.info(
+        "warp_monitor: SSH server_id=%s host=%s (google_routing_mode=entry)",
+        server.id,
+        server.host,
+    )
+    _run_ssh_remote_provision(db, server, component="warp_monitor")
 
 
 def _vless_grpc_env_lines(db: Session, server: Server, *, cfg: Settings) -> str:
@@ -597,6 +614,9 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
         remote_env += _node_exporter_env_lines(force_install=True)
     elif component == "fair_egress":
         remote_env += f"export VPN_SERVER_ID={server.id}\n"
+    elif component == "warp_monitor":
+        remote_env += f"export VPN_SERVER_ID={server.id}\n"
+        remote_env += _google_routing_env_line(server)
     elif component in ("xray", "vless"):
         if proxy_kind == "vless_grpc":
             remote_env += _vless_grpc_env_lines(db, server, cfg=settings)
@@ -660,6 +680,8 @@ def _run_ssh_remote_provision(db: Session, server: Server, *, component: Provisi
     last_progress = {"value": 12, "ts": 0.0}
 
     def _on_ssh_output(_stream: str, line: str) -> None:
+        if "[warp]" in line.lower():
+            log.info("SSH server_id=%s warp: %s", server.id, line.rstrip()[:500])
         parsed = _progress_from_remote_line(line)
         if parsed is None:
             return
@@ -876,6 +898,14 @@ def sync_xray_clients_to_server(server_id: int) -> None:
             )
         dyn_ok, dyn_err = try_dynamic_xray_client_sync(db, server)
         if dyn_ok:
+            try:
+                _run_warp_monitor_ssh(db, server)
+            except Exception as e:
+                log.error(
+                    "sync_xray_clients: warp_monitor после dynamic sync не удался server_id=%s: %s",
+                    server_id,
+                    e,
+                )
             return
         if dyn_err:
             log.error(

@@ -225,7 +225,10 @@ async def get_server_warp_status(
             enabled=False,
             monitored=False,
             prometheus_instance=inst,
-            detail="WARP не используется на этом узле (google_routing_mode=exit).",
+            detail=(
+                "WARP не используется: google_routing_mode=exit. "
+                "В карточке сервера выберите «Через вход (YouTube через Cloudflare WARP)» и нажмите Xray / Обновить всё."
+            ),
         )
 
     try:
