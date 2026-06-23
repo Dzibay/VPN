@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query, Response
 
 from app.config import settings
 from app.core.dependencies import ReadonlySessionDep, require_admin
-from app.domain.models.server_metrics import ServerMetricsFromPrometheus
+from app.domain.models.server_metrics import ServerMetricsFromPrometheus, ServerWarpStatusRead
 from app.domain.models.server_traffic import (
     AllServersInboundTrafficDailySummary,
     ServerTrafficDailySummary,
@@ -90,6 +90,21 @@ async def get_server_metrics_prometheus(
         online_clients_val,
         online_from_cfg,
     )
+
+
+@router.get(
+    "/{server_id}/warp-status",
+    response_model=ServerWarpStatusRead,
+    dependencies=[Depends(require_admin)],
+    summary="Cloudflare WARP: состояние, лимиты и метрики из Prometheus",
+)
+async def get_server_warp_status(
+    server_id: int,
+    session: ReadonlySessionDep,
+    response: Response,
+) -> ServerWarpStatusRead:
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return await server_metrics_service.get_server_warp_status(session, server_id, cfg=settings)
 
 
 @router.post(

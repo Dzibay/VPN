@@ -36,6 +36,10 @@ const userTrafficError = ref(null)
 /** Пока true — идёт collect=true (SSH); не вызывать loadUserTraffic(false) из loadMetrics, иначе сбросится надпись SSH и начнётся гонка. */
 const userTrafficSSHInFlight = ref(false)
 
+/** @type {import('vue').Ref<object | null>} */
+const warpStatus = ref(null)
+const warpStatusError = ref(null)
+
 /** Счётчик параллельных запросов трафика — только последний обновляет UI. */
 let userTrafficFetchGen = 0
 
@@ -83,6 +87,39 @@ const hourOptions = [
 const selectedServer = computed(() =>
   servers.value.find((s) => s.id === serverId.value),
 )
+
+const showWarpPanel = computed(() => {
+  const s = selectedServer.value
+  return s && String(s.google_routing_mode || 'exit').toLowerCase() === 'entry'
+})
+
+function formatBytesHuman(n) {
+  if (n == null || Number(n) < 0) return '—'
+  let val = Number(n)
+  const units = ['Б', 'КиБ', 'МиБ', 'ГиБ', 'ТиБ']
+  let i = 0
+  while (val >= 1024 && i < units.length - 1) {
+    val /= 1024
+    i += 1
+  }
+  if (i === 0) return `${Math.round(val)} ${units[i]}`
+  return `${Math.round(val * 10) / 10} ${units[i]}`
+}
+
+async function loadWarpStatus() {
+  if (!showWarpPanel.value || serverId.value == null) {
+    warpStatus.value = null
+    warpStatusError.value = null
+    return
+  }
+  try {
+    warpStatusError.value = null
+    warpStatus.value = await fetchJson(`/api/servers/${serverId.value}/warp-status`)
+  } catch (e) {
+    warpStatusError.value = e.message || String(e)
+    warpStatus.value = null
+  }
+}
 
 /** Строки для блока «конфигурация из БД» (админка) */
 const serverParamRows = computed(() => {
@@ -320,6 +357,7 @@ async function loadMetrics() {
   if (!userTrafficSSHInFlight.value) {
     await loadUserTraffic(false)
   }
+  await loadWarpStatus()
 }
 
 function userTrafficLabel(u) {
@@ -1142,6 +1180,47 @@ onBeforeUnmount(() => {
       >
     </p>
 
+    <div
+      v-if="showWarpPanel"
+      class="chart-panel glass warp-status-block"
+    >
+      <div class="chart-head">
+        <h3 class="chart-title">Cloudflare WARP (YouTube)</h3>
+        <span
+          v-if="warpStatus?.last_check_at"
+          class="chart-unit"
+        >{{ formatTs(warpStatus.last_check_at) }}</span>
+      </div>
+      <p v-if="warpStatusError" class="banner-err">{{ warpStatusError }}</p>
+      <p v-else-if="warpStatus?.detail" class="warp-detail">{{ warpStatus.detail }}</p>
+      <div v-if="warpStatus?.monitored" class="warp-grid">
+        <span
+          :class="warpStatus.overall_ok ? 'warp-ok' : 'warp-bad'"
+        >{{ warpStatus.overall_ok ? 'OK' : 'Проблема' }}</span>
+        <span>endpoint: {{ warpStatus.endpoint_ok ? '✓' : '✗' }}</span>
+        <span>CF API: {{ warpStatus.cf_api_ok ? '✓' : '✗' }}</span>
+        <span>профиль: {{ warpStatus.profile_ok ? '✓' : '✗' }}</span>
+        <span v-if="warpStatus.account_type">тип: {{ warpStatus.account_type }}</span>
+        <span v-if="warpStatus.warp_plus">WARP+</span>
+        <span v-if="warpStatus.quota_bytes != null">
+          лимит: {{ formatBytesHuman(warpStatus.quota_bytes) }}
+        </span>
+        <span v-if="warpStatus.premium_data_bytes != null">
+          использовано: {{ formatBytesHuman(warpStatus.premium_data_bytes) }}
+        </span>
+        <span v-if="warpStatus.quota_remaining_bytes != null">
+          остаток: {{ formatBytesHuman(warpStatus.quota_remaining_bytes) }}
+        </span>
+        <span v-if="warpStatus.probe_latency_ms != null">
+          YouTube probe: {{ warpStatus.youtube_probe_ok ? '✓' : '✗' }}
+          ({{ Math.round(warpStatus.probe_latency_ms) }} ms)
+        </span>
+      </div>
+      <p v-else-if="warpStatus && !warpStatus.monitored" class="banner-warn">
+        Метрики ещё не в Prometheus — выполните sync Xray на entry-узле.
+      </p>
+    </div>
+
     <div v-if="serverId != null" class="chart-panel glass traffic-users-block">
       <div class="chart-head traffic-chart-head">
         <h3 class="chart-title">Трафик по пользователям (Xray)</h3>
@@ -1889,5 +1968,25 @@ onBeforeUnmount(() => {
   background: rgba(0, 0, 0, 0.2);
   border: 1px solid var(--card-border);
   color: var(--text-h);
+}
+.warp-detail {
+  margin: 0 0 0.65rem;
+  font-size: 0.88rem;
+  color: var(--text-h);
+}
+.warp-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.85rem;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+.warp-ok {
+  font-weight: 700;
+  color: #3ecf8e;
+}
+.warp-bad {
+  font-weight: 700;
+  color: #f07178;
 }
 </style>

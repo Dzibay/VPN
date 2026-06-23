@@ -26,6 +26,7 @@ from app.domain.models.server_metrics import (
     ServerMetricPoint,
     ServerMetricsAxisHints,
     ServerMetricsFromPrometheus,
+    ServerWarpStatusRead,
 )
 from app.core.time import utc_today
 from app.domain.models.server_traffic import (
@@ -48,6 +49,7 @@ from app.infrastructure.prometheus.prometheus_node import (
     fetch_analytics_axis_hints,
     fetch_instant_scalar,
     fetch_node_metrics_merged,
+    fetch_warp_status_from_prometheus,
     format_query_with_instance,
 )
 from app.infrastructure.xray.xray_stats_collect import load_user_traffic_bundle_rows
@@ -142,6 +144,123 @@ async def resolve_prometheus_metrics_inputs(
     cap = server.network_cap_mbps
     tariff_cap = float(cap) if cap is not None else None
     return inst, adj_step, tariff_cap
+
+
+def _warp_enabled_for_server(server: Server) -> bool:
+    return (getattr(server, "google_routing_mode", None) or "exit").strip().lower() == "entry"
+
+
+def _prometheus_instance_for_server(server: Server, cfg: Settings | None = None) -> str:
+    cfg = cfg or settings
+    inst = (server.prometheus_instance or "").strip()
+    if not inst:
+        inst = f"{server.host.strip()}:{cfg.provision_node_exporter_port}"
+    return inst
+
+
+def _format_bytes_human(n: int | float | None) -> str:
+    if n is None:
+        return "—"
+    val = float(n)
+    if val < 0:
+        return "—"
+    units = ["Б", "КиБ", "МиБ", "ГиБ", "ТиБ"]
+    i = 0
+    while val >= 1024 and i < len(units) - 1:
+        val /= 1024
+        i += 1
+    if i == 0:
+        return f"{int(val)} {units[i]}"
+    return f"{val:.1f} {units[i]}"
+
+
+def _warp_status_detail(raw: dict[str, object]) -> str:
+    if not raw.get("monitored"):
+        return (
+            "Метрики WARP не найдены в Prometheus. "
+            "На узле: sync Xray / provision (entry), timer vpn-warp-check, node_exporter textfile."
+        )
+    parts: list[str] = []
+    if raw.get("overall_ok"):
+        parts.append("WARP в порядке")
+    else:
+        parts.append("Есть проблемы с WARP")
+    if raw.get("account_type"):
+        parts.append(f"аккаунт {raw['account_type']}")
+    if raw.get("warp_plus"):
+        parts.append("WARP+")
+    quota = raw.get("quota_bytes")
+    used = raw.get("premium_data_bytes")
+    remaining = raw.get("quota_remaining_bytes")
+    if quota is not None and used is not None:
+        parts.append(
+            f"лимит {_format_bytes_human(int(quota))}, "
+            f"использовано {_format_bytes_human(int(used))}, "
+            f"остаток {_format_bytes_human(int(remaining) if remaining is not None else None)}"
+        )
+    elif used is not None:
+        parts.append(f"использовано premium {_format_bytes_human(int(used))}")
+    else:
+        parts.append("лимиты CF API не отдаются (типично для free WARP)")
+    if raw.get("last_check_at") is not None:
+        parts.append(f"проверка {raw['last_check_at']}")
+    return ". ".join(parts) + "."
+
+
+async def get_server_warp_status(
+    session: AsyncSession,
+    server_id: int,
+    *,
+    cfg: Settings | None = None,
+) -> ServerWarpStatusRead:
+    cfg = cfg or settings
+    server = await session.get(Server, server_id)
+    if server is None:
+        raise NotFoundError("Сервер не найден")
+
+    enabled = _warp_enabled_for_server(server)
+    inst = _prometheus_instance_for_server(server, cfg)
+    if not enabled:
+        return ServerWarpStatusRead(
+            enabled=False,
+            monitored=False,
+            prometheus_instance=inst,
+            detail="WARP не используется на этом узле (google_routing_mode=exit).",
+        )
+
+    try:
+        raw = await run_in_threadpool(fetch_warp_status_from_prometheus, inst)
+    except RuntimeError as e:
+        raise ServiceUnavailableError(str(e)) from e
+    except httpx.HTTPError as e:
+        raise BadGatewayError(f"Не удалось запросить Prometheus: {e}") from e
+
+    return ServerWarpStatusRead(
+        enabled=True,
+        monitored=bool(raw.get("monitored")),
+        prometheus_instance=inst,
+        overall_ok=raw.get("overall_ok"),
+        profile_ok=raw.get("profile_ok"),
+        outbound_ok=raw.get("outbound_ok"),
+        endpoint_ok=raw.get("endpoint_ok"),
+        cf_api_ok=raw.get("cf_api_ok"),
+        warp_plus=raw.get("warp_plus"),
+        youtube_probe_ok=raw.get("youtube_probe_ok"),
+        probe_latency_ms=raw.get("probe_latency_ms"),
+        last_check_at=raw.get("last_check_at"),
+        account_type=raw.get("account_type"),
+        license=raw.get("license"),
+        quota_bytes=int(raw["quota_bytes"]) if raw.get("quota_bytes") is not None else None,
+        premium_data_bytes=(
+            int(raw["premium_data_bytes"]) if raw.get("premium_data_bytes") is not None else None
+        ),
+        quota_remaining_bytes=(
+            int(raw["quota_remaining_bytes"])
+            if raw.get("quota_remaining_bytes") is not None
+            else None
+        ),
+        detail=_warp_status_detail(raw),
+    )
 
 
 async def fetch_merged_metrics_for_instance(

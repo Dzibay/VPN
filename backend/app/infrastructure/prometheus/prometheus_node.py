@@ -96,6 +96,20 @@ _QUERIES: dict[str, str] = {
     "uptime_seconds": 'time() - node_boot_time_seconds{{instance="{i}"}}',
 }
 
+# Textfile collector (vpn-warp-check.sh на узлах с google_routing_mode=entry).
+_WARP_INSTANT: dict[str, str] = {
+    "profile_ok": 'vpn_warp_profile_ok{{instance="{i}"}}',
+    "outbound_ok": 'vpn_warp_outbound_ok{{instance="{i}"}}',
+    "endpoint_ok": 'vpn_warp_endpoint_reachable{{instance="{i}"}}',
+    "cf_api_ok": 'vpn_warp_cf_api_ok{{instance="{i}"}}',
+    "warp_plus": 'vpn_warp_warp_plus{{instance="{i}"}}',
+    "probe_ok": 'vpn_warp_probe_ok{{instance="{i}"}}',
+    "probe_latency_ms": 'vpn_warp_probe_latency_ms{{instance="{i}"}}',
+    "last_check_ts": 'vpn_warp_last_check_timestamp{{instance="{i}"}}',
+    "quota_bytes": 'vpn_warp_quota_bytes{{instance="{i}"}}',
+    "premium_data_bytes": 'vpn_warp_premium_data_bytes{{instance="{i}"}}',
+}
+
 
 def _escape_instance(i: str) -> str:
     return i.replace("\\", "\\\\").replace('"', '\\"')
@@ -164,6 +178,100 @@ def format_query_with_instance(template: str, instance: str) -> str:
     if "{instance}" in t:
         return t.replace("{instance}", inst)
     return t
+
+
+def _query_instant_vector_labels(
+    client: httpx.Client,
+    query: str,
+) -> list[dict[str, str]]:
+    r = client.get(f"{_base_url()}/api/v1/query", params={"query": query})
+    r.raise_for_status()
+    payload = r.json()
+    if payload.get("status") != "success":
+        return []
+    out: list[dict[str, str]] = []
+    for item in payload.get("data", {}).get("result") or []:
+        metric = item.get("metric")
+        if isinstance(metric, dict):
+            out.append({str(k): str(v) for k, v in metric.items()})
+    return out
+
+
+def _warp_metric_scalar(instance: str, key: str) -> float | None:
+    tpl = _WARP_INSTANT.get(key)
+    if not tpl:
+        return None
+    q = format_query_with_instance(tpl, instance)
+    return fetch_instant_scalar(q)
+
+
+def fetch_warp_status_from_prometheus(instance: str) -> dict[str, Any]:
+    """
+    Instant-метрики WARP из textfile collector (vpn-warp-check на узле).
+    Пустой dict, если метрик нет (мониторинг не установлен или Prometheus не scrape'ит).
+    """
+    inst = (instance or "").strip()
+    if not inst or not _base_url():
+        return {}
+
+    def _flag(key: str) -> bool | None:
+        v = _warp_metric_scalar(inst, key)
+        if v is None:
+            return None
+        return bool(int(v))
+
+    def _num(key: str) -> float | None:
+        return _warp_metric_scalar(inst, key)
+
+    account_type: str | None = None
+    license_name: str | None = None
+    try:
+        _circuit_check()
+        timeout = min(float(settings.prometheus_timeout_seconds), 15.0)
+        with _prometheus_http_client(timeout) as client:
+            q = format_query_with_instance('vpn_warp_info{{instance="{i}"}}', inst)
+            labels = _query_instant_vector_labels(client, q)
+            if labels:
+                account_type = labels[0].get("account_type") or None
+                license_name = labels[0].get("license") or None
+    except Exception as e:
+        log.warning("Prometheus warp_info: %s", e)
+
+    last_ts = _num("last_check_ts")
+    quota = _num("quota_bytes")
+    used = _num("premium_data_bytes")
+    quota_known = quota is not None and quota >= 0
+    used_known = used is not None and used >= 0
+    quota_remaining: float | None = None
+    if quota_known and used_known:
+        quota_remaining = max(0.0, quota - used)
+
+    profile_ok = _flag("profile_ok")
+    endpoint_ok = _flag("endpoint_ok")
+    cf_ok = _flag("cf_api_ok")
+    overall: bool | None = None
+    if profile_ok is not None or endpoint_ok is not None:
+        overall = bool(profile_ok) and bool(endpoint_ok) and bool(cf_ok if cf_ok is not None else True)
+
+    return {
+        "monitored": profile_ok is not None or endpoint_ok is not None,
+        "overall_ok": overall,
+        "profile_ok": profile_ok,
+        "outbound_ok": _flag("outbound_ok"),
+        "endpoint_ok": endpoint_ok,
+        "cf_api_ok": cf_ok,
+        "warp_plus": _flag("warp_plus"),
+        "youtube_probe_ok": _flag("probe_ok"),
+        "probe_latency_ms": _num("probe_latency_ms"),
+        "last_check_at": (
+            datetime.fromtimestamp(last_ts, tz=timezone.utc) if last_ts is not None else None
+        ),
+        "account_type": account_type,
+        "license": license_name,
+        "quota_bytes": quota if quota_known else None,
+        "premium_data_bytes": used if used_known else None,
+        "quota_remaining_bytes": quota_remaining,
+    }
 
 
 def fetch_instant_scalar(query: str) -> float | None:

@@ -81,3 +81,52 @@ class ServerMetricsFromPrometheus(BaseModel):
         description="True, если в настройках задан запрос онлайн-клиентов",
     )
     points: list[ServerMetricPoint]
+
+
+class ServerWarpStatusRead(BaseModel):
+    """Состояние Cloudflare WARP на узле (Prometheus textfile collector)."""
+
+    enabled: bool = Field(
+        description="True, если у сервера google_routing_mode=entry (WARP задуман на узле)",
+    )
+    monitored: bool = Field(
+        False,
+        description="True, если метрики vpn_warp_* видны в Prometheus",
+    )
+    prometheus_instance: str = Field(description="label instance в Prometheus")
+    overall_ok: bool | None = Field(
+        None,
+        description="Сводная оценка: профиль + endpoint + CF API",
+    )
+    profile_ok: bool | None = None
+    outbound_ok: bool | None = None
+    endpoint_ok: bool | None = None
+    cf_api_ok: bool | None = None
+    warp_plus: bool | None = None
+    youtube_probe_ok: bool | None = Field(
+        None,
+        description="Доступность YouTube generate_204 с самого сервера (не через Xray/WARP)",
+    )
+    probe_latency_ms: float | None = None
+    last_check_at: datetime | None = None
+    account_type: str | None = Field(
+        None,
+        description="Тип аккаунта из Cloudflare WARP API (free / unlimited / …)",
+    )
+    license: str | None = None
+    quota_bytes: int | None = Field(
+        None,
+        description="Лимит premium-трафика WARP из CF API, если отдаётся",
+    )
+    premium_data_bytes: int | None = Field(
+        None,
+        description="Использовано premium-трафика WARP, если отдаётся API",
+    )
+    quota_remaining_bytes: int | None = Field(
+        None,
+        description="Остаток quota − used, если оба известны",
+    )
+    detail: str = Field(
+        default="",
+        description="Краткое пояснение для админки",
+    )

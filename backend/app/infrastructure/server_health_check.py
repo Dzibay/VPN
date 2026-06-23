@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 from app.infrastructure.persistence.models.server import Server
 from app.domain.models.servers import HealthCheckItemRead, ServerPingRead
+from app.infrastructure.prometheus.prometheus_node import fetch_warp_status_from_prometheus
 
 
 def _tcp_connect_probe(host: str, port: int, timeout: float) -> tuple[bool, float | None, str]:
@@ -203,6 +204,57 @@ async def build_server_health_read(
                 severity="critical",
             )
         )
+
+    google_mode = (getattr(server, "google_routing_mode", None) or "exit").strip().lower()
+    if google_mode == "entry":
+        inst = (server.prometheus_instance or "").strip()
+        if not inst:
+            inst = f"{host.strip()}:{int(settings.provision_node_exporter_port)}"
+        try:
+            warp = fetch_warp_status_from_prometheus(inst)
+        except Exception:
+            warp = {}
+        if not warp.get("monitored"):
+            checks.append(
+                HealthCheckItemRead(
+                    id="warp_monitor",
+                    label="Cloudflare WARP (мониторинг)",
+                    ok=False,
+                    detail=(
+                        "Метрики vpn_warp_* не в Prometheus — переустановите/sync Xray на entry-узле "
+                        "(timer vpn-warp-check, textfile collector node_exporter)"
+                    ),
+                    severity="warning",
+                )
+            )
+        else:
+            w_ok = bool(warp.get("overall_ok"))
+            w_parts: list[str] = []
+            if warp.get("endpoint_ok") is False:
+                w_parts.append("endpoint Cloudflare недоступен")
+            if warp.get("cf_api_ok") is False:
+                w_parts.append("CF API не отвечает")
+            if warp.get("profile_ok") is False:
+                w_parts.append("нет wgcf-профиля")
+            if warp.get("quota_bytes") is not None and warp.get("premium_data_bytes") is not None:
+                rem = warp.get("quota_remaining_bytes")
+                w_parts.append(
+                    f"лимит {int(warp['quota_bytes']) // (1024**3)} ГиБ, "
+                    f"остаток {(int(rem) // (1024**2)) if rem is not None else '?'} МиБ"
+                )
+            elif not warp.get("warp_plus"):
+                w_parts.append("free WARP (жёсткие лимиты CF не публикуются)")
+            detail = "OK" if w_ok else "; ".join(w_parts) or "проверьте WARP"
+            checks.append(
+                HealthCheckItemRead(
+                    id="warp_status",
+                    label="Cloudflare WARP (YouTube)",
+                    ok=w_ok,
+                    detail=detail,
+                    severity="warning" if not w_ok else "info",
+                    latency_ms=warp.get("probe_latency_ms"),
+                )
+            )
 
     crit_ok = all(c.ok for c in checks if c.severity == "critical")
     overall_ok = crit_ok

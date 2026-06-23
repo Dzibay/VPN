@@ -142,6 +142,10 @@ _ne_install() {
   fi
   rm -rf "$TMP"
 
+  local NE_TEXTFILE_DIR="${VPN_NODE_EXPORTER_TEXTFILE_DIR:-/var/lib/node_exporter/textfile}"
+  mkdir -p "$NE_TEXTFILE_DIR"
+  chmod 755 "$NE_TEXTFILE_DIR" 2>/dev/null || true
+
   cat > /etc/systemd/system/node_exporter.service <<NEUNIT
 [Unit]
 Description=Prometheus Node Exporter
@@ -152,7 +156,7 @@ Wants=network-online.target
 Type=simple
 Restart=always
 RestartSec=3
-ExecStart=${NE_BIN} --web.listen-address=${NE_LH}:${NE_PORT}
+ExecStart=${NE_BIN} --web.listen-address=${NE_LH}:${NE_PORT} --collector.textfile.directory=${NE_TEXTFILE_DIR:-/var/lib/node_exporter/textfile}
 
 [Install]
 WantedBy=multi-user.target
@@ -161,7 +165,44 @@ NEUNIT
   systemctl daemon-reload
   systemctl enable node_exporter 2>/dev/null || true
   systemctl restart node_exporter || true
-  echo "[node_exporter] сервис обновлён, ${NE_LH}:${NE_PORT}"
+  echo "[node_exporter] сервис обновлён, ${NE_LH}:${NE_PORT}, textfile ${NE_TEXTFILE_DIR}"
+}
+
+# Подключить textfile collector на уже установленном node_exporter (без полной переустановки).
+_node_exporter_ensure_textfile_collector() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    return 0
+  fi
+  local NE_TEXTFILE_DIR="${VPN_NODE_EXPORTER_TEXTFILE_DIR:-/var/lib/node_exporter/textfile}"
+  mkdir -p "$NE_TEXTFILE_DIR"
+  chmod 755 "$NE_TEXTFILE_DIR" 2>/dev/null || true
+  if [[ ! -f /etc/systemd/system/node_exporter.service ]]; then
+    return 0
+  fi
+  if grep -q 'collector.textfile.directory' /etc/systemd/system/node_exporter.service 2>/dev/null; then
+    return 0
+  fi
+  local NE_BIN="${VPN_NODE_EXPORTER_BIN:-/usr/local/bin/node_exporter}"
+  local NE_PORT="${VPN_NODE_EXPORTER_PORT:-9100}"
+  local NE_LH="${VPN_NODE_EXPORTER_LISTEN_HOST:-0.0.0.0}"
+  cat > /etc/systemd/system/node_exporter.service <<NEUNIT
+[Unit]
+Description=Prometheus Node Exporter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=3
+ExecStart=${NE_BIN} --web.listen-address=${NE_LH}:${NE_PORT} --collector.textfile.directory=${NE_TEXTFILE_DIR}
+
+[Install]
+WantedBy=multi-user.target
+NEUNIT
+  systemctl daemon-reload
+  systemctl restart node_exporter 2>/dev/null || true
+  echo "[node_exporter] добавлен textfile collector: ${NE_TEXTFILE_DIR}"
 }
 
 _egress_fairness_install() {
