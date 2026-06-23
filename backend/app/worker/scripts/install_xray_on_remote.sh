@@ -8,6 +8,7 @@
 #   provision_vless_ws.sh
 #   provision_vless_xhttp.sh
 #   provision_vless_vk_cdn_xhttp.sh
+#   provision_warp.sh
 #   provision_cascade.sh
 #   provision_hysteria2.sh
 

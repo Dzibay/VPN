@@ -124,7 +124,7 @@ const serverParamRows = computed(() => {
             label: 'Google / YouTube',
             value:
               s.google_routing_mode === 'entry'
-                ? 'через вход (YouTube без рекламы)'
+                ? 'YouTube через WARP'
                 : 'через exit (Gemini / Google)',
           },
         ]

@@ -220,7 +220,7 @@ const formXhttpPath = ref('')
 const formIsCascadeRuEntry = ref(false)
 /** id внешнего сервера; '' = не задано */
 const formCascadeNextServerId = ref('')
-/** exit: Google/Gemini через exit; entry: YouTube/Google через вход */
+/** exit: Google/Gemini через exit; entry: YouTube через WARP на входе */
 const formGoogleRoutingMode = ref('exit')
 /** Вкладки модалки сервера: общие параметры | VLESS+REALITY */
 const serverModalTab = ref('general')
@@ -2745,7 +2745,7 @@ watch(formIsCascadeRuEntry, (v) => {
                       Через exit (Gemini и Google, по умолчанию)
                     </option>
                     <option value="entry">
-                      Через вход (YouTube без рекламы, Google на РФ-узле)
+                      Через вход (YouTube через Cloudflare WARP)
                     </option>
                   </select>
                   <span class="field-hint"

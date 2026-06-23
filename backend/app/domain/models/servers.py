@@ -163,8 +163,8 @@ class ServerCreate(BaseModel):
     google_routing_mode: Literal["exit", "entry"] = Field(
         default="exit",
         description=(
-            "Маршрутизация Google/YouTube на каскадном входе: exit — Gemini и geoip:google через exit; "
-            "entry — YouTube/Google через вход (direct, без рекламы на YouTube)"
+            "Маршрутизация Google на каскадном входе: exit — Gemini и geoip:google через exit; "
+            "entry — YouTube/Google через Cloudflare WARP на входе, Gemini — direct"
         ),
     )
 
@@ -689,7 +689,7 @@ class ServerRead(BaseModel):
     )
     google_routing_mode: Literal["exit", "entry"] = Field(
         default="exit",
-        description="exit: Google/Gemini через exit; entry: YouTube/Google через вход",
+        description="exit: Google/Gemini через exit; entry: YouTube через WARP на входе",
     )
 
 

@@ -56,6 +56,7 @@ _write_xray_config() {
   if [[ -n "$raw" ]]; then
     export VPN_CASCADE_RU_DIRECT_EXTRA_DOMAINS="$raw"
   fi
+  _warp_ensure_if_youtube_entry || true
   python3 - << 'PY'
 import base64
 import json
@@ -204,6 +205,16 @@ gemini_domains = [
 ]
 _google_geosites = ("geosite:youtube", "geosite:google")
 gemini_tag = "egress-cascade" if cascade else "direct"
+
+warp_outbound = None
+if not google_via_exit and not cascade:
+    warp_json = (
+        os.environ.get("VPN_WARP_OUTBOUND_JSON") or "/usr/local/etc/xray/wgcf/outbound.json"
+    ).strip()
+    if os.path.isfile(warp_json):
+        with open(warp_json, encoding="utf-8") as wf:
+            warp_outbound = json.load(wf)
+
 google_rules = []
 if google_via_exit:
     google_rules = [
@@ -211,13 +222,21 @@ if google_via_exit:
         {"type": "field", "outboundTag": gemini_tag, "ip": ["geoip:google"]},
     ]
 elif not cascade:
-    google_rules = [
-        {
-            "type": "field",
-            "outboundTag": "direct",
-            "domain": [*_google_geosites, *gemini_domains],
-        },
-    ]
+    if warp_outbound:
+        google_rules = [
+            {"type": "field", "outboundTag": "warp", "domain": list(_google_geosites)},
+            {"type": "field", "outboundTag": "warp", "ip": ["geoip:google"]},
+            {"type": "field", "outboundTag": "direct", "domain": gemini_domains},
+        ]
+        cfg["outbounds"].insert(0, warp_outbound)
+    else:
+        google_rules = [
+            {
+                "type": "field",
+                "outboundTag": "direct",
+                "domain": [*_google_geosites, *gemini_domains],
+            },
+        ]
 
 if not cascade:
     cfg["outbounds"].append({"protocol": "blackhole", "tag": "block"})
@@ -504,6 +523,7 @@ _xray_cleanup() {
   if [[ "$rc" -ne 0 ]]; then
     echo "[cleanup] предупреждение: скрипт remove завершился с кодом $rc (xray мог быть не установлен)" >&2
   fi
+  _warp_cleanup 2>/dev/null || true
 }
 
 _emit_xray_meta() {

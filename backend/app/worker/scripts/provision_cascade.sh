@@ -6,6 +6,7 @@ set -euo pipefail
 
 _apply_xray_cascade_to_file() {
   local cfg_path="${1:-${VPN_XRAY_CONFIG_PATH:-/usr/local/etc/xray/config.json}}"
+  _warp_ensure_if_youtube_entry || true
   python3 - "$cfg_path" << 'PY'
 import json
 import os
@@ -103,12 +104,6 @@ vless_to_exit = {
     "streamSettings": stream,
 }
 
-cfg["outbounds"] = [
-    vless_to_exit,
-    {"protocol": "freedom", "tag": "direct", "settings": {"domainStrategy": "UseIPv4"}},
-    {"protocol": "blackhole", "tag": "block"},
-]
-
 google_mode = (os.environ.get("VPN_GOOGLE_ROUTING_MODE") or "exit").strip().lower()
 if google_mode not in ("exit", "entry"):
     google_mode = "exit"
@@ -124,6 +119,26 @@ gemini_domains = [
 ]
 _google_geosites = ("geosite:youtube", "geosite:google")
 
+warp_outbound = None
+if not google_via_exit:
+    warp_json = (
+        os.environ.get("VPN_WARP_OUTBOUND_JSON") or "/usr/local/etc/xray/wgcf/outbound.json"
+    ).strip()
+    if os.path.isfile(warp_json):
+        with open(warp_json, encoding="utf-8") as wf:
+            warp_outbound = json.load(wf)
+
+outbounds = [vless_to_exit]
+if warp_outbound:
+    outbounds.append(warp_outbound)
+outbounds.extend(
+    [
+        {"protocol": "freedom", "tag": "direct", "settings": {"domainStrategy": "UseIPv4"}},
+        {"protocol": "blackhole", "tag": "block"},
+    ]
+)
+cfg["outbounds"] = outbounds
+
 google_egress_rules = []
 if google_via_exit:
     google_egress_rules = [
@@ -131,9 +146,17 @@ if google_via_exit:
         {"type": "field", "outboundTag": "egress-cascade", "ip": ["geoip:google"]},
     ]
 
+youtube_warp_rules = []
 google_direct_domains = []
 if not google_via_exit:
-    google_direct_domains = [*_google_geosites, *gemini_domains]
+    if warp_outbound:
+        youtube_warp_rules = [
+            {"type": "field", "outboundTag": "warp", "domain": list(_google_geosites)},
+            {"type": "field", "outboundTag": "warp", "ip": ["geoip:google"]},
+        ]
+        google_direct_domains = list(gemini_domains)
+    else:
+        google_direct_domains = [*_google_geosites, *gemini_domains]
 
 dns_outbound_tag = "egress-cascade"
 
@@ -153,7 +176,7 @@ if raw_extra_ru:
 
 if google_via_exit:
     extra_ru_domains = [x for x in extra_ru_domains if x.strip().lower() not in _google_geosites]
-else:
+elif not warp_outbound:
     seen_extra = {x.strip().lower() for x in extra_ru_domains}
     for g in _google_geosites:
         if g not in seen_extra:
@@ -173,6 +196,7 @@ if ru_direct:
     cfg["routing"] = {
         "domainStrategy": "IPIfNonMatch",
         "rules": [
+            *youtube_warp_rules,
             *google_egress_rules,
             {"type": "field", "outboundTag": "direct", "domain": _ru_domains},
             {"type": "field", "outboundTag": "direct", "ip": ["geoip:ru", "geoip:private"]},
@@ -184,7 +208,7 @@ if ru_direct:
         ],
     }
 else:
-    routing_rules = [*google_egress_rules]
+    routing_rules = [*youtube_warp_rules, *google_egress_rules]
     if google_direct_domains:
         routing_rules.append(
             {"type": "field", "outboundTag": "direct", "domain": google_direct_domains}
@@ -240,13 +264,24 @@ dns_rules = [
         "outboundTag": dns_outbound_tag,
         "domain": ["geosite:geolocation-!cn"],
     },
+]
+if warp_outbound:
+    dns_rules.append(
+        {
+            "type": "field",
+            "inboundTag": ["dns-inbound"],
+            "outboundTag": "warp",
+            "domain": list(_google_geosites),
+        }
+    )
+dns_rules.append(
     {
         "type": "field",
         "inboundTag": ["dns-inbound"],
         "outboundTag": "direct",
         "domain": dns_ru_domains,
-    },
-]
+    }
+)
 quic_block_rule = {
     "type": "field",
     "outboundTag": "block",

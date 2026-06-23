@@ -675,7 +675,7 @@ def _pool_auto_youtube_vless(
 ) -> list[Server]:
     """
     VLESS для Auto (YouTube): ``include_in_auto``, ``google_routing_mode=entry``
-    (YouTube через вход, не Gemini/exit) и валидный URI.
+    (YouTube через WARP на входе) и валидный URI.
     """
     out: list[Server] = []
     for s in ctx.delivery_rows:

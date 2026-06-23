@@ -39,6 +39,7 @@ _SCRIPTS_DIR = Path(__file__).resolve().parent / "scripts"
 _REMOTE_SCRIPT = _SCRIPTS_DIR / "install_xray_on_remote.sh"
 _REMOTE_SCRIPT_PARTS = (
     _SCRIPTS_DIR / "provision_common.sh",
+    _SCRIPTS_DIR / "provision_warp.sh",
     _SCRIPTS_DIR / "provision_cascade.sh",
     _SCRIPTS_DIR / "provision_vless.sh",
     _SCRIPTS_DIR / "provision_vless_grpc.sh",
@@ -239,6 +240,8 @@ def _progress_from_remote_line(line: str) -> tuple[str, int, str] | None:
         return ("Проверка Xray", 84, text)
     if "egress_fairness" in low or "net_sysctl" in low or "sysctl" in low:
         return ("Оптимизация сети", 88, text)
+    if "[warp]" in low or "wgcf" in low:
+        return ("Cloudflare WARP", 75, text)
     if "node_exporter" in low:
         return ("Установка метрик", 92, text)
     if "готово" in low or "завершено" in low:

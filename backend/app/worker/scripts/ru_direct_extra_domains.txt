@@ -6,5 +6,5 @@
 #   regexp:^.*\.tinkoff\.com$
 #   full:example.com
 #
-# YouTube/Google: use server setting google_routing_mode=entry (not this file).
+# YouTube/Google: server setting google_routing_mode=entry → WARP outbound on provision.
 # With google_routing_mode=exit, geosite:youtube here conflicts with geoip:google → exit.
