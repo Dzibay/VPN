@@ -365,12 +365,19 @@ def _competitor_dns() -> dict[str, Any]:
         "serveExpiredTTL": 0,
         "serveStale": True,
         "servers": [
-            {"address": "https://1.1.1.1/dns-query", "timeoutMs": 1000},
             {
-                "domain": ["geosite:category-direct"],
+                # Xray DNS: поле ``domains`` (не ``domain`` как в routing).
+                # udp+local — резолв на устройстве, минуя прокси (RU/direct, белые списки).
+                "domains": [
+                    "geosite:category-direct",
+                    "geosite:category-ru",
+                    "regexp:.*\\.ru$",
+                ],
                 "address": "udp+local://77.88.8.8",
-                "timeoutMs": 1000,
+                "timeoutMs": 2000,
+                "skipFallback": False,
             },
+            {"address": "https://1.1.1.1/dns-query", "timeoutMs": 5000},
         ],
         "tag": _COMPETITOR_DNS_TAG,
         "useSystemHosts": False,
