@@ -86,6 +86,8 @@ def _routing_profile_happ(cfg: Settings | None = None) -> dict[str, object]:
         "DomesticDNSIP": "8.8.8.8",
         "Geoipurl": f"{base}/sub/geoip.dat",
         "Geositeurl": f"{base}/sub/geosite.dat",
+        # Принудительно перекачать geosite/geoip после обновления подписки (Happ lastUpdatedDate).
+        "LastUpdated": "1781913600",
         "DnsHosts": {
             "1.1.1.1": "1.1.1.1",
             "8.8.8.8": "8.8.8.8",

@@ -300,6 +300,31 @@ dns_rules.append(
         "domain": dns_ru_domains,
     }
 )
+# QUIC/UDP 443: блокируем только то, что НЕ Google и НЕ RU.
+# Google QUIC должен иметь шанс пройти через warp/egress (важно для YouTube/HTTP3).
+# Если правило слишком жадное — в entry-режиме Google QUIC уходит в blackhole и
+# YouTube/Google не открываются.
+quic_pre_rules: list[dict[str, object]] = []
+if not google_via_exit and warp_outbound:
+    quic_pre_rules.append(
+        {
+            "type": "field",
+            "outboundTag": "warp",
+            "network": "udp",
+            "port": "443",
+            "domain": list(_warp_route_domains),
+        }
+    )
+elif google_via_exit:
+    quic_pre_rules.append(
+        {
+            "type": "field",
+            "outboundTag": "egress-cascade",
+            "network": "udp",
+            "port": "443",
+            "domain": list(_google_geosites) + list(gemini_domains),
+        }
+    )
 quic_block_rule = {
     "type": "field",
     "outboundTag": "block",
@@ -307,7 +332,12 @@ quic_block_rule = {
     "port": "443",
     "domain": ["geosite:geolocation-!cn"],
 }
-cfg["routing"]["rules"] = [*dns_rules, *cfg["routing"]["rules"], quic_block_rule]
+cfg["routing"]["rules"] = [
+    *dns_rules,
+    *quic_pre_rules,
+    *cfg["routing"]["rules"],
+    quic_block_rule,
+]
 
 with open(path, "w", encoding="utf-8") as f:
     json.dump(cfg, f, indent=2, ensure_ascii=False)

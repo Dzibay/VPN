@@ -367,11 +367,13 @@ def _competitor_dns() -> dict[str, Any]:
         "servers": [
             {
                 # Xray DNS: поле ``domains`` (не ``domain`` как в routing).
-                # udp+local — резолв на устройстве, минуя прокси (RU/direct, белые списки).
+                # udp+local — резолв на устройстве, минуя прокси (RU TLD, белые списки).
+                # Без geosite:* — Happ резолвит DNS до загрузки geosite.dat (chunk UUID),
+                # иначе «category-ru / missing file …» при подключении.
                 "domains": [
-                    "geosite:category-direct",
-                    "geosite:category-ru",
                     "regexp:.*\\.ru$",
+                    "regexp:.*\\.su$",
+                    "regexp:.*\\.xn--p1ai$",
                 ],
                 "address": "udp+local://77.88.8.8",
                 "timeoutMs": 2000,
