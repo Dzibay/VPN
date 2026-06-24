@@ -54,11 +54,17 @@ _provision_preflight_packages() {
   fi
 }
 
+# curl >= 7.71 понимает --retry-all-errors; на старых VPS (Ubuntu 18.04 и т.п.) флаг неизвестен.
+_curl_retry_extra=()
+if command -v curl >/dev/null 2>&1 && curl --help 2>&1 | grep -qF 'retry-all-errors'; then
+  _curl_retry_extra=(--retry-all-errors)
+fi
+
 fetch_installer() {
   if command -v curl >/dev/null 2>&1; then
     # install-release.sh внутри снова тянет релизы с GitHub — при блокировке см. сообщение в _xray_install.
     curl -fsSL --connect-timeout 30 --max-time 300 \
-      --retry 3 --retry-delay 8 --retry-all-errors \
+      --retry 3 --retry-delay 8 "${_curl_retry_extra[@]}" \
       "$INSTALLER_URL"
   elif command -v wget >/dev/null 2>&1; then
     wget -qO- --timeout=30 --tries=3 "$INSTALLER_URL"
