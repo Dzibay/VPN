@@ -352,10 +352,15 @@ def server_to_competitor_vless_reality_outbound(
 
 
 def _competitor_dns() -> dict[str, Any]:
-    # DoH 1.1.1.1 для общих доменов (идёт через прокси по routing); Яндекс DNS через
-    # udp+local для direct/RU-доменов резолвится всегда напрямую (минуя прокси) — это
-    # продолжает работать в режиме «белых списков», когда зарубежные адреса недоступны.
-    # Совпадает с эталонной конфигурацией конкурента.
+    # DNS на клиенте Happ. Оба сервера — local-режим (минуя routing), иначе
+    # запросы попадают в catch-all ``proxy``, нет VLESS-handshake → нет резолва →
+    # «бесконечная загрузка» всех сайтов.
+    #
+    # 1) udp+local 77.88.8.8 — RU TLD (.ru/.su/.рф). Без geosite:* — Happ резолвит
+    #    DNS до загрузки geosite.dat (см. «category-ru / missing file» при коннекте).
+    # 2) https+local 1.1.1.1 — всё остальное. ``+local`` важно: Xray ходит за DoH
+    #    через freedom-outbound напрямую, без VPN/прокси. Иначе при недоступном
+    #    proxy DoH тоже мёртв.
     return {
         "disableCache": False,
         "disableFallback": False,
@@ -366,10 +371,6 @@ def _competitor_dns() -> dict[str, Any]:
         "serveStale": True,
         "servers": [
             {
-                # Xray DNS: поле ``domains`` (не ``domain`` как в routing).
-                # udp+local — резолв на устройстве, минуя прокси (RU TLD, белые списки).
-                # Без geosite:* — Happ резолвит DNS до загрузки geosite.dat (chunk UUID),
-                # иначе «category-ru / missing file …» при подключении.
                 "domains": [
                     "regexp:.*\\.ru$",
                     "regexp:.*\\.su$",
@@ -379,7 +380,10 @@ def _competitor_dns() -> dict[str, Any]:
                 "timeoutMs": 2000,
                 "skipFallback": False,
             },
-            {"address": "https://1.1.1.1/dns-query", "timeoutMs": 5000},
+            {
+                "address": "https+local://1.1.1.1/dns-query",
+                "timeoutMs": 5000,
+            },
         ],
         "tag": _COMPETITOR_DNS_TAG,
         "useSystemHosts": False,
@@ -552,6 +556,12 @@ def _competitor_routing(
         }
 
     rules: list[dict[str, Any]] = [
+        # Страховка: встроенный DNS никогда не идёт через balancer/proxy.
+        {
+            "type": "field",
+            "inboundTag": [_COMPETITOR_DNS_TAG],
+            "outboundTag": "direct",
+        },
         {
             "type": "field",
             "outboundTag": "direct",
@@ -782,6 +792,13 @@ def _happ_plain_profile_doc(proxy: dict[str, Any], remark: str) -> dict[str, Any
             "domainMatcher": "hybrid",
             "domainStrategy": "IPIfNonMatch",
             "rules": [
+                # Страховка: трафик встроенного DNS никогда не должен идти в proxy
+                # (если local-режим у DNS-сервера почему-то выпал, всё равно direct).
+                {
+                    "type": "field",
+                    "inboundTag": [_COMPETITOR_DNS_TAG],
+                    "outboundTag": "direct",
+                },
                 {
                     "type": "field",
                     "protocol": ["bittorrent"],
