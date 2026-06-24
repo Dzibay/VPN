@@ -6,7 +6,8 @@ set -euo pipefail
 
 _apply_xray_cascade_to_file() {
   local cfg_path="${1:-${VPN_XRAY_CONFIG_PATH:-/usr/local/etc/xray/config.json}}"
-  _warp_ensure_if_youtube_entry || true
+  # WARP отключён: YouTube/Google в режиме entry идут direct с этого узла,
+  # в режиме exit — через каскадный outbound. См. ниже.
   python3 - "$cfg_path" << 'PY'
 import json
 import os
@@ -104,11 +105,16 @@ vless_to_exit = {
     "streamSettings": stream,
 }
 
+# google_routing_mode:
+#   exit  — YouTube/Google + Gemini едут в exit-каскад (Gemini требует не-RU IP)
+#   entry — YouTube/Google идут DIRECT с этого РФ-входа (как обычные RU-сайты);
+#           Gemini всё равно через exit (на RU-IP не отдаётся ответ)
 google_mode = (os.environ.get("VPN_GOOGLE_ROUTING_MODE") or "exit").strip().lower()
 if google_mode not in ("exit", "entry"):
     google_mode = "exit"
 google_via_exit = google_mode == "exit"
 
+# Gemini всегда через exit (контент Google AI блокирован для RU IP).
 gemini_domains = [
     "domain:gemini.google.com",
     "domain:aistudio.google.com",
@@ -118,6 +124,8 @@ gemini_domains = [
     "domain:proactivebackend-pa.googleapis.com",
 ]
 _google_geosites = ("geosite:youtube", "geosite:google")
+# Доп. Google/YouTube CDN-домены, которые не всегда есть в geosite:google
+# (важно для отлова первых пакетов до завершения sniff).
 _youtube_extra_domains = (
     "domain:googlevideo.com",
     "domain:ytimg.com",
@@ -127,54 +135,47 @@ _youtube_extra_domains = (
     "domain:gvt1.com",
     "domain:googleusercontent.com",
 )
-_warp_route_domains = list(_google_geosites) + list(_youtube_extra_domains)
+_google_youtube_domains = list(_google_geosites) + list(_youtube_extra_domains)
 
-warp_outbound = None
-if not google_via_exit:
-    warp_json = (
-        os.environ.get("VPN_WARP_OUTBOUND_JSON") or "/usr/local/etc/xray/wgcf/outbound.json"
-    ).strip()
-    if os.path.isfile(warp_json):
-        with open(warp_json, encoding="utf-8") as wf:
-            warp_outbound = json.load(wf)
-
-outbounds = [vless_to_exit]
-if warp_outbound:
-    outbounds.append(warp_outbound)
-outbounds.extend(
-    [
-        {"protocol": "freedom", "tag": "direct", "settings": {"domainStrategy": "UseIPv4"}},
-        {"protocol": "blackhole", "tag": "block"},
-    ]
-)
+outbounds = [
+    vless_to_exit,
+    {"protocol": "freedom", "tag": "direct", "settings": {"domainStrategy": "UseIPv4"}},
+    {"protocol": "blackhole", "tag": "block"},
+]
 cfg["outbounds"] = outbounds
 
-google_egress_rules = []
+# Google routing для catch-all внутри РФ-входа.
+# entry: YouTube/Google → direct (с РФ-входа); Gemini → exit
+# exit:  YouTube/Google + Gemini → exit
+google_egress_rules: list[dict[str, object]] = []
+google_direct_rules: list[dict[str, object]] = []
+google_via_exit_domains_for_dns: list[str] = []
+google_via_direct_domains_for_dns: list[str] = []
 if google_via_exit:
     google_egress_rules = [
-        {"type": "field", "outboundTag": "egress-cascade", "domain": list(gemini_domains)},
+        {
+            "type": "field",
+            "outboundTag": "egress-cascade",
+            "domain": [*gemini_domains, *_google_youtube_domains],
+        },
         {"type": "field", "outboundTag": "egress-cascade", "ip": ["geoip:google"]},
     ]
-
-youtube_warp_rules = []
-google_direct_domains = []
-if not google_via_exit:
-    if warp_outbound:
-        youtube_warp_rules = [
-            {"type": "field", "outboundTag": "warp", "domain": list(_warp_route_domains)},
-            {"type": "field", "outboundTag": "warp", "ip": ["geoip:google"]},
-            # QUIC/UDP 443 на Google IP — в warp, иначе уходит в egress-cascade (catch-all).
-            {
-                "type": "field",
-                "outboundTag": "warp",
-                "network": "udp",
-                "port": "443",
-                "ip": ["geoip:google"],
-            },
-        ]
-        google_direct_domains = list(gemini_domains)
-    else:
-        google_direct_domains = [*_google_geosites, *gemini_domains]
+    google_via_exit_domains_for_dns = [*gemini_domains, *_google_youtube_domains]
+else:
+    # Gemini — всегда через exit, даже в entry-режиме.
+    google_egress_rules = [
+        {"type": "field", "outboundTag": "egress-cascade", "domain": list(gemini_domains)},
+    ]
+    google_direct_rules = [
+        {
+            "type": "field",
+            "outboundTag": "direct",
+            "domain": list(_google_youtube_domains),
+        },
+        {"type": "field", "outboundTag": "direct", "ip": ["geoip:google"]},
+    ]
+    google_via_exit_domains_for_dns = list(gemini_domains)
+    google_via_direct_domains_for_dns = list(_google_youtube_domains)
 
 dns_outbound_tag = "egress-cascade"
 
@@ -192,20 +193,14 @@ if raw_extra_ru:
             seen.add(t)
             extra_ru_domains.append(t)
 
-if google_via_exit:
-    extra_ru_domains = [x for x in extra_ru_domains if x.strip().lower() not in _google_geosites]
-elif not warp_outbound:
-    seen_extra = {x.strip().lower() for x in extra_ru_domains}
-    for g in _google_geosites:
-        if g not in seen_extra:
-            extra_ru_domains.append(g)
-            seen_extra.add(g)
+# Google geosite-метки в extra_ru_domains не нужны: их обрабатывают google_direct_rules
+# (в entry) или google_egress_rules (в exit), и попадание в RU-direct сломает Gemini.
+extra_ru_domains = [x for x in extra_ru_domains if x.strip().lower() not in _google_geosites]
 
 if ru_direct:
     _ru_domains = [
         "geosite:private",
         *extra_ru_domains,
-        *google_direct_domains,
         "geosite:category-ru",
         "regexp:.*\\.ru$",
         "regexp:.*\\.su$",
@@ -214,8 +209,8 @@ if ru_direct:
     cfg["routing"] = {
         "domainStrategy": "IPIfNonMatch",
         "rules": [
-            *youtube_warp_rules,
             *google_egress_rules,
+            *google_direct_rules,
             {"type": "field", "outboundTag": "direct", "domain": _ru_domains},
             {"type": "field", "outboundTag": "direct", "ip": ["geoip:ru", "geoip:private"]},
             {
@@ -226,11 +221,10 @@ if ru_direct:
         ],
     }
 else:
-    routing_rules = [*youtube_warp_rules, *google_egress_rules]
-    if google_direct_domains:
-        routing_rules.append(
-            {"type": "field", "outboundTag": "direct", "domain": google_direct_domains}
-        )
+    routing_rules: list[dict[str, object]] = [
+        *google_egress_rules,
+        *google_direct_rules,
+    ]
     routing_rules.append(
         {
             "type": "field",
@@ -251,9 +245,11 @@ dns_ru_domains = [
     "regexp:.*\\.xn--p1ai$",
 ]
 if ru_direct:
-    dns_ru_domains = [*dns_ru_domains, *extra_ru_domains, *google_direct_domains]
-elif google_direct_domains:
-    dns_ru_domains = [*dns_ru_domains, *google_direct_domains]
+    dns_ru_domains = [*dns_ru_domains, *extra_ru_domains]
+# В entry-режиме Google/YouTube тоже резолвим через RU DNS (77.88.8.8): меньше
+# вероятность отдачи зарубежного балансировщика, который заблокирован для RU IP.
+if google_via_direct_domains_for_dns:
+    dns_ru_domains = [*dns_ru_domains, *google_via_direct_domains_for_dns]
 
 cfg["dns"] = {
     "servers": [
@@ -282,47 +278,45 @@ dns_rules = [
         "outboundTag": dns_outbound_tag,
         "domain": ["geosite:geolocation-!cn"],
     },
-]
-if warp_outbound:
-    dns_rules.append(
-        {
-            "type": "field",
-            "inboundTag": ["dns-inbound"],
-            "outboundTag": "warp",
-            "domain": list(_warp_route_domains),
-        }
-    )
-dns_rules.append(
     {
         "type": "field",
         "inboundTag": ["dns-inbound"],
         "outboundTag": "direct",
         "domain": dns_ru_domains,
-    }
-)
-# QUIC/UDP 443: блокируем только то, что НЕ Google и НЕ RU.
-# Google QUIC должен иметь шанс пройти через warp/egress (важно для YouTube/HTTP3).
-# Если правило слишком жадное — в entry-режиме Google QUIC уходит в blackhole и
-# YouTube/Google не открываются.
+    },
+]
+# QUIC/UDP 443:
+#   - Google в entry-режиме идёт direct (UDP/443 разрешаем direct отдельным правилом)
+#   - Google в exit-режиме идёт через каскад (UDP/443 в egress)
+#   - Всё остальное не-cn QUIC режем — браузер сделает fallback на TCP/443 (TLS+SNI).
 quic_pre_rules: list[dict[str, object]] = []
-if not google_via_exit and warp_outbound:
-    quic_pre_rules.append(
-        {
-            "type": "field",
-            "outboundTag": "warp",
-            "network": "udp",
-            "port": "443",
-            "domain": list(_warp_route_domains),
-        }
-    )
-elif google_via_exit:
+if google_via_exit:
     quic_pre_rules.append(
         {
             "type": "field",
             "outboundTag": "egress-cascade",
             "network": "udp",
             "port": "443",
-            "domain": list(_google_geosites) + list(gemini_domains),
+            "domain": [*_google_youtube_domains, *gemini_domains],
+        }
+    )
+else:
+    quic_pre_rules.append(
+        {
+            "type": "field",
+            "outboundTag": "direct",
+            "network": "udp",
+            "port": "443",
+            "domain": list(_google_youtube_domains),
+        }
+    )
+    quic_pre_rules.append(
+        {
+            "type": "field",
+            "outboundTag": "egress-cascade",
+            "network": "udp",
+            "port": "443",
+            "domain": list(gemini_domains),
         }
     )
 quic_block_rule = {

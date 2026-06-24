@@ -675,13 +675,17 @@ def _pool_auto_youtube_vless(
 ) -> list[Server]:
     """
     VLESS для Auto (YouTube): ``include_in_auto``, ``google_routing_mode=entry``
-    (YouTube через WARP на входе) и валидный URI.
+    (YouTube/Google идут direct с РФ-входа — обходит блок Google для дата-центров
+    зарубежных провайдеров), без ``whitelist`` (WL-узлы для контентных сервисов
+    непригодны), валидный URI.
     """
     out: list[Server] = []
     for s in ctx.delivery_rows:
         if not _is_vless_server(s) or not s.include_in_auto:
             continue
         if (s.google_routing_mode or "exit").strip().lower() != "entry":
+            continue
+        if s.whitelist:
             continue
         if uri_by_id.get(s.id) is None:
             continue

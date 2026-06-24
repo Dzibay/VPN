@@ -190,11 +190,9 @@ cfg["inbounds"][0]["sniffing"] = {
     "routeOnly": True,
 }
 
-google_mode = (os.environ.get("VPN_GOOGLE_ROUTING_MODE") or "exit").strip().lower()
-if google_mode not in ("exit", "entry"):
-    google_mode = "exit"
-google_via_exit = google_mode == "exit"
-
+# Не-каскадный узел (одиночный VLESS): WARP убран. Google/YouTube идут direct
+# (с этого VPS), Gemini — тоже direct (этот узел сам играет роль exit).
+# Каскадный случай обрабатывается в _apply_xray_cascade_to_file.
 gemini_domains = [
     "domain:gemini.google.com",
     "domain:aistudio.google.com",
@@ -204,7 +202,6 @@ gemini_domains = [
     "domain:proactivebackend-pa.googleapis.com",
 ]
 _google_geosites = ("geosite:youtube", "geosite:google")
-# Доп. домены видео/CDN — не всегда попадают в sniff до первого пакета.
 _youtube_extra_domains = (
     "domain:googlevideo.com",
     "domain:ytimg.com",
@@ -214,40 +211,16 @@ _youtube_extra_domains = (
     "domain:gvt1.com",
     "domain:googleusercontent.com",
 )
-_warp_route_domains = list(_google_geosites) + list(_youtube_extra_domains)
-gemini_tag = "egress-cascade" if cascade else "direct"
-
-warp_outbound = None
-if not google_via_exit and not cascade:
-    warp_json = (
-        os.environ.get("VPN_WARP_OUTBOUND_JSON") or "/usr/local/etc/xray/wgcf/outbound.json"
-    ).strip()
-    if os.path.isfile(warp_json):
-        with open(warp_json, encoding="utf-8") as wf:
-            warp_outbound = json.load(wf)
 
 google_rules = []
-if google_via_exit:
+if not cascade:
     google_rules = [
-        {"type": "field", "outboundTag": gemini_tag, "domain": gemini_domains},
-        {"type": "field", "outboundTag": gemini_tag, "ip": ["geoip:google"]},
+        {
+            "type": "field",
+            "outboundTag": "direct",
+            "domain": [*_google_geosites, *_youtube_extra_domains, *gemini_domains],
+        },
     ]
-elif not cascade:
-    if warp_outbound:
-        google_rules = [
-            {"type": "field", "outboundTag": "warp", "domain": list(_warp_route_domains)},
-            {"type": "field", "outboundTag": "warp", "ip": ["geoip:google"]},
-            {"type": "field", "outboundTag": "direct", "domain": gemini_domains},
-        ]
-        cfg["outbounds"].insert(0, warp_outbound)
-    else:
-        google_rules = [
-            {
-                "type": "field",
-                "outboundTag": "direct",
-                "domain": [*_google_geosites, *gemini_domains],
-            },
-        ]
 
 if not cascade:
     cfg["outbounds"].append({"protocol": "blackhole", "tag": "block"})
