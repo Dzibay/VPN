@@ -120,8 +120,7 @@ function logout() {
 async function loadSupportBadgeCount() {
   if (showStaffSupportBell.value) {
     try {
-      const params = new URLSearchParams({ limit: '1', offset: '0' })
-      const data = await fetchJson(`/api/staff/support-chats?${params.toString()}`)
+      const data = await fetchJson('/api/staff/support-chats/badge')
       staffSupportBadgeCount.value = Number(data?.needs_reply_count) || 0
     } catch {
       staffSupportBadgeCount.value = 0

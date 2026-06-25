@@ -71,5 +71,9 @@ class StaffSupportChatsListResponse(BaseModel):
     needs_reply_count: int = Field(ge=0)
 
 
+class StaffSupportBadgeResponse(BaseModel):
+    needs_reply_count: int = Field(ge=0, description="Чаты, где последнее сообщение от пользователя")
+
+
 class SupportUnreadCountResponse(BaseModel):
     unread_count: int = Field(ge=0)

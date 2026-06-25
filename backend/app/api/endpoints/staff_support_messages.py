@@ -14,6 +14,7 @@ from app.core.dependencies import (
     require_referrals_staff,
 )
 from app.domain.models.support_messages import (
+    StaffSupportBadgeResponse,
     StaffSupportChatsListResponse,
     StaffSupportMessageRead,
     StaffSupportMessagesListResponse,
@@ -23,6 +24,7 @@ from app.domain.services.support_messages_service import (
     create_staff_support_message,
     list_staff_support_chats,
     list_user_support_messages_for_staff,
+    staff_support_needs_reply_count,
 )
 
 router = APIRouter(
@@ -63,6 +65,18 @@ async def staff_support_chats(
         offset=offset,
         needs_reply_count=needs_reply_count,
     )
+
+
+@router.get(
+    "/badge",
+    response_model=StaffSupportBadgeResponse,
+    summary="Счётчик чатов, ожидающих ответа (лёгкий polling для шапки)",
+)
+async def staff_support_chats_badge(
+    session: ReadonlySessionDep,
+) -> StaffSupportBadgeResponse:
+    count = await staff_support_needs_reply_count(session)
+    return StaffSupportBadgeResponse(needs_reply_count=count)
 
 
 @router.get(

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
@@ -143,16 +143,29 @@ async def count_unread_support_for_user(
     *,
     user_id: int,
 ) -> int:
-    user = await session.get(User, user_id)
-    if user is None:
-        raise NotFoundError("Пользователь не найден")
-    stmt = select(func.count()).select_from(SupportMessage).where(
-        SupportMessage.user_id == user_id,
-        SupportMessage.author_kind == "staff",
+    """Ответы staff после support_seen_at (один запрос)."""
+    uid = int(user_id)
+    unread_filter = or_(
+        User.support_seen_at.is_(None),
+        SupportMessage.created_at > User.support_seen_at,
     )
-    if user.support_seen_at is not None:
-        stmt = stmt.where(SupportMessage.created_at > user.support_seen_at)
-    return int(await session.scalar(stmt) or 0)
+    row = (
+        await session.execute(
+            select(func.count(SupportMessage.id))
+            .select_from(User)
+            .outerjoin(
+                SupportMessage,
+                (SupportMessage.user_id == User.id)
+                & (SupportMessage.author_kind == "staff")
+                & unread_filter,
+            )
+            .where(User.id == uid)
+            .group_by(User.id),
+        )
+    ).one_or_none()
+    if row is None:
+        raise NotFoundError("Пользователь не найден")
+    return int(row[0] or 0)
 
 
 async def mark_support_seen_for_user(
@@ -164,6 +177,25 @@ async def mark_support_seen_for_user(
     if user is None:
         raise NotFoundError("Пользователь не найден")
     user.support_seen_at = utc_now()
+
+
+async def staff_support_needs_reply_count(session: AsyncSession) -> int:
+    """Число чатов, где последнее сообщение от пользователя (один запрос, для бейджа в шапке)."""
+    latest_per_user = (
+        select(
+            SupportMessage.user_id,
+            SupportMessage.author_kind,
+        )
+        .distinct(SupportMessage.user_id)
+        .order_by(SupportMessage.user_id, SupportMessage.id.desc())
+        .subquery()
+    )
+    stmt = (
+        select(func.count())
+        .select_from(latest_per_user)
+        .where(latest_per_user.c.author_kind == "user")
+    )
+    return int(await session.scalar(stmt) or 0)
 
 
 async def list_staff_support_chats(
@@ -198,13 +230,7 @@ async def list_staff_support_chats(
     count_stmt = select(func.count()).select_from(base_stmt.subquery())
     total = int(await session.scalar(count_stmt) or 0)
 
-    needs_reply_count_stmt = (
-        select(func.count())
-        .select_from(latest_subq)
-        .join(SupportMessage, SupportMessage.id == latest_subq.c.last_message_id)
-        .where(SupportMessage.author_kind == "user")
-    )
-    needs_reply_count = int(await session.scalar(needs_reply_count_stmt) or 0)
+    needs_reply_count = await staff_support_needs_reply_count(session)
 
     stmt = base_stmt.order_by(
         case((SupportMessage.author_kind == "user", 0), else_=1),

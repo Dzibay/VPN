@@ -57,6 +57,12 @@ def http_audit_skip_persist_for_path(path_with_query: str, *, api_prefix: str) -
     notify_tasks = f"{pfx}/telegram/notification-tasks"
     if normalized == notify_tasks:
         return True
+    support_badge = f"{pfx}/staff/support-chats/badge"
+    if normalized == support_badge:
+        return True
+    support_unread = f"{pfx}/me/support-messages/unread-count"
+    if normalized == support_unread:
+        return True
     return False
 
 

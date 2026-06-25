@@ -250,6 +250,15 @@ CREATE INDEX IF NOT EXISTS idx_tasks_pending_delivery_type
     ON tasks (delivery_channel, type, created_at ASC)
     WHERE status = 'pending';
 
+-- Бейдж поддержки в шапке: DISTINCT ON (user_id) ORDER BY id DESC.
+CREATE INDEX IF NOT EXISTS idx_support_messages_user_id_id_desc
+    ON support_messages (user_id, id DESC);
+
+-- Бейдж непрочитанных ответов в ЛК: COUNT staff-сообщений по user_id.
+CREATE INDEX IF NOT EXISTS idx_support_messages_user_staff_created
+    ON support_messages (user_id, created_at)
+    WHERE author_kind = 'staff';
+
 -- Rollup-таблицы платежей (триггер и backfill — database/rollups/pre_payments_rollup.sql).
 CREATE TABLE IF NOT EXISTS stats_payments_daily_utc (
     day_utc date NOT NULL,
