@@ -62,12 +62,16 @@ def get_db_readonly_sync() -> Generator[Session, None, None]:
 # Асинхронный движок и сессия — для всех HTTP-эндпоинтов API. Один и тот же DSN
 # (postgresql+psycopg://) одинаково работает в sync- и async-режимах SQLAlchemy 2.0
 # поверх psycopg3. Отдельный драйвер (asyncpg) не нужен.
+# Под uvicorn с N workers общий лимит соединений к Postgres = N × (pool_size + max_overflow).
+# Postgres по умолчанию max_connections=100; держим N=6 × (8+8) = до 96 + scheduler/worker ≤ ~110.
+# pool_timeout=10: лучше быстрый 503 при перегрузке, чем 45-секундное зависание лёгких запросов
+# (тарифы, auth, health) в очереди за тяжёлыми /sub/ и аналитикой.
 async_engine = create_async_engine(
     settings.sqlalchemy_database_url,
     pool_pre_ping=True,
-    pool_size=15,
-    max_overflow=15,
-    pool_timeout=45,
+    pool_size=8,
+    max_overflow=8,
+    pool_timeout=10,
     connect_args=_CONNECT_ARGS,
 )
 

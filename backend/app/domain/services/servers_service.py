@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings, settings
 from app.core.exceptions import ConflictError, NotFoundError
 from app.domain.subscription.servers_cache import invalidate_subscription_delivery_servers_cache
-from app.domain.services.prometheus_sd_cache import refresh_node_exporter_targets_cache_sync
+from app.domain.services.prometheus_sd_cache import invalidate_node_exporter_targets_cache
 from app.domain.models.servers import (
     ServerCreate,
     ServersCountResponse,
@@ -69,11 +69,12 @@ log = logging.getLogger("app.servers_service")
 
 
 def _refresh_server_delivery_caches() -> None:
+    """Сбросить кэш списка узлов: следующий /sub/ и Prometheus SD пересчитают из БД.
+
+    Не блокирует event loop — это лёгкая операция Redis DEL + flag in-memory.
+    """
     invalidate_subscription_delivery_servers_cache()
-    try:
-        refresh_node_exporter_targets_cache_sync()
-    except Exception:
-        log.exception("refresh server list caches failed")
+    invalidate_node_exporter_targets_cache()
 
 __all__ = [
     "servers_count",

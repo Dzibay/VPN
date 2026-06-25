@@ -67,6 +67,16 @@ def refresh_node_exporter_targets_cache_sync(cfg: Settings | None = None) -> int
     return len(targets)
 
 
+def invalidate_node_exporter_targets_cache() -> None:
+    """Сбросить кэш SD; следующий запрос API/scheduler пересчитает из БД."""
+    from app.infrastructure.cache import get_redis
+
+    try:
+        get_redis().delete(_REDIS_KEY)
+    except Exception:
+        log.exception("redis delete %s", _REDIS_KEY)
+
+
 async def node_exporter_targets_cached(
     session: AsyncSession,
     cfg: Settings,

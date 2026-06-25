@@ -40,7 +40,10 @@ async def subscription_delivery_servers_cached(
         try:
             rows = await loader(session)
             for row in rows:
-                session.expunge(row)
+                try:
+                    session.expunge(row)
+                except Exception:
+                    pass
             _cached_rows = rows
             _cached_at = time.monotonic()
         except Exception:
