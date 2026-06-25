@@ -20,11 +20,23 @@ const CHART_VISIBLE_MSK_DAYS = 30
  * @typedef {{ stats_date: string | null; period_start_utc?: string | null; users_count: number; users_with_traffic_count?: number; active_users_count?: number; subscription_devices_users_count?: number; users_cumulative_traffic_over_100_mbit_count?: number; persistent_traffic_users_count?: number; users_with_payment_count?: number; active_users_with_payment_count?: number; users_with_active_subscription_count?: number }} DailyStatsRow
  */
 
-/** Метрики по traffic_date (UTC): не показывать незавершённые/«будущие» дни на оси МСК. */
+/**
+ * Метрики по `traffic_date` (UTC): отображаем только полностью завершённые сутки UTC.
+ *
+ * SQL ``fn_users_daily_stats_compute`` агрегирует трафик по календарным дням МСК,
+ * но снимки ``user_server_traffic`` хранятся в UTC. Для дня ``D`` агрегат
+ * ``users_cumulative_traffic_over_100_mbit_count`` / ``active_users_count`` и т.п.
+ * считается по последнему UTC-снимку ``traffic_date <= D``. Если ``D == utc_today``,
+ * день UTC ещё не закончился — снимки за ``traffic_date = utc_today`` накапливаются
+ * в течение дня. В МСК (UTC+3) большую часть суток ``msk_today == utc_today``,
+ * но в первые 3 часа МСК ``msk_today - 1 == utc_today`` — и тогда «предпоследний»
+ * по МСК день оказывается незакрытым по UTC. Чтобы не рисовать частичные значения
+ * (видимые как «странный провал»), скрываем и сам ``utc_today``.
+ */
 function resolveTrafficSnapshotMetric(dayIso, raw, utcCap) {
   const iso = String(dayIso).slice(0, 10)
   const utcToday = String(utcCap || utcTodayIso()).slice(0, 10)
-  if (iso > utcToday) return null
+  if (iso >= utcToday) return null
   if (iso >= mskTodayIso()) return null
   if (raw == null) return null
   return Number(raw) || 0
