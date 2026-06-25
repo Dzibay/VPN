@@ -1110,16 +1110,20 @@ def _collect_xray_user_traffic_all_servers_impl() -> dict[str, Any]:
         finally:
             enforce_db.close()
 
-    if ok_n > 0:
+    if ok_n > 0 and settings.stats_users_daily_auto_refresh:
         try:
             from app.infrastructure.database.stats_mv_refresh import (
                 refresh_users_daily_stats_mv_sync,
             )
 
-            refresh_users_daily_stats_mv_sync()
+            if not refresh_users_daily_stats_mv_sync():
+                log.info(
+                    "collect_xray_user_traffic_all_servers: refresh stats_users_daily_msk "
+                    "пропущен (уже выполняется)",
+                )
         except Exception:
             log.exception(
-                "collect_xray_user_traffic_all_servers: не удалось обновить mv_users_daily_stats",
+                "collect_xray_user_traffic_all_servers: не удалось обновить stats_users_daily_msk",
             )
 
     return {

@@ -19,6 +19,7 @@ RETURNS TABLE (
 )
 LANGUAGE sql
 STABLE
+SET search_path TO public
 AS $$
 WITH qualified_users AS (
     SELECT u.id

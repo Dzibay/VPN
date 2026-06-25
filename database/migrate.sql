@@ -267,3 +267,18 @@ CREATE INDEX IF NOT EXISTS idx_stats_payments_daily_utc_day
 
 CREATE INDEX IF NOT EXISTS idx_stats_payments_daily_msk_day
     ON stats_payments_daily_msk (day_msk);
+
+CREATE TABLE IF NOT EXISTS stats_users_daily_msk (
+    stats_date date PRIMARY KEY,
+    users_count bigint NOT NULL DEFAULT 0,
+    users_with_traffic_count bigint NOT NULL DEFAULT 0,
+    active_users_count bigint NOT NULL DEFAULT 0,
+    subscription_devices_users_count bigint NOT NULL DEFAULT 0,
+    users_cumulative_traffic_over_100_mbit_count bigint NOT NULL DEFAULT 0,
+    persistent_traffic_users_count bigint NOT NULL DEFAULT 0,
+    users_with_payment_count bigint NOT NULL DEFAULT 0,
+    payments_first_count bigint NOT NULL DEFAULT 0,
+    payments_repeat_count bigint NOT NULL DEFAULT 0,
+    active_users_with_payment_count bigint NOT NULL DEFAULT 0,
+    users_with_active_subscription_count bigint NOT NULL DEFAULT 0
+);

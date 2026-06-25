@@ -56,15 +56,7 @@ def _with_day_period_start(rows: list[UserStatsByDateRow]) -> list[UserStatsByDa
     return out
 
 
-async def stats_by_date_merged(
-    session: AsyncSession,
-    *,
-    date_from: date | None = None,
-    date_to: date | None = None,
-) -> list[UserStatsByDateRow]:
-    """Сводка по датам через PostgreSQL ``rpc_users_daily_stats(p_from, p_to)``."""
-    stmt = text(
-        """
+_DAILY_STATS_ROW_SQL = """
         SELECT stats_date, users_count, users_with_traffic_count,
                active_users_count, subscription_devices_users_count,
                users_cumulative_traffic_over_100_mbit_count,
@@ -72,15 +64,10 @@ async def stats_by_date_merged(
                users_with_payment_count, payments_first_count, payments_repeat_count,
                active_users_with_payment_count,
                users_with_active_subscription_count
-        FROM rpc_users_daily_stats(:p_from, :p_to)
-        """,
-    )
-    rows = (
-        await session.execute(
-            stmt,
-            {"p_from": date_from, "p_to": date_to},
-        )
-    ).all()
+"""
+
+
+def _rows_to_stats(rows: list) -> list[UserStatsByDateRow]:
     return [
         UserStatsByDateRow(
             stats_date=row[0],
@@ -99,6 +86,43 @@ async def stats_by_date_merged(
         )
         for row in rows
     ]
+
+
+async def _stats_users_daily_msk_ready(session: AsyncSession) -> bool:
+    try:
+        return bool(
+            await session.scalar(
+                text("SELECT fn_stats_users_daily_msk_is_ready()"),
+            ),
+        )
+    except Exception:
+        return False
+
+
+async def stats_by_date_merged(
+    session: AsyncSession,
+    *,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> list[UserStatsByDateRow]:
+    """Сводка по датам: из кэша stats_users_daily_msk или fn_users_daily_stats_compute."""
+    params = {"p_from": date_from, "p_to": date_to}
+    if await _stats_users_daily_msk_ready(session):
+        stmt = text(
+            f"""
+            {_DAILY_STATS_ROW_SQL}
+            FROM rpc_users_daily_stats(:p_from, :p_to)
+            """,
+        )
+    else:
+        stmt = text(
+            f"""
+            {_DAILY_STATS_ROW_SQL}
+            FROM fn_users_daily_stats_compute(:p_from, :p_to)
+            """,
+        )
+    rows = (await session.execute(stmt, params)).all()
+    return _rows_to_stats(rows)
 
 
 def _hour_extras_from_first_rpc_row(row: object | None) -> tuple[int, int, int, int]:

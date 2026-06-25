@@ -367,6 +367,13 @@ class Settings(BaseSettings):
         le=60.0,
         description="Пауза между опросом узлов внутри одной батч-задачи RQ (снижает пики SSH).",
     )
+    stats_users_daily_auto_refresh: bool = Field(
+        default=False,
+        description=(
+            "После батч-сбора трафика Xray пересчитывать stats_users_daily_msk "
+            "(тяжёлая операция; по умолчанию выключено — API читает compute по диапазону дат)."
+        ),
+    )
     xray_traffic_batch_job_timeout_seconds: int = Field(
         default=7200,
         ge=300,

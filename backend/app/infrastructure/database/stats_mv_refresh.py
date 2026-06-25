@@ -1,4 +1,4 @@
-"""Обновление materialized view дневной пользовательской статистики."""
+"""Обновление кэша дневной пользовательской статистики (stats_users_daily_msk)."""
 
 from __future__ import annotations
 
@@ -11,16 +11,22 @@ from app.infrastructure.database.session import SessionLocal
 log = logging.getLogger(__name__)
 
 
-def refresh_users_daily_stats_mv_sync() -> None:
-    """``REFRESH MATERIALIZED VIEW CONCURRENTLY mv_users_daily_stats`` (sync, для worker/scheduler)."""
+def refresh_users_daily_stats_mv_sync() -> bool:
+    """Пересчёт ``stats_users_daily_msk``. Возвращает False, если refresh уже идёт в другой сессии."""
     db = SessionLocal()
     try:
-        db.execute(text("SELECT fn_refresh_mv_users_daily_stats()"))
+        ran = bool(
+            db.execute(
+                text("SELECT fn_refresh_stats_users_daily_msk()"),
+            ).scalar(),
+        )
         db.commit()
-        log.info("mv_users_daily_stats: refresh завершён")
+        if ran:
+            log.info("stats_users_daily_msk: refresh завершён")
+        return ran
     except Exception:
         db.rollback()
-        log.exception("mv_users_daily_stats: ошибка refresh")
+        log.exception("stats_users_daily_msk: ошибка refresh")
         raise
     finally:
         db.close()
