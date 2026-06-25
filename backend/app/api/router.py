@@ -4,6 +4,7 @@ from app.core.dependencies import apply_request_subject_from_bearer_optional
 
 from app.api.endpoints import (
     accounting,
+    admin_summary,
     auth,
     client_app_public,
     health,
@@ -50,4 +51,5 @@ api_router.include_router(subscription_device_stats.router)
 api_router.include_router(staff_ledger.payments_staff_router)
 api_router.include_router(staff_ledger.tasks_staff_router)
 api_router.include_router(accounting.accounting_router)
+api_router.include_router(admin_summary.admin_summary_router)
 api_router.include_router(prometheus_sd.router)

@@ -56,6 +56,8 @@ const AdminPaymentsStaffView = () =>
   import('../views/AdminPaymentsStaffView.vue')
 const AdminFinanceStaffView = () =>
   import('../views/AdminFinanceStaffView.vue')
+const AdminSummaryStaffView = () =>
+  import('../views/AdminSummaryStaffView.vue')
 const AdminTasksStaffView = () => import('../views/AdminTasksStaffView.vue')
 const AdminSupportStaffView = () => import('../views/AdminSupportStaffView.vue')
 const LegalDocumentView = () => import('../views/LegalDocumentView.vue')
@@ -161,6 +163,11 @@ const routes = [
     path: '/sub/:token/open/:client',
     name: 'subscription-open',
     component: SubscriptionOpenView,
+  },
+  {
+    path: '/admin/summary',
+    name: 'admin-summary-staff',
+    component: AdminSummaryStaffView,
   },
   {
     path: '/admin/logs',
@@ -342,6 +349,7 @@ router.beforeEach(async (to, _from, next) => {
       }
       const isReferralsRoute = to.name === 'admin-referrals'
       const isSeoPagesRoute = to.name === 'admin-seo-pages'
+      const isSummaryStaff = to.name === 'admin-summary-staff'
       const isUsersAnalyticsStaff = to.name === 'admin-users-staff-analytics'
       const isUserPerAnalytics = to.name === 'admin-user-analytics'
       const isMarketingFunnel = to.name === 'admin-funnel'
@@ -356,6 +364,7 @@ router.beforeEach(async (to, _from, next) => {
       if (
         isReferralsRoute ||
         isSeoPagesRoute ||
+        isSummaryStaff ||
         isUsersAnalyticsStaff ||
         isUserPerAnalytics ||
         isMarketingFunnel ||

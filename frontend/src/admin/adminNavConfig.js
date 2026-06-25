@@ -11,6 +11,12 @@ import { isAdminRole, canAccessReferralsAdmin } from '../auth/permissions.js'
 /** @type {Array<{ routeName: string, label: string, path: string, access: AdminNavAccess }>} */
 export const ADMIN_NAV_DEFINITION = [
   {
+    routeName: 'admin-summary-staff',
+    label: 'Сводка',
+    path: '/admin/summary',
+    access: 'staff',
+  },
+  {
     routeName: 'admin-users-staff-analytics',
     label: 'Клиенты',
     path: '/admin/users/analytics',
