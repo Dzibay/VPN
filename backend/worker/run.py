@@ -63,7 +63,8 @@ def _redis_connection() -> Redis:
 
 def main() -> None:
     setup_logging(settings.log_level)
-    ensure_schema()
+    if os.environ.get("SKIP_ENSURE_SCHEMA", "").lower() not in ("1", "true", "yes"):
+        ensure_schema()
     log = logging.getLogger("worker")
     listen = [settings.redis_install_queue_name]
     redis_conn = _redis_connection()

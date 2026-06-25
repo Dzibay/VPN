@@ -29,7 +29,6 @@ from starlette.requests import Request
 from app.config import settings
 from app.core.dependencies import (
     ReadonlySessionDep,
-    SessionDep,
     apply_request_subject_from_bearer_optional,
 )
 from app.domain.models.subscription import SubscriptionOpenPageData
@@ -156,14 +155,14 @@ async def subscription_open_page_data(
 
 async def _subscription_by_token_response(
     request: Request,
-    session: SessionDep,
+    session: ReadonlySessionDep,
     subscription_token: str,
 ) -> Response:
     user = await user_by_subscription_token(session, subscription_token)
     if user is None:
         raise HTTPException(status_code=404, detail="Неизвестный токен")
     device_ok = await subscription_maybe_register_device(
-        session=session, request=request, user=user, cfg=settings,
+        request=request, user=user, cfg=settings,
     )
     want_yaml = subscription_user_agent_is_clash_yaml(request)
     happ_json = subscription_user_agent_is_happ(request)
@@ -224,7 +223,7 @@ async def _subscription_by_token_response(
 )
 async def subscription_base64_by_token(
     request: Request,
-    session: SessionDep,
+    session: ReadonlySessionDep,
     subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
 ) -> Response:
     return await _subscription_by_token_response(request, session, subscription_token)
@@ -237,14 +236,14 @@ async def subscription_base64_by_token(
 )
 async def subscription_clash_by_token(
     request: Request,
-    session: SessionDep,
+    session: ReadonlySessionDep,
     subscription_token: str = _SUBSCRIPTION_TOKEN_PATH,
 ) -> Response:
     user = await user_by_subscription_token(session, subscription_token)
     if user is None:
         raise HTTPException(status_code=404, detail="Неизвестный токен")
     device_ok = await subscription_maybe_register_device(
-        session=session, request=request, user=user, cfg=settings,
+        request=request, user=user, cfg=settings,
     )
     up_b, down_b, total_b = await user_traffic_totals(session, int(user.id))
     _, block_reason = await resolve_subscription_delivery_block(

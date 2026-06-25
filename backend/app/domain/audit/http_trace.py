@@ -40,8 +40,10 @@ def http_audit_always_persist_for_path(path_with_query: str, *, api_prefix: str)
 
 
 def http_audit_skip_persist_for_path(path_with_query: str, *, api_prefix: str) -> bool:
-    """Не писать в БД высокочастотные служебные эндпоинты (пробы, SD Prometheus)."""
+    """Не писать в БД высокочастотные служебные эндпоинты (пробы, SD Prometheus, подписка)."""
     normalized = _normalized_route_path(path_with_query)
+    if normalized == "/sub" or normalized.startswith("/sub/"):
+        return True
     pfx = (api_prefix or "/api").strip()
     if not pfx.startswith("/"):
         pfx = "/" + pfx.lstrip("/")

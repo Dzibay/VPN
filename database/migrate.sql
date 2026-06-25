@@ -243,6 +243,13 @@ CREATE INDEX IF NOT EXISTS idx_users_sub_baseline
     ON users (subscription_until, registered_at)
     WHERE registered_at IS NOT NULL AND subscription_until IS NOT NULL;
 
+-- Хвост частых горячих запросов:
+-- 1) /api/telegram/notification-tasks: Task.status='pending' + task_type IN (...) + delivery_channel='telegram'.
+--    Частичный индекс по pending устраняет фильтрацию по всем тысячам completed/failed строк.
+CREATE INDEX IF NOT EXISTS idx_tasks_pending_delivery_type
+    ON tasks (delivery_channel, task_type, created_at ASC)
+    WHERE status = 'pending';
+
 -- Rollup-таблицы платежей (триггер и backfill — database/rollups/pre_payments_rollup.sql).
 CREATE TABLE IF NOT EXISTS stats_payments_daily_utc (
     day_utc date NOT NULL,
@@ -308,8 +315,15 @@ CREATE TABLE IF NOT EXISTS stats_users_daily_dirty (
 CREATE INDEX IF NOT EXISTS idx_stats_users_daily_dirty_at
     ON stats_users_daily_dirty (dirty_at);
 
+-- Одноразовые миграции данных (отметка после apply, см. schema.py).
+CREATE TABLE IF NOT EXISTS schema_one_time_migrations (
+    name text PRIMARY KEY,
+    applied_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- Починка архива трафика (server_id=0): старый перенос без carry-forward давал падающий ряд.
 -- Forward-fill (total := prev), без prev+cur — иначе каскадное завышение на графике.
+-- Одноразово: при каждом ensure_schema полный скан архива не нужен.
 DO $$
 DECLARE
     uid bigint;
@@ -318,6 +332,13 @@ DECLARE
     cur_total bigint;
     up_share double precision;
 BEGIN
+    IF EXISTS (
+        SELECT 1 FROM schema_one_time_migrations
+        WHERE name = 'traffic_archive_forward_fill_20260625'
+    ) THEN
+        RETURN;
+    END IF;
+
     FOR uid IN
         SELECT DISTINCT user_id
         FROM user_server_traffic
@@ -354,10 +375,8 @@ BEGIN
             END IF;
         END LOOP;
     END LOOP;
-END $$;
 
--- Одноразовые миграции данных (отметка в Python после apply, см. schema.py).
-CREATE TABLE IF NOT EXISTS schema_one_time_migrations (
-    name text PRIMARY KEY,
-    applied_at timestamptz NOT NULL DEFAULT now()
-);
+    INSERT INTO schema_one_time_migrations (name)
+    VALUES ('traffic_archive_forward_fill_20260625')
+    ON CONFLICT (name) DO NOTHING;
+END $$;

@@ -148,6 +148,7 @@ services:
     env_file:
       - .env
     environment:
+      SKIP_ENSURE_SCHEMA: "1"
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: ${POSTGRES_USER:-vpn}
@@ -161,6 +162,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      api:
         condition: service_healthy
     volumes:
       # Образ запускается под UID/GID 10001 (см. backend/Dockerfile). Чтобы worker мог
@@ -183,6 +186,7 @@ services:
     env_file:
       - .env
     environment:
+      SKIP_ENSURE_SCHEMA: "1"
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: ${POSTGRES_USER:-vpn}
@@ -197,6 +201,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      api:
+        condition: service_healthy
     networks: [internal]
 
   scheduler-telegram-notify:
@@ -210,6 +216,7 @@ services:
     env_file:
       - .env
     environment:
+      SKIP_ENSURE_SCHEMA: "1"
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: ${POSTGRES_USER:-vpn}
@@ -223,6 +230,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      api:
         condition: service_healthy
     networks: [internal]
 

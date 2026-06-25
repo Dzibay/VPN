@@ -12,7 +12,7 @@ from app.infrastructure.persistence.models.server import Server
 
 log = logging.getLogger("app.subscription.servers_cache")
 
-_CACHE_TTL_SEC = 30.0
+_CACHE_TTL_SEC = 60.0
 _cached_at: float = 0.0
 _cached_rows: list[Server] = []
 _lock = asyncio.Lock()

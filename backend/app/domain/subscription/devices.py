@@ -94,6 +94,7 @@ async def register_or_touch_subscription_device(
     limit = effective_subscription_device_limit(settings)
 
     # Сериализуем по пользователю, чтобы два новых клиента параллельно не превысили лимит.
+    # Lock только на время этой транзакции (вызывающий код коммитит сразу после регистрации).
     await session.execute(text("SELECT pg_advisory_xact_lock(:uid)"), {"uid": int(user.id)})
 
     row = (

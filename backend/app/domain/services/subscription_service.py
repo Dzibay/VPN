@@ -243,20 +243,29 @@ async def subscription_payload_rows_for_resolved_user(
 
 async def subscription_maybe_register_device(
     *,
-    session: AsyncSession,
     request: Request,
     user: User | None,
     cfg: Settings | None = None,
 ) -> bool:
+    """Отдельная короткая транзакция: pg_advisory_xact_lock не держится на время сборки подписки."""
     cfg = cfg or settings
     if user is None:
         return True
-    return await register_or_touch_subscription_device(
-        session,
-        settings=cfg,
-        user=user,
-        request=request,
-    )
+    from app.infrastructure.database.session import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as dev_session:
+        try:
+            ok = await register_or_touch_subscription_device(
+                dev_session,
+                settings=cfg,
+                user=user,
+                request=request,
+            )
+            await dev_session.commit()
+            return ok
+        except Exception:
+            await dev_session.rollback()
+            raise
 
 
 async def subscription_client_metadata_headers(

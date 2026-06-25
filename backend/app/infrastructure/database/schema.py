@@ -194,30 +194,38 @@ def _apply_python_one_time_migrations(eng: Engine) -> None:
         rebuild_inflated_traffic_archive_sync,
     )
 
-    with eng.begin() as conn:
+    # Session-level lock на всё время: xact_lock отпускался до rebuild → два процесса
+    # (api entrypoint + worker) могли параллельно гонять тяжёлый пересчёт архива.
+    with eng.connect() as conn:
         conn.execute(
-            text("SELECT pg_advisory_xact_lock(:lock_id)"),
+            text("SELECT pg_advisory_lock(:lock_id)"),
             {"lock_id": _PYTHON_ONE_TIME_MIGRATION_LOCK_ID},
         )
-        if _python_one_time_migration_applied(conn, ARCHIVE_REBUILD_ONE_TIME_MIGRATION):
-            return
+        try:
+            if _python_one_time_migration_applied(conn, ARCHIVE_REBUILD_ONE_TIME_MIGRATION):
+                return
 
-    stats = rebuild_inflated_traffic_archive_sync()
-    log.info(
-        "one-time migration %s: users=%s rows_rebuilt=%s rows_forward_filled=%s",
-        ARCHIVE_REBUILD_ONE_TIME_MIGRATION,
-        stats.get("users"),
-        stats.get("rows_rebuilt"),
-        stats.get("rows_forward_filled"),
-    )
-    with eng.begin() as conn:
-        conn.execute(
-            text(
-                "INSERT INTO schema_one_time_migrations (name) VALUES (:n) "
-                "ON CONFLICT (name) DO NOTHING",
-            ),
-            {"n": ARCHIVE_REBUILD_ONE_TIME_MIGRATION},
-        )
+            stats = rebuild_inflated_traffic_archive_sync()
+            log.info(
+                "one-time migration %s: users=%s rows_rebuilt=%s rows_forward_filled=%s",
+                ARCHIVE_REBUILD_ONE_TIME_MIGRATION,
+                stats.get("users"),
+                stats.get("rows_rebuilt"),
+                stats.get("rows_forward_filled"),
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO schema_one_time_migrations (name) VALUES (:n) "
+                    "ON CONFLICT (name) DO NOTHING",
+                ),
+                {"n": ARCHIVE_REBUILD_ONE_TIME_MIGRATION},
+            )
+            conn.commit()
+        finally:
+            conn.execute(
+                text("SELECT pg_advisory_unlock(:lock_id)"),
+                {"lock_id": _PYTHON_ONE_TIME_MIGRATION_LOCK_ID},
+            )
 
 
 def ensure_schema(engine: Engine | None = None) -> None:

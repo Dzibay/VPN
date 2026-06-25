@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import signal
 from typing import Awaitable, Callable
 
@@ -93,11 +94,12 @@ async def main() -> None:
     role = settings.scheduler_role
     log.info("scheduler: запуск (process for periodic background loops, role=%s)", role)
 
-    # Гарантируем, что схема существует — на чистом окружении API мог ещё не успеть
-    # её создать. Идемпотентно.
-    from app.infrastructure.database.schema import ensure_schema
+    # Гарантируем схему на чистом окружении. В Docker миграции делает api entrypoint
+    # (SKIP_ENSURE_SCHEMA=1); здесь — fallback для локального запуска.
+    if os.environ.get("SKIP_ENSURE_SCHEMA", "").lower() not in ("1", "true", "yes"):
+        from app.infrastructure.database.schema import ensure_schema
 
-    ensure_schema()
+        ensure_schema()
 
     include_periodic = role in ("all", "periodic")
     include_telegram_notify = role in ("all", "telegram_notify")
