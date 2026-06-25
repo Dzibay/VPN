@@ -36,6 +36,7 @@ async def lifespan(_app: FastAPI):
     async with AsyncSessionLocal() as session:
         await ensure_seo_pages_catalog(session)
         await session.commit()
+    await ensure_blocked_ips_loaded(force=True)
     yield
 
 

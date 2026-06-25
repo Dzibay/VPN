@@ -81,8 +81,8 @@ services:
       context: ..
       dockerfile: backend/Dockerfile
     restart: unless-stopped
-    # --workers 6: при всплесках GET /sub/ и Prometheus SD запросы не должны блокировать
-    # лёгкие эндпоинты (auth, тарифы, support). Каждый worker ~50–80 МБ RAM.
+    # --workers 4: баланс параллелизма и лимита PG (4×20 async conn ≈ 80). Больше workers
+    # без роста max_connections Postgres → QueuePool timeout на каждом процессе.
     command:
       - /app/scripts/docker_entrypoint_api.sh
       - app.main:app
@@ -91,7 +91,7 @@ services:
       - --port
       - "8000"
       - --workers
-      - "6"
+      - "4"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/health || exit 1"]
       interval: 30s

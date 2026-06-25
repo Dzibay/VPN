@@ -6,10 +6,9 @@ import asyncio
 import logging
 import time
 
-from sqlalchemy import select
+from sqlalchemy import text
 
-from app.infrastructure.database.session import AsyncSessionLocal
-from app.infrastructure.persistence.models.blocked_ip import BlockedIp
+from app.infrastructure.database.session import async_engine
 
 log = logging.getLogger("app.security.blocked_ip")
 
@@ -31,11 +30,12 @@ async def ensure_blocked_ips_loaded(*, force: bool = False) -> frozenset[str]:
         if not force and _blocked and (now - _last_load_monotonic) < _TTL_SEC:
             return _blocked
         try:
-            async with AsyncSessionLocal() as session:
-                rows = list(
-                    (await session.scalars(select(BlockedIp.ip).order_by(BlockedIp.id.asc()))).all(),
+            async with async_engine.connect() as conn:
+                result = await conn.execute(
+                    text("SELECT ip FROM blocked_ips ORDER BY id ASC"),
                 )
-            _blocked = frozenset(str(ip) for ip in rows)
+                rows = [str(r[0]) for r in result.all()]
+            _blocked = frozenset(rows)
             _last_load_monotonic = time.monotonic()
         except Exception:
             log.exception("Не удалось загрузить blocked_ips")
