@@ -56,7 +56,7 @@ DECLARE
     net_delta numeric(14, 2);
     cnt_delta bigint;
     n integer;
-    ym text;
+    v_ym text;
     part_gross numeric(14, 6);
     part_net numeric(14, 6);
 BEGIN
@@ -90,13 +90,13 @@ BEGIN
         part_gross := (p_row.amount / p_row.months::numeric) * p_sign;
         part_net := (p_row.net_amount / p_row.months::numeric) * p_sign;
         FOR n IN 0..(p_row.months - 1) LOOP
-            ym := to_char(
+            v_ym := to_char(
                 date_trunc('month', p_row.created_at AT TIME ZONE 'UTC')
                 + (n || ' months')::interval,
                 'YYYY-MM'
             );
             INSERT INTO stats_payments_spread_monthly_utc (ym, payment_kind, gross, net)
-            VALUES (ym, p_row.payment_kind, part_gross, part_net)
+            VALUES (v_ym, p_row.payment_kind, part_gross, part_net)
             ON CONFLICT (ym, payment_kind) DO UPDATE
             SET
                 gross = stats_payments_spread_monthly_utc.gross + EXCLUDED.gross,
