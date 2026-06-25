@@ -226,6 +226,23 @@ CREATE INDEX IF NOT EXISTS idx_user_server_traffic_date_user
 CREATE INDEX IF NOT EXISTS idx_subscription_devices_user_created_at
     ON subscription_devices (user_id, created_at);
 
+-- Функциональные индексы для compute (GROUP BY по дню МСК — без них seq scan на users).
+CREATE INDEX IF NOT EXISTS idx_users_registered_at_msk_date
+    ON users (((registered_at AT TIME ZONE 'Europe/Moscow')::date))
+    WHERE registered_at IS NOT NULL;
+
+-- Партиционный индекс для traffic_baseline (трафик строго до окна) и
+-- traffic_in_range — primary key (user_id, server_id, traffic_date) уже эффективен
+-- для index scan по traffic_date >= X, но добавим частичный для ускорения "был ли трафик":
+CREATE INDEX IF NOT EXISTS idx_user_server_traffic_has_traffic
+    ON user_server_traffic (user_id)
+    WHERE up_bytes + down_bytes > 0;
+
+-- subscription_until + registered_at для активных подписок baseline
+CREATE INDEX IF NOT EXISTS idx_users_sub_baseline
+    ON users (subscription_until, registered_at)
+    WHERE registered_at IS NOT NULL AND subscription_until IS NOT NULL;
+
 -- Rollup-таблицы платежей (триггер и backfill — database/rollups/pre_payments_rollup.sql).
 CREATE TABLE IF NOT EXISTS stats_payments_daily_utc (
     day_utc date NOT NULL,
@@ -282,3 +299,11 @@ CREATE TABLE IF NOT EXISTS stats_users_daily_msk (
     active_users_with_payment_count bigint NOT NULL DEFAULT 0,
     users_with_active_subscription_count bigint NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS stats_users_daily_dirty (
+    stats_date date PRIMARY KEY,
+    dirty_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_stats_users_daily_dirty_at
+    ON stats_users_daily_dirty (dirty_at);

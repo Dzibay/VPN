@@ -88,39 +88,25 @@ def _rows_to_stats(rows: list) -> list[UserStatsByDateRow]:
     ]
 
 
-async def _stats_users_daily_msk_ready(session: AsyncSession) -> bool:
-    try:
-        return bool(
-            await session.scalar(
-                text("SELECT fn_stats_users_daily_msk_is_ready()"),
-            ),
-        )
-    except Exception:
-        return False
-
-
 async def stats_by_date_merged(
     session: AsyncSession,
     *,
     date_from: date | None = None,
     date_to: date | None = None,
 ) -> list[UserStatsByDateRow]:
-    """Сводка по датам: из кэша stats_users_daily_msk или fn_users_daily_stats_compute."""
+    """Сводка по датам: единая точка входа rpc_users_daily_stats.
+
+    rpc_users_daily_stats сам выбирает между кэшем (для холодных дней) и
+    live-compute (для горячего окна) — звать compute напрямую больше не нужно.
+    """
     params = {"p_from": date_from, "p_to": date_to}
-    if await _stats_users_daily_msk_ready(session):
-        stmt = text(
-            f"""
-            {_DAILY_STATS_ROW_SQL}
-            FROM rpc_users_daily_stats(:p_from, :p_to)
-            """,
-        )
-    else:
-        stmt = text(
-            f"""
-            {_DAILY_STATS_ROW_SQL}
-            FROM fn_users_daily_stats_compute(:p_from, :p_to)
-            """,
-        )
+    stmt = text(
+        f"""
+        {_DAILY_STATS_ROW_SQL}
+        FROM rpc_users_daily_stats(:p_from, :p_to)
+        ORDER BY stats_date NULLS LAST
+        """,
+    )
     rows = (await session.execute(stmt, params)).all()
     return _rows_to_stats(rows)
 

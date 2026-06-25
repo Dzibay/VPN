@@ -249,6 +249,36 @@ class UsersDailyStatsResponse(BaseModel):
     )
 
 
+class UsersDailyStatsCacheStatusResponse(BaseModel):
+    """Состояние кэша stats_users_daily_msk (полная история по дням МСК)."""
+
+    cache_ready: bool = Field(description="В таблице есть хотя бы одна строка")
+    row_count: int = Field(ge=0, description="Число дней в кэше")
+    date_from: date | None = Field(default=None, description="Минимальная stats_date в кэше")
+    date_to: date | None = Field(default=None, description="Максимальная stats_date в кэше")
+    refresh_running: bool = Field(description="Сейчас выполняется полный пересчёт (воркер RQ)")
+    dirty_days_pending: int = Field(
+        ge=0,
+        description="Холодных дней в очереди на инкрементальный пересчёт",
+    )
+    hot_window_days: int = Field(
+        ge=1,
+        description="Последние N дней МСК всегда считаются live при чтении",
+    )
+    last_refresh_at: datetime | None = Field(
+        default=None,
+        description="UTC-время последнего успешного пересчёта (из Redis, если был запуск из админки)",
+    )
+
+
+class UsersDailyStatsCacheRefreshResponse(BaseModel):
+    status: Literal["started", "already_running"]
+    job_id: str | None = Field(
+        default=None,
+        description="RQ job id при status=started",
+    )
+
+
 class DailyPaymentsExpiryStatsRow(BaseModel):
     """Одна точка столбчатого графика: оплаты и разбивка по дню subscription_until (МСК)."""
 

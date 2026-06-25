@@ -27,6 +27,8 @@ from app.domain.models.users import (
     UserListItem,
     UserRead,
     UsersCountResponse,
+    UsersDailyStatsCacheRefreshResponse,
+    UsersDailyStatsCacheStatusResponse,
     UsersDailyStatsResponse,
     UserUpdate,
 )
@@ -46,6 +48,10 @@ from app.domain.users.daily_stats import (
     daily_payments_expiry_day_detail,
     daily_payments_expiry_stats,
     users_daily_stats,
+)
+from app.infrastructure.database.users_daily_stats_cache import (
+    enqueue_users_daily_stats_cache_refresh,
+    users_daily_stats_cache_status,
 )
 from app.domain.users.staff_balance_ledger import staff_user_balance_ledger
 from app.domain.users.traffic_breakdown import (
@@ -227,6 +233,28 @@ async def users_daily_stats_ep(
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+@router.get(
+    "/daily-stats-cache",
+    response_model=UsersDailyStatsCacheStatusResponse,
+    dependencies=[Depends(require_referrals_staff)],
+    summary="Состояние кэша дневной статистики (stats_users_daily_msk)",
+)
+async def users_daily_stats_cache_status_ep(
+    session: ReadonlySessionDep,
+) -> UsersDailyStatsCacheStatusResponse:
+    return await users_daily_stats_cache_status(session)
+
+
+@router.post(
+    "/daily-stats-cache/refresh",
+    response_model=UsersDailyStatsCacheRefreshResponse,
+    dependencies=[Depends(require_referrals_staff)],
+    summary="Поставить в очередь полный пересчёт кэша дневной статистики (воркер RQ, 10–30+ мин)",
+)
+async def users_daily_stats_cache_refresh_ep() -> UsersDailyStatsCacheRefreshResponse:
+    return enqueue_users_daily_stats_cache_refresh()
 
 
 @router.get(

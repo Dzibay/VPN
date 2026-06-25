@@ -1016,6 +1016,15 @@ def sync_xray_clients_all_servers() -> None:
         raise RuntimeError("; ".join(errors[:24]))
 
 
+def refresh_users_daily_stats_cache_job() -> dict[str, Any]:
+    """RQ: полный пересчёт stats_users_daily_msk (кнопка в админке)."""
+    from app.infrastructure.database.users_daily_stats_cache import (
+        refresh_users_daily_stats_cache_job as _run,
+    )
+
+    return _run()
+
+
 def collect_xray_user_traffic_all_servers(schedule_lock_token: str | None = None) -> dict[str, Any]:
     """
     RQ-вход батча сбора трафика Xray по всем активным provision_ready узлам.
@@ -1110,20 +1119,27 @@ def _collect_xray_user_traffic_all_servers_impl() -> dict[str, Any]:
         finally:
             enforce_db.close()
 
-    if ok_n > 0 and settings.stats_users_daily_auto_refresh:
+    if ok_n > 0:
         try:
             from app.infrastructure.database.stats_mv_refresh import (
+                mark_users_daily_stats_recent_cold_dirty_sync,
                 refresh_users_daily_stats_mv_sync,
             )
 
-            if not refresh_users_daily_stats_mv_sync():
-                log.info(
-                    "collect_xray_user_traffic_all_servers: refresh stats_users_daily_msk "
-                    "пропущен (уже выполняется)",
+            if settings.stats_users_daily_auto_refresh:
+                if not refresh_users_daily_stats_mv_sync():
+                    log.info(
+                        "collect_xray_user_traffic_all_servers: полный refresh "
+                        "stats_users_daily_msk пропущен (уже выполняется)",
+                    )
+            else:
+                mark_users_daily_stats_recent_cold_dirty_sync(
+                    days=int(settings.stats_users_daily_traffic_dirty_days),
                 )
         except Exception:
             log.exception(
-                "collect_xray_user_traffic_all_servers: не удалось обновить stats_users_daily_msk",
+                "collect_xray_user_traffic_all_servers: не удалось обновить "
+                "очередь stats_users_daily_msk",
             )
 
     return {

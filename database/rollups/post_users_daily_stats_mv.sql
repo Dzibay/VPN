@@ -1,6 +1,7 @@
 -- Кэш дневной пользовательской статистики (Europe/Moscow).
--- Таблица вместо materialized view: REFRESH MV + SQL-функция ломается из-за search_path.
--- Обновление: SELECT fn_refresh_stats_users_daily_msk();
+-- Умный режим: «холодная» история в stats_users_daily_msk (триггеры + flush),
+-- последние fn_stats_users_daily_hot_days() суток — live-compute на чтении.
+-- Полный пересчёт: SELECT fn_refresh_stats_users_daily_msk();
 
 DROP MATERIALIZED VIEW IF EXISTS mv_users_daily_stats;
 
@@ -41,6 +42,8 @@ AS $$
 SELECT fn_stats_users_daily_msk_is_ready();
 $$;
 
+-- Строка stats_date = NULL: пользователи без registered_at.
+-- Использует партиционный индекс idx_user_server_traffic_has_traffic.
 CREATE OR REPLACE FUNCTION fn_users_daily_stats_undated_row ()
 RETURNS TABLE (
     stats_date date,
@@ -60,54 +63,29 @@ LANGUAGE sql
 STABLE
 SET search_path TO public
 AS $$
-WITH qualified_users AS (
-    SELECT u.id
-    FROM users u
-    WHERE u.telegram_id IS NOT NULL
-       OR (
-           u.email IS NOT NULL
-           AND BTRIM(u.email) <> ''
-           AND u.email_verified_at IS NOT NULL
-       )
-),
-latest_traffic_all AS (
-    SELECT DISTINCT ON (t.user_id, t.server_id)
-        t.user_id,
-        t.server_id,
-        t.up_bytes + t.down_bytes AS bytes
-    FROM user_server_traffic t
-    ORDER BY t.user_id, t.server_id, t.traffic_date DESC
-),
-user_traffic_total_all AS (
-    SELECT
-        user_id,
-        COALESCE(SUM(bytes), 0)::bigint AS total_bytes
-    FROM latest_traffic_all
-    GROUP BY user_id
-)
 SELECT
     NULL::date,
     cnt.users_count,
     cnt.users_with_traffic_count,
-    0::bigint,
-    0::bigint,
-    0::bigint,
-    0::bigint,
-    0::bigint,
-    0::bigint,
-    0::bigint,
-    0::bigint,
-    0::bigint
+    0::bigint, 0::bigint, 0::bigint, 0::bigint,
+    0::bigint, 0::bigint, 0::bigint, 0::bigint, 0::bigint
 FROM (
     SELECT
         COUNT(*)::bigint AS users_count,
-        SUM(
-            CASE WHEN COALESCE(utt.total_bytes, 0) > 0 THEN 1 ELSE 0 END
+        COUNT(*) FILTER (
+            WHERE EXISTS (
+                SELECT 1 FROM user_server_traffic t
+                WHERE t.user_id = u.id AND t.up_bytes + t.down_bytes > 0
+            )
         )::bigint AS users_with_traffic_count
     FROM users u
-    INNER JOIN qualified_users qu ON qu.id = u.id
-    LEFT JOIN user_traffic_total_all utt ON utt.user_id = u.id
     WHERE u.registered_at IS NULL
+      AND (
+          u.telegram_id IS NOT NULL
+          OR (u.email IS NOT NULL
+              AND BTRIM(u.email) <> ''
+              AND u.email_verified_at IS NOT NULL)
+      )
 ) cnt
 WHERE cnt.users_count > 0;
 $$;
@@ -115,6 +93,99 @@ $$;
 DROP FUNCTION IF EXISTS fn_refresh_mv_users_daily_stats ();
 
 DROP FUNCTION IF EXISTS fn_refresh_stats_users_daily_msk ();
+
+CREATE OR REPLACE FUNCTION fn_stats_users_daily_flush_dirty ()
+RETURNS integer
+LANGUAGE plpgsql
+SET search_path TO public
+AS $$
+DECLARE
+    got_lock boolean;
+    d_min date;
+    d_max date;
+    cold_to date;
+    flush_to date;
+    n integer;
+BEGIN
+    got_lock := pg_try_advisory_lock(72491002);
+    IF NOT got_lock THEN
+        RETURN 0;
+    END IF;
+
+    cold_to := fn_stats_users_daily_hot_start() - 1;
+    IF cold_to < '1970-01-01'::date THEN
+        PERFORM pg_advisory_unlock(72491002);
+        RETURN 0;
+    END IF;
+
+    SELECT MIN(stats_date), MAX(stats_date)
+    INTO d_min, d_max
+    FROM stats_users_daily_dirty
+    WHERE stats_date <= cold_to;
+
+    IF d_min IS NULL THEN
+        PERFORM pg_advisory_unlock(72491002);
+        RETURN 0;
+    END IF;
+
+    flush_to := LEAST(d_max, cold_to);
+
+    INSERT INTO stats_users_daily_msk (
+        stats_date,
+        users_count,
+        users_with_traffic_count,
+        active_users_count,
+        subscription_devices_users_count,
+        users_cumulative_traffic_over_100_mbit_count,
+        persistent_traffic_users_count,
+        users_with_payment_count,
+        payments_first_count,
+        payments_repeat_count,
+        active_users_with_payment_count,
+        users_with_active_subscription_count
+    )
+    SELECT
+        c.stats_date,
+        c.users_count,
+        c.users_with_traffic_count,
+        c.active_users_count,
+        c.subscription_devices_users_count,
+        c.users_cumulative_traffic_over_100_mbit_count,
+        c.persistent_traffic_users_count,
+        c.users_with_payment_count,
+        c.payments_first_count,
+        c.payments_repeat_count,
+        c.active_users_with_payment_count,
+        c.users_with_active_subscription_count
+    FROM fn_users_daily_stats_compute(d_min, flush_to) c
+    WHERE c.stats_date IS NOT NULL
+    ON CONFLICT (stats_date) DO UPDATE
+    SET
+        users_count = EXCLUDED.users_count,
+        users_with_traffic_count = EXCLUDED.users_with_traffic_count,
+        active_users_count = EXCLUDED.active_users_count,
+        subscription_devices_users_count = EXCLUDED.subscription_devices_users_count,
+        users_cumulative_traffic_over_100_mbit_count = EXCLUDED.users_cumulative_traffic_over_100_mbit_count,
+        persistent_traffic_users_count = EXCLUDED.persistent_traffic_users_count,
+        users_with_payment_count = EXCLUDED.users_with_payment_count,
+        payments_first_count = EXCLUDED.payments_first_count,
+        payments_repeat_count = EXCLUDED.payments_repeat_count,
+        active_users_with_payment_count = EXCLUDED.active_users_with_payment_count,
+        users_with_active_subscription_count = EXCLUDED.users_with_active_subscription_count;
+
+    GET DIAGNOSTICS n = ROW_COUNT;
+
+    DELETE FROM stats_users_daily_dirty
+    WHERE stats_date BETWEEN d_min AND flush_to;
+
+    PERFORM pg_advisory_unlock(72491002);
+    RETURN n;
+EXCEPTION
+    WHEN OTHERS THEN
+        PERFORM pg_advisory_unlock(72491002);
+        RAISE;
+END;
+$$;
 
 CREATE OR REPLACE FUNCTION fn_refresh_stats_users_daily_msk ()
 RETURNS boolean
@@ -167,6 +238,9 @@ BEGIN
     SELECT *
     FROM stats_users_daily_msk_build;
 
+    DELETE FROM stats_users_daily_dirty
+    WHERE stats_date < fn_stats_users_daily_hot_start();
+
     PERFORM pg_advisory_unlock(72491001);
     RETURN true;
 EXCEPTION
@@ -186,44 +260,32 @@ BEGIN
 END;
 $$;
 
+-- Baseline = накопительные счётчики до p_before (для частичных периодов).
+-- Использует rpc_users_daily_stats(NULL, p_before-1) — один compute,
+-- кэш + горячее окно обрабатываются единообразно.
 CREATE OR REPLACE FUNCTION rpc_users_daily_stats_baseline (p_before date)
 RETURNS jsonb
 LANGUAGE sql
 STABLE
 SET search_path TO public
 AS $$
-SELECT CASE
-    WHEN fn_stats_users_daily_msk_is_ready() THEN (
-        SELECT jsonb_build_object(
-            'users_count',
-            COALESCE(SUM(s.users_count), 0)::bigint,
-            'users_with_traffic_count',
-            COALESCE(SUM(s.users_with_traffic_count), 0)::bigint,
-            'subscription_devices_users_count',
-            COALESCE(SUM(s.subscription_devices_users_count), 0)::bigint,
-            'users_with_payment_count',
-            COALESCE(SUM(s.users_with_payment_count), 0)::bigint
-        )
-        FROM stats_users_daily_msk s
-        WHERE s.stats_date < p_before
-    )
-    ELSE (
-        SELECT jsonb_build_object(
-            'users_count',
-            COALESCE(SUM(c.users_count), 0)::bigint,
-            'users_with_traffic_count',
-            COALESCE(SUM(c.users_with_traffic_count), 0)::bigint,
-            'subscription_devices_users_count',
-            COALESCE(SUM(c.subscription_devices_users_count), 0)::bigint,
-            'users_with_payment_count',
-            COALESCE(SUM(c.users_with_payment_count), 0)::bigint
-        )
-        FROM fn_users_daily_stats_compute(NULL, p_before - 1) c
-        WHERE c.stats_date IS NOT NULL
-    )
-END;
+SELECT jsonb_build_object(
+    'users_count', COALESCE(SUM(s.users_count), 0)::bigint,
+    'users_with_traffic_count', COALESCE(SUM(s.users_with_traffic_count), 0)::bigint,
+    'subscription_devices_users_count',
+        COALESCE(SUM(s.subscription_devices_users_count), 0)::bigint,
+    'users_with_payment_count', COALESCE(SUM(s.users_with_payment_count), 0)::bigint
+)
+FROM rpc_users_daily_stats(NULL, p_before - 1) s
+WHERE s.stats_date IS NOT NULL AND s.stats_date < p_before;
 $$;
 
+-- Главная функция чтения статистики.
+-- Стратегия:
+--   * холодная часть периода (stats_date < hot_start) — из кэша stats_users_daily_msk,
+--     если он построен; иначе один compute по холодной части.
+--   * горячая часть (>= hot_start) — один compute по горячей части.
+-- НИ В КОЕМ СЛУЧАЕ не вызываем fn_users_daily_stats_compute дважды.
 CREATE OR REPLACE FUNCTION rpc_users_daily_stats (
     p_from date DEFAULT NULL,
     p_to date DEFAULT NULL
@@ -242,86 +304,76 @@ RETURNS TABLE (
     active_users_with_payment_count bigint,
     users_with_active_subscription_count bigint
 )
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 SET search_path TO public
 AS $$
-WITH rollup_ready AS (
-    SELECT fn_stats_users_daily_msk_is_ready() AS ok
-),
-msk_bounds AS (
-    SELECT
-        (NOW() AT TIME ZONE 'Europe/Moscow')::date AS msk_today,
-        COALESCE(
-            CASE
-                WHEN (SELECT ok FROM rollup_ready) THEN (
-                    SELECT MIN(s.stats_date)
-                    FROM stats_users_daily_msk s
-                )
-            END,
-            (
-                SELECT MIN((u.registered_at AT TIME ZONE 'Europe/Moscow')::date)
-                FROM users u
-                WHERE u.registered_at IS NOT NULL
-            ),
-            (NOW() AT TIME ZONE 'Europe/Moscow')::date
-        ) AS window_start
-),
-date_window AS (
-    SELECT
-        COALESCE(p_from, mb.window_start) AS range_start,
-        COALESCE(p_to, mb.msk_today) AS range_end
-    FROM msk_bounds mb
-),
-from_rollup AS (
-    SELECT
-        s.stats_date,
-        s.users_count,
-        s.users_with_traffic_count,
-        s.active_users_count,
-        s.subscription_devices_users_count,
-        s.users_cumulative_traffic_over_100_mbit_count,
-        s.persistent_traffic_users_count,
-        s.users_with_payment_count,
-        s.payments_first_count,
-        s.payments_repeat_count,
-        s.active_users_with_payment_count,
-        s.users_with_active_subscription_count
-    FROM stats_users_daily_msk s
-    CROSS JOIN date_window dw
-    CROSS JOIN rollup_ready r
-    WHERE r.ok
-      AND s.stats_date BETWEEN dw.range_start AND dw.range_end
-),
-from_compute AS (
-    SELECT c.*
-    FROM fn_users_daily_stats_compute(p_from, p_to) c
-    CROSS JOIN rollup_ready r
-    WHERE NOT r.ok
-      AND c.stats_date IS NOT NULL
-),
-dated_rows AS (
-    SELECT * FROM from_rollup
-    UNION ALL
-    SELECT * FROM from_compute
-),
-undated AS (
+DECLARE
+    v_msk_today date := (NOW() AT TIME ZONE 'Europe/Moscow')::date;
+    v_hot_start date := fn_stats_users_daily_hot_start();
+    v_ready boolean := fn_stats_users_daily_msk_is_ready();
+    v_window_start date;
+    v_range_start date;
+    v_range_end date;
+    v_cold_end date;
+    v_hot_begin date;
+BEGIN
+    -- window_start: минимальный известный день (из кэша или users)
+    IF v_ready THEN
+        SELECT MIN(s.stats_date) INTO v_window_start FROM stats_users_daily_msk s;
+    END IF;
+    IF v_window_start IS NULL THEN
+        SELECT MIN((u.registered_at AT TIME ZONE 'Europe/Moscow')::date)
+        INTO v_window_start
+        FROM users u
+        WHERE u.registered_at IS NOT NULL;
+    END IF;
+    v_window_start := COALESCE(v_window_start, v_msk_today);
+
+    v_range_start := COALESCE(p_from, v_window_start);
+    v_range_end := COALESCE(p_to, v_msk_today);
+
+    v_cold_end := LEAST(v_range_end, v_hot_start - 1);
+    v_hot_begin := GREATEST(v_range_start, v_hot_start);
+
+    -- 1) холодная часть периода
+    IF v_range_start <= v_cold_end THEN
+        IF v_ready THEN
+            RETURN QUERY
+            SELECT
+                s.stats_date,
+                s.users_count,
+                s.users_with_traffic_count,
+                s.active_users_count,
+                s.subscription_devices_users_count,
+                s.users_cumulative_traffic_over_100_mbit_count,
+                s.persistent_traffic_users_count,
+                s.users_with_payment_count,
+                s.payments_first_count,
+                s.payments_repeat_count,
+                s.active_users_with_payment_count,
+                s.users_with_active_subscription_count
+            FROM stats_users_daily_msk s
+            WHERE s.stats_date BETWEEN v_range_start AND v_cold_end;
+        ELSE
+            RETURN QUERY
+            SELECT c.*
+            FROM fn_users_daily_stats_compute(v_range_start, v_cold_end) c
+            WHERE c.stats_date IS NOT NULL;
+        END IF;
+    END IF;
+
+    -- 2) горячая часть всегда из compute (live, без кэша)
+    IF v_range_end >= v_hot_start THEN
+        RETURN QUERY
+        SELECT c.*
+        FROM fn_users_daily_stats_compute(v_hot_begin, v_range_end) c
+        WHERE c.stats_date IS NOT NULL;
+    END IF;
+
+    -- 3) строка undated
+    RETURN QUERY
     SELECT u.*
-    FROM fn_users_daily_stats_undated_row() u
-    CROSS JOIN rollup_ready r
-    WHERE r.ok
-    UNION ALL
-    SELECT c.*
-    FROM fn_users_daily_stats_compute(p_from, p_to) c
-    CROSS JOIN rollup_ready r
-    WHERE NOT r.ok
-      AND c.stats_date IS NULL
-)
-SELECT *
-FROM (
-    SELECT * FROM dated_rows
-    UNION ALL
-    SELECT * FROM undated
-) x
-ORDER BY x.stats_date NULLS LAST;
+    FROM fn_users_daily_stats_undated_row() u;
+END;
 $$;

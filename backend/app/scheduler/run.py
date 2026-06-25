@@ -146,6 +146,16 @@ async def main() -> None:
     elif include_periodic:
         log.info("scheduler: фоновый опрос доступности узлов выключен")
 
+    if include_periodic and settings.stats_users_daily_flush_schedule_enabled:
+        from app.infrastructure.database.stats_users_daily_flush_scheduler import (
+            periodic_stats_users_daily_flush_loop,
+        )
+
+        factories.append(periodic_stats_users_daily_flush_loop)
+        log.info("scheduler: включён flush умного кэша stats_users_daily_msk")
+    elif include_periodic:
+        log.info("scheduler: flush stats_users_daily_msk выключен")
+
     if include_telegram_notify and settings.subscription_expiry_notify_schedule_enabled:
         from app.domain.subscription.expiry_notify_scheduler import (
             subscription_expiry_notify_loop,

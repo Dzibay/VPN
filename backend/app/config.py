@@ -370,9 +370,25 @@ class Settings(BaseSettings):
     stats_users_daily_auto_refresh: bool = Field(
         default=False,
         description=(
-            "После батч-сбора трафика Xray пересчитывать stats_users_daily_msk "
-            "(тяжёлая операция; по умолчанию выключено — API читает compute по диапазону дат)."
+            "Устарело: после батч-сбора трафика делать полный fn_refresh_stats_users_daily_msk. "
+            "По умолчанию выключено — умный кэш помечает холодные дни dirty и flush в scheduler."
         ),
+    )
+    stats_users_daily_flush_schedule_enabled: bool = Field(
+        default=True,
+        description="Периодически вызывать fn_stats_users_daily_flush_dirty в scheduler-periodic.",
+    )
+    stats_users_daily_flush_interval_seconds: int = Field(
+        default=60,
+        ge=15,
+        le=3600,
+        description="Интервал flush очереди stats_users_daily_dirty (сек).",
+    )
+    stats_users_daily_traffic_dirty_days: int = Field(
+        default=90,
+        ge=7,
+        le=365,
+        description="После батч-сбора трафика: пометить столько холодных дней для пересчёта.",
     )
     xray_traffic_batch_job_timeout_seconds: int = Field(
         default=7200,
