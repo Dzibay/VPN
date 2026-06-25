@@ -46,6 +46,35 @@ def _rq_job_id_sync_xray_server(server_id: int) -> str:
     return f"vpn_sync_xray_clients_server_{int(server_id)}"
 
 
+def _purge_rq_job_keys(job: Job) -> None:
+    """Best-effort очистка Redis-ключей job при битых execution-метаданных RQ."""
+    conn = job.connection
+    jid = job.id
+    keys = [
+        job.key,
+        f"rq:job:{jid}:dependents",
+        f"rq:job:{jid}:dependencies",
+        f"rq:job:{jid}:executions",
+        f"rq:executions:{jid}",
+    ]
+    conn.delete(*keys)
+
+
+def _safe_delete_rq_job(job: Job) -> None:
+    try:
+        job.delete()
+    except ValueError as exc:
+        # RQ 2.x: execution registry ссылается на ключ, уже удалённый из Redis.
+        log.warning(
+            "xray sync coalesce: stale RQ metadata for job_id=%s (%s), force purge",
+            job.id,
+            exc,
+        )
+        _purge_rq_job_keys(job)
+    except NoSuchJobError:
+        pass
+
+
 def _coalesce_enqueue(
     *,
     job_id: str,
@@ -71,14 +100,14 @@ def _coalesce_enqueue(
             )
             return job_id
         if st in _TERMINAL_XRAY_SYNC_STATUSES:
-            job.delete()
+            _safe_delete_rq_job(job)
         else:
             log.warning(
                 "xray sync coalesce: неожиданный статус job_id=%s (%s), пересоздаём",
                 job_id,
                 st,
             )
-            job.delete()
+            _safe_delete_rq_job(job)
     except NoSuchJobError:
         pass
 

@@ -143,9 +143,9 @@ def enqueue_xray_clients_sync_for_access_change() -> bool:
         job_id = ensure_sync_xray_clients_all_servers_enqueued()
         log.info("traffic limit: в очереди sync Xray клиентов job_id=%s", job_id)
         return True
-    except RedisError:
+    except (RedisError, ValueError):
         log.warning(
-            "traffic limit: не удалось поставить sync Xray (Redis)",
+            "traffic limit: не удалось поставить sync Xray (очередь Redis/RQ)",
             exc_info=True,
         )
         return False
