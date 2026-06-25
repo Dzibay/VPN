@@ -52,23 +52,23 @@ tasks_staff_router = APIRouter(
     response_model=StaffPaymentsFinanceSummaryResponse,
     summary="Сводка платежей по месяцам/дням и типу (RPC)",
     description="``granularity=month`` (по умолчанию): ``rpc_staff_payments_finance_summary(from, to)``, "
-    "ось ``months`` (UTC). ``from``/``to`` — календарные дни UTC (опционально). "
-    "``granularity=day``: ``rpc_staff_payments_finance_summary_daily(from, to)``, ось ``days`` (UTC), "
+    "ось ``months`` (МСК для cash). ``from``/``to`` — календарные дни Europe/Moscow (опционально). "
+    "``granularity=day``: ``rpc_staff_payments_finance_summary_daily(from, to)``, ось ``days`` (МСК), "
     "только ``cash`` по дате платежа.",
 )
 async def staff_payments_finance_summary_endpoint(
     session: ReadonlySessionDep,
     granularity: Annotated[
         Literal["month", "day"],
-        Query(description="month — по месяцам; day — по календарным дням UTC"),
+        Query(description="month — по месяцам; day — по календарным дням Europe/Moscow"),
     ] = "month",
     date_from: Annotated[
         date | None,
-        Query(alias="from", description="Начало периода (календарный день UTC, включительно)"),
+        Query(alias="from", description="Начало периода (календарный день МСК, включительно)"),
     ] = None,
     date_to: Annotated[
         date | None,
-        Query(alias="to", description="Конец периода (календарный день UTC, включительно)"),
+        Query(alias="to", description="Конец периода (календарный день МСК, включительно)"),
     ] = None,
 ) -> StaffPaymentsFinanceSummaryResponse:
     return await staff_payments_finance_summary(

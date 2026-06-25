@@ -25,6 +25,8 @@ _RPC_DIR_NAME = "rpc"
 _ROLLUPS_DIR_NAME = "rollups"
 _ROLLUP_PRE_PREFIX = "pre_"
 _ROLLUP_POST_PREFIX = "post_"
+# Один процесс на кластер: несколько uvicorn workers не должны параллельно гонять DDL.
+_SCHEMA_MIGRATION_ADVISORY_LOCK_ID = 72490001
 
 
 def _repo_root_candidates() -> list[Path]:
@@ -157,6 +159,11 @@ def ensure_schema(engine: Engine | None = None) -> None:
 
     try:
         with eng.begin() as conn:
+            # Сериализация миграций между uvicorn workers (иначе ALTER TABLE → deadlock).
+            conn.execute(
+                text("SELECT pg_advisory_xact_lock(:lock_id)"),
+                {"lock_id": _SCHEMA_MIGRATION_ADVISORY_LOCK_ID},
+            )
             _execute_sql_file(conn, init_path)
             _execute_sql_file(conn, migrate_path, allow_empty=True)
             for rollup_path in rollup_pre_paths:

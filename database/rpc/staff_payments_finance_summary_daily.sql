@@ -1,5 +1,5 @@
--- Сводка платежей: календарные дни UTC, суммы по payment_kind (net и gross).
--- Источник: stats_payments_daily_utc (триггер на payments).
+-- Сводка платежей: календарные дни Europe/Moscow, суммы по payment_kind (net и gross).
+-- Источник: stats_payments_daily_msk (триггер на payments).
 CREATE OR REPLACE FUNCTION rpc_staff_payments_finance_summary_daily (
     p_from date DEFAULT NULL,
     p_to date DEFAULT NULL
@@ -10,19 +10,19 @@ STABLE
 AS $$
 WITH filtered AS (
     SELECT
-        s.day_utc,
+        s.day_msk,
         s.payment_kind,
         s.gross,
         s.net,
         s.cnt
-    FROM stats_payments_daily_utc s
+    FROM stats_payments_daily_msk s
     WHERE (
         p_from IS NULL
-        OR s.day_utc >= p_from
+        OR s.day_msk >= p_from
     )
     AND (
         p_to IS NULL
-        OR s.day_utc <= p_to
+        OR s.day_msk <= p_to
     )
 ),
 grand AS (
@@ -34,7 +34,7 @@ grand AS (
 ),
 agg_cash AS (
     SELECT
-        to_char(day_utc, 'YYYY-MM-DD') AS ymd,
+        to_char(day_msk, 'YYYY-MM-DD') AS ymd,
         payment_kind,
         SUM(net)::numeric(14, 2) AS total_amount
     FROM filtered
@@ -42,7 +42,7 @@ agg_cash AS (
 ),
 agg_cash_gross AS (
     SELECT
-        to_char(day_utc, 'YYYY-MM-DD') AS ymd,
+        to_char(day_msk, 'YYYY-MM-DD') AS ymd,
         payment_kind,
         SUM(gross)::numeric(14, 2) AS total_amount
     FROM filtered

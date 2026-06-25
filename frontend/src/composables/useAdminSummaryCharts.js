@@ -101,17 +101,6 @@ function formatMonthLabel(ym) {
   return d.toLocaleDateString('ru-RU', { month: 'short', year: 'numeric', timeZone: 'UTC' })
 }
 
-function formatUtcDayLabel(iso) {
-  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`)
-  if (Number.isNaN(d.getTime())) return String(iso)
-  return d.toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'UTC',
-  })
-}
-
 function parseAmounts(arr) {
   if (!Array.isArray(arr)) return []
   return arr.map((x) => {
@@ -265,32 +254,31 @@ function statsQueryParams(from, to, extra = {}) {
     const sub = parseAmounts(gross?.subscription)
     const one = parseAmounts(gross?.one_time)
 
-    const daily = days.map((day, i) => ({
-      key: String(day).slice(0, 10),
-      label: formatUtcDayLabel(day),
-      value: (sub[i] || 0) + (one[i] || 0),
+    /** @type {Map<string, number>} */
+    const byDay = new Map()
+    days.forEach((day, i) => {
+      const key = String(day).slice(0, 10)
+      if (key) byDay.set(key, (sub[i] || 0) + (one[i] || 0))
+    })
+
+    const daily = iterMskDays(from, to).map((iso) => ({
+      key: iso,
+      label: formatMskCalendarDayShort(iso),
+      value: byDay.get(iso) || 0,
     }))
 
-    const filtered = daily.filter((r) => r.key >= from && r.key <= to)
-
-    if (mode === 'day' || mode === 'hour') return filtered
+    if (mode === 'day' || mode === 'hour') return daily
 
     if (mode === 'week') {
       return aggregateDaily(
-        filtered,
-        (iso) => {
-          const [y, m, d] = iso.split('-').map(Number)
-          const wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay()
-          const daysSinceMon = (wd + 6) % 7
-          const t = Date.parse(`${iso}T00:00:00Z`) - daysSinceMon * 86400000
-          return new Date(t).toISOString().slice(0, 10)
-        },
-        (weekStart) => formatUtcDayLabel(weekStart),
+        daily,
+        (iso) => mskWeekStart(iso),
+        (weekStart) => formatMskCalendarDayShort(weekStart),
       )
     }
 
     return aggregateDaily(
-      filtered,
+      daily,
       (iso) => iso.slice(0, 7),
       (ym) => formatMonthLabel(ym),
     )
@@ -363,13 +351,13 @@ function statsQueryParams(from, to, extra = {}) {
   )
 
   const usersHint = computed(() => `Приток пользователей, ${bucketLabel.value} (МСК)`)
-  const revenueHint = computed(() => `Валовый доход, ${bucketLabel.value}`)
+  const revenueHint = computed(() => `Валовый доход, ${bucketLabel.value} (МСК)`)
 
   const usersAriaLabel = computed(
     () => `Приток пользователей за период, ${bucketLabel.value}, МСК`,
   )
   const revenueAriaLabel = computed(
-    () => `Доход за период, ${bucketLabel.value}, валовая сумма, ₽`,
+    () => `Доход за период, ${bucketLabel.value}, валовая сумма, ₽, МСК`,
   )
 
   /** @param {number} i */

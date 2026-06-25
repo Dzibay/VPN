@@ -10,6 +10,12 @@ import {
   chartBarStackedMoneyTooltipFooter,
   formatChartMoneyTick,
 } from '../../utils/adminChartFormatters.js'
+import {
+  addCalendarDayIso,
+  formatMskCalendarDayShort,
+  mskTodayIso,
+  subtractCalendarDaysIso,
+} from '../../utils/mskDate.js'
 
 /** @typedef {{ subscription: string[]; one_time: string[] }} FinanceBuckets */
 
@@ -29,10 +35,10 @@ const error = ref(null)
  * }>}
  */
 const summary = ref(null)
-/** Дневная сводка для средних (UTC); при режиме «По дням» совпадает с summary. */
+/** Дневная сводка для средних (МСК); при режиме «По дням» совпадает с summary. */
 const dailySummary = ref(null)
 
-/** «cash» — вся сумма в месяце платежа; «spread» — net_amount/months по месяцам подписки; «daily» — по дням UTC. */
+/** «cash» — вся сумма в месяце платежа; «spread» — net_amount/months по месяцам подписки; «daily» — по дням МСК. */
 const chartDistribution = ref(/** @type {'cash' | 'spread' | 'daily'} */ ('daily'))
 
 /** По умолчанию — чистый доход после комиссии PSP. */
@@ -96,14 +102,7 @@ function formatMonthLabel(ym) {
 }
 
 function formatDayLabel(iso) {
-  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`)
-  if (Number.isNaN(d.getTime())) return String(iso)
-  return d.toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'UTC',
-  })
+  return formatMskCalendarDayShort(iso)
 }
 
 function parseAmounts(arr) {
@@ -136,19 +135,21 @@ function formatMoney(n) {
   })
 }
 
-function utcTodayIso() {
-  return new Date().toISOString().slice(0, 10)
-}
-
-function shiftUtcDay(isoDay, deltaDays) {
-  const t = Date.parse(`${String(isoDay).slice(0, 10)}T00:00:00Z`)
-  if (Number.isNaN(t)) return isoDay
-  return new Date(t + deltaDays * 86400000).toISOString().slice(0, 10)
+function shiftMskDay(isoDay, deltaDays) {
+  const s = String(isoDay).slice(0, 10)
+  if (deltaDays >= 0) {
+    let cur = s
+    for (let i = 0; i < deltaDays; i += 1) cur = addCalendarDayIso(cur)
+    return cur
+  }
+  let cur = s
+  for (let i = 0; i < -deltaDays; i += 1) cur = subtractCalendarDaysIso(cur, 1)
+  return cur
 }
 
 function daysBetweenInclusive(fromIso, toIso) {
-  const a = Date.parse(`${String(fromIso).slice(0, 10)}T00:00:00Z`)
-  const b = Date.parse(`${String(toIso).slice(0, 10)}T00:00:00Z`)
+  const a = Date.parse(`${String(fromIso).slice(0, 10)}T12:00:00+03:00`)
+  const b = Date.parse(`${String(toIso).slice(0, 10)}T12:00:00+03:00`)
   if (Number.isNaN(a) || Number.isNaN(b) || b < a) return 1
   return Math.floor((b - a) / 86400000) + 1
 }
@@ -170,11 +171,11 @@ const averageIncome = computed(() => {
   const ms = summary.value
   if (!ds?.days?.length && !ms?.months?.length) return null
 
-  const today = utcTodayIso()
+  const today = mskTodayIso()
   const dayRows = dailyAmountsFromSummary(ds, useNetAmount.value)
 
-  const weekFrom = shiftUtcDay(today, -6)
-  const monthFrom = shiftUtcDay(today, -29)
+  const weekFrom = shiftMskDay(today, -6)
+  const monthFrom = shiftMskDay(today, -29)
 
   function sumFrom(fromDay) {
     return dayRows
@@ -239,8 +240,8 @@ const financeChartDatasets = computed(() => {
 
 const chartAriaLabel = computed(() =>
   isDailyView.value
-    ? 'Доходы по дням (UTC), ₽'
-    : 'Доходы по месяцам (UTC), ₽',
+    ? 'Доходы по дням (МСК), ₽'
+    : 'Доходы по месяцам (МСК для cash, UTC для spread), ₽',
 )
 
 function financeFormatValueTick(v) {
@@ -258,8 +259,8 @@ async function load() {
   summary.value = null
   dailySummary.value = null
   const granularity = isDailyView.value ? 'day' : 'month'
-  const today = utcTodayIso()
-  const avgFrom = shiftUtcDay(today, -29)
+  const today = mskTodayIso()
+  const avgFrom = shiftMskDay(today, -29)
   try {
     if (isDailyView.value) {
       const data = await fetchJson(
@@ -307,7 +308,7 @@ onMounted(() => {
         role="group"
         :aria-label="
           isDailyView
-            ? 'Группировка доходов по календарным дням UTC'
+            ? 'Группировка доходов по календарным дням МСК'
             : 'Как считать суммы по месяцам на графике'
         "
       >
