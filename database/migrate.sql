@@ -225,3 +225,45 @@ CREATE INDEX IF NOT EXISTS idx_user_server_traffic_date_user
 
 CREATE INDEX IF NOT EXISTS idx_subscription_devices_user_created_at
     ON subscription_devices (user_id, created_at);
+
+-- Rollup-таблицы платежей (триггер и backfill — database/rollups/pre_payments_rollup.sql).
+CREATE TABLE IF NOT EXISTS stats_payments_daily_utc (
+    day_utc date NOT NULL,
+    payment_kind text NOT NULL,
+    gross numeric(14, 2) NOT NULL DEFAULT 0,
+    net numeric(14, 2) NOT NULL DEFAULT 0,
+    cnt bigint NOT NULL DEFAULT 0,
+    PRIMARY KEY (day_utc, payment_kind),
+    CONSTRAINT stats_payments_daily_utc_kind CHECK (
+        payment_kind IN ('subscription', 'one_time')
+    )
+);
+
+CREATE TABLE IF NOT EXISTS stats_payments_daily_msk (
+    day_msk date NOT NULL,
+    payment_kind text NOT NULL,
+    gross numeric(14, 2) NOT NULL DEFAULT 0,
+    net numeric(14, 2) NOT NULL DEFAULT 0,
+    cnt bigint NOT NULL DEFAULT 0,
+    PRIMARY KEY (day_msk, payment_kind),
+    CONSTRAINT stats_payments_daily_msk_kind CHECK (
+        payment_kind IN ('subscription', 'one_time')
+    )
+);
+
+CREATE TABLE IF NOT EXISTS stats_payments_spread_monthly_utc (
+    ym char(7) NOT NULL,
+    payment_kind text NOT NULL,
+    gross numeric(14, 6) NOT NULL DEFAULT 0,
+    net numeric(14, 6) NOT NULL DEFAULT 0,
+    PRIMARY KEY (ym, payment_kind),
+    CONSTRAINT stats_payments_spread_monthly_utc_kind CHECK (
+        payment_kind IN ('subscription', 'one_time')
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_stats_payments_daily_utc_day
+    ON stats_payments_daily_utc (day_utc);
+
+CREATE INDEX IF NOT EXISTS idx_stats_payments_daily_msk_day
+    ON stats_payments_daily_msk (day_msk);

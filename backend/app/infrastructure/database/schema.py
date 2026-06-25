@@ -149,6 +149,12 @@ def ensure_schema(engine: Engine | None = None) -> None:
     rpc_paths = resolve_rpc_sql_paths()
     rollup_post_paths = resolve_rollup_sql_paths(phase="post")
 
+    if not rollup_pre_paths:
+        log.warning(
+            "Каталог database/rollups/pre_*.sql не найден — rollup-таблицы должны быть "
+            "созданы через migrate.sql; пересоберите образ API (COPY database/rollups).",
+        )
+
     try:
         with eng.begin() as conn:
             _execute_sql_file(conn, init_path)
