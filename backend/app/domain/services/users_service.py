@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -142,25 +142,65 @@ async def users_count(session: AsyncSession) -> UsersCountResponse:
         or 0,
     )
 
-    all_times = [
-        t
-        for t in (
-            await session.scalars(
-                select(User.registered_at).where(
-                    stats_user,
-                    User.registered_at.is_not(None),
-                    User.subscription_until.is_not(None),
-                ),
-            )
-        ).all()
-        if t is not None
-    ]
-    all_times.sort()
-    today_times = sorted(
-        ut
-        for t in all_times
-        if start_today <= (ut := ensure_utc(t)) < end_today
+    gap_overall_stmt = text(
+        """
+        WITH ordered AS (
+            SELECT u.registered_at
+            FROM users u
+            WHERE u.registered_at IS NOT NULL
+              AND u.subscription_until IS NOT NULL
+              AND (
+                  u.telegram_id IS NOT NULL
+                  OR (
+                      u.email IS NOT NULL
+                      AND BTRIM(u.email) <> ''
+                      AND u.email_verified_at IS NOT NULL
+                  )
+              )
+        ),
+        gaps AS (
+            SELECT EXTRACT(EPOCH FROM (
+                registered_at - LAG(registered_at) OVER (ORDER BY registered_at)
+            )) * 1000 AS gap_ms
+            FROM ordered
+        )
+        SELECT AVG(gap_ms) FROM gaps WHERE gap_ms IS NOT NULL
+        """,
     )
+    gap_today_stmt = text(
+        """
+        WITH ordered AS (
+            SELECT u.registered_at
+            FROM users u
+            WHERE u.registered_at IS NOT NULL
+              AND u.subscription_until IS NOT NULL
+              AND u.registered_at >= :start_today
+              AND u.registered_at < :end_today
+              AND (
+                  u.telegram_id IS NOT NULL
+                  OR (
+                      u.email IS NOT NULL
+                      AND BTRIM(u.email) <> ''
+                      AND u.email_verified_at IS NOT NULL
+                  )
+              )
+        ),
+        gaps AS (
+            SELECT EXTRACT(EPOCH FROM (
+                registered_at - LAG(registered_at) OVER (ORDER BY registered_at)
+            )) * 1000 AS gap_ms
+            FROM ordered
+        )
+        SELECT AVG(gap_ms) FROM gaps WHERE gap_ms IS NOT NULL
+        """,
+    )
+    gap_overall_raw = await session.scalar(gap_overall_stmt)
+    gap_today_raw = await session.scalar(
+        gap_today_stmt,
+        {"start_today": start_today, "end_today": end_today},
+    )
+    gap_overall = float(gap_overall_raw) if gap_overall_raw is not None else None
+    gap_today = float(gap_today_raw) if gap_today_raw is not None else None
 
     return UsersCountResponse(
         users_count=total,
@@ -168,8 +208,8 @@ async def users_count(session: AsyncSession) -> UsersCountResponse:
         registrations_today_count=regs_today,
         registrations_today_unverified_email_count=regs_today_unverified,
         registrations_yesterday_count=regs_yesterday,
-        registration_gap_overall_ms=_mean_registration_gap_ms(all_times),
-        registration_gap_today_ms=_mean_registration_gap_ms(today_times),
+        registration_gap_overall_ms=gap_overall,
+        registration_gap_today_ms=gap_today,
     )
 
 

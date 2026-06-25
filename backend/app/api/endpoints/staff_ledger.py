@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
@@ -50,10 +51,9 @@ tasks_staff_router = APIRouter(
     "/finance-summary",
     response_model=StaffPaymentsFinanceSummaryResponse,
     summary="Сводка платежей по месяцам/дням и типу (RPC)",
-    description="``granularity=month`` (по умолчанию): ``rpc_staff_payments_finance_summary()``, "
-    "ось ``months`` (UTC). ``cash`` — полная сумма в месяце даты платежа; ``spread`` — "
-    "``amount/months`` в месяце платежа и в каждом из следующих ``months-1`` месяцев. "
-    "``granularity=day``: ``rpc_staff_payments_finance_summary_daily()``, ось ``days`` (UTC), "
+    description="``granularity=month`` (по умолчанию): ``rpc_staff_payments_finance_summary(from, to)``, "
+    "ось ``months`` (UTC). ``from``/``to`` — календарные дни UTC (опционально). "
+    "``granularity=day``: ``rpc_staff_payments_finance_summary_daily(from, to)``, ось ``days`` (UTC), "
     "только ``cash`` по дате платежа.",
 )
 async def staff_payments_finance_summary_endpoint(
@@ -62,8 +62,21 @@ async def staff_payments_finance_summary_endpoint(
         Literal["month", "day"],
         Query(description="month — по месяцам; day — по календарным дням UTC"),
     ] = "month",
+    date_from: Annotated[
+        date | None,
+        Query(alias="from", description="Начало периода (календарный день UTC, включительно)"),
+    ] = None,
+    date_to: Annotated[
+        date | None,
+        Query(alias="to", description="Конец периода (календарный день UTC, включительно)"),
+    ] = None,
 ) -> StaffPaymentsFinanceSummaryResponse:
-    return await staff_payments_finance_summary(session, granularity=granularity)
+    return await staff_payments_finance_summary(
+        session,
+        granularity=granularity,
+        date_from=date_from,
+        date_to=date_to,
+    )
 
 
 @payments_staff_router.get(

@@ -162,6 +162,13 @@ export function useAdminSummaryCharts(rangeRef, trimLeadingRef) {
   /** @type {import('vue').Ref<string>} */
   const bucketLabel = ref('по дням')
 
+function statsQueryParams(from, to, extra = {}) {
+  const params = new URLSearchParams(extra)
+  if (from) params.set('from', String(from).slice(0, 10))
+  if (to) params.set('to', String(to).slice(0, 10))
+  return params
+}
+
   async function loadUsersSeries(from, to, mode) {
     const trimLeading = trimLeadingRef?.value === true
 
@@ -190,7 +197,9 @@ export function useAdminSummaryCharts(rangeRef, trimLeadingRef) {
       return trimLeading ? trimLeadingZeroBuckets(hourPoints) : hourPoints
     }
 
-    const data = await fetchJson('/api/users/daily-stats?granularity=day')
+    const data = await fetchJson(
+      `/api/users/daily-stats?${statsQueryParams(from, to, { granularity: 'day' })}`,
+    )
     const rows = Array.isArray(data?.stats_by_date) ? data.stats_by_date : []
     /** @type {Map<string, number>} */
     const byDay = new Map()
@@ -230,8 +239,11 @@ export function useAdminSummaryCharts(rangeRef, trimLeadingRef) {
   }
 
   async function loadRevenueSeries(from, to, mode) {
+    const rangeParams = statsQueryParams(from, to)
     if (mode === 'month') {
-      const data = await fetchJson('/api/admin/payments/finance-summary?granularity=month')
+      const data = await fetchJson(
+        `/api/admin/payments/finance-summary?granularity=month&${rangeParams}`,
+      )
       const months = Array.isArray(data?.months) ? data.months : []
       const gross = data?.cash_gross ?? data?.cash
       const sub = parseAmounts(gross?.subscription)
@@ -245,7 +257,9 @@ export function useAdminSummaryCharts(rangeRef, trimLeadingRef) {
         .filter((row) => monthOverlapsRange(row.key, from, to))
     }
 
-    const data = await fetchJson('/api/admin/payments/finance-summary?granularity=day')
+    const data = await fetchJson(
+      `/api/admin/payments/finance-summary?granularity=day&${rangeParams}`,
+    )
     const days = Array.isArray(data?.days) ? data.days : []
     const gross = data?.cash_gross ?? data?.cash
     const sub = parseAmounts(gross?.subscription)

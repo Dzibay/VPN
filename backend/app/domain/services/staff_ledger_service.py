@@ -32,6 +32,8 @@ async def staff_payments_finance_summary(
     session: AsyncSession,
     *,
     granularity: Literal["month", "day"] = "month",
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> StaffPaymentsFinanceSummaryResponse:
     """Сводка для финансов: monthly или daily RPC (UTC × тип оплаты)."""
     rpc_name = (
@@ -39,8 +41,13 @@ async def staff_payments_finance_summary(
         if granularity == "day"
         else "rpc_staff_payments_finance_summary"
     )
-    stmt = text(f"SELECT {rpc_name}() AS payload")
-    row = (await session.execute(stmt)).one()
+    stmt = text(f"SELECT {rpc_name}(:p_from, :p_to) AS payload")
+    row = (
+        await session.execute(
+            stmt,
+            {"p_from": date_from, "p_to": date_to},
+        )
+    ).one()
     raw = row.payload
     if raw is None:
         return StaffPaymentsFinanceSummaryResponse(

@@ -346,6 +346,18 @@ CREATE INDEX IF NOT EXISTS idx_staff_chart_events_event_at
 CREATE INDEX IF NOT EXISTS idx_payments_user_created_at
     ON payments (user_id, created_at DESC);
 
+CREATE INDEX IF NOT EXISTS idx_payments_created_at
+    ON payments (created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_payments_created_at_msk_date
+    ON payments (((created_at AT TIME ZONE 'Europe/Moscow')::date));
+
+CREATE INDEX IF NOT EXISTS idx_user_server_traffic_date_user
+    ON user_server_traffic (traffic_date, user_id);
+
+CREATE INDEX IF NOT EXISTS idx_subscription_devices_user_created_at
+    ON subscription_devices (user_id, created_at);
+
 -- uq_payments_yookassa_object_id — в migrate.sql (после tribute_webhook → provider_webhook).
 
 CREATE INDEX IF NOT EXISTS idx_tasks_user_created_at

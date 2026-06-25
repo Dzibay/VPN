@@ -1,8 +1,4 @@
--- Сводка бухгалтерии (P&L) по месяцам в диапазоне [p_from, p_to] (по началу месяца).
--- Выручка — из payments (месяц created_at по календарю Москвы, как остальная stats-аналитика).
--- Расходы — разовые (expenses) плюс развёрнутые помесячно повторяющиеся шаблоны
--- (recurring_expenses). Налог и прибыль считаются в Python-сервисе по настройкам
--- (app_settings.finance). Все суммы — text (decimal).
+-- Сводка бухгалтерии (P&L) по месяцам в диапазоне [p_from, p_to].
 DROP FUNCTION IF EXISTS rpc_finance_accounting_summary (date, date);
 
 CREATE OR REPLACE FUNCTION rpc_finance_accounting_summary (p_from date, p_to date)
@@ -38,6 +34,17 @@ pay AS (
           BETWEEN (SELECT m_from FROM bounds) AND (SELECT m_to FROM bounds)
     GROUP BY 1, 2
 ),
+pay_monthly AS (
+    SELECT
+        m_start,
+        COALESCE(SUM(gross), 0)::numeric(14, 2) AS gross_total,
+        COALESCE(SUM(net), 0)::numeric(14, 2) AS net_total,
+        COALESCE(SUM(gross) FILTER (WHERE payment_kind = 'subscription'), 0)::numeric(14, 2) AS gross_sub,
+        COALESCE(SUM(gross) FILTER (WHERE payment_kind = 'one_time'), 0)::numeric(14, 2) AS gross_one,
+        COALESCE(SUM(cnt), 0)::bigint AS cnt_total
+    FROM pay
+    GROUP BY m_start
+),
 exp_once AS (
     SELECT
         date_trunc('month', e.incurred_on)::date AS m_start,
@@ -69,6 +76,11 @@ exp_all AS (
     ) u
     GROUP BY 1, 2
 ),
+exp_monthly AS (
+    SELECT m_start, COALESCE(SUM(amt), 0)::numeric(14, 2) AS expenses_total
+    FROM exp_all
+    GROUP BY m_start
+),
 exp_by_slug AS (
     SELECT
         COALESCE(c.slug, 'other') AS slug,
@@ -80,82 +92,57 @@ exp_by_slug AS (
 ),
 cat_slugs AS (
     SELECT DISTINCT slug FROM exp_by_slug
+),
+month_joined AS (
+    SELECT
+        m.ym,
+        m.m_start,
+        COALESCE(pm.gross_total, 0)::text AS revenue_gross,
+        COALESCE(pm.net_total, 0)::text AS revenue_net,
+        COALESCE(pm.gross_total - pm.net_total, 0)::text AS psp_commission,
+        COALESCE(pm.gross_sub, 0)::text AS revenue_gross_subscription,
+        COALESCE(pm.gross_one, 0)::text AS revenue_gross_one_time,
+        COALESCE(em.expenses_total, 0)::text AS expenses_total
+    FROM months m
+    LEFT JOIN pay_monthly pm ON pm.m_start = m.m_start
+    LEFT JOIN exp_monthly em ON em.m_start = m.m_start
+    ORDER BY m.m_start
+),
+cat_series AS (
+    SELECT
+        s.slug,
+        jsonb_agg(
+            COALESCE(ebs.amt, 0)::text
+            ORDER BY m.m_start
+        ) AS amounts
+    FROM cat_slugs s
+    CROSS JOIN months m
+    LEFT JOIN exp_by_slug ebs
+        ON ebs.slug = s.slug
+       AND ebs.m_start = m.m_start
+    GROUP BY s.slug
 )
 SELECT jsonb_build_object(
     'months',
     COALESCE((SELECT jsonb_agg(ym ORDER BY m_start) FROM months), '[]'::jsonb),
     'revenue_gross',
-    COALESCE((
-        SELECT jsonb_agg(
-            COALESCE((SELECT SUM(gross) FROM pay p WHERE p.m_start = m.m_start), 0)::text
-            ORDER BY m.m_start
-        )
-        FROM months m
-    ), '[]'::jsonb),
+    COALESCE((SELECT jsonb_agg(revenue_gross) FROM month_joined), '[]'::jsonb),
     'revenue_net',
-    COALESCE((
-        SELECT jsonb_agg(
-            COALESCE((SELECT SUM(net) FROM pay p WHERE p.m_start = m.m_start), 0)::text
-            ORDER BY m.m_start
-        )
-        FROM months m
-    ), '[]'::jsonb),
+    COALESCE((SELECT jsonb_agg(revenue_net) FROM month_joined), '[]'::jsonb),
     'psp_commission',
-    COALESCE((
-        SELECT jsonb_agg(
-            COALESCE((SELECT SUM(gross - net) FROM pay p WHERE p.m_start = m.m_start), 0)::text
-            ORDER BY m.m_start
-        )
-        FROM months m
-    ), '[]'::jsonb),
+    COALESCE((SELECT jsonb_agg(psp_commission) FROM month_joined), '[]'::jsonb),
     'revenue_gross_subscription',
-    COALESCE((
-        SELECT jsonb_agg(
-            COALESCE((
-                SELECT SUM(gross) FROM pay p
-                WHERE p.m_start = m.m_start AND p.payment_kind = 'subscription'
-            ), 0)::text
-            ORDER BY m.m_start
-        )
-        FROM months m
-    ), '[]'::jsonb),
+    COALESCE((SELECT jsonb_agg(revenue_gross_subscription) FROM month_joined), '[]'::jsonb),
     'revenue_gross_one_time',
-    COALESCE((
-        SELECT jsonb_agg(
-            COALESCE((
-                SELECT SUM(gross) FROM pay p
-                WHERE p.m_start = m.m_start AND p.payment_kind = 'one_time'
-            ), 0)::text
-            ORDER BY m.m_start
-        )
-        FROM months m
-    ), '[]'::jsonb),
+    COALESCE((SELECT jsonb_agg(revenue_gross_one_time) FROM month_joined), '[]'::jsonb),
     'expenses_total',
-    COALESCE((
-        SELECT jsonb_agg(
-            COALESCE((SELECT SUM(amt) FROM exp_all ea WHERE ea.m_start = m.m_start), 0)::text
-            ORDER BY m.m_start
-        )
-        FROM months m
-    ), '[]'::jsonb),
+    COALESCE((SELECT jsonb_agg(expenses_total) FROM month_joined), '[]'::jsonb),
     'expenses_by_category',
     COALESCE((
-        SELECT jsonb_object_agg(
-            s.slug,
-            (
-                SELECT jsonb_agg(
-                    COALESCE((
-                        SELECT amt FROM exp_by_slug e
-                        WHERE e.slug = s.slug AND e.m_start = m.m_start
-                    ), 0)::text
-                    ORDER BY m.m_start
-                )
-                FROM months m
-            )
-        )
-        FROM cat_slugs s
+        SELECT jsonb_object_agg(slug, amounts)
+        FROM cat_series
     ), '{}'::jsonb),
     'payment_count',
-    COALESCE((SELECT SUM(cnt) FROM pay), 0)
+    COALESCE((SELECT SUM(cnt_total) FROM pay_monthly), 0)
 );
 $$;

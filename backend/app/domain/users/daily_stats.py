@@ -56,13 +56,13 @@ def _with_day_period_start(rows: list[UserStatsByDateRow]) -> list[UserStatsByDa
     return out
 
 
-async def stats_by_date_merged(session: AsyncSession) -> list[UserStatsByDateRow]:
-    """Сводка по датам через PostgreSQL ``rpc_users_daily_stats()`` (см. ``database/rpc/users_daily_stats.sql``).
-
-    Строка без ``stats_date`` — пользователи без ``registered_at`` (в конце набора).
-    Дневные ``users_count`` — прирост по дню регистрации (МСК) среди учётных пользователей
-    (Telegram или подтверждённый email), без фильтра по ``subscription_until``.
-    """
+async def stats_by_date_merged(
+    session: AsyncSession,
+    *,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> list[UserStatsByDateRow]:
+    """Сводка по датам через PostgreSQL ``rpc_users_daily_stats(p_from, p_to)``."""
     stmt = text(
         """
         SELECT stats_date, users_count, users_with_traffic_count,
@@ -72,10 +72,15 @@ async def stats_by_date_merged(session: AsyncSession) -> list[UserStatsByDateRow
                users_with_payment_count, payments_first_count, payments_repeat_count,
                active_users_with_payment_count,
                users_with_active_subscription_count
-        FROM rpc_users_daily_stats()
+        FROM rpc_users_daily_stats(:p_from, :p_to)
         """,
     )
-    rows = (await session.execute(stmt)).all()
+    rows = (
+        await session.execute(
+            stmt,
+            {"p_from": date_from, "p_to": date_to},
+        )
+    ).all()
     return [
         UserStatsByDateRow(
             stats_date=row[0],
@@ -114,6 +119,8 @@ async def users_daily_stats(
     *,
     granularity: Literal["day", "hour"] = "day",
     hour_day: date | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> UsersDailyStatsResponse:
     """Сводка для эндпоинта ``/users/daily-stats`` (дни МСК или 24 часа календарного дня МСК)."""
 
@@ -162,7 +169,7 @@ async def users_daily_stats(
             hour_baseline_subscription_devices_users_count=hb_devices,
             hour_undated_users_count=undated_n,
         )
-    dated = await stats_by_date_merged(session)
+    dated = await stats_by_date_merged(session, date_from=date_from, date_to=date_to)
     return UsersDailyStatsResponse(
         granularity="day",
         hour_day=None,
@@ -299,12 +306,38 @@ async def daily_payments_expiry_stats(
     for su_day, uids in by_su.items():
         expiring_paid_by[su_day] = sum(1 for uid in uids if uid in paid_uids)
 
-    by_user = await fetch_user_traffic_series(session, eligible_users_only=True)
+    expiry_dates = set(by_su.keys())
+    pay_dates = set(pay_by.keys())
+    month_min, month_max = _payments_expiry_month_bounds(expiry_dates, pay_dates)
+
+    if month is not None:
+        lo, hi = msk_month_bounds(month)
+        days = iter_calendar_days(lo, hi)
+    else:
+        if not expiry_dates and not pay_dates:
+            return DailyPaymentsExpiryStatsBundle(rows=[], month_min=month_min, month_max=month_max)
+        d0 = min(expiry_dates | pay_dates | {msk_td})
+        d1 = max(expiry_dates | pay_dates | {msk_td})
+        days = iter_calendar_days(d0, d1)
+
+    days_set = set(days)
+    traffic_uids: set[int] = set()
+    for su_day, uids in by_su.items():
+        if su_day in days_set:
+            traffic_uids.update(uids)
+
+    by_user = await fetch_user_traffic_series(
+        session,
+        user_ids_filter=traffic_uids if traffic_uids else None,
+        eligible_users_only=True,
+    )
 
     user_flags: dict[int, tuple[bool, frozenset[date]]] = {}
     bucket_by_day: dict[date, list[int]] = defaultdict(lambda: [0, 0, 0, 0])
 
     for su_day, uids in by_su.items():
+        if su_day not in days_set:
+            continue
         for uid in uids:
             sm = by_user.get(uid)
             if not sm or not any(series for series in sm.values()):
@@ -324,20 +357,6 @@ async def daily_payments_expiry_stats(
                 bucket_by_day[su_day][2] += 1
             else:
                 bucket_by_day[su_day][3] += 1
-
-    expiry_dates = set(by_su.keys())
-    pay_dates = set(pay_by.keys())
-    month_min, month_max = _payments_expiry_month_bounds(expiry_dates, pay_dates)
-
-    if month is not None:
-        lo, hi = msk_month_bounds(month)
-        days = iter_calendar_days(lo, hi)
-    else:
-        if not expiry_dates and not pay_dates:
-            return DailyPaymentsExpiryStatsBundle(rows=[], month_min=month_min, month_max=month_max)
-        d0 = min(expiry_dates | pay_dates | {msk_td})
-        d1 = max(expiry_dates | pay_dates | {msk_td})
-        days = iter_calendar_days(d0, d1)
 
     out: list[DailyPaymentsExpiryStatsRow] = []
     for d in days:
@@ -548,7 +567,11 @@ async def daily_payments_expiry_day_detail(
         int(row[1]) for row in pay_rows if row[1] is not None
     }
 
-    by_user = await fetch_user_traffic_series(session, eligible_users_only=True)
+    by_user = await fetch_user_traffic_series(
+        session,
+        user_ids_filter=set(by_su.get(day, [])),
+        eligible_users_only=True,
+    )
     user_flags: dict[int, tuple[bool, frozenset[date]]] = {}
 
     expiry_buckets: dict[PayExpDayDetailGroupKey, list[int]] = defaultdict(list)
@@ -670,30 +693,59 @@ async def active_users_count_for_utc_date(
 ) -> int:
     """«Активные» за календарный день UTC по ``traffic_date`` (воронка рефералов)."""
 
-    filt: set[int] | None = None
+    user_filter_sql = ""
+    params: dict[str, object] = {"cal_day": cal_day}
     if referral_link_id is not None:
-        ids_raw = (
-            await session.scalars(
-                select(User.id).where(
-                    User.referral_link_id == referral_link_id,
-                    user_counts_in_admin_stats(User),
-                ),
+        user_filter_sql = "AND u.referral_link_id = :referral_link_id"
+        params["referral_link_id"] = referral_link_id
+
+    stmt = text(
+        f"""
+        WITH qualified AS (
+            SELECT u.id
+            FROM users u
+            WHERE (
+                u.telegram_id IS NOT NULL
+                OR (
+                    u.email IS NOT NULL
+                    AND BTRIM(u.email) <> ''
+                    AND u.email_verified_at IS NOT NULL
+                )
             )
-        ).all()
-        filt = {int(i) for i in ids_raw}
-    else:
-        ids_raw = (
-            await session.scalars(select(User.id).where(user_counts_in_admin_stats(User)))
-        ).all()
-        filt = {int(i) for i in ids_raw}
-    series = await fetch_user_traffic_series(session, user_ids_filter=filt)
-    if not series:
-        return 0
-    span = traffic_day_span(series)
-    if not span or cal_day < span[0]:
-        return 0
-    # Алгоритм active_users_count_by_traffic_day сравнивает день с предыдущим в day_list;
-    # один cal_day без истории даёт prev_total=0 и считает всех с трафиком «активными».
-    day_list = iter_calendar_days(span[0], cal_day)
-    counts = active_users_count_by_traffic_day(series, day_list=day_list)
-    return int(counts.get(cal_day, 0) or 0)
+            {user_filter_sql}
+        ),
+        traffic_cum AS (
+            SELECT
+                t.user_id,
+                t.server_id,
+                MAX(
+                    CASE
+                        WHEN t.traffic_date <= :cal_day
+                            THEN t.up_bytes + t.down_bytes
+                    END
+                )::bigint AS cum_d,
+                MAX(
+                    CASE
+                        WHEN t.traffic_date < :cal_day
+                            THEN t.up_bytes + t.down_bytes
+                    END
+                )::bigint AS cum_prev
+            FROM user_server_traffic t
+            INNER JOIN qualified q ON q.id = t.user_id
+            WHERE t.traffic_date <= :cal_day
+            GROUP BY t.user_id, t.server_id
+        ),
+        user_totals AS (
+            SELECT
+                user_id,
+                COALESCE(SUM(cum_d), 0)::bigint AS total_d,
+                COALESCE(SUM(cum_prev), 0)::bigint AS total_prev
+            FROM traffic_cum
+            GROUP BY user_id
+        )
+        SELECT COUNT(*)::bigint
+        FROM user_totals
+        WHERE total_d > total_prev
+        """,
+    )
+    return int(await session.scalar(stmt, params) or 0)

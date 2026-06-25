@@ -212,3 +212,16 @@ ALTER TABLE servers
 -- INSERT INTO cash_accounts (name, kind, currency, opening_balance, opened_on, active, is_default)
 -- SELECT 'Расчетный счет', 'bank', 'RUB', 0, CURRENT_DATE, TRUE, TRUE
 -- WHERE NOT EXISTS (SELECT 1 FROM cash_accounts WHERE is_default = TRUE);
+
+-- Индексы для ускорения статистики (идемпотентно на существующих БД).
+CREATE INDEX IF NOT EXISTS idx_payments_created_at
+    ON payments (created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_payments_created_at_msk_date
+    ON payments (((created_at AT TIME ZONE 'Europe/Moscow')::date));
+
+CREATE INDEX IF NOT EXISTS idx_user_server_traffic_date_user
+    ON user_server_traffic (traffic_date, user_id);
+
+CREATE INDEX IF NOT EXISTS idx_subscription_devices_user_created_at
+    ON subscription_devices (user_id, created_at);

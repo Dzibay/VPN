@@ -197,6 +197,20 @@ async def users_daily_stats_ep(
             description="При granularity=hour — календарная дата суток по Москве YYYY-MM-DD",
         ),
     ] = None,
+    date_from: Annotated[
+        date | None,
+        Query(
+            alias="from",
+            description="При granularity=day — начало периода (календарный день Europe/Moscow, включительно)",
+        ),
+    ] = None,
+    date_to: Annotated[
+        date | None,
+        Query(
+            alias="to",
+            description="При granularity=day — конец периода (календарный день Europe/Moscow, включительно)",
+        ),
+    ] = None,
 ) -> UsersDailyStatsResponse:
     if granularity == "hour" and hour_day is None:
         raise HTTPException(
@@ -208,6 +222,8 @@ async def users_daily_stats_ep(
             session,
             granularity=granularity,
             hour_day=hour_day,
+            date_from=date_from,
+            date_to=date_to,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e

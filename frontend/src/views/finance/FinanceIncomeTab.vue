@@ -167,15 +167,11 @@ function dailyAmountsFromSummary(s, useNet) {
 
 const averageIncome = computed(() => {
   const ds = dailySummary.value
-  if (!ds?.days?.length) return null
+  const ms = summary.value
+  if (!ds?.days?.length && !ms?.months?.length) return null
 
   const today = utcTodayIso()
-  const firstDay = String(ds.days[0]).slice(0, 10)
   const dayRows = dailyAmountsFromSummary(ds, useNetAmount.value)
-  const grandRaw = useNetAmount.value
-    ? ds.grand_total
-    : ds.grand_total_gross ?? ds.grand_total
-  const grand = Number(String(grandRaw ?? '').replace(',', '.'))
 
   const weekFrom = shiftUtcDay(today, -6)
   const monthFrom = shiftUtcDay(today, -29)
@@ -186,7 +182,19 @@ const averageIncome = computed(() => {
       .reduce((s, r) => s + r.amount, 0)
   }
 
-  const allSpan = daysBetweenInclusive(firstDay, today)
+  const grandRaw = useNetAmount.value
+    ? (ms?.grand_total ?? ds?.grand_total)
+    : (ms?.grand_total_gross ?? ms?.grand_total ?? ds?.grand_total_gross ?? ds?.grand_total)
+  const grand = Number(String(grandRaw ?? '').replace(',', '.'))
+
+  let allSpan = 1
+  if (ms?.months?.length) {
+    const firstMonth = String(ms.months[0])
+    allSpan = daysBetweenInclusive(`${firstMonth}-01`, today)
+  } else if (ds?.days?.length) {
+    allSpan = daysBetweenInclusive(String(ds.days[0]).slice(0, 10), today)
+  }
+
   return {
     all: Number.isFinite(grand) && allSpan > 0 ? grand / allSpan : 0,
     month: sumFrom(monthFrom) / 30,
@@ -250,6 +258,8 @@ async function load() {
   summary.value = null
   dailySummary.value = null
   const granularity = isDailyView.value ? 'day' : 'month'
+  const today = utcTodayIso()
+  const avgFrom = shiftUtcDay(today, -29)
   try {
     if (isDailyView.value) {
       const data = await fetchJson(
@@ -260,7 +270,9 @@ async function load() {
     } else {
       const [chartData, dayData] = await Promise.all([
         fetchJson(`/api/admin/payments/finance-summary?granularity=${granularity}`),
-        fetchJson('/api/admin/payments/finance-summary?granularity=day'),
+        fetchJson(
+          `/api/admin/payments/finance-summary?granularity=day&from=${encodeURIComponent(avgFrom)}&to=${encodeURIComponent(today)}`,
+        ),
       ])
       summary.value = chartData
       dailySummary.value = dayData

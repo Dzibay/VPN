@@ -87,7 +87,10 @@ function densifyMskDays(sortedRows) {
  * Общая загрузка `/api/users/daily-stats` и расчёт данных для `AdminLineChartPanel`
  * (страница «Статистика по дням»). Даты/МСК — ``utils/mskDate.js``; бакеты с API.
  */
-export function useUsersDailyStatsChart() {
+/**
+ * @param {import('vue').Ref<{ from: string; to: string }> | null} [dateRangeRef] — фильтр дней МСК для API
+ */
+export function useUsersDailyStatsChart(dateRangeRef = null) {
   /** @type {import('vue').Ref<StatsGranularity>} */
   const granularity = ref('day')
 
@@ -763,6 +766,11 @@ export function useUsersDailyStatsChart() {
     try {
       const g = granularity.value
       let url = `/api/users/daily-stats?granularity=${encodeURIComponent(g)}`
+      if (g === 'day' && dateRangeRef?.value) {
+        const { from, to } = dateRangeRef.value
+        if (from) url += `&from=${encodeURIComponent(String(from).slice(0, 10))}`
+        if (to) url += `&to=${encodeURIComponent(String(to).slice(0, 10))}`
+      }
       if (g === 'hour') {
         let day = String(hourDayMsk.value ?? '').trim().slice(0, 10)
         if (!day) {

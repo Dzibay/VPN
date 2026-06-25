@@ -1,6 +1,4 @@
 -- Сводка админки за календарный период [p_from, p_to] (Europe/Moscow).
--- Пользователи — только «учётные»: Telegram или подтверждённый email.
--- Доход — валовая сумма payments.amount; даты платежей — календарь Москвы.
 DROP FUNCTION IF EXISTS rpc_admin_summary (date, date);
 
 CREATE OR REPLACE FUNCTION rpc_admin_summary (p_from date, p_to date)
@@ -24,6 +22,11 @@ qualified_users AS (
            AND u.email_verified_at IS NOT NULL
        )
 ),
+paying_user_ids AS (
+    SELECT DISTINCT p.user_id
+    FROM payments p
+    WHERE p.user_id IS NOT NULL
+),
 users_total AS (
     SELECT COUNT(*)::bigint AS n
     FROM qualified_users
@@ -45,11 +48,10 @@ active_users AS (
 expiring AS (
     SELECT
         COUNT(*)::bigint AS total,
-        COUNT(*) FILTER (
-            WHERE EXISTS (SELECT 1 FROM payments p WHERE p.user_id = qu.id)
-        )::bigint AS paid
+        COUNT(*) FILTER (WHERE pu.user_id IS NOT NULL)::bigint AS paid
     FROM qualified_users qu
     CROSS JOIN msk m
+    LEFT JOIN paying_user_ids pu ON pu.user_id = qu.id
     WHERE qu.subscription_until IS NOT NULL
       AND qu.subscription_until >= m.today
       AND qu.subscription_until < m.today + 7

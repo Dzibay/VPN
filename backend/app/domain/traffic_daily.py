@@ -36,6 +36,10 @@ async def fetch_user_traffic_series(
             User.registered_at.is_not(None),
             User.subscription_until.is_not(None),
         )
+    if user_ids_filter is not None:
+        if not user_ids_filter:
+            return {}
+        stmt = stmt.where(UserServerTraffic.user_id.in_(user_ids_filter))
     stmt = stmt.order_by(
         UserServerTraffic.user_id.asc(),
         UserServerTraffic.server_id.asc(),

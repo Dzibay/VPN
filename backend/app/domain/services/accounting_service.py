@@ -362,58 +362,22 @@ async def _build_cash_position(
     deferred: FinanceDeferredSnapshot,
     tax_reserved: Decimal,
 ) -> FinanceCashPosition:
-    opening = await _sum_decimal(
-        session,
-        select(func.coalesce(func.sum(CashAccount.opening_balance), 0)).where(
-            CashAccount.opened_on <= as_of
-        ),
-    )
-    adjustments = await _sum_decimal(
-        session,
-        select(func.coalesce(func.sum(CashTransaction.amount), 0)).where(
-            CashTransaction.occurred_on <= as_of
-        ),
-    )
-    company_expenses_paid = await _sum_decimal(
-        session,
-        select(func.coalesce(func.sum(Expense.amount), 0)).where(
-            Expense.payment_source == "company",
-            Expense.incurred_on <= as_of,
-        ),
-    )
-    unpaid_expenses = await _sum_decimal(
-        session,
-        select(func.coalesce(func.sum(Expense.amount), 0)).where(
-            Expense.payment_source == "unpaid",
-            Expense.incurred_on <= as_of,
-        ),
-    )
-    payables_open = await _sum_decimal(
-        session,
-        select(func.coalesce(func.sum(Payable.amount - Payable.paid_amount), 0)).where(
-            Payable.status.in_(("open", "partial"))
-        ),
-    )
-    payables_paid = await _sum_decimal(
-        session,
-        select(func.coalesce(func.sum(Payable.paid_amount), 0)).where(
-            Payable.status.in_(("partial", "paid"))
-        ),
-    )
-    refunds = await _sum_decimal(
-        session,
-        select(func.coalesce(func.sum(Refund.net_amount), 0)).where(
-            Refund.status == "succeeded",
-            Refund.refunded_on <= as_of,
-        ),
-    )
-    withdrawals = await _sum_decimal(
-        session,
-        select(func.coalesce(func.sum(ProfitWithdrawal.amount), 0)).where(
-            ProfitWithdrawal.status == "succeeded",
-            ProfitWithdrawal.withdrawn_on <= as_of,
-        ),
-    )
+    row = (
+        await session.execute(
+            text("SELECT rpc_finance_cash_position(:p_as_of) AS payload"),
+            {"p_as_of": as_of},
+        )
+    ).one()
+    raw = row.payload if isinstance(row.payload, dict) else {}
+
+    opening = _to_decimal(raw.get("opening"))
+    adjustments = _to_decimal(raw.get("adjustments"))
+    company_expenses_paid = _to_decimal(raw.get("company_expenses_paid"))
+    unpaid_expenses = _to_decimal(raw.get("unpaid_expenses"))
+    payables_open = _to_decimal(raw.get("payables_open"))
+    payables_paid = _to_decimal(raw.get("payables_paid"))
+    refunds = _to_decimal(raw.get("refunds"))
+    withdrawals = _to_decimal(raw.get("withdrawals"))
 
     received = _to_decimal(deferred.received_net)
     earned = _to_decimal(deferred.earned_net)

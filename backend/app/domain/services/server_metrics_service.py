@@ -519,7 +519,10 @@ def _server_traffic_daily_summary_blocking(
             UserServerTraffic.traffic_date,
             (UserServerTraffic.up_bytes + UserServerTraffic.down_bytes).label("tot"),
         )
-        .where(UserServerTraffic.server_id == server_id)
+        .where(
+            UserServerTraffic.server_id == server_id,
+            UserServerTraffic.traffic_date >= day_before_start,
+        )
         .order_by(UserServerTraffic.user_id.asc(), UserServerTraffic.traffic_date.asc())
     )
     raw_rows = db.execute(stmt).all()
@@ -622,6 +625,7 @@ def _all_servers_inbound_traffic_daily_blocking(
             UserServerTraffic.traffic_date,
             UserServerTraffic.down_bytes,
         )
+        .where(UserServerTraffic.traffic_date >= day_before_start)
         .order_by(
             UserServerTraffic.server_id.asc(),
             UserServerTraffic.user_id.asc(),

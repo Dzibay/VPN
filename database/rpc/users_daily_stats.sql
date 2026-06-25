@@ -1,15 +1,14 @@
 -- Дневная сводка: registered_at, payments, devices — календарь Europe/Moscow;
 -- traffic_date (снимки) — календарный день UTC на момент сбора (см. xray_stats_collect).
--- Накопление регистраций (users_count): учётные пользователи (Telegram или email ✓);
--- с registered_at — по дню МСК, без registered_at — отдельная строка stats_date IS NULL.
--- Прочие метрики (активность, снимок подписки, оплаты) — только с registered_at и subscription_until.
--- Во все метрики входят только «учётные» пользователи: Telegram ИЛИ подтверждённый email
--- (см. database/rpc/_user_stats_qualified.sql).
--- Календарь выдачи: от первой регистрации (МСК) до сегодня по Europe/Moscow.
--- На графике админки показывают последние 30 дней; накопительные серии считаются на фронте по полному ряду.
-drop function if exists rpc_users_daily_stats;
+-- p_from / p_to — опциональный диапазон календарных дней МСК (включительно); NULL = вся история.
+DROP FUNCTION IF EXISTS rpc_users_daily_stats ();
 
-CREATE OR REPLACE FUNCTION rpc_users_daily_stats ()
+DROP FUNCTION IF EXISTS rpc_users_daily_stats (date, date);
+
+CREATE OR REPLACE FUNCTION rpc_users_daily_stats (
+    p_from date DEFAULT NULL,
+    p_to date DEFAULT NULL
+)
 RETURNS TABLE (
     stats_date date,
     users_count bigint,
@@ -57,7 +56,13 @@ msk_bounds AS (
             (NOW() AT TIME ZONE 'Europe/Moscow')::date
         ) AS window_start
 ),
--- Первый платёж (календарный день Europe/Moscow).
+date_window AS (
+    SELECT
+        COALESCE(p_from, mb.window_start) AS range_start,
+        COALESCE(p_to, mb.msk_today) AS range_end,
+        COALESCE(p_from, mb.window_start) - 1 AS traffic_lag_start
+    FROM msk_bounds mb
+),
 first_payment AS (
     SELECT
         p.user_id,
@@ -71,6 +76,7 @@ new_payers_by_day AS (
         fp.first_pay_day AS pay_day,
         COUNT(*)::bigint AS users_with_payment_count
     FROM first_payment fp
+    INNER JOIN date_window dw ON fp.first_pay_day BETWEEN dw.range_start AND dw.range_end
     GROUP BY fp.first_pay_day
 ),
 pay_split AS (
@@ -88,23 +94,8 @@ payments_by_day AS (
         COUNT(*) FILTER (WHERE payment_num = 1)::bigint AS payments_first_count,
         COUNT(*) FILTER (WHERE payment_num > 1)::bigint AS payments_repeat_count
     FROM pay_split
+    INNER JOIN date_window dw ON pay_split.d BETWEEN dw.range_start AND dw.range_end
     GROUP BY d
-),
-latest_traffic AS (
-    SELECT DISTINCT ON (t.user_id, t.server_id)
-        t.user_id,
-        t.server_id,
-        t.up_bytes + t.down_bytes AS bytes
-    FROM user_server_traffic t
-    INNER JOIN eligible_users eu ON eu.id = t.user_id
-    ORDER BY t.user_id, t.server_id, t.traffic_date DESC
-),
-user_traffic_total AS (
-    SELECT
-        user_id,
-        COALESCE(SUM(bytes), 0)::bigint AS total_bytes
-    FROM latest_traffic
-    GROUP BY user_id
 ),
 latest_traffic_all AS (
     SELECT DISTINCT ON (t.user_id, t.server_id)
@@ -134,39 +125,49 @@ reg AS (
     WHERE u.registered_at IS NOT NULL
     GROUP BY (u.registered_at AT TIME ZONE 'Europe/Moscow')::date
 ),
-traffic_local AS (
+traffic_snapshots AS (
     SELECT
         t.user_id,
         t.server_id,
-        t.traffic_date,
-        t.up_bytes + t.down_bytes AS bytes,
-        t.traffic_date AS local_d
+        t.traffic_date AS snap_day,
+        (t.up_bytes + t.down_bytes)::bigint AS bytes
     FROM user_server_traffic t
     INNER JOIN eligible_users eu ON eu.id = t.user_id
 ),
-bounds AS (
-    SELECT MIN(local_d) AS dmin, MAX(local_d) AS dmax
-    FROM traffic_local
+traffic_ranges AS (
+    SELECT
+        ts.user_id,
+        ts.server_id,
+        ts.snap_day AS from_day,
+        ts.bytes,
+        LEAD(ts.snap_day) OVER (
+            PARTITION BY ts.user_id, ts.server_id
+            ORDER BY ts.snap_day
+        ) AS next_snap_day
+    FROM traffic_snapshots ts
 ),
-days AS (
-    SELECT generate_series(b.dmin, b.dmax, '1 day'::interval)::date AS cal_day
-    FROM bounds b
-    WHERE b.dmin IS NOT NULL
-      AND b.dmax IS NOT NULL
-),
-latest_per_day AS (
-    SELECT DISTINCT ON (d.cal_day, tl.user_id, tl.server_id)
-        d.cal_day,
-        tl.user_id,
-        tl.server_id,
-        tl.bytes
-    FROM days d
-    INNER JOIN traffic_local tl ON tl.local_d <= d.cal_day
-    ORDER BY d.cal_day, tl.user_id, tl.server_id, tl.traffic_date DESC
+traffic_filled AS (
+    SELECT
+        gs.cal_day::date AS cal_day,
+        tr.user_id,
+        tr.server_id,
+        tr.bytes
+    FROM traffic_ranges tr
+    CROSS JOIN date_window dw
+    CROSS JOIN LATERAL generate_series(
+        GREATEST(tr.from_day, dw.traffic_lag_start),
+        LEAST(
+            COALESCE(tr.next_snap_day - 1, dw.range_end),
+            dw.range_end
+        ),
+        interval '1 day'
+    ) AS gs (cal_day)
+    WHERE tr.from_day <= dw.range_end
+      AND COALESCE(tr.next_snap_day - 1, dw.range_end) >= dw.traffic_lag_start
 ),
 user_total_by_day AS (
     SELECT cal_day, user_id, SUM(bytes)::bigint AS total
-    FROM latest_per_day
+    FROM traffic_filled
     GROUP BY cal_day, user_id
 ),
 with_prev AS (
@@ -182,44 +183,45 @@ with_prev AS (
 ),
 active_by_day AS (
     SELECT
-        cal_day,
+        w.cal_day,
         COUNT(*) FILTER (
-            WHERE total > COALESCE(prev_total, 0)
+            WHERE w.total > COALESCE(w.prev_total, 0)
         )::bigint AS active_users_count
-    FROM with_prev
-    GROUP BY cal_day
+    FROM with_prev w
+    INNER JOIN date_window dw ON w.cal_day BETWEEN dw.range_start AND dw.range_end
+    GROUP BY w.cal_day
 ),
 active_users_with_payment_by_day AS (
     SELECT
         w.cal_day,
         COUNT(*) FILTER (
             WHERE w.total > COALESCE(w.prev_total, 0)
-              AND EXISTS (
-                  SELECT 1
-                  FROM first_payment fp
-                  WHERE fp.user_id = w.user_id
-                    AND fp.first_pay_day <= w.cal_day
-              )
+              AND fp.user_id IS NOT NULL
         )::bigint AS active_users_with_payment_count
     FROM with_prev w
+    INNER JOIN date_window dw ON w.cal_day BETWEEN dw.range_start AND dw.range_end
+    LEFT JOIN first_payment fp
+        ON fp.user_id = w.user_id
+       AND fp.first_pay_day <= w.cal_day
     GROUP BY w.cal_day
 ),
--- Порог объёма: 100 Мбит (десятичных, 100×10⁶ бит) → байты.
 high_traffic_users_by_day AS (
     SELECT
-        cal_day,
+        w.cal_day,
         COUNT(*) FILTER (
-            WHERE total > (100::bigint * 1000000 / 8)
+            WHERE w.total > (100::bigint * 1000000 / 8)
         )::bigint AS users_cumulative_traffic_over_100_mbit_count
-    FROM user_total_by_day
-    GROUP BY cal_day
+    FROM with_prev w
+    INNER JOIN date_window dw ON w.cal_day BETWEEN dw.range_start AND dw.range_end
+    GROUP BY w.cal_day
 ),
 user_active_on_day AS (
     SELECT
-        cal_day,
-        user_id
-    FROM with_prev
-    WHERE total > COALESCE(prev_total, 0)
+        w.cal_day,
+        w.user_id
+    FROM with_prev w
+    INNER JOIN date_window dw ON w.cal_day BETWEEN dw.range_start AND dw.range_end
+    WHERE w.total > COALESCE(w.prev_total, 0)
 ),
 first_user_active_day AS (
     SELECT user_id, MIN(cal_day) AS first_cal
@@ -247,26 +249,64 @@ dev AS (
         (fd.first_at AT TIME ZONE 'Europe/Moscow')::date AS sd,
         COUNT(*)::bigint AS cnt
     FROM first_dev fd
+    INNER JOIN date_window dw
+        ON (fd.first_at AT TIME ZONE 'Europe/Moscow')::date
+           BETWEEN dw.range_start AND dw.range_end
     GROUP BY 1
 ),
 dense_calendar AS (
-    SELECT generate_series(w.window_start, w.msk_today, '1 day'::interval)::date AS cal_day
-    FROM msk_bounds w
+    SELECT generate_series(dw.range_start, dw.range_end, '1 day'::interval)::date AS cal_day
+    FROM date_window dw
 ),
--- Снимок на конец календарного дня Europe/Moscow: подписка активна (subscription_until >= cal_day),
--- только пользователи с известными registered_at и subscription_until.
+sub_starts AS (
+    SELECT
+        (u.registered_at AT TIME ZONE 'Europe/Moscow')::date AS d,
+        COUNT(*)::bigint AS delta
+    FROM users u
+    INNER JOIN qualified_users qu ON qu.id = u.id
+    WHERE u.registered_at IS NOT NULL
+      AND u.subscription_until IS NOT NULL
+    GROUP BY 1
+),
+sub_ends AS (
+    SELECT
+        (u.subscription_until::date + 1) AS d,
+        (-COUNT(*))::bigint AS delta
+    FROM users u
+    INNER JOIN qualified_users qu ON qu.id = u.id
+    WHERE u.registered_at IS NOT NULL
+      AND u.subscription_until IS NOT NULL
+    GROUP BY 1
+),
+sub_deltas AS (
+    SELECT d, SUM(delta)::bigint AS delta
+    FROM (
+        SELECT d, delta FROM sub_starts
+        UNION ALL
+        SELECT d, delta FROM sub_ends
+    ) x
+    GROUP BY d
+),
+sub_cumulative AS (
+    SELECT
+        d,
+        SUM(delta) OVER (ORDER BY d) AS running
+    FROM sub_deltas
+),
 subscription_active_by_day AS (
     SELECT
         dc.cal_day,
-        COUNT(u.id)::bigint AS users_with_active_subscription_count
+        COALESCE(
+            (
+                SELECT sc.running
+                FROM sub_cumulative sc
+                WHERE sc.d <= dc.cal_day
+                ORDER BY sc.d DESC
+                LIMIT 1
+            ),
+            0
+        )::bigint AS users_with_active_subscription_count
     FROM dense_calendar dc
-    LEFT JOIN users u
-        ON (u.registered_at AT TIME ZONE 'Europe/Moscow')::date <= dc.cal_day
-       AND u.subscription_until >= dc.cal_day
-       AND u.registered_at IS NOT NULL
-       AND u.subscription_until IS NOT NULL
-       AND u.id IN (SELECT id FROM qualified_users)
-    GROUP BY dc.cal_day
 ),
 merged AS (
     SELECT
