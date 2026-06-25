@@ -22,6 +22,7 @@ from app.core.time import (
     moscow_date_period_start_utc,
     moscow_today,
     msk_month_bounds,
+    utc_today,
 )
 from app.domain.models.users import (
     DailyPaymentsExpiryDayDetailResponse,
@@ -69,20 +70,25 @@ _DAILY_STATS_ROW_SQL = """
 
 
 def _rows_to_stats(rows: list) -> list[UserStatsByDateRow]:
+    def _opt_int(v: object) -> int | None:
+        if v is None:
+            return None
+        return int(v or 0)
+
     return [
         UserStatsByDateRow(
             stats_date=row[0],
             period_start_utc=None,
             users_count=int(row[1] or 0),
             users_with_traffic_count=int(row[2] or 0),
-            active_users_count=int(row[3] or 0),
+            active_users_count=_opt_int(row[3]),
             subscription_devices_users_count=int(row[4] or 0),
-            users_cumulative_traffic_over_100_mbit_count=int(row[5] or 0),
-            persistent_traffic_users_count=int(row[6] or 0),
+            users_cumulative_traffic_over_100_mbit_count=_opt_int(row[5]),
+            persistent_traffic_users_count=_opt_int(row[6]),
             users_with_payment_count=int(row[7] or 0),
             payments_first_count=int(row[8] or 0),
             payments_repeat_count=int(row[9] or 0),
-            active_users_with_payment_count=int(row[10] or 0),
+            active_users_with_payment_count=_opt_int(row[10]),
             users_with_active_subscription_count=int(row[11] or 0),
         )
         for row in rows
@@ -221,6 +227,7 @@ async def users_daily_stats(
         day_baseline_users_with_traffic_count=day_baseline[1] if day_baseline else None,
         day_baseline_subscription_devices_users_count=day_baseline[2] if day_baseline else None,
         day_baseline_users_with_payment_count=day_baseline[3] if day_baseline else None,
+        traffic_utc_today=utc_today(),
     )
 
 

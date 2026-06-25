@@ -124,14 +124,14 @@ BEGIN
         c.stats_date,
         c.users_count,
         c.users_with_traffic_count,
-        c.active_users_count,
+        COALESCE(c.active_users_count, 0),
         c.subscription_devices_users_count,
-        c.users_cumulative_traffic_over_100_mbit_count,
-        c.persistent_traffic_users_count,
+        COALESCE(c.users_cumulative_traffic_over_100_mbit_count, 0),
+        COALESCE(c.persistent_traffic_users_count, 0),
         c.users_with_payment_count,
         c.payments_first_count,
         c.payments_repeat_count,
-        c.active_users_with_payment_count,
+        COALESCE(c.active_users_with_payment_count, 0),
         c.users_with_active_subscription_count
     FROM fn_users_daily_stats_compute(p_from, p_to) c
     WHERE c.stats_date IS NOT NULL;

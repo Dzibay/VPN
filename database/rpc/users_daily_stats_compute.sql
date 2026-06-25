@@ -30,6 +30,7 @@ WITH
 msk_bounds AS (
     SELECT
         (NOW() AT TIME ZONE 'Europe/Moscow')::date AS msk_today,
+        (NOW() AT TIME ZONE 'UTC')::date AS utc_today,
         COALESCE(
             (
                 SELECT MIN((u.registered_at AT TIME ZONE 'Europe/Moscow')::date)
@@ -49,6 +50,7 @@ date_window AS (
     SELECT
         COALESCE(p_from, mb.window_start) AS range_start,
         COALESCE(p_to, mb.msk_today) AS range_end,
+        mb.utc_today,
         -- На один день раньше нужен для LAG (предыдущий снимок трафика).
         COALESCE(p_from, mb.window_start) - 1 AS traffic_lag_start
     FROM msk_bounds mb
@@ -370,20 +372,30 @@ merged AS (
         dc.cal_day AS stats_date,
         COALESCE(r.users_count, 0)::bigint AS users_count,
         COALESCE(uwt.cnt, 0)::bigint AS users_with_traffic_count,
-        COALESCE(ta.active_users_count, 0)::bigint AS active_users_count,
+        CASE
+            WHEN dc.cal_day > dw.utc_today THEN NULL
+            ELSE COALESCE(ta.active_users_count, 0)::bigint
+        END AS active_users_count,
         COALESCE(d.cnt, 0)::bigint AS subscription_devices_users_count,
-        COALESCE(ta.users_cumulative_traffic_over_100_mbit_count, 0)::bigint
-            AS users_cumulative_traffic_over_100_mbit_count,
-        COALESCE(p.persistent_traffic_users_count, 0)::bigint
-            AS persistent_traffic_users_count,
+        CASE
+            WHEN dc.cal_day > dw.utc_today THEN NULL
+            ELSE COALESCE(ta.users_cumulative_traffic_over_100_mbit_count, 0)::bigint
+        END AS users_cumulative_traffic_over_100_mbit_count,
+        CASE
+            WHEN dc.cal_day > dw.utc_today THEN NULL
+            ELSE COALESCE(p.persistent_traffic_users_count, 0)::bigint
+        END AS persistent_traffic_users_count,
         COALESCE(np.users_with_payment_count, 0)::bigint AS users_with_payment_count,
         COALESCE(pb.payments_first_count, 0)::bigint AS payments_first_count,
         COALESCE(pb.payments_repeat_count, 0)::bigint AS payments_repeat_count,
-        COALESCE(ta.active_users_with_payment_count, 0)::bigint
-            AS active_users_with_payment_count,
+        CASE
+            WHEN dc.cal_day > dw.utc_today THEN NULL
+            ELSE COALESCE(ta.active_users_with_payment_count, 0)::bigint
+        END AS active_users_with_payment_count,
         COALESCE(sub.users_with_active_subscription_count, 0)::bigint
             AS users_with_active_subscription_count
     FROM dense_calendar dc
+    CROSS JOIN date_window dw
     LEFT JOIN reg r ON r.sd = dc.cal_day
     LEFT JOIN users_with_traffic_by_reg_day uwt ON uwt.reg_day = dc.cal_day
     LEFT JOIN traffic_aggs ta ON ta.cal_day = dc.cal_day

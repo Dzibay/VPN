@@ -9,6 +9,7 @@ import {
   mskTodayIso,
   subtractCalendarDaysIso,
   utcHourFloorMs,
+  utcTodayIso,
 } from '../utils/mskDate.js'
 
 /** Сколько последних календарных дней МСК показывать на линейном графике (данные API — за весь срок). */
@@ -18,6 +19,16 @@ const CHART_VISIBLE_MSK_DAYS = 30
  * @typedef {'day' | 'hour'} StatsGranularity
  * @typedef {{ stats_date: string | null; period_start_utc?: string | null; users_count: number; users_with_traffic_count?: number; active_users_count?: number; subscription_devices_users_count?: number; users_cumulative_traffic_over_100_mbit_count?: number; persistent_traffic_users_count?: number; users_with_payment_count?: number; active_users_with_payment_count?: number; users_with_active_subscription_count?: number }} DailyStatsRow
  */
+
+/** Метрики по traffic_date (UTC): не показывать незавершённые/«будущие» дни на оси МСК. */
+function resolveTrafficSnapshotMetric(dayIso, raw, utcCap) {
+  const iso = String(dayIso).slice(0, 10)
+  const utcToday = String(utcCap || utcTodayIso()).slice(0, 10)
+  if (iso > utcToday) return null
+  if (iso >= mskTodayIso()) return null
+  if (raw == null) return null
+  return Number(raw) || 0
+}
 
 function isUndatedRow(r) {
   const noDate = r.stats_date == null || r.stats_date === ''
@@ -110,6 +121,7 @@ export function useUsersDailyStatsChart(dateRangeRef = null) {
 
   /** @type {import('vue').Ref<DailyStatsRow[]>} */
   const rows = ref([])
+  const trafficUtcToday = ref(/** @type {string | null} */ (null))
   const loading = ref(false)
   const error = ref(null)
 
@@ -158,23 +170,41 @@ export function useUsersDailyStatsChart(dateRangeRef = null) {
     const extraPayment = undatedPaymentCount.value
     const sorted = rows.value
       .filter((r) => hasChartBucket(r, gran))
-      .map((r) => ({
-        iso: bucketSortKey(r, gran),
+      .map((r) => {
+        const iso = bucketSortKey(r, gran)
+        return {
+        iso,
         periodStart: gran === 'hour' ? r.period_start_utc : null,
         dayUsers: Number(r.users_count) || 0,
         dayTraffic: Number(r.users_with_traffic_count) || 0,
-        dayActive: Number(r.active_users_count) || 0,
+        dayActive: resolveTrafficSnapshotMetric(
+          iso,
+          r.active_users_count,
+          trafficUtcToday.value,
+        ),
         dayDevices: Number(r.subscription_devices_users_count) || 0,
-        dayOver100Mbit: Number(r.users_cumulative_traffic_over_100_mbit_count) || 0,
-        dayPersistentTraffic: Number(r.persistent_traffic_users_count) || 0,
+        dayOver100Mbit: resolveTrafficSnapshotMetric(
+          iso,
+          r.users_cumulative_traffic_over_100_mbit_count,
+          trafficUtcToday.value,
+        ),
+        dayPersistentTraffic: resolveTrafficSnapshotMetric(
+          iso,
+          r.persistent_traffic_users_count,
+          trafficUtcToday.value,
+        ),
         dayPayment: Number(r.users_with_payment_count) || 0,
         dayPaymentsFirst: Number(r.payments_first_count) || 0,
         dayPaymentsRepeat: Number(r.payments_repeat_count) || 0,
-        dayActiveWithPayment:
-          Number(r.active_users_with_payment_count) || 0,
+        dayActiveWithPayment: resolveTrafficSnapshotMetric(
+          iso,
+          r.active_users_with_payment_count,
+          trafficUtcToday.value,
+        ),
         dayActiveSubscription:
           Number(r.users_with_active_subscription_count) || 0,
-      }))
+      }
+      })
       .filter((row) => row.iso != null)
       .sort((a, b) => String(a.iso).localeCompare(String(b.iso)))
 
@@ -313,7 +343,10 @@ export function useUsersDailyStatsChart(dateRangeRef = null) {
       return { today: '—' }
     }
     const row = rows.value.find((r) => String(r.stats_date) === mskTodayIso())
-    const todayVal = row ? Number(row.active_users_count) || 0 : 0
+    if (!row || row.active_users_count == null) {
+      return { today: '—' }
+    }
+    const todayVal = Number(row.active_users_count) || 0
     return {
       today: todayVal.toLocaleString('ru-RU'),
     }
@@ -324,9 +357,10 @@ export function useUsersDailyStatsChart(dateRangeRef = null) {
       return { today: '—' }
     }
     const row = rows.value.find((r) => String(r.stats_date) === mskTodayIso())
-    const todayVal = row
-      ? Number(row.active_users_with_payment_count) || 0
-      : 0
+    if (!row || row.active_users_with_payment_count == null) {
+      return { today: '—' }
+    }
+    const todayVal = Number(row.active_users_with_payment_count) || 0
     return {
       today: todayVal.toLocaleString('ru-RU'),
     }
@@ -389,6 +423,7 @@ export function useUsersDailyStatsChart(dateRangeRef = null) {
   )
 
   function pctOfUsers(value, totalUsers) {
+    if (value == null) return null
     const t = Number(totalUsers) || 0
     if (t <= 0) return 0
     return (Number(value) / t) * 100
@@ -638,16 +673,20 @@ export function useUsersDailyStatsChart(dateRangeRef = null) {
         )
       }
       if (label === 'Активные') {
+        if (p.dayActive == null) return ['Активных: день ещё не завершён (трафик UTC)']
         const pct = pctOfUsers(p.dayActive, base)
         const prevPct = prev ? pctOfUsers(prev.dayActive, prevBase) : 0
         return lineValueDeltaPct(
           'Активных',
           p.dayActive,
           pct,
-          pct - prevPct,
+          pct - (prevPct ?? 0),
         )
       }
       if (label === 'С оплатой активных') {
+        if (p.dayActiveWithPayment == null) {
+          return ['С оплатой активных: день ещё не завершён (трафик UTC)']
+        }
         const pct = pctOfUsers(p.dayActiveWithPayment, base)
         const prevPct = prev
           ? pctOfUsers(prev.dayActiveWithPayment, prevBase)
@@ -660,6 +699,9 @@ export function useUsersDailyStatsChart(dateRangeRef = null) {
         )
       }
       if (label === 'С трафиком > 100 Мбит') {
+        if (p.dayOver100Mbit == null) {
+          return ['С трафиком > 100 Мбит: день ещё не завершён (трафик UTC)']
+        }
         const pct = pctOfUsers(p.dayOver100Mbit, base)
         const prevPct = prev
           ? pctOfUsers(prev.dayOver100Mbit, prevBase)
@@ -672,6 +714,9 @@ export function useUsersDailyStatsChart(dateRangeRef = null) {
         )
       }
       if (label === 'Возвращающиеся активные') {
+        if (p.dayPersistentTraffic == null) {
+          return ['Возвращающиеся активные: день ещё не завершён (трафик UTC)']
+        }
         const pct = pctOfUsers(p.dayPersistentTraffic, base)
         const prevPct = prev
           ? pctOfUsers(prev.dayPersistentTraffic, prevBase)
@@ -728,11 +773,15 @@ export function useUsersDailyStatsChart(dateRangeRef = null) {
       )
     }
     if (label === 'Активные') {
+      if (p.dayActive == null) return ['Активных: день ещё не завершён (трафик UTC)']
       const prevA = prev?.dayActive ?? 0
       const dA = p.dayActive - prevA
       return lineValueDelta('Активных', p.dayActive, dA)
     }
     if (label === 'С оплатой активных') {
+      if (p.dayActiveWithPayment == null) {
+        return ['С оплатой активных: день ещё не завершён (трафик UTC)']
+      }
       const prevAp = prev?.dayActiveWithPayment ?? 0
       const dAp = p.dayActiveWithPayment - prevAp
       return lineValueDelta(
@@ -742,6 +791,9 @@ export function useUsersDailyStatsChart(dateRangeRef = null) {
       )
     }
     if (label === 'С трафиком > 100 Мбит') {
+      if (p.dayOver100Mbit == null) {
+        return ['С трафиком > 100 Мбит: день ещё не завершён (трафик UTC)']
+      }
       const prevH = prev?.dayOver100Mbit ?? 0
       const dH = p.dayOver100Mbit - prevH
       return lineValueDelta(
@@ -751,6 +803,9 @@ export function useUsersDailyStatsChart(dateRangeRef = null) {
       )
     }
     if (label === 'Возвращающиеся активные') {
+      if (p.dayPersistentTraffic == null) {
+        return ['Возвращающиеся активные: день ещё не завершён (трафик UTC)']
+      }
       const prevP = prev?.dayPersistentTraffic ?? 0
       const dP = p.dayPersistentTraffic - prevP
       return lineValueDelta(
@@ -792,6 +847,10 @@ export function useUsersDailyStatsChart(dateRangeRef = null) {
       }
       const data = await fetchJson(url)
       rows.value = Array.isArray(data.stats_by_date) ? data.stats_by_date : []
+      trafficUtcToday.value =
+        data.traffic_utc_today != null
+          ? String(data.traffic_utc_today).slice(0, 10)
+          : null
       if (g === 'hour') {
         hourBaselineUsers.value =
           Number(data.hour_baseline_users_count) || 0

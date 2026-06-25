@@ -109,11 +109,13 @@ class UserStatsByDateRow(BaseModel):
             "(включая без registered_at)."
         ),
     )
-    active_users_count: int = Field(
+    active_users_count: int | None = Field(
+        default=0,
         ge=0,
         description=(
             "При granularity=day — число пользователей, у которых на этот stats_date "
             "(по traffic_date, снимки в UTC-календаре) суммарный трафик вырос относительно предыдущего дня. "
+            "NULL — stats_date впереди текущего UTC-дня (ось МСК, трафик UTC). "
             "При granularity=hour всегда 0 (в БД нет почасовых снимков трафика)."
         ),
     )
@@ -125,22 +127,22 @@ class UserStatsByDateRow(BaseModel):
             "строго до конца часа по календарю Москвы."
         ),
     )
-    users_cumulative_traffic_over_100_mbit_count: int = Field(
+    users_cumulative_traffic_over_100_mbit_count: int | None = Field(
         default=0,
         ge=0,
         description=(
             "Только granularity=day: число пользователей, у которых на конец этого stats_date суммарный "
             "накопленный трафик (последний снимок на узел, как в метрике active_users_count) "
-            "строго больше 100 Мбит объёма (100×10⁶ бит → байты). При hour — 0."
+            "строго больше 100 Мбит объёма (100×10⁶ бит → байты). NULL — как у active_users_count. При hour — 0."
         ),
     )
-    persistent_traffic_users_count: int = Field(
+    persistent_traffic_users_count: int | None = Field(
         default=0,
         ge=0,
         description=(
             "Только granularity=day: пользователи с ростом суммарного трафика в этот день "
             "(как active_users_count), для которых это не первый такой «активный» день — "
-            "раньше уже был день с ростом. При hour — 0."
+            "раньше уже был день с ростом. NULL — как у active_users_count. При hour — 0."
         ),
     )
     users_with_payment_count: int = Field(
@@ -168,13 +170,13 @@ class UserStatsByDateRow(BaseModel):
             "в этот календарный день МСК. При hour — 0."
         ),
     )
-    active_users_with_payment_count: int = Field(
+    active_users_with_payment_count: int | None = Field(
         default=0,
         ge=0,
         description=(
             "Только granularity=day: как active_users_count, но только пользователи, у которых "
             "к концу этого stats_date уже была хотя бы одна оплата (первая оплата не позже этого дня). "
-            "При hour — 0."
+            "NULL — как у active_users_count. При hour — 0."
         ),
     )
     users_with_active_subscription_count: int = Field(
@@ -246,6 +248,13 @@ class UsersDailyStatsResponse(BaseModel):
     day_baseline_users_with_payment_count: int | None = Field(
         default=None,
         description="Только granularity=day при from: сумма users_with_payment_count до from.",
+    )
+    traffic_utc_today: date | None = Field(
+        default=None,
+        description=(
+            "Только granularity=day: текущий календарный день UTC (traffic_date). "
+            "Метрики active/persistent/over100 для stats_date строго после этой даты — NULL."
+        ),
     )
 
 
