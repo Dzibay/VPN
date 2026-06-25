@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -21,6 +22,37 @@ from app.core.startup_checks import validate_production_secrets
 log = logging.getLogger("app.main")
 
 
+async def _refresh_users_daily_stats_mv_if_empty() -> None:
+    """Первичное наполнение MV в фоне (WITH NO DATA нельзя читать до REFRESH)."""
+    from starlette.concurrency import run_in_threadpool
+
+    from sqlalchemy import text
+
+    from app.infrastructure.database.session import SessionLocal
+
+    def _run() -> None:
+        db = SessionLocal()
+        try:
+            populated = bool(
+                db.execute(
+                    text("SELECT fn_mv_users_daily_stats_is_populated()"),
+                ).scalar(),
+            )
+            if populated:
+                return
+            from app.infrastructure.database.stats_mv_refresh import (
+                refresh_users_daily_stats_mv_sync,
+            )
+
+            refresh_users_daily_stats_mv_sync()
+        except Exception:
+            log.exception("фоновый refresh mv_users_daily_stats не удался")
+        finally:
+            db.close()
+
+    await run_in_threadpool(_run)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     from app.infrastructure.database.schema import ensure_schema
@@ -32,6 +64,7 @@ async def lifespan(_app: FastAPI):
     # Здесь остался только ensure_schema (идемпотентно, быстро): запускается синхронно при
     # старте процесса и не зависит от порядка запуска контейнеров.
     ensure_schema()
+    asyncio.create_task(_refresh_users_daily_stats_mv_if_empty())
     async with AsyncSessionLocal() as session:
         await ensure_seo_pages_catalog(session)
         await session.commit()

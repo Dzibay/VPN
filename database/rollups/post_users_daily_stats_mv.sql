@@ -21,6 +21,22 @@ $$;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_users_daily_stats_date
     ON mv_users_daily_stats (stats_date);
 
+CREATE OR REPLACE FUNCTION fn_mv_users_daily_stats_is_populated ()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+AS $$
+SELECT COALESCE(
+    (
+        SELECT m.ispopulated
+        FROM pg_catalog.pg_matviews m
+        WHERE m.schemaname = 'public'
+          AND m.matviewname = 'mv_users_daily_stats'
+    ),
+    false
+);
+$$;
+
 CREATE OR REPLACE FUNCTION fn_refresh_mv_users_daily_stats ()
 RETURNS void
 LANGUAGE plpgsql
@@ -35,7 +51,7 @@ BEGIN
         RETURN;
     END IF;
 
-    IF NOT EXISTS (SELECT 1 FROM mv_users_daily_stats LIMIT 1) THEN
+    IF NOT fn_mv_users_daily_stats_is_populated() THEN
         REFRESH MATERIALIZED VIEW mv_users_daily_stats;
         RETURN;
     END IF;
@@ -52,18 +68,36 @@ RETURNS jsonb
 LANGUAGE sql
 STABLE
 AS $$
-SELECT jsonb_build_object(
-    'users_count',
-    COALESCE(SUM(m.users_count), 0)::bigint,
-    'users_with_traffic_count',
-    COALESCE(SUM(m.users_with_traffic_count), 0)::bigint,
-    'subscription_devices_users_count',
-    COALESCE(SUM(m.subscription_devices_users_count), 0)::bigint,
-    'users_with_payment_count',
-    COALESCE(SUM(m.users_with_payment_count), 0)::bigint
-)
-FROM mv_users_daily_stats m
-WHERE m.stats_date < p_before;
+SELECT CASE
+    WHEN fn_mv_users_daily_stats_is_populated() THEN (
+        SELECT jsonb_build_object(
+            'users_count',
+            COALESCE(SUM(m.users_count), 0)::bigint,
+            'users_with_traffic_count',
+            COALESCE(SUM(m.users_with_traffic_count), 0)::bigint,
+            'subscription_devices_users_count',
+            COALESCE(SUM(m.subscription_devices_users_count), 0)::bigint,
+            'users_with_payment_count',
+            COALESCE(SUM(m.users_with_payment_count), 0)::bigint
+        )
+        FROM mv_users_daily_stats m
+        WHERE m.stats_date < p_before
+    )
+    ELSE (
+        SELECT jsonb_build_object(
+            'users_count',
+            COALESCE(SUM(c.users_count), 0)::bigint,
+            'users_with_traffic_count',
+            COALESCE(SUM(c.users_with_traffic_count), 0)::bigint,
+            'subscription_devices_users_count',
+            COALESCE(SUM(c.subscription_devices_users_count), 0)::bigint,
+            'users_with_payment_count',
+            COALESCE(SUM(c.users_with_payment_count), 0)::bigint
+        )
+        FROM fn_users_daily_stats_compute(NULL, p_before - 1) c
+        WHERE c.stats_date IS NOT NULL
+    )
+END;
 $$;
 
 CREATE OR REPLACE FUNCTION rpc_users_daily_stats (
@@ -87,14 +121,19 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 AS $$
-WITH msk_bounds AS (
+WITH mv_ready AS (
+    SELECT fn_mv_users_daily_stats_is_populated() AS ok
+),
+msk_bounds AS (
     SELECT
         (NOW() AT TIME ZONE 'Europe/Moscow')::date AS msk_today,
         COALESCE(
-            (
-                SELECT MIN(stats_date)
-                FROM mv_users_daily_stats
-            ),
+            CASE
+                WHEN (SELECT ok FROM mv_ready) THEN (
+                    SELECT MIN(m.stats_date)
+                    FROM mv_users_daily_stats m
+                )
+            END,
             (
                 SELECT MIN((u.registered_at AT TIME ZONE 'Europe/Moscow')::date)
                 FROM users u
@@ -108,9 +147,6 @@ date_window AS (
         COALESCE(p_from, mb.window_start) AS range_start,
         COALESCE(p_to, mb.msk_today) AS range_end
     FROM msk_bounds mb
-),
-mv_ready AS (
-    SELECT EXISTS (SELECT 1 FROM mv_users_daily_stats LIMIT 1) AS ok
 ),
 from_mv AS (
     SELECT
@@ -147,7 +183,15 @@ dated_rows AS (
 undated AS (
     SELECT u.*
     FROM fn_users_daily_stats_compute(p_from, p_to) u
-    WHERE u.stats_date IS NULL
+    CROSS JOIN mv_ready r
+    WHERE NOT r.ok
+      AND u.stats_date IS NULL
+    UNION ALL
+    SELECT u.*
+    FROM fn_users_daily_stats_compute(p_from, p_to) u
+    CROSS JOIN mv_ready r
+    WHERE r.ok
+      AND u.stats_date IS NULL
 )
 SELECT *
 FROM (
