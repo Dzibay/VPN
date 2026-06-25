@@ -1,5 +1,11 @@
 import { computed, ref, watch } from 'vue'
 import { chartSeriesRgb, rgbTupleFromVar } from '../utils/adminChartTheme.js'
+import {
+  chartBarMoneyTooltipFooter,
+  chartLineCountTooltipLabel,
+  formatChartCountTick,
+  formatChartMoneyTick,
+} from '../utils/adminChartFormatters.js'
 import { fetchJson } from '../api/client.js'
 import {
   addCalendarDayIso,
@@ -122,10 +128,28 @@ function monthOverlapsRange(ym, fromIso, toIso) {
   return end >= fromIso && start <= toIso
 }
 
+/** Первая регистрация в диапазоне [from, to] по дневной сводке. */
+function firstRegistrationDayInRange(byDay, from, to) {
+  let first = null
+  for (const [d, n] of byDay) {
+    if (n <= 0 || d < from || d > to) continue
+    if (first == null || d < first) first = d
+  }
+  return first
+}
+
+/** Убирает ведущие бакеты с нулём (ось с первой регистрации). */
+function trimLeadingZeroBuckets(points) {
+  const i = points.findIndex((p) => p.value > 0)
+  if (i <= 0) return points
+  return points.slice(i)
+}
+
 /**
  * @param {import('vue').Ref<{ from: string; to: string }>} rangeRef
+ * @param {import('vue').Ref<boolean> | import('vue').ComputedRef<boolean>} [trimLeadingRef] — обрезка ведущих нулей (только «Всё время»)
  */
-export function useAdminSummaryCharts(rangeRef) {
+export function useAdminSummaryCharts(rangeRef, trimLeadingRef) {
   const loading = ref(false)
   const error = ref(null)
 
@@ -139,19 +163,21 @@ export function useAdminSummaryCharts(rangeRef) {
   const bucketLabel = ref('по дням')
 
   async function loadUsersSeries(from, to, mode) {
+    const trimLeading = trimLeadingRef?.value === true
+
     if (mode === 'hour') {
       const data = await fetchJson(
         `/api/users/daily-stats?granularity=hour&hour_day=${encodeURIComponent(from)}`,
       )
-      const rows = Array.isArray(data?.rows) ? data.rows : []
+      const rows = Array.isArray(data?.stats_by_date) ? data.stats_by_date : []
       const sorted = rows
         .filter((r) => r.period_start_utc)
         .slice()
         .sort((a, b) =>
           String(a.period_start_utc).localeCompare(String(b.period_start_utc)),
         )
-      let prev = Number(sorted[0]?.hour_baseline_users_count) || 0
-      return sorted.map((r) => {
+      let prev = Number(data?.hour_baseline_users_count) || 0
+      const hourPoints = sorted.map((r) => {
         const cur = Number(r.users_count) || 0
         const value = Math.max(0, cur - prev)
         prev = cur
@@ -161,10 +187,11 @@ export function useAdminSummaryCharts(rangeRef) {
           value,
         }
       })
+      return trimLeading ? trimLeadingZeroBuckets(hourPoints) : hourPoints
     }
 
     const data = await fetchJson('/api/users/daily-stats?granularity=day')
-    const rows = Array.isArray(data?.rows) ? data.rows : []
+    const rows = Array.isArray(data?.stats_by_date) ? data.stats_by_date : []
     /** @type {Map<string, number>} */
     const byDay = new Map()
     for (const r of rows) {
@@ -172,30 +199,34 @@ export function useAdminSummaryCharts(rangeRef) {
       if (d) byDay.set(d, Number(r.users_count) || 0)
     }
 
-    const daily = iterMskDays(from, to).map((iso) => ({
+    const firstReg = trimLeading ? firstRegistrationDayInRange(byDay, from, to) : null
+    const rangeStart = trimLeading && firstReg ? firstReg : from
+
+    const daily = iterMskDays(rangeStart, to).map((iso) => ({
       key: iso,
       label: formatMskCalendarDayShort(iso),
       value: byDay.get(iso) || 0,
     }))
 
-    if (mode === 'day') return daily
-
-    if (mode === 'week') {
-      return aggregateDaily(
-        daily,
-        (iso) => mskWeekStart(iso),
-        (weekStart) => {
-          const weekEnd = addCalendarDayIso(weekStart, 6)
-          return `${formatMskCalendarDayShort(weekStart)} – ${formatMskCalendarDayShort(weekEnd)}`
-        },
-      )
+    if (mode === 'day') {
+      return trimLeading ? trimLeadingZeroBuckets(daily) : daily
     }
 
-    return aggregateDaily(
+    if (mode === 'week') {
+      const points = aggregateDaily(
+        daily,
+        (iso) => mskWeekStart(iso),
+        (weekStart) => formatMskCalendarDayShort(weekStart),
+      )
+      return trimLeading ? trimLeadingZeroBuckets(points) : points
+    }
+
+    const monthPoints = aggregateDaily(
       daily,
       (iso) => iso.slice(0, 7),
       (ym) => formatMonthLabel(ym),
     )
+    return trimLeading ? trimLeadingZeroBuckets(monthPoints) : monthPoints
   }
 
   async function loadRevenueSeries(from, to, mode) {
@@ -240,14 +271,7 @@ export function useAdminSummaryCharts(rangeRef) {
           const t = Date.parse(`${iso}T00:00:00Z`) - daysSinceMon * 86400000
           return new Date(t).toISOString().slice(0, 10)
         },
-        (weekStart) => {
-          const end = new Date(
-            Date.parse(`${weekStart}T00:00:00Z`) + 6 * 86400000,
-          )
-            .toISOString()
-            .slice(0, 10)
-          return `${formatUtcDayLabel(weekStart)} – ${formatUtcDayLabel(end)}`
-        },
+        (weekStart) => formatUtcDayLabel(weekStart),
       )
     }
 
@@ -285,6 +309,9 @@ export function useAdminSummaryCharts(rangeRef) {
   }
 
   watch(rangeRef, () => void load(), { deep: true })
+  if (trimLeadingRef) {
+    watch(trimLeadingRef, () => void load())
+  }
 
   const usersLabels = computed(() => usersPoints.value.map((p) => p.label))
   const revenueLabels = computed(() => revenuePoints.value.map((p) => p.label))
@@ -331,37 +358,16 @@ export function useAdminSummaryCharts(rangeRef) {
     () => `Доход за период, ${bucketLabel.value}, валовая сумма, ₽`,
   )
 
-  function formatCountTick(v) {
-    const n = Number(v)
-    if (!Number.isFinite(n)) return ''
-    return n.toLocaleString('ru-RU')
-  }
-
-  function formatMoneyTick(v) {
-    const n = Number(v)
-    if (!Number.isFinite(n)) return ''
-    return n.toLocaleString('ru-RU', { maximumFractionDigits: 0 })
-  }
-
   /** @param {number} i */
   function usersTooltipTitle(i) {
     const p = usersPoints.value[i]
     return p ? p.label : ''
   }
 
-  /** @param {import('chart.js').TooltipItem<'line'>} ctx */
-  function usersTooltipLabel(ctx) {
-    return `${ctx.dataset.label}: ${Number(ctx.parsed.y).toLocaleString('ru-RU')}`
-  }
-
-  /** @param {import('chart.js').TooltipItem<'bar'>[]} items */
-  function revenueTooltipFooter(items) {
-    const first = items?.[0]
-    if (!first) return ''
-    const v = Number(first.raw)
-    if (!Number.isFinite(v)) return ''
-    return `Всего: ${v.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽`
-  }
+  const formatCountTick = formatChartCountTick
+  const formatMoneyTick = (v) => formatChartMoneyTick(v)
+  const usersTooltipLabel = chartLineCountTooltipLabel
+  const revenueTooltipFooter = chartBarMoneyTooltipFooter
 
   return {
     loading,

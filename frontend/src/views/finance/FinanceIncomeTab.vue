@@ -1,10 +1,15 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import AdminBarChart from '../../components/AdminBarChart.vue'
+import AdminBarChartPanel from '../../components/AdminBarChartPanel.vue'
 import AppRefreshButton from '../../components/AppRefreshButton.vue'
 import StateNote from '../../components/StateNote.vue'
 import { fetchJson } from '../../api/client.js'
 import { adminChartTheme } from '../../utils/adminChartTheme.js'
+import {
+  chartBarPositiveTooltipFilter,
+  chartBarStackedMoneyTooltipFooter,
+  formatChartMoneyTick,
+} from '../../utils/adminChartFormatters.js'
 
 /** @typedef {{ subscription: string[]; one_time: string[] }} FinanceBuckets */
 
@@ -231,29 +236,13 @@ const chartAriaLabel = computed(() =>
 )
 
 function financeFormatValueTick(v) {
-  const n = Number(v)
-  if (!Number.isFinite(n)) return ''
-  return n.toLocaleString('ru-RU', { maximumFractionDigits: 0 })
+  return formatChartMoneyTick(v)
 }
 
-/** @param {import('chart.js').TooltipItem<'bar'>[]} items */
-function financeTooltipFooter(items) {
-  const first = items?.[0]
-  if (!first) return ''
-  const idx = first.dataIndex
-  const chart = first.chart
-  let sum = 0
-  for (const ds of chart.data.datasets) {
-    const v = Number(ds.data[idx])
-    if (Number.isFinite(v)) sum += v
-  }
-  return `Всего: ${sum.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽`
-}
+const financeTooltipFooter = chartBarStackedMoneyTooltipFooter
 
 /** @param {import('chart.js').TooltipItem<'bar'>} item */
-function financeTooltipFilter(item) {
-  return Number(item.raw) > 0
-}
+const financeTooltipFilter = chartBarPositiveTooltipFilter
 
 async function load() {
   loading.value = true
@@ -300,7 +289,6 @@ onMounted(() => {
 
 <template>
   <div class="head-row">
-    <h2 class="section-heading">{{ sectionHeading }}</h2>
     <div class="head-actions">
       <div
         class="dist-toggle"
@@ -381,24 +369,25 @@ onMounted(() => {
       </section>
     </div>
 
-    <div v-if="!periodKeys.length" class="empty-box">
-      <p class="muted">Платежей пока нет — график появится после первых оплат.</p>
-    </div>
-    <AdminBarChart
-      v-else
-      preset="finance"
+    <AdminBarChartPanel
+      :title="sectionHeading"
       :aria-label="chartAriaLabel"
       :has-data="periodKeys.length > 0"
       :labels="financeChartLabels"
       :datasets="financeChartDatasets"
       stacked
-      value-axis-title="₽"
+      y-title="₽"
+      legend-style="box"
       :format-value-tick="financeFormatValueTick"
       :get-tooltip-footer="financeTooltipFooter"
       :tooltip-filter="financeTooltipFilter"
       :category-max-ticks="isDailyView ? 18 : 22"
       :category-max-rotation="isDailyView ? 55 : undefined"
-    />
+    >
+      <template #empty>
+        <p class="muted">Платежей пока нет — график появится после первых оплат.</p>
+      </template>
+    </AdminBarChartPanel>
   </template>
 </template>
 
@@ -407,15 +396,9 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 0.75rem;
   margin-bottom: 0.85rem;
-}
-
-.section-heading {
-  margin: 0;
-  font-size: 1.05rem;
-  color: var(--text-h);
 }
 
 .head-actions {

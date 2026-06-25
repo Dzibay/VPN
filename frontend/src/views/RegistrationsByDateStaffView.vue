@@ -8,6 +8,10 @@ import PayExpDayDetailPanel from '../components/PayExpDayDetailPanel.vue'
 import { fetchJson } from '../api/client.js'
 import { mapStaffChartEventsToMarkers } from '../utils/chartStaffMarkersPlugin.js'
 import { useUsersDailyStatsChart } from '../composables/useUsersDailyStatsChart.js'
+import {
+  chartLineCountTooltipLabel,
+  formatChartCountTick,
+} from '../utils/adminChartFormatters.js'
 import { chartSeriesRgb, rgba, rgbTupleFromVar } from '../utils/adminChartTheme.js'
 import {
   formatMskCalendarDayShort,
@@ -198,16 +202,9 @@ function dailyDeltaTooltipTitle(i) {
 }
 
 /** @param {import('chart.js').TooltipItem<'line'>} ctx */
-function dailyDeltaTooltipLabel(ctx) {
-  const v = ctx.parsed.y
-  return `${ctx.dataset.label}: ${Number(v).toLocaleString('ru-RU')}`
-}
+const dailyDeltaTooltipLabel = chartLineCountTooltipLabel
 
-function dailyDeltaFormatYTick(v) {
-  const n = Number(v)
-  if (!Number.isFinite(n)) return ''
-  return n.toLocaleString('ru-RU')
-}
+const dailyDeltaFormatYTick = formatChartCountTick
 
 /**
  * @typedef {{

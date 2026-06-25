@@ -1,10 +1,11 @@
 <script setup>
 /**
- * Панель со столбчатым графиком: заголовок + общий компонент AdminBarChart.
+ * Панель со столбчатым графиком: AdminChartPanelShell + AdminBarChart.
  */
 import AdminBarChart from './AdminBarChart.vue'
+import AdminChartPanelShell from './AdminChartPanelShell.vue'
 
-/** @typedef {{ label: string; data: number[]; rgb: [number, number, number] }} BarSeries */
+/** @typedef {{ label: string; data: number[]; rgb?: [number, number, number]; backgroundColor?: string; borderColor?: string; borderRadius?: number; maxBarThickness?: number; borderWidth?: number; stack?: string }} BarSeries */
 
 defineProps({
   ariaLabel: { type: String, required: true },
@@ -17,44 +18,47 @@ defineProps({
   labels: { type: Array, default: () => [] },
   /** @type {import('vue').PropType<BarSeries[]>} */
   datasets: { type: Array, default: () => [] },
-  /** Вертикальные отметки на оси X (плагин staffChartMarkers). */
   xMarkers: { type: Array, default: () => [] },
-  /** Подписи над вершиной stack (плагин barStackTopLabels). */
   stackTopLabels: { type: Array, default: () => [] },
-  /** Подписи по центру категории над столбцами (плагин categoryValueLabels). */
   categoryValueLabels: { type: Array, default: () => [] },
   yTitle: { type: String, default: '' },
   yGrace: { type: String, default: '8%' },
   stacked: { type: Boolean, default: false },
-  /** @type {import('vue').PropType<(items: import('chart.js').TooltipItem<'bar'>[]) => string | string[] | void>} */
+  preset: { type: String, default: 'finance' },
+  indexAxis: { type: String, default: 'x' },
+  valueAxisMin: { type: Number, default: undefined },
+  formatValueTick: { type: Function, default: null },
   getTooltipFooter: { type: Function, default: null },
-  /** @type {import('vue').PropType<(item: import('chart.js').TooltipItem<'bar'>) => boolean>} */
   tooltipFilter: { type: Function, default: null },
+  categoryMaxTicks: { type: Number, default: null },
+  categoryMaxRotation: { type: Number, default: null },
+  categoryMinRotation: { type: Number, default: null },
+  legendStyle: { type: String, default: 'point' },
   selectedCategoryIndex: { type: Number, default: -1 },
+  flush: { type: Boolean, default: false },
 })
 
 defineEmits(['categoryClick'])
 </script>
 
 <template>
-  <div class="admin-bar-chart-panel glass">
-    <div v-if="title || unitLabel" class="chart-head">
-      <h3 v-if="title" class="chart-title">{{ title }}</h3>
-      <span v-if="unitLabel" class="chart-unit">{{ unitLabel }}</span>
-    </div>
-    <p v-if="hint" class="chart-hint">{{ hint }}</p>
-
-    <p v-if="error" class="banner-err">{{ error }}</p>
-    <p v-else-if="loading" class="loading-line">Загрузка…</p>
-    <template v-else-if="!hasData">
-      <p class="empty-hint">Нет данных для графика.</p>
+  <AdminChartPanelShell
+    :title="title"
+    :unit-label="unitLabel"
+    :hint="hint"
+    :loading="loading"
+    :error="error"
+    :has-data="hasData"
+    :flush="flush"
+  >
+    <template #empty>
+      <slot name="empty">
+        <p class="empty-hint">Нет данных для графика.</p>
+      </slot>
     </template>
     <AdminBarChart
-      v-else
-      preset="finance"
+      :preset="preset"
       :aria-label="ariaLabel"
-      :loading="false"
-      :error="null"
       :has-data="hasData"
       :labels="labels"
       :datasets="datasets"
@@ -64,76 +68,17 @@ defineEmits(['categoryClick'])
       :value-axis-title="yTitle"
       :y-grace="yGrace"
       :stacked="stacked"
+      :index-axis="indexAxis"
+      :value-axis-min="valueAxisMin"
+      :format-value-tick="formatValueTick"
       :get-tooltip-footer="getTooltipFooter"
       :tooltip-filter="tooltipFilter"
+      :category-max-ticks="categoryMaxTicks"
+      :category-max-rotation="categoryMaxRotation"
+      :category-min-rotation="categoryMinRotation"
+      :legend-style="legendStyle"
       :selected-category-index="selectedCategoryIndex"
       @category-click="$emit('categoryClick', $event)"
     />
-  </div>
+  </AdminChartPanelShell>
 </template>
-
-<style scoped>
-.admin-bar-chart-panel {
-  padding: 1rem 1.15rem 1.15rem;
-  margin-bottom: 1rem;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--card-border);
-  box-shadow: var(--shadow-sm);
-}
-
-.chart-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.35rem;
-}
-
-.chart-title {
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 800;
-  font-family: var(--heading);
-  color: var(--text-h);
-}
-
-.chart-unit {
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.chart-hint {
-  margin: 0 0 0.85rem;
-  font-size: 0.82rem;
-  color: var(--muted);
-  line-height: 1.5;
-  max-width: 52rem;
-}
-
-.banner-err {
-  padding: 0.85rem 1.1rem;
-  border-radius: 14px;
-  background: var(--danger-soft);
-  border: 1px solid var(--danger);
-  color: var(--danger);
-  font-size: 0.9rem;
-  margin: 0;
-}
-
-.loading-line {
-  color: var(--muted);
-  font-size: 0.92rem;
-  margin: 0;
-}
-
-.empty-hint {
-  padding: 0.5rem 0 0;
-  color: var(--muted);
-  font-size: 0.9rem;
-  line-height: 1.5;
-  margin: 0;
-}
-</style>

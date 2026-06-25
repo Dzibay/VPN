@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import AdminHighlightListLink from '../components/AdminHighlightListLink.vue'
-import AdminBarChart from '../components/AdminBarChart.vue'
+import AdminBarChartPanel from '../components/AdminBarChartPanel.vue'
 import AdminLineChartPanel from '../components/AdminLineChartPanel.vue'
 import AdminPageHeader from '../components/AdminPageHeader.vue'
 import AdminPageShell from '../components/AdminPageShell.vue'
@@ -1915,31 +1915,23 @@ onMounted(() => {
     />
 
     <template v-if="!loading && bundle">
-      <div class="chart-panel glass">
-        <div class="chart-head">
-          <h3 class="chart-title">Распределение по узлам</h3>
-          <span class="chart-unit">МиБ</span>
-        </div>
-        <div
-          v-if="bundle.servers.length === 0"
-          class="empty-hint"
-        >
-          В базе нет серверов.
-        </div>
-        <AdminBarChart
-          v-else
-          preset="finance"
-          aria-label="Распределение трафика по узлам, МиБ"
-          :has-data="serverBarLabels.length > 0"
-          :labels="serverBarLabels"
-          :datasets="serverBarDatasets"
-          stacked
-          index-axis="y"
-          value-axis-title="МиБ"
-          :value-axis-min="0"
-          :format-value-tick="formatServerBarValueTick"
-        />
-      </div>
+      <AdminBarChartPanel
+        title="Распределение по узлам"
+        unit-label="МиБ"
+        aria-label="Распределение трафика по узлам, МиБ"
+        :has-data="serverBarLabels.length > 0"
+        :labels="serverBarLabels"
+        :datasets="serverBarDatasets"
+        stacked
+        index-axis="y"
+        y-title="МиБ"
+        :value-axis-min="0"
+        :format-value-tick="formatServerBarValueTick"
+      >
+        <template #empty>
+          <p class="empty-hint">В базе нет серверов.</p>
+        </template>
+      </AdminBarChartPanel>
     </template>
   </AdminPageShell>
 </template>
@@ -2418,30 +2410,11 @@ tr.referee-row-active-today {
   color: var(--muted);
   font-size: 0.92rem;
 }
-.chart-panel {
-  padding: 1rem 1.15rem 1.15rem;
-  margin-bottom: 1.15rem;
-}
-.chart-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.35rem;
-}
-.chart-title {
+.empty-hint {
   margin: 0;
-  font-size: 1.05rem;
-  font-weight: 800;
-  font-family: var(--heading);
-  color: var(--text-h);
-}
-.chart-unit {
-  font-size: 0.75rem;
-  font-weight: 700;
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 .chart-hint {
   margin: 0 0 0.85rem;

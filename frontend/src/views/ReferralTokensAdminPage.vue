@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AdminHighlightListLink from '../components/AdminHighlightListLink.vue'
+import AdminChartsGrid from '../components/AdminChartsGrid.vue'
 import AdminLineChartPanel from '../components/AdminLineChartPanel.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import AdminSortTh from '../components/AdminSortTh.vue'
@@ -13,6 +14,10 @@ import StatWidget from '../components/StatWidget.vue'
 import { fetchJson, sitePublicUrl } from '../api/client.js'
 import { rgbTupleFromVar } from '../utils/adminChartTheme.js'
 import { useTableSort } from '../utils/adminTableSort.js'
+import {
+  chartLineCountTooltipLabel,
+  formatChartCountTick,
+} from '../utils/adminChartFormatters.js'
 import { formatMskApiDateTime, formatMskCalendarDayShort } from '../utils/mskDate.js'
 
 const route = useRoute()
@@ -63,12 +68,6 @@ const SOURCE_LINE_RGB = {
   direct_site: [167, 139, 250],
   channel_links: [52, 211, 153],
   user_referrals: [245, 158, 11],
-}
-
-function formatRegChartYTick(v) {
-  const n = Number(v)
-  if (!Number.isFinite(n)) return '—'
-  return n.toLocaleString('ru-RU')
 }
 
 const tokenRegLabels = computed(() =>
@@ -126,12 +125,6 @@ function tokenRegTooltipTitle(i) {
   const d = tokenRegBundle.value?.dates?.[i]
   if (!d) return tokenRegLabels.value[i] ?? ''
   return `${formatMskCalendarDayShort(d)} (МСК)`
-}
-
-/** @param {import('chart.js').TooltipItem<'line'>} ctx */
-function tokenRegTooltipLabel(ctx) {
-  const raw = ctx.parsed.y
-  return `${ctx.dataset.label}: ${formatRegChartYTick(raw)}`
 }
 
 async function loadTokenRegChart() {
@@ -201,12 +194,6 @@ function sourceRegTooltipTitle(i) {
   const d = sourceRegBundle.value?.dates?.[i]
   if (!d) return sourceRegLabels.value[i] ?? ''
   return `${formatMskCalendarDayShort(d)} (МСК)`
-}
-
-/** @param {import('chart.js').TooltipItem<'line'>} ctx */
-function sourceRegTooltipLabel(ctx) {
-  const raw = ctx.parsed.y
-  return `${ctx.dataset.label}: ${formatRegChartYTick(raw)}`
 }
 
 async function loadSourceRegChart() {
@@ -512,7 +499,7 @@ onMounted(() => {
     </template>
 
     <section class="stats widgets-row" aria-live="polite">
-      <div class="widgets-grid">
+      <div class="widgets-grid widgets-grid--cols-4">
         <StatWidget title="Прямой трафик" aria-label="Прямой трафик без реферальной ссылки">
           <p class="stat-widget-value">
             {{
@@ -617,7 +604,7 @@ onMounted(() => {
       <p v-if="copyHint" class="copy-hint">{{ copyHint }}</p>
     </section>
 
-    <section class="token-reg-chart" aria-label="Графики регистраций">
+    <section class="token-reg-section" aria-label="Графики регистраций">
       <div class="chart-toolbar">
         <label class="days-field">
           <span class="days-label">Период</span>
@@ -632,51 +619,52 @@ onMounted(() => {
           </select>
         </label>
       </div>
-      <AdminLineChartPanel
-        title="Регистрации по токенам"
-        unit-label="рег. / сутки"
-        :hint="tokenRegChartHint"
-        :aria-label="tokenRegAriaLabel"
-        :loading="tokenRegLoading"
-        :error="tokenRegError"
-        :has-data="tokenRegHasData"
-        y-title="Регистрации за сутки"
-        y-grace="8%"
-        :labels="tokenRegLabels"
-        :datasets="tokenRegDatasets"
-        :format-y-tick="formatRegChartYTick"
-        :get-tooltip-title="tokenRegTooltipTitle"
-        :get-tooltip-label="tokenRegTooltipLabel"
-      >
-        <template #empty>
-          <p class="empty-hint">
-            Нет регистраций по токенам с более чем 10 регистрациями за выбранный период.
-          </p>
-        </template>
-      </AdminLineChartPanel>
-      <AdminLineChartPanel
-        class="source-reg-chart-panel"
-        title="Регистрации по источникам"
-        unit-label="рег. / сутки"
-        :hint="sourceRegChartHint"
-        :aria-label="sourceRegAriaLabel"
-        :loading="sourceRegLoading"
-        :error="sourceRegError"
-        :has-data="sourceRegHasData"
-        y-title="Регистрации за сутки"
-        y-grace="8%"
-        :labels="sourceRegLabels"
-        :datasets="sourceRegDatasets"
-        :format-y-tick="formatRegChartYTick"
-        :get-tooltip-title="sourceRegTooltipTitle"
-        :get-tooltip-label="sourceRegTooltipLabel"
-      >
-        <template #empty>
-          <p class="empty-hint">
-            Нет регистраций по источникам трафика за выбранный период.
-          </p>
-        </template>
-      </AdminLineChartPanel>
+      <AdminChartsGrid class="admin-charts-grid--no-top-margin">
+        <AdminLineChartPanel
+          title="Регистрации по токенам"
+          unit-label="рег. / сутки"
+          :hint="tokenRegChartHint"
+          :aria-label="tokenRegAriaLabel"
+          :loading="tokenRegLoading"
+          :error="tokenRegError"
+          :has-data="tokenRegHasData"
+          y-title="Регистрации за сутки"
+          y-grace="8%"
+          :labels="tokenRegLabels"
+          :datasets="tokenRegDatasets"
+          :format-y-tick="formatChartCountTick"
+          :get-tooltip-title="tokenRegTooltipTitle"
+          :get-tooltip-label="chartLineCountTooltipLabel"
+        >
+          <template #empty>
+            <p class="empty-hint">
+              Нет регистраций по токенам с более чем 10 регистрациями за выбранный период.
+            </p>
+          </template>
+        </AdminLineChartPanel>
+        <AdminLineChartPanel
+          title="Регистрации по источникам"
+          unit-label="рег. / сутки"
+          :hint="sourceRegChartHint"
+          :aria-label="sourceRegAriaLabel"
+          :loading="sourceRegLoading"
+          :error="sourceRegError"
+          :has-data="sourceRegHasData"
+          y-title="Регистрации за сутки"
+          y-grace="8%"
+          :labels="sourceRegLabels"
+          :datasets="sourceRegDatasets"
+          :format-y-tick="formatChartCountTick"
+          :get-tooltip-title="sourceRegTooltipTitle"
+          :get-tooltip-label="chartLineCountTooltipLabel"
+        >
+          <template #empty>
+            <p class="empty-hint">
+              Нет регистраций по источникам трафика за выбранный период.
+            </p>
+          </template>
+        </AdminLineChartPanel>
+      </AdminChartsGrid>
     </section>
 
     <div
@@ -1027,21 +1015,6 @@ onMounted(() => {
 .stats {
   margin-bottom: 1rem;
 }
-.widgets-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-}
-@media (min-width: 1100px) {
-  .widgets-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-}
-@media (max-width: 640px) {
-  .widgets-grid {
-    grid-template-columns: 1fr;
-  }
-}
 /* Здесь split идёт после meta-текста — нужен верхний отступ (в admin-ui.css он 0). */
 .stat-widget-split {
   margin-top: 0.75rem;
@@ -1057,11 +1030,8 @@ onMounted(() => {
   color: var(--accent);
   font-weight: 600;
 }
-.token-reg-chart {
+.token-reg-section {
   margin-bottom: 1rem;
-}
-.source-reg-chart-panel {
-  margin-top: 0.75rem;
 }
 .chart-toolbar {
   display: flex;
@@ -1091,13 +1061,6 @@ onMounted(() => {
   color: var(--text);
   font: inherit;
   font-size: 0.88rem;
-}
-.empty-hint {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.9rem;
-  line-height: 1.5;
-  max-width: 42rem;
 }
 .table-filter-hint {
   margin: 0 0 0.65rem;

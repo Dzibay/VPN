@@ -408,7 +408,7 @@ onMounted(() => {
 <template>
   <AdminStaffShell title="Аналитика пользователей">
     <section class="stats widgets-row" aria-live="polite">
-      <div class="widgets-grid">
+      <div class="widgets-grid widgets-grid--cols-2">
         <StatWidget title="Пользователи" aria-label="Число пользователей">
           <p class="stat-widget-value">
             {{ loading ? '…' : error ? '—' : userCountWidget.totalDisplay }}
@@ -860,17 +860,6 @@ onMounted(() => {
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--muted);
-}
-
-.widgets-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-}
-@media (max-width: 640px) {
-  .widgets-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 .ref-id-cell {

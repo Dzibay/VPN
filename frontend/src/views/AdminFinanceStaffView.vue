@@ -1,13 +1,15 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import AdminPeriodPresets from '../components/AdminPeriodPresets.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
 import FinanceOverviewTab from './finance/FinanceOverviewTab.vue'
 import FinanceIncomeTab from './finance/FinanceIncomeTab.vue'
 import FinanceExpensesTab from './finance/FinanceExpensesTab.vue'
 import FinanceOperationsTab from './finance/FinanceOperationsTab.vue'
 import FinanceSettingsTab from './finance/FinanceSettingsTab.vue'
-import { mskTodayIso } from '../utils/mskDate.js'
+import { useMskPeriodRange } from '../composables/useMskPeriodRange.js'
+import { FINANCE_PERIOD_PRESETS } from '../utils/mskPeriodRange.js'
 
 const TABS = [
   { key: 'overview', label: 'Обзор' },
@@ -31,76 +33,15 @@ function selectTab(key) {
   router.replace({ query: { ...route.query, tab: key } })
 }
 
-// --- период (для вкладки «Обзор») ---
-const PERIOD_PRESETS = [
-  { key: 'month', label: 'Этот месяц' },
-  { key: 'prev_month', label: 'Прошлый месяц' },
-  { key: 'quarter', label: 'Квартал' },
-  { key: 'year', label: 'Этот год' },
-  { key: 'all', label: 'Всё время' },
-  { key: 'custom', label: 'Период' },
-]
-
-const periodPreset = ref('year')
-const customFrom = ref('')
-const customTo = ref('')
-
-// Период считается по календарю Москвы (как RPC выручки и staff-аналитика),
-// а не по TZ браузера: иначе у клиента в другом поясе «этот месяц» съезжает.
-const pad2 = (n) => String(n).padStart(2, '0')
-
-function mskParts() {
-  const [y, m, d] = mskTodayIso().split('-').map(Number)
-  return { y, m, d }
-}
-function monthStart(y, m) {
-  return `${y}-${pad2(m)}-01`
-}
-function lastDayOfPrevMonth(y, m) {
-  // m — 1-based текущий месяц; день 0 текущего месяца = последний день предыдущего.
-  const dt = new Date(Date.UTC(y, m - 1, 0))
-  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`
-}
-
-const computedRange = computed(() => {
-  const { y, m } = mskParts()
-  const today = mskTodayIso()
-  switch (periodPreset.value) {
-    case 'month':
-      return { from: monthStart(y, m), to: today }
-    case 'prev_month': {
-      const py = m === 1 ? y - 1 : y
-      const pm = m === 1 ? 12 : m - 1
-      return { from: monthStart(py, pm), to: lastDayOfPrevMonth(y, m) }
-    }
-    case 'quarter': {
-      const qStart = Math.floor((m - 1) / 3) * 3 + 1
-      return { from: monthStart(y, qStart), to: today }
-    }
-    case 'all':
-      return { from: '2020-01-01', to: today }
-    case 'custom':
-      return {
-        from: customFrom.value || monthStart(y, 1),
-        to: customTo.value || today,
-      }
-    case 'year':
-    default:
-      return { from: monthStart(y, 1), to: today }
-  }
-})
+const {
+  periodPreset,
+  customFrom,
+  customTo,
+  computedRange,
+} = useMskPeriodRange(FINANCE_PERIOD_PRESETS, 'year')
 
 const rangeFrom = computed(() => computedRange.value.from)
 const rangeTo = computed(() => computedRange.value.to)
-
-watch(periodPreset, (p) => {
-  if (p === 'custom') {
-    const { y } = mskParts()
-    if (!customFrom.value) customFrom.value = monthStart(y, 1)
-    if (!customTo.value) customTo.value = mskTodayIso()
-  }
-})
-
 const showPeriod = computed(() => activeTab.value === 'overview')
 </script>
 
@@ -120,25 +61,14 @@ const showPeriod = computed(() => activeTab.value === 'overview')
         </button>
       </nav>
 
-      <div v-if="showPeriod" class="period-row">
-        <div class="period-presets" role="group" aria-label="Период">
-          <button
-            v-for="p in PERIOD_PRESETS"
-            :key="p.key"
-            type="button"
-            class="period-btn"
-            :class="{ 'period-btn--active': periodPreset === p.key }"
-            @click="periodPreset = p.key"
-          >
-            {{ p.label }}
-          </button>
-        </div>
-        <div v-if="periodPreset === 'custom'" class="period-custom">
-          <input v-model="customFrom" type="date" class="period-date" aria-label="С" />
-          <span class="period-sep">—</span>
-          <input v-model="customTo" type="date" class="period-date" aria-label="По" />
-        </div>
-      </div>
+      <AdminPeriodPresets
+        v-if="showPeriod"
+        v-model="periodPreset"
+        v-model:custom-from="customFrom"
+        v-model:custom-to="customTo"
+        :presets="FINANCE_PERIOD_PRESETS"
+        variant="segmented"
+      />
     </template>
 
     <FinanceOverviewTab v-if="activeTab === 'overview'" :from="rangeFrom" :to="rangeTo" />
@@ -150,7 +80,6 @@ const showPeriod = computed(() => activeTab.value === 'overview')
 </template>
 
 <style scoped>
-/* Сегментированная панель — на всю ширину, без скруглений и зазоров (не как pill admin-tabs). */
 .subtabs {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -226,61 +155,5 @@ const showPeriod = computed(() => activeTab.value === 'overview')
   .subtab:nth-child(2) {
     border-bottom: 1px solid var(--card-border);
   }
-}
-
-.period-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.65rem;
-  margin-bottom: 1.1rem;
-}
-.period-presets {
-  display: inline-flex;
-  flex-wrap: wrap;
-  border-radius: 10px;
-  border: 1px solid var(--card-border);
-  overflow: hidden;
-  background: var(--surface);
-}
-.period-btn {
-  margin: 0;
-  padding: 0.4rem 0.7rem;
-  border: none;
-  background: transparent;
-  font: inherit;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--muted);
-  cursor: pointer;
-  white-space: nowrap;
-  border-right: 1px solid var(--card-border);
-}
-.period-btn:last-child {
-  border-right: none;
-}
-.period-btn:hover {
-  color: var(--text-h);
-  background: rgba(127, 127, 127, 0.08);
-}
-.period-btn--active {
-  color: var(--text-h);
-  background: rgba(88, 214, 141, 0.14);
-}
-.period-custom {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-}
-.period-date {
-  font: inherit;
-  padding: 0.4rem 0.55rem;
-  border-radius: 10px;
-  border: 1px solid var(--card-border);
-  background: var(--surface);
-  color: var(--text-h);
-}
-.period-sep {
-  color: var(--muted);
 }
 </style>

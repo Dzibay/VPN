@@ -1,0 +1,100 @@
+/* Выбор периода в админке (Сводка, Финансы). */
+.admin-period-row {
+  margin: 0 0 0.85rem;
+}
+
+.admin-period-row--spaced {
+  margin-bottom: 1.1rem;
+}
+
+.admin-period-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.admin-period-presets--segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.admin-period-btn {
+  margin: 0;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 92%, black);
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.admin-period-presets--segmented .admin-period-btn {
+  padding: 0.4rem 0.7rem;
+  border: none;
+  border-radius: 0;
+  border-right: 1px solid var(--card-border);
+  background: transparent;
+  white-space: nowrap;
+}
+
+.admin-period-presets--segmented .admin-period-btn:last-child {
+  border-right: none;
+}
+
+.admin-period-btn:hover:not(.admin-period-btn--active) {
+  color: var(--text-h);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--card-border));
+}
+
+.admin-period-presets--segmented .admin-period-btn:hover:not(.admin-period-btn--active) {
+  border-color: transparent;
+  background: rgba(127, 127, 127, 0.08);
+}
+
+.admin-period-btn--active {
+  color: var(--text-h);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--card-border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+
+.admin-period-presets--segmented .admin-period-btn--active {
+  border-color: transparent;
+  background: rgba(88, 214, 141, 0.14);
+}
+
+.admin-period-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+}
+
+.admin-period-row:not(.admin-period-row--stacked) .admin-period-custom {
+  margin-top: 0;
+  margin-left: 0.25rem;
+}
+
+.admin-period-date {
+  font: inherit;
+  padding: 0.4rem 0.55rem;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+  color: var(--text-h);
+}
+
+.admin-period-sep {
+  color: var(--muted);
+}

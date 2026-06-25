@@ -4,6 +4,8 @@ import './style.css'
 import './styles/admin-ui.css'
 import './styles/admin-table.css'
 import './styles/admin-chart-wrap.css'
+import './styles/admin-chart-panel.css'
+import './styles/admin-period-presets.css'
 import App from './App.vue'
 import {
   ensureIpBlockStatus,
