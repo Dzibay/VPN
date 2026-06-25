@@ -159,6 +159,7 @@ async def create_server(
     server = Server(
         name=body.name,
         host=body.host,
+        ssh_user=body.ssh_user,
         port=body.port,
         country=body.country,
         load_percent=body.load_percent,

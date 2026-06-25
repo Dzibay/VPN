@@ -188,6 +188,7 @@ const clearTelegramBusy = ref(false)
 
 const formName = ref('')
 const formHost = ref('')
+const formSshUser = ref('root')
 const formPort = ref(443)
 const formCountry = ref('')
 const formActive = ref(true)
@@ -559,6 +560,7 @@ function openModal() {
   } else {
     formName.value = ''
     formHost.value = ''
+    formSshUser.value = 'root'
     formPort.value = 443
     formCountry.value = ''
     formActive.value = true
@@ -584,6 +586,7 @@ function openEditServer(s) {
   serverModalTab.value = 'general'
   formName.value = s.name ?? ''
   formHost.value = s.host
+  formSshUser.value = s.ssh_user || 'root'
   formPort.value = s.port
   formCountry.value = s.country ?? ''
   formActive.value = Boolean(s.is_active)
@@ -1107,6 +1110,7 @@ async function submitSaveServer() {
       const createBody = {
         name: String(formName.value ?? '').trim() || null,
         host: String(formHost.value ?? '').trim(),
+        ssh_user: String(formSshUser.value ?? '').trim() || 'root',
         port: normalizePort(formPort.value),
         country,
         is_active: formActive.value,
@@ -2659,6 +2663,22 @@ watch(formIsCascadeRuEntry, (v) => {
               <div v-else class="field field-readonly">
                 <span>Host:порт</span>
                 <p class="readonly-value mono">{{ formHost }}:{{ formPort }}</p>
+              </div>
+              <label v-if="editingServerId == null" class="field">
+                <span>SSH-пользователь</span>
+                <input
+                  v-model="formSshUser"
+                  type="text"
+                  required
+                  autocomplete="off"
+                  autocapitalize="none"
+                  spellcheck="false"
+                  placeholder="root"
+                />
+              </label>
+              <div v-else class="field field-readonly">
+                <span>SSH-пользователь</span>
+                <p class="readonly-value mono">{{ formSshUser }}</p>
               </div>
               <label v-if="editingServerId == null" class="field">
                 <span>Порт inbound</span>

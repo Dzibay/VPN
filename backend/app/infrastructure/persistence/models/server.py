@@ -11,6 +11,7 @@ class Server(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     name: Mapped[str | None] = mapped_column(Text, nullable=True)
     host: Mapped[str] = mapped_column(Text, nullable=False)
+    ssh_user: Mapped[str] = mapped_column(Text, nullable=False, default="root")
     port: Mapped[int] = mapped_column(Integer, nullable=False, default=443)
     country: Mapped[str] = mapped_column(Text, nullable=False, default="")
     load_percent: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

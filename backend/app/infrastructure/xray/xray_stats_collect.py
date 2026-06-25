@@ -31,7 +31,7 @@ from app.domain.models.server_traffic import (
     ServerUserTrafficRow,
     UserTrafficCollectDetail,
 )
-from app.infrastructure.ssh.provision_ssh import ssh_run_bash_lc
+from app.infrastructure.ssh.provision_ssh import server_ssh_user, ssh_run_bash_lc
 
 log = logging.getLogger("app.xray_stats")
 
@@ -193,10 +193,9 @@ def _collect_base_detail(server: Server) -> UserTrafficCollectDetail:
         f"{shlex.quote(bin_path)} api statsquery --server={listen} "
         f"</dev/null 2>&1"
     )
-    fb = (settings.provision_ssh_user_fallback or "").strip()
-    user_hint = (settings.provision_ssh_user or "root") + (f" → {fb}" if fb else "")
+    ssh_u = server_ssh_user(server)
     return UserTrafficCollectDetail(
-        ssh_target=f"{user_hint}@{server.host}",
+        ssh_target=f"{ssh_u}@{server.host}",
         ssh_port=port_ssh,
         xray_api_listen=listen,
         remote_command=remote,
@@ -240,12 +239,13 @@ def collect_xray_traffic_for_server(
     key_path = (settings.provision_ssh_key_path or "").strip()
     key_hint = os.path.basename(key_path) if key_path else "agent/по умолчанию"
     t0 = time.monotonic()
+    ssh_u = server_ssh_user(server)
     log.info(
         "SSH statsquery: старт server_id=%s host=%s ssh_port=%s user=%s timeout=%.0fs key=%s remote_cmd=%s",
         server.id,
         server.host,
         settings.provision_ssh_port,
-        settings.provision_ssh_user,
+        ssh_u,
         ssh_timeout,
         key_hint,
         remote[:500] + ("…" if len(remote) > 500 else ""),
@@ -272,7 +272,7 @@ def collect_xray_traffic_for_server(
             _preview(partial_err, 2000),
         )
         h = server.host
-        u = settings.provision_ssh_user
+        u = ssh_u
         p = settings.provision_ssh_port
         return (
             f"SSH: таймаут {ssh_timeout:.0f} с (вся сессия). "

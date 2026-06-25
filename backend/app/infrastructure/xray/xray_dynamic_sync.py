@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, settings as default_settings
 from app.infrastructure.persistence.models.server import Server
-from app.infrastructure.ssh.provision_ssh import ssh_run_script_with_user_fallback
+from app.infrastructure.ssh.provision_ssh import ssh_run_script
 from app.infrastructure.xray.xray_clients import vless_client_entries_for_server
 
 log = logging.getLogger("app.xray_dynamic_sync")
@@ -163,7 +163,7 @@ if [[ -z "${{BIN}}" || ! -x "${{BIN}}" ]]; then BIN=/usr/local/bin/xray; fi
         timeout=timeout_s,
     )
 
-    rc, stdout_t, stderr_t, _user = ssh_run_script_with_user_fallback(
+    rc, stdout_t, stderr_t, _user = ssh_run_script(
         server,
         probe_script,
         timeout=ssh_timeout,
@@ -223,7 +223,7 @@ if [[ -z "${{BIN}}" || ! -x "${{BIN}}" ]]; then BIN=/usr/local/bin/xray; fi
         chunks.append(f"rm -f {tf}")
 
     apply_script = "\n".join(chunks) + "\n"
-    arc, aout, aerr, ssh_u = ssh_run_script_with_user_fallback(
+    arc, aout, aerr, ssh_u = ssh_run_script(
         server,
         apply_script,
         timeout=ssh_timeout,

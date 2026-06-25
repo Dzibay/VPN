@@ -1,3 +1,8 @@
+-- Миграция для существующих инстансов.
+
+ALTER TABLE servers
+    ADD COLUMN IF NOT EXISTS ssh_user TEXT NOT NULL DEFAULT 'root';
+
 -- Миграция для существующих инстансов: баланс и политика fixed_first_payment_balance.
 
 -- ALTER TABLE users

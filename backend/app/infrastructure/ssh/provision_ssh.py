@@ -18,53 +18,10 @@ from app.infrastructure.persistence.models.server import Server
 log = logging.getLogger("app.provision_ssh")
 
 
-def provision_ssh_user_candidates() -> list[str]:
-    """
-    Порядок: сначала PROVISION_SSH_USER, затем PROVISION_SSH_USER_FALLBACK (если задан и не дублирует).
-    """
-    primary = (settings.provision_ssh_user or "root").strip() or "root"
-    out: list[str] = [primary]
-    fb = (settings.provision_ssh_user_fallback or "").strip()
-    if fb and fb != primary:
-        out.append(fb)
-    return out
-
-
-def _ssh_looks_like_auth_failure(rc: int, stdout: str, stderr: str) -> bool:
-    """Стоит ли пробовать fallback-пользователя (только типичные отказы в ключе/логине)."""
-    if rc not in (255, 1):
-        return False
-    blob = f"{stdout}\n{stderr}".lower()
-    if "no matching host key" in blob:
-        return False
-    if "connection refused" in blob or "could not resolve hostname" in blob:
-        return False
-    if "permission denied" in blob:
-        return True
-    if "too many authentication failures" in blob:
-        return True
-    return False
-
-
-def _ssh_provider_rejects_user(stdout: str, stderr: str) -> bool:
-    """
-    Облачные образы (Hetzner и др.): вместо shell печатают в stdout, что нельзя
-    зайти под root — нужен другой логин. rc бывает 142 и т.д., не 255.
-    """
-    blob = f"{stdout}\n{stderr}".lower()
-    if "please login as" in blob and "rather than" in blob:
-        return True
-    return False
-
-
-def _ssh_worth_next_user(rc: int, stdout: str, stderr: str) -> bool:
-    if rc == 0:
-        return False
-    if _ssh_looks_like_auth_failure(rc, stdout, stderr):
-        return True
-    if _ssh_provider_rejects_user(stdout, stderr):
-        return True
-    return False
+def server_ssh_user(server: Server) -> str:
+    """SSH-логин узла из БД; по умолчанию root."""
+    raw = getattr(server, "ssh_user", None) or "root"
+    return (str(raw).strip() or "root")
 
 
 def ssh_base_argv(server: Server) -> list[str]:
@@ -120,7 +77,7 @@ def ssh_bash_s_cmd_for_user(
     return base + sh_argv
 
 
-def ssh_run_script_with_user_fallback(
+def ssh_run_script(
     server: Server,
     script: str | bytes,
     *,
@@ -129,8 +86,7 @@ def ssh_run_script_with_user_fallback(
     output_callback: Callable[[str, str], None] | None = None,
 ) -> tuple[int, str, str, str]:
     """
-    SSH + bash -s, stdin = script. Перебор PROVISION_SSH_USER → fallback
-    при отказе по ключу или если облачный образ запрещает root («Please login as …»).
+    SSH + bash -s, stdin = script.
 
     Возвращает: returncode, stdout, stderr, used_ssh_user.
     """
@@ -141,56 +97,27 @@ def ssh_run_script_with_user_fallback(
     )
     if not data.endswith(b"\n"):
         data = data + b"\n"
-    users = provision_ssh_user_candidates()
-    last_u = users[-1] if users else (settings.provision_ssh_user or "root")
-    last_out, last_err = "", ""
-    last_rc = 255
-    for idx, u in enumerate(users):
-        cmd = ssh_bash_s_cmd_for_user(server, u, login_shell=login_shell)
-        log.debug("ssh %s (кандидат %d/%d)", u, idx + 1, len(users))
-        if output_callback is None:
-            result = subprocess.run(
-                cmd,
-                input=data,
-                capture_output=True,
-                timeout=timeout,
-            )
-            out = (result.stdout or b"").decode("utf-8", errors="replace")
-            err = (result.stderr or b"").decode("utf-8", errors="replace")
-            rc = int(result.returncode)
-        else:
-            rc, out, err = _run_script_streaming(
-                cmd,
-                data,
-                timeout=timeout,
-                output_callback=output_callback,
-            )
-        last_u, last_out, last_err, last_rc = u, out, err, rc
-        if rc == 0:
-            if idx > 0:
-                log.info(
-                    "SSH: успех под %s@%s (предыдущий кандидат не подошёл)",
-                    u,
-                    server.host,
-                )
-            return 0, out, err, u
-        if idx < len(users) - 1 and _ssh_worth_next_user(
-            rc, out, err
-        ):
-            nxt = users[idx + 1]
-            nxt_at = f"{nxt}@{server.host}"
-            tail = (f"{out}\n{err}").strip()[:500].replace("\n", " ")
-            log.warning(
-                "SSH %s@%s: rc=%s, следующий кандидат %s. вывод: %s",
-                u,
-                server.host,
-                rc,
-                nxt_at,
-                tail,
-            )
-            continue
-        return rc, out, err, u
-    return last_rc, last_out, last_err, last_u
+    u = server_ssh_user(server)
+    cmd = ssh_bash_s_cmd_for_user(server, u, login_shell=login_shell)
+    log.debug("ssh %s@%s", u, server.host)
+    if output_callback is None:
+        result = subprocess.run(
+            cmd,
+            input=data,
+            capture_output=True,
+            timeout=timeout,
+        )
+        out = (result.stdout or b"").decode("utf-8", errors="replace")
+        err = (result.stderr or b"").decode("utf-8", errors="replace")
+        rc = int(result.returncode)
+    else:
+        rc, out, err = _run_script_streaming(
+            cmd,
+            data,
+            timeout=timeout,
+            output_callback=output_callback,
+        )
+    return rc, out, err, u
 
 
 def _run_script_streaming(
@@ -273,7 +200,7 @@ def ssh_run_bash_lc(
     и он читает конфиг из STDIN (как в логе «Using config from STDIN»).
     Тот же приём, что у провижининга: bash -s + скрипт в stdin.
     """
-    rc, out, err, _u = ssh_run_script_with_user_fallback(
+    rc, out, err, _u = ssh_run_script(
         server,
         remote_bash_lc,
         timeout=timeout,

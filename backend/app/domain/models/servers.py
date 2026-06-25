@@ -36,6 +36,11 @@ class ServerCreate(BaseModel):
         max_length=512,
         description="IP или доменное имя узла",
     )
+    ssh_user: str = Field(
+        default="root",
+        max_length=64,
+        description="Пользователь SSH для провижининга и управления узлом",
+    )
     port: int = Field(
         default=443,
         ge=1,
@@ -190,6 +195,18 @@ class ServerCreate(BaseModel):
         s = str(v).strip()
         if not s:
             raise ValueError("host: не может быть пустым")
+        return s
+
+    @field_validator("ssh_user", mode="before")
+    @classmethod
+    def normalize_ssh_user(cls, v: Any) -> str:
+        if v is None:
+            return "root"
+        s = str(v).strip()
+        if not s:
+            return "root"
+        if "@" in s or "/" in s or " " in s:
+            raise ValueError("ssh_user: невалидное имя пользователя")
         return s
 
     @field_validator("country", mode="before")
@@ -591,6 +608,10 @@ class ServerRead(BaseModel):
     id: int
     name: str | None
     host: str
+    ssh_user: str = Field(
+        default="root",
+        description="Пользователь SSH для провижининга и управления узлом",
+    )
     port: int
     country: str
     load_percent: int

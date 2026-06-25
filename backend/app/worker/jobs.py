@@ -25,7 +25,7 @@ from app.core.time import utc_now
 from app.domain.servers.reality_defaults import normalize_reality_spider_x
 from app.infrastructure.database.session import SessionLocal
 from app.infrastructure.persistence.models.server import Server
-from app.infrastructure.ssh.provision_ssh import ssh_run_script_with_user_fallback
+from app.infrastructure.ssh.provision_ssh import server_ssh_user, ssh_run_script
 from app.infrastructure.xray.xray_clients import (
     vless_client_uuids_csv_for_server,
     vless_clients_b64_for_server,
@@ -741,7 +741,7 @@ def _run_ssh_remote_provision(
         except Exception:
             log.exception("Не удалось обновить progress server_id=%s", server.id)
 
-    rc, stdout_t, stderr_t, used_user = ssh_run_script_with_user_fallback(
+    rc, stdout_t, stderr_t, used_user = ssh_run_script(
         server,
         payload,
         timeout=settings.provision_subprocess_timeout,
@@ -1141,7 +1141,7 @@ def collect_xray_user_traffic(server_id: int) -> dict[str, Any]:
             }
         log.info(
             "collect_xray_user_traffic: SSH statsquery %s@%s server_id=%s (как при провижининге)",
-            settings.provision_ssh_user,
+            server_ssh_user(server),
             server.host,
             server_id,
         )
