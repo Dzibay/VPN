@@ -92,6 +92,54 @@ AS $$
 SELECT COUNT(*)::bigint FROM stats_users_daily_dirty;
 $$;
 
+-- Пометить холодные дни, отсутствующие в кэше (догон после частичного заполнения).
+CREATE OR REPLACE FUNCTION fn_stats_users_daily_mark_cache_gaps_dirty ()
+RETURNS integer
+LANGUAGE plpgsql
+SET search_path TO public
+AS $$
+DECLARE
+    cold_to date := fn_stats_users_daily_hot_start() - 1;
+    d_from date;
+    n integer;
+BEGIN
+    IF cold_to < '1970-01-01'::date THEN
+        RETURN 0;
+    END IF;
+
+    SELECT MIN((u.registered_at AT TIME ZONE 'Europe/Moscow')::date)
+    INTO d_from
+    FROM users u
+    WHERE u.registered_at IS NOT NULL
+      AND (
+          u.telegram_id IS NOT NULL
+          OR (
+              u.email IS NOT NULL
+              AND BTRIM(u.email) <> ''
+              AND u.email_verified_at IS NOT NULL
+          )
+      );
+
+    d_from := COALESCE(d_from, cold_to);
+    IF d_from > cold_to THEN
+        RETURN 0;
+    END IF;
+
+    INSERT INTO stats_users_daily_dirty (stats_date)
+    SELECT gs::date
+    FROM generate_series(d_from, cold_to, interval '1 day') AS gs
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM stats_users_daily_msk s
+        WHERE s.stats_date = gs::date
+    )
+    ON CONFLICT (stats_date) DO NOTHING;
+
+    GET DIAGNOSTICS n = ROW_COUNT;
+    RETURN n;
+END;
+$$;
+
 -- fn_stats_users_daily_flush_dirty — в post_users_daily_stats_mv.sql (после compute).
 
 -- --- триггеры ---

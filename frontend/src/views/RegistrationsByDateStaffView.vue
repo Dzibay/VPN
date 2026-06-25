@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, toRefs, watch } from 'vue'
+import { computed, onMounted, ref, toRefs, watch } from 'vue'
 import AdminBarChartPanel from '../components/AdminBarChartPanel.vue'
 import AdminLineChartPanel from '../components/AdminLineChartPanel.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
@@ -22,7 +22,7 @@ import {
 } from '../utils/mskDate.js'
 
 /** @typedef {{ id: number; event_at: string; title: string; color: string; created_at: string }} ChartEventRow */
-/** @typedef {{ cache_ready: boolean; row_count: number; date_from: string | null; date_to: string | null; refresh_running: boolean; dirty_days_pending: number; hot_window_days: number; last_refresh_at: string | null }} DailyStatsCacheStatus */
+/** @typedef {{ cache_ready: boolean; row_count: number; date_from: string | null; date_to: string | null; dirty_days_pending: number; hot_window_days: number }} DailyStatsCacheStatus */
 
 const chartEvents = ref(/** @type {ChartEventRow[]} */ ([]))
 const eventsLoading = ref(false)
@@ -461,9 +461,6 @@ async function refreshAllCharts() {
 const cacheStatus = ref(/** @type {DailyStatsCacheStatus | null} */ (null))
 const cacheStatusLoading = ref(false)
 const cacheStatusError = ref(null)
-const cacheRefreshBusy = ref(false)
-/** @type {ReturnType<typeof setInterval> | null} */
-let cachePollTimer = null
 
 async function loadCacheStatus() {
   const silent = cacheStatus.value != null
@@ -478,52 +475,10 @@ async function loadCacheStatus() {
   }
 }
 
-function stopCachePoll() {
-  if (cachePollTimer) {
-    clearInterval(cachePollTimer)
-    cachePollTimer = null
-  }
-}
-
-function startCachePoll() {
-  stopCachePoll()
-  cachePollTimer = setInterval(() => {
-    void loadCacheStatus().then(() => {
-      if (cacheStatus.value && !cacheStatus.value.refresh_running) {
-        stopCachePoll()
-        void refreshAllCharts()
-      }
-    })
-  }, 5000)
-}
-
-async function enqueueCacheRefresh() {
-  if (cacheStatus.value?.refresh_running) return
-  cacheRefreshBusy.value = true
-  cacheStatusError.value = null
-  try {
-    const res = await fetchJson('/api/users/daily-stats-cache/refresh', { method: 'POST' })
-    if (res.status === 'already_running') {
-      cacheStatusError.value = 'Пересчёт уже выполняется — дождитесь завершения.'
-    }
-    await loadCacheStatus()
-    if (cacheStatus.value?.refresh_running) {
-      startCachePoll()
-    }
-  } catch (e) {
-    cacheStatusError.value = e.message || String(e)
-  } finally {
-    cacheRefreshBusy.value = false
-  }
-}
-
 const cacheStatusLabel = computed(() => {
   const s = cacheStatus.value
   if (!s) return ''
   const hot = s.hot_window_days || 14
-  if (s.refresh_running) {
-    return 'Полный пересчёт истории… (10–30+ мин, воркер RQ)'
-  }
   const hotNote = `последние ${hot} дн. — всегда актуальны`
   if (!s.cache_ready) {
     return `Умный кэш: ${hotNote}; холодная история догоняется автоматически`
@@ -537,37 +492,11 @@ const cacheStatusLabel = computed(() => {
   return line
 })
 
-const cacheLastRefreshLabel = computed(() => {
-  const at = cacheStatus.value?.last_refresh_at
-  if (!at) return null
-  return `Последний пересчёт: ${formatMskDateTimeShort(at)}`
-})
-
-const cacheRefreshLabel = computed(() => {
-  if (cacheStatus.value?.refresh_running) return 'Пересчёт…'
-  return cacheStatus.value?.cache_ready ? 'Перестроить всю историю' : 'Заполнить историю'
-})
-
-const cacheRefreshDisabled = computed(
-  () =>
-    cacheRefreshBusy.value
-    || cacheStatusLoading.value
-    || Boolean(cacheStatus.value?.refresh_running),
-)
-
 onMounted(() => {
   void load()
   void loadChartEvents()
   void loadPayExpBars()
-  void loadCacheStatus().then(() => {
-    if (cacheStatus.value?.refresh_running) {
-      startCachePoll()
-    }
-  })
-})
-
-onUnmounted(() => {
-  stopCachePoll()
+  void loadCacheStatus()
 })
 
 watch(payExpMonth, () => {
@@ -649,43 +578,21 @@ watch(payExpMonth, () => {
       </div>
     </template>
 
-    <section
+    <!-- <section
       class="stats-cache-panel glass"
       aria-label="Кэш полной дневной статистики"
     >
-      <div class="stats-cache-main">
-        <p class="stats-cache-text">
-          <span v-if="cacheStatusLoading && !cacheStatus" class="stats-cache-muted">
-            Загрузка состояния кэша…
-          </span>
-          <span v-else>{{ cacheStatusLabel }}</span>
-          <span v-if="cacheLastRefreshLabel" class="stats-cache-muted">
-            {{ cacheLastRefreshLabel }}
-          </span>
-        </p>
-        <button
-          type="button"
-          class="btn-secondary stats-cache-btn"
-          :disabled="cacheRefreshDisabled"
-          :title="
-            cacheStatus?.refresh_running
-              ? 'Дождитесь завершения текущего пересчёта'
-              : 'Разовый полный пересчёт всей холодной истории (воркер RQ). Обычно не нужен — кэш обновляется сам.'
-          "
-          @click="enqueueCacheRefresh"
-        >
-          {{ cacheRefreshLabel }}
-        </button>
-      </div>
+      <p class="stats-cache-text">
+        <span v-if="cacheStatusLoading && !cacheStatus" class="stats-cache-muted">
+          Загрузка состояния кэша…
+        </span>
+        <span v-else>{{ cacheStatusLabel }}</span>
+      </p>
       <p v-if="cacheStatusError" class="stats-cache-error" role="alert">
         {{ cacheStatusError }}
       </p>
-      <p class="stats-cache-hint">
-        Регистрации, оплаты и трафик за последние {{ cacheStatus?.hot_window_days || 14 }} дней
-        видны сразу. Старше — триггеры в БД + фоновый flush (~1 мин).
-        Кнопка справа — только для первичного заполнения или полного пересчёта истории.
-      </p>
-    </section>
+      
+    </section> -->
 
     <AdminLineChartPanel
       :aria-label="chartAriaLabel"
@@ -867,14 +774,6 @@ watch(payExpMonth, () => {
   padding: 0.75rem 1rem;
 }
 
-.stats-cache-main {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.65rem 1rem;
-}
-
 .stats-cache-text {
   margin: 0;
   display: flex;
@@ -887,10 +786,6 @@ watch(payExpMonth, () => {
 .stats-cache-muted {
   font-size: 0.8rem;
   color: var(--muted);
-}
-
-.stats-cache-btn {
-  flex: 0 0 auto;
 }
 
 .stats-cache-error {

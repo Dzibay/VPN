@@ -1016,15 +1016,6 @@ def sync_xray_clients_all_servers() -> None:
         raise RuntimeError("; ".join(errors[:24]))
 
 
-def refresh_users_daily_stats_cache_job() -> dict[str, Any]:
-    """RQ: полный пересчёт stats_users_daily_msk (кнопка в админке)."""
-    from app.infrastructure.database.users_daily_stats_cache import (
-        refresh_users_daily_stats_cache_job as _run,
-    )
-
-    return _run()
-
-
 def collect_xray_user_traffic_all_servers(schedule_lock_token: str | None = None) -> dict[str, Any]:
     """
     RQ-вход батча сбора трафика Xray по всем активным provision_ready узлам.

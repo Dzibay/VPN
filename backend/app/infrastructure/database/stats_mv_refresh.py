@@ -16,6 +16,7 @@ def flush_users_daily_stats_dirty_sync() -> int:
     db = SessionLocal()
     try:
         db.execute(text("SET statement_timeout = '600s'"))
+        db.execute(text("SELECT fn_stats_users_daily_mark_cache_gaps_dirty()"))
         n = int(db.execute(text("SELECT fn_stats_users_daily_flush_dirty()")).scalar() or 0)
         db.commit()
         if n > 0:

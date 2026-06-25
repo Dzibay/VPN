@@ -133,9 +133,8 @@ first_payment AS (
     SELECT user_id, first_pay_day FROM first_payment_meta
 ),
 
--- 5) Трафик: исходник ограничен окном (traffic_date BETWEEN lag_start AND range_end).
---    + один снимок «до окна» для baseline LAG → отдельная ветка.
-traffic_in_range AS (
+-- 5) Трафик: все снимки до конца окна (как в оригинале — корректный LAG и «первый активный день»).
+traffic_snapshots AS (
     SELECT
         t.user_id,
         t.server_id,
@@ -143,25 +142,8 @@ traffic_in_range AS (
         (t.up_bytes + t.down_bytes)::bigint AS bytes
     FROM user_server_traffic t
     INNER JOIN eligible_users eu ON eu.id = t.user_id
-    INNER JOIN date_window dw
-        ON t.traffic_date BETWEEN dw.traffic_lag_start AND dw.range_end
-),
--- Последний снимок до окна — нужен как «prev» для первого дня (если был трафик раньше).
-traffic_baseline AS (
-    SELECT DISTINCT ON (t.user_id, t.server_id)
-        t.user_id,
-        t.server_id,
-        t.traffic_date AS snap_day,
-        (t.up_bytes + t.down_bytes)::bigint AS bytes
-    FROM user_server_traffic t
-    INNER JOIN eligible_users eu ON eu.id = t.user_id
-    INNER JOIN date_window dw ON t.traffic_date < dw.traffic_lag_start
-    ORDER BY t.user_id, t.server_id, t.traffic_date DESC
-),
-traffic_snapshots AS (
-    SELECT * FROM traffic_in_range
-    UNION ALL
-    SELECT * FROM traffic_baseline
+    CROSS JOIN date_window dw
+    WHERE t.traffic_date <= dw.range_end
 ),
 traffic_ranges AS (
     SELECT
@@ -235,9 +217,44 @@ user_active_on_day AS (
     INNER JOIN date_window dw ON w.cal_day BETWEEN dw.range_start AND dw.range_end
     WHERE w.total > COALESCE(w.prev_total, 0)
 ),
+-- Первый активный день за всю историю (не только внутри окна запроса).
+traffic_filled_all AS (
+    SELECT
+        gs.cal_day::date AS cal_day,
+        tr.user_id,
+        tr.bytes
+    FROM traffic_ranges tr
+    CROSS JOIN date_window dw
+    CROSS JOIN LATERAL generate_series(
+        tr.from_day,
+        LEAST(
+            COALESCE(tr.next_snap_day - 1, dw.range_end),
+            dw.range_end
+        ),
+        interval '1 day'
+    ) AS gs (cal_day)
+    WHERE tr.from_day <= dw.range_end
+),
+user_total_all AS (
+    SELECT cal_day, user_id, SUM(bytes)::bigint AS total
+    FROM traffic_filled_all
+    GROUP BY cal_day, user_id
+),
+with_prev_all AS (
+    SELECT
+        cal_day,
+        user_id,
+        total,
+        LAG(total) OVER (
+            PARTITION BY user_id
+            ORDER BY cal_day
+        ) AS prev_total
+    FROM user_total_all
+),
 first_user_active_day AS (
     SELECT user_id, MIN(cal_day) AS first_cal
-    FROM user_active_on_day
+    FROM with_prev_all
+    WHERE total > COALESCE(prev_total, 0)
     GROUP BY user_id
 ),
 persistent_traffic_users_by_day AS (

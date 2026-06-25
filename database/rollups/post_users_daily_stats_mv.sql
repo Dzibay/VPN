@@ -354,22 +354,42 @@ BEGIN
     -- 1) холодная часть периода
     IF v_range_start <= v_cold_end THEN
         IF v_ready THEN
-            RETURN QUERY
-            SELECT
-                s.stats_date,
-                s.users_count,
-                s.users_with_traffic_count,
-                s.active_users_count,
-                s.subscription_devices_users_count,
-                s.users_cumulative_traffic_over_100_mbit_count,
-                s.persistent_traffic_users_count,
-                s.users_with_payment_count,
-                s.payments_first_count,
-                s.payments_repeat_count,
-                s.active_users_with_payment_count,
-                s.users_with_active_subscription_count
-            FROM stats_users_daily_msk s
-            WHERE s.stats_date BETWEEN v_range_start AND v_cold_end;
+            -- Пропуски в кэше или грязные дни → live-compute, иначе нули на графике.
+            IF EXISTS (
+                SELECT 1
+                FROM generate_series(v_range_start, v_cold_end, interval '1 day') gs (d)
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM stats_users_daily_msk s
+                    WHERE s.stats_date = gs.d::date
+                )
+            ) OR EXISTS (
+                SELECT 1
+                FROM stats_users_daily_dirty d
+                WHERE d.stats_date BETWEEN v_range_start AND v_cold_end
+            ) THEN
+                RETURN QUERY
+                SELECT c.*
+                FROM fn_users_daily_stats_compute(v_range_start, v_cold_end) c
+                WHERE c.stats_date IS NOT NULL;
+            ELSE
+                RETURN QUERY
+                SELECT
+                    s.stats_date,
+                    s.users_count,
+                    s.users_with_traffic_count,
+                    s.active_users_count,
+                    s.subscription_devices_users_count,
+                    s.users_cumulative_traffic_over_100_mbit_count,
+                    s.persistent_traffic_users_count,
+                    s.users_with_payment_count,
+                    s.payments_first_count,
+                    s.payments_repeat_count,
+                    s.active_users_with_payment_count,
+                    s.users_with_active_subscription_count
+                FROM stats_users_daily_msk s
+                WHERE s.stats_date BETWEEN v_range_start AND v_cold_end;
+            END IF;
         ELSE
             RETURN QUERY
             SELECT c.*
