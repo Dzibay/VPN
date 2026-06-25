@@ -94,43 +94,19 @@ DROP FUNCTION IF EXISTS fn_refresh_mv_users_daily_stats ();
 
 DROP FUNCTION IF EXISTS fn_refresh_stats_users_daily_msk ();
 
-CREATE OR REPLACE FUNCTION fn_stats_users_daily_flush_dirty ()
-RETURNS integer
+-- Заполняет staging-таблицу без блокировок (тяжёлый compute).
+CREATE OR REPLACE FUNCTION fn_stats_users_daily_msk_build_fill (
+    p_from date,
+    p_to date
+)
+RETURNS void
 LANGUAGE plpgsql
 SET search_path TO public
 AS $$
-DECLARE
-    got_lock boolean;
-    d_min date;
-    d_max date;
-    cold_to date;
-    flush_to date;
-    n integer;
 BEGIN
-    got_lock := pg_try_advisory_lock(72491002);
-    IF NOT got_lock THEN
-        RETURN 0;
-    END IF;
+    TRUNCATE stats_users_daily_msk_build;
 
-    cold_to := fn_stats_users_daily_hot_start() - 1;
-    IF cold_to < '1970-01-01'::date THEN
-        PERFORM pg_advisory_unlock(72491002);
-        RETURN 0;
-    END IF;
-
-    SELECT MIN(stats_date), MAX(stats_date)
-    INTO d_min, d_max
-    FROM stats_users_daily_dirty
-    WHERE stats_date <= cold_to;
-
-    IF d_min IS NULL THEN
-        PERFORM pg_advisory_unlock(72491002);
-        RETURN 0;
-    END IF;
-
-    flush_to := LEAST(d_max, cold_to);
-
-    INSERT INTO stats_users_daily_msk (
+    INSERT INTO stats_users_daily_msk_build (
         stats_date,
         users_count,
         users_with_traffic_count,
@@ -157,8 +133,77 @@ BEGIN
         c.payments_repeat_count,
         c.active_users_with_payment_count,
         c.users_with_active_subscription_count
-    FROM fn_users_daily_stats_compute(d_min, flush_to) c
-    WHERE c.stats_date IS NOT NULL
+    FROM fn_users_daily_stats_compute(p_from, p_to) c
+    WHERE c.stats_date IS NOT NULL;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION fn_stats_users_daily_flush_max_days ()
+RETURNS integer
+LANGUAGE sql
+IMMUTABLE
+SET search_path TO public
+AS $$
+SELECT 31;
+$$;
+
+-- Инкрементальный flush: compute БЕЗ advisory lock, lock только на upsert (секунды).
+CREATE OR REPLACE FUNCTION fn_stats_users_daily_flush_dirty ()
+RETURNS integer
+LANGUAGE plpgsql
+SET search_path TO public
+AS $$
+DECLARE
+    got_lock boolean;
+    d_min date;
+    d_max date;
+    cold_to date;
+    flush_to date;
+    n integer;
+BEGIN
+    cold_to := fn_stats_users_daily_hot_start() - 1;
+    IF cold_to < '1970-01-01'::date THEN
+        RETURN 0;
+    END IF;
+
+    SELECT MIN(stats_date), MAX(stats_date)
+    INTO d_min, d_max
+    FROM stats_users_daily_dirty
+    WHERE stats_date <= cold_to;
+
+    IF d_min IS NULL THEN
+        RETURN 0;
+    END IF;
+
+    flush_to := LEAST(
+        d_max,
+        cold_to,
+        d_min + fn_stats_users_daily_flush_max_days() - 1
+    );
+
+    PERFORM fn_stats_users_daily_msk_build_fill(d_min, flush_to);
+
+    got_lock := pg_try_advisory_lock(72491002);
+    IF NOT got_lock THEN
+        RETURN 0;
+    END IF;
+
+    INSERT INTO stats_users_daily_msk (
+        stats_date,
+        users_count,
+        users_with_traffic_count,
+        active_users_count,
+        subscription_devices_users_count,
+        users_cumulative_traffic_over_100_mbit_count,
+        persistent_traffic_users_count,
+        users_with_payment_count,
+        payments_first_count,
+        payments_repeat_count,
+        active_users_with_payment_count,
+        users_with_active_subscription_count
+    )
+    SELECT *
+    FROM stats_users_daily_msk_build
     ON CONFLICT (stats_date) DO UPDATE
     SET
         users_count = EXCLUDED.users_count,
@@ -195,42 +240,12 @@ AS $$
 DECLARE
     got_lock boolean;
 BEGIN
+    PERFORM fn_stats_users_daily_msk_build_fill(NULL, NULL);
+
     got_lock := pg_try_advisory_lock(72491001);
     IF NOT got_lock THEN
         RETURN false;
     END IF;
-
-    TRUNCATE stats_users_daily_msk_build;
-
-    INSERT INTO stats_users_daily_msk_build (
-        stats_date,
-        users_count,
-        users_with_traffic_count,
-        active_users_count,
-        subscription_devices_users_count,
-        users_cumulative_traffic_over_100_mbit_count,
-        persistent_traffic_users_count,
-        users_with_payment_count,
-        payments_first_count,
-        payments_repeat_count,
-        active_users_with_payment_count,
-        users_with_active_subscription_count
-    )
-    SELECT
-        c.stats_date,
-        c.users_count,
-        c.users_with_traffic_count,
-        c.active_users_count,
-        c.subscription_devices_users_count,
-        c.users_cumulative_traffic_over_100_mbit_count,
-        c.persistent_traffic_users_count,
-        c.users_with_payment_count,
-        c.payments_first_count,
-        c.payments_repeat_count,
-        c.active_users_with_payment_count,
-        c.users_with_active_subscription_count
-    FROM fn_users_daily_stats_compute(NULL, NULL) c
-    WHERE c.stats_date IS NOT NULL;
 
     DELETE FROM stats_users_daily_msk;
 

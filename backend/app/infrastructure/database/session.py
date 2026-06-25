@@ -20,6 +20,8 @@ _CONNECT_ARGS: dict = {"prepare_threshold": None}
 engine = create_engine(
     settings.sqlalchemy_database_url,
     pool_pre_ping=True,
+    pool_size=8,
+    max_overflow=12,
     connect_args=_CONNECT_ARGS,
 )
 
@@ -63,8 +65,9 @@ def get_db_readonly_sync() -> Generator[Session, None, None]:
 async_engine = create_async_engine(
     settings.sqlalchemy_database_url,
     pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=10,
+    pool_size=15,
+    max_overflow=15,
+    pool_timeout=45,
     connect_args=_CONNECT_ARGS,
 )
 

@@ -66,8 +66,7 @@ BEGIN
     INSERT INTO stats_users_daily_dirty (stats_date)
     SELECT gs::date
     FROM generate_series(d_from, d_to, interval '1 day') AS gs
-    ON CONFLICT (stats_date) DO UPDATE
-    SET dirty_at = now();
+    ON CONFLICT (stats_date) DO NOTHING;
 END;
 $$;
 

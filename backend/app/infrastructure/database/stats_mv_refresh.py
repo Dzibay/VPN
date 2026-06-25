@@ -15,6 +15,7 @@ def flush_users_daily_stats_dirty_sync() -> int:
     """Пересчитать «грязные» холодные дни и upsert в stats_users_daily_msk."""
     db = SessionLocal()
     try:
+        db.execute(text("SET statement_timeout = '600s'"))
         n = int(db.execute(text("SELECT fn_stats_users_daily_flush_dirty()")).scalar() or 0)
         db.commit()
         if n > 0:
@@ -49,6 +50,7 @@ def refresh_users_daily_stats_mv_sync() -> bool:
     """Пересчёт ``stats_users_daily_msk``. Возвращает False, если refresh уже идёт в другой сессии."""
     db = SessionLocal()
     try:
+        db.execute(text("SET statement_timeout = '7200s'"))
         ran = bool(
             db.execute(
                 text("SELECT fn_refresh_stats_users_daily_msk()"),

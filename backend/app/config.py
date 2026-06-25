@@ -379,16 +379,28 @@ class Settings(BaseSettings):
         description="Периодически вызывать fn_stats_users_daily_flush_dirty в scheduler-periodic.",
     )
     stats_users_daily_flush_interval_seconds: int = Field(
-        default=60,
+        default=90,
         ge=15,
         le=3600,
         description="Интервал flush очереди stats_users_daily_dirty (сек).",
     )
     stats_users_daily_traffic_dirty_days: int = Field(
-        default=90,
+        default=31,
         ge=7,
         le=365,
         description="После батч-сбора трафика: пометить столько холодных дней для пересчёта.",
+    )
+    stats_users_daily_query_timeout_seconds: int = Field(
+        default=45,
+        ge=5,
+        le=300,
+        description="statement_timeout для запросов графиков пользователей (сек).",
+    )
+    stats_users_daily_lock_timeout_seconds: int = Field(
+        default=5,
+        ge=1,
+        le=60,
+        description="lock_timeout для запросов графиков (сек) — не ждать flush/refresh.",
     )
     xray_traffic_batch_job_timeout_seconds: int = Field(
         default=7200,

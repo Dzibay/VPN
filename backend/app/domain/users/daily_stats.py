@@ -14,6 +14,7 @@ from typing import Literal
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.time import (
     as_calendar_date,
     ensure_utc,
@@ -88,6 +89,14 @@ def _rows_to_stats(rows: list) -> list[UserStatsByDateRow]:
     ]
 
 
+async def _set_stats_query_limits(session: AsyncSession) -> None:
+    """Ограничить время запроса и ожидание lock — иначе пул API исчерпывается."""
+    stmt_ms = max(5_000, int(settings.stats_users_daily_query_timeout_seconds) * 1000)
+    lock_ms = max(1_000, int(settings.stats_users_daily_lock_timeout_seconds) * 1000)
+    await session.execute(text(f"SET LOCAL statement_timeout = '{stmt_ms}ms'"))
+    await session.execute(text(f"SET LOCAL lock_timeout = '{lock_ms}ms'"))
+
+
 async def stats_by_date_merged(
     session: AsyncSession,
     *,
@@ -99,6 +108,7 @@ async def stats_by_date_merged(
     rpc_users_daily_stats сам выбирает между кэшем (для холодных дней) и
     live-compute (для горячего окна) — звать compute напрямую больше не нужно.
     """
+    await _set_stats_query_limits(session)
     params = {"p_from": date_from, "p_to": date_to}
     stmt = text(
         f"""
@@ -129,6 +139,7 @@ async def _day_baseline_from_mv(
     *,
     date_before: date,
 ) -> tuple[int, int, int, int]:
+    await _set_stats_query_limits(session)
     stmt = text("SELECT rpc_users_daily_stats_baseline(:p_before) AS payload")
     row = (await session.execute(stmt, {"p_before": date_before})).one()
     raw = row.payload if isinstance(row.payload, dict) else {}
