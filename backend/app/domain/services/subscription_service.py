@@ -25,6 +25,7 @@ from app.domain.subscription.build import (
     build_subscription_payload,
     subscription_servers_from_db,
 )
+from app.domain.subscription.servers_cache import subscription_delivery_servers_cached
 from app.domain.subscription.client_ua import subscription_user_agent_is_happ
 from app.domain.subscription.placeholders import (
     SubscriptionPlaceholderReason,
@@ -228,7 +229,10 @@ async def subscription_payload_rows_for_resolved_user(
             reason,
         )
 
-    rows = await subscription_servers_from_db(session)
+    rows = await subscription_delivery_servers_cached(
+        session,
+        loader=subscription_servers_from_db,
+    )
     return (
         build_subscription_payload(user, rows, happ_json=happ_json),
         user,

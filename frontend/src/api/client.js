@@ -12,7 +12,8 @@ function tokenForApiPath(path) {
     path.startsWith('/api/auth/verify-email') ||
     path === '/api/auth/resend-verification' ||
     path.startsWith('/api/auth/telegram/site-link/preview') ||
-    path === '/api/auth/telegram/site-link/complete'
+    path === '/api/auth/telegram/site-link/complete' ||
+    path === '/api/payments/tariffs'
   ) {
     return null
   }

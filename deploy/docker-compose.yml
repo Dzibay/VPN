@@ -81,9 +81,8 @@ services:
       context: ..
       dockerfile: backend/Dockerfile
     restart: unless-stopped
-    # --workers 2: defense-in-depth поверх async-стека. Один воркер всё ещё может
-    # деградировать (баг, OOM-killer внутри потока, зависший syscall) — второй продолжит
-    # обслуживать запросы. На небольшом VPS это меньше 100 МБ дополнительной памяти.
+    # --workers 6: при всплесках GET /sub/ и Prometheus SD запросы не должны блокировать
+    # лёгкие эндпоинты (auth, тарифы, support). Каждый worker ~50–80 МБ RAM.
     command:
       - /app/scripts/docker_entrypoint_api.sh
       - app.main:app
@@ -92,7 +91,7 @@ services:
       - --port
       - "8000"
       - --workers
-      - "2"
+      - "6"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/health || exit 1"]
       interval: 30s

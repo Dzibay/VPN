@@ -609,6 +609,28 @@ class Settings(BaseSettings):
             "Пусто — эндпоинт отвечает 404."
         ),
     )
+    prometheus_sd_cache_ttl_seconds: int = Field(
+        default=120,
+        ge=30,
+        le=3600,
+        description="TTL Redis-кэша целей HTTP SD (секунды).",
+    )
+    prometheus_sd_cache_schedule_enabled: bool = Field(
+        default=True,
+        description="Scheduler периодически обновляет кэш HTTP SD, чтобы API не ходил в БД.",
+    )
+    prometheus_sd_cache_refresh_interval_seconds: int = Field(
+        default=60,
+        ge=30,
+        le=3600,
+        description="Интервал refresh кэша HTTP SD в scheduler (секунды).",
+    )
+    prometheus_sd_cache_initial_delay_seconds: int = Field(
+        default=5,
+        ge=0,
+        le=600,
+        description="Задержка перед первым refresh кэша HTTP SD после старта scheduler.",
+    )
     server_load_prometheus_sync_schedule_enabled: bool = Field(
         default=True,
         description=(

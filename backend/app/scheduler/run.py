@@ -136,6 +136,14 @@ async def main() -> None:
     elif include_periodic:
         log.info("scheduler: server load из Prometheus выключен (или нет PROMETHEUS_BASE_URL)")
 
+    if include_periodic and settings.prometheus_sd_cache_schedule_enabled:
+        from app.infrastructure.prometheus.prometheus_sd_cache_scheduler import (
+            periodic_prometheus_sd_cache_loop,
+        )
+
+        factories.append(periodic_prometheus_sd_cache_loop)
+        log.info("scheduler: включён refresh кэша Prometheus HTTP SD")
+
     if include_periodic and settings.server_reachability_schedule_enabled:
         from app.infrastructure.server_reachability_scheduler import (
             periodic_server_reachability_loop,

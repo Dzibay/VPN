@@ -147,14 +147,21 @@ export function useYookassaPricing(fetchPath = '/api/payments/tariffs') {
   async function load() {
     loading.value = true
     error.value = null
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 20_000)
     try {
-      const data = await fetchJson(fetchPath)
+      const data = await fetchJson(fetchPath, { signal: controller.signal })
       const list = [...(data?.tariffs ?? [])]
       tariffs.value = list.sort((a, b) => a.months - b.months)
     } catch (e) {
-      error.value = e?.message || String(e)
+      if (e?.name === 'AbortError') {
+        error.value = 'Сервер не ответил вовремя. Попробуйте через минуту.'
+      } else {
+        error.value = e?.message || String(e)
+      }
       tariffs.value = []
     } finally {
+      clearTimeout(timeoutId)
       loading.value = false
     }
   }

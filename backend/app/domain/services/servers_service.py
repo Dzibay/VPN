@@ -23,6 +23,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, settings
 from app.core.exceptions import ConflictError, NotFoundError
+from app.domain.subscription.servers_cache import invalidate_subscription_delivery_servers_cache
+from app.domain.services.prometheus_sd_cache import refresh_node_exporter_targets_cache_sync
 from app.domain.models.servers import (
     ServerCreate,
     ServersCountResponse,
@@ -64,6 +66,14 @@ from app.infrastructure.database.operations import table_insert
 from app.infrastructure.persistence.models.server import Server
 
 log = logging.getLogger("app.servers_service")
+
+
+def _refresh_server_delivery_caches() -> None:
+    invalidate_subscription_delivery_servers_cache()
+    try:
+        refresh_node_exporter_targets_cache_sync()
+    except Exception:
+        log.exception("refresh server list caches failed")
 
 __all__ = [
     "servers_count",
@@ -184,6 +194,7 @@ async def create_server(
             "Сервер с таким host и port уже существует",
         ) from e
     await try_enqueue_sync_xray_on_exit_for_cascade(session, cnext)
+    _refresh_server_delivery_caches()
     return server
 
 
@@ -259,6 +270,7 @@ async def patch_server(session: AsyncSession, server_id: int, body: ServerUpdate
             old_cnext,
             server.cascade_next_server_id,
         )
+    _refresh_server_delivery_caches()
     return server
 
 
@@ -285,3 +297,4 @@ async def delete_server(session: AsyncSession, server_id: int) -> None:
     await session.delete(server)
     await session.flush()
     delete_server_reachability_key(get_redis(), server_id)
+    _refresh_server_delivery_caches()

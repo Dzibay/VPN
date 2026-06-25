@@ -13,8 +13,12 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from app.api.security_bearer import bearer_jwt
 from app.config import settings
-from app.core.dependencies import ReadonlySessionDep
 from app.domain.services import prometheus_sd_service
+from app.domain.services.prometheus_sd_cache import (
+    read_node_exporter_targets_cache,
+    write_node_exporter_targets_cache,
+)
+from app.infrastructure.database.session import AsyncSessionLocal
 
 router = APIRouter(prefix="/prometheus/sd", tags=["admin"])
 
@@ -39,8 +43,15 @@ def _require_sd_bearer(
     dependencies=[Depends(_require_sd_bearer)],
     summary="HTTP service discovery Prometheus: цели scrape node_exporter",
 )
-async def prometheus_sd_node_exporter(session: ReadonlySessionDep):
+async def prometheus_sd_node_exporter():
     """
     Активные серверы из БД → targets для scrape (host:port как в PromQL).
+    Ответ из Redis-кэша (обновляется scheduler), без сессии БД на cache hit.
     """
-    return await prometheus_sd_service.node_exporter_targets(session, settings)
+    cached = read_node_exporter_targets_cache(settings)
+    if cached is not None:
+        return cached
+    async with AsyncSessionLocal() as session:
+        targets = await prometheus_sd_service.node_exporter_targets(session, settings)
+    write_node_exporter_targets_cache(targets, cfg=settings)
+    return targets

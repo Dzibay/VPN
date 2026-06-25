@@ -36,7 +36,8 @@ const route = useRoute()
 const router = useRouter()
 
 const loading = ref(false)
-const chartsLoading = ref(false)
+const bundleLoading = ref(false)
+const trafficByDayLoading = ref(false)
 const error = ref(null)
 const profileError = ref(null)
 /** @type {import('vue').Ref<Record<string, unknown> | null>} */
@@ -809,6 +810,76 @@ function resetAnalyticsPageState() {
   balanceLedgerError.value = null
 }
 
+async function loadTrafficBundle(uid) {
+  bundleLoading.value = true
+  try {
+    bundle.value = await fetchJson(`/api/users/${uid}/traffic-by-server`)
+  } catch (e) {
+    bundle.value = null
+    error.value = e?.message || String(e ?? 'Ошибка загрузки сводки по узлам')
+  } finally {
+    bundleLoading.value = false
+  }
+}
+
+async function loadTrafficByDayData(uid) {
+  trafficByDayLoading.value = true
+  try {
+    const rows = await fetchJson(`/api/users/${uid}/traffic-by-day`)
+    trafficByDay.value = Array.isArray(rows) ? rows : []
+  } catch (e) {
+    trafficByDay.value = []
+    trafficByDayError.value =
+      e?.message || String(e ?? 'Ошибка загрузки трафика по дням')
+  } finally {
+    trafficByDayLoading.value = false
+  }
+}
+
+async function loadPaymentLedgerData(uid) {
+  try {
+    const d = await fetchJson(
+      `/api/admin/payments?limit=${LEDGER_PAGE_LIMIT}&offset=0&user_id=${uid}`,
+    )
+    paymentLedgerItems.value = Array.isArray(d?.items) ? d.items : []
+    paymentLedgerTotal.value = Number(d?.total) || 0
+  } catch (e) {
+    paymentLedgerItems.value = []
+    paymentLedgerTotal.value = 0
+    paymentsLedgerError.value =
+      e?.message || String(e ?? 'Ошибка загрузки платежей')
+  }
+}
+
+async function loadTaskLedgerData(uid) {
+  try {
+    const d = await fetchJson(
+      `/api/admin/tasks?limit=${LEDGER_PAGE_LIMIT}&offset=0&user_id=${uid}`,
+    )
+    taskLedgerItems.value = Array.isArray(d?.items) ? d.items : []
+    taskLedgerTotal.value = Number(d?.total) || 0
+  } catch (e) {
+    taskLedgerItems.value = []
+    taskLedgerTotal.value = 0
+    tasksLedgerError.value = e?.message || String(e ?? 'Ошибка загрузки задач')
+  }
+}
+
+async function loadBalanceLedgerData(uid) {
+  try {
+    const d = await fetchJson(
+      `/api/users/${uid}/balance-ledger?limit=${LEDGER_PAGE_LIMIT}&offset=0`,
+    )
+    balanceLedgerItems.value = Array.isArray(d?.items) ? d.items : []
+    balanceLedgerTotal.value = Number(d?.total) || 0
+  } catch (e) {
+    balanceLedgerItems.value = []
+    balanceLedgerTotal.value = 0
+    balanceLedgerError.value =
+      e?.message || String(e ?? 'Ошибка загрузки журнала баланса')
+  }
+}
+
 async function load() {
   if (userId.value == null) {
     resetAnalyticsPageState()
@@ -816,7 +887,6 @@ async function load() {
     return
   }
   loading.value = true
-  chartsLoading.value = true
   resetAnalyticsPageState()
   try {
     const uid = userId.value
@@ -830,82 +900,25 @@ async function load() {
     if (profileRes && typeof profileRes === 'object') {
       profile.value = profileRes
     }
-    loading.value = false
-
-    const [r1, r2, rPay, rTasks, rBalance] = await Promise.allSettled([
-      fetchJson(`/api/users/${uid}/traffic-by-server`),
-      fetchJson(`/api/users/${uid}/traffic-by-day`),
-      fetchJson(
-        `/api/admin/payments?limit=${LEDGER_PAGE_LIMIT}&offset=0&user_id=${uid}`,
-      ),
-      fetchJson(
-        `/api/admin/tasks?limit=${LEDGER_PAGE_LIMIT}&offset=0&user_id=${uid}`,
-      ),
-      fetchJson(
-        `/api/users/${uid}/balance-ledger?limit=${LEDGER_PAGE_LIMIT}&offset=0`,
-      ),
-    ])
-    if (r1.status === 'fulfilled') {
-      bundle.value = r1.value
-    } else {
-      bundle.value = null
-      error.value =
-        r1.reason?.message ||
-        String(r1.reason ?? 'Ошибка загрузки сводки по узлам')
-    }
-    if (r2.status === 'fulfilled') {
-      trafficByDay.value = Array.isArray(r2.value) ? r2.value : []
-    } else {
-      trafficByDay.value = []
-      trafficByDayError.value =
-        r2.reason?.message ||
-        String(r2.reason ?? 'Ошибка загрузки трафика по дням')
-    }
-    if (rPay.status === 'fulfilled') {
-      const d = rPay.value
-      paymentLedgerItems.value = Array.isArray(d?.items) ? d.items : []
-      paymentLedgerTotal.value = Number(d?.total) || 0
-    } else {
-      paymentLedgerItems.value = []
-      paymentLedgerTotal.value = 0
-      paymentsLedgerError.value =
-        rPay.reason?.message ||
-        String(rPay.reason ?? 'Ошибка загрузки платежей')
-    }
-    if (rTasks.status === 'fulfilled') {
-      const d = rTasks.value
-      taskLedgerItems.value = Array.isArray(d?.items) ? d.items : []
-      taskLedgerTotal.value = Number(d?.total) || 0
-    } else {
-      taskLedgerItems.value = []
-      taskLedgerTotal.value = 0
-      tasksLedgerError.value =
-        rTasks.reason?.message ||
-        String(rTasks.reason ?? 'Ошибка загрузки задач')
-    }
-    if (rBalance.status === 'fulfilled') {
-      const d = rBalance.value
-      balanceLedgerItems.value = Array.isArray(d?.items) ? d.items : []
-      balanceLedgerTotal.value = Number(d?.total) || 0
-    } else {
-      balanceLedgerItems.value = []
-      balanceLedgerTotal.value = 0
-      balanceLedgerError.value =
-        rBalance.reason?.message ||
-        String(rBalance.reason ?? 'Ошибка загрузки журнала баланса')
-    }
-    chartsLoading.value = false
-
-    if (profile.value) {
-      void Promise.all([
-        loadSourceReferralLink(),
-        loadOwnedReferralLink(),
-        loadRefereesByOwnedLink(),
-      ])
-    }
   } finally {
     loading.value = false
-    chartsLoading.value = false
+  }
+
+  const uid = userId.value
+  if (uid == null) return
+
+  void loadTrafficBundle(uid)
+  void loadTrafficByDayData(uid)
+  void loadPaymentLedgerData(uid)
+  void loadTaskLedgerData(uid)
+  void loadBalanceLedgerData(uid)
+
+  if (profile.value) {
+    void Promise.all([
+      loadSourceReferralLink(),
+      loadOwnedReferralLink(),
+      loadRefereesByOwnedLink(),
+    ])
   }
 }
 
@@ -932,7 +945,6 @@ onMounted(() => {
     <p v-if="profileError" class="banner-err">{{ profileError }}</p>
     <p v-if="error" class="banner-err">{{ error }}</p>
     <p v-if="loading" class="loading-line">Загрузка карточки…</p>
-    <p v-else-if="chartsLoading" class="loading-line loading-line--muted">Загрузка графиков и журналов…</p>
 
     <div v-if="!loading && profile" class="user-profile glass">
       <div class="profile-head">
@@ -1643,7 +1655,7 @@ onMounted(() => {
       </template>
     </div>
 
-    <div v-if="userId != null && !chartsLoading && profile" class="ledger-widget glass">
+    <div v-if="userId != null && profile" class="ledger-widget glass">
       <div class="ledger-widget__head">
         <h2 class="ledger-widget__title">Платежи</h2>
         <RouterLink class="btn-secondary btn-tiny" to="/admin/payments">
@@ -1756,7 +1768,7 @@ onMounted(() => {
       </AdminTableWrap>
     </div>
 
-    <div v-if="userId != null && !chartsLoading && profile" class="ledger-widget glass">
+    <div v-if="userId != null && profile" class="ledger-widget glass">
       <div class="ledger-widget__head">
         <h2 class="ledger-widget__title">Задачи</h2>
         <RouterLink class="btn-secondary btn-tiny" to="/admin/tasks">
@@ -1907,7 +1919,8 @@ onMounted(() => {
     </div>
 
     <AdminLineChartPanel
-      v-if="userId != null && !chartsLoading && profile"
+      v-if="userId != null && profile"
+      :loading="trafficByDayLoading"
       aria-label="Потребление трафика пользователя по календарным дням UTC"
       :error="trafficByDayError"
       :has-data="trafficByDay.length > 0"
@@ -1922,25 +1935,26 @@ onMounted(() => {
       :get-tooltip-label="trafficDayTooltipLabel"
     />
 
-    <template v-if="!chartsLoading && bundle">
-      <AdminBarChartPanel
-        title="Распределение по узлам"
-        unit-label="МиБ"
-        aria-label="Распределение трафика по узлам, МиБ"
-        :has-data="serverBarLabels.length > 0"
-        :labels="serverBarLabels"
-        :datasets="serverBarDatasets"
-        stacked
-        index-axis="y"
-        y-title="МиБ"
-        :value-axis-min="0"
-        :format-value-tick="formatServerBarValueTick"
-      >
-        <template #empty>
-          <p class="empty-hint">В базе нет серверов.</p>
-        </template>
-      </AdminBarChartPanel>
-    </template>
+    <AdminBarChartPanel
+      v-if="profile"
+      :loading="bundleLoading"
+      :error="error"
+      title="Распределение по узлам"
+      unit-label="МиБ"
+      aria-label="Распределение трафика по узлам, МиБ"
+      :has-data="serverBarLabels.length > 0"
+      :labels="serverBarLabels"
+      :datasets="serverBarDatasets"
+      stacked
+      index-axis="y"
+      y-title="МиБ"
+      :value-axis-min="0"
+      :format-value-tick="formatServerBarValueTick"
+    >
+      <template #empty>
+        <p class="empty-hint">В базе нет серверов.</p>
+      </template>
+    </AdminBarChartPanel>
   </AdminPageShell>
 </template>
 
@@ -2417,10 +2431,6 @@ tr.referee-row-active-today {
 .loading-line {
   color: var(--muted);
   font-size: 0.92rem;
-}
-.loading-line--muted {
-  font-size: 0.85rem;
-  opacity: 0.85;
 }
 .empty-hint {
   margin: 0;
