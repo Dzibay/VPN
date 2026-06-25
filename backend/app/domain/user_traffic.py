@@ -37,6 +37,9 @@ def user_server_traffic_latest_subquery():
     """
     Последняя по дате строка для каждой пары (user_id, server_id).
     Суммировать все строки по пользователю нельзя — это дублирует накопление между днями.
+
+    Внимание: сканирует всю таблицу — для карточки одного user_id используйте
+    ``user_traffic_latest_per_server_stmt``.
     """
     ranked = _user_server_traffic_ranked_by_day_subquery()
     return (
@@ -49,6 +52,20 @@ def user_server_traffic_latest_subquery():
         )
         .where(ranked.c.rn == 1)
         .subquery()
+    )
+
+
+def user_traffic_latest_per_server_stmt(user_id: int):
+    """Последний снимок на каждый server_id для одного user_id (index user_id, traffic_date DESC)."""
+    return (
+        select(
+            UserServerTraffic.server_id,
+            UserServerTraffic.up_bytes,
+            UserServerTraffic.down_bytes,
+        )
+        .where(UserServerTraffic.user_id == int(user_id))
+        .distinct(UserServerTraffic.server_id)
+        .order_by(UserServerTraffic.server_id, UserServerTraffic.traffic_date.desc())
     )
 
 
@@ -91,14 +108,12 @@ def user_server_traffic_latest_strictly_before_calendar_day_subquery(calendar_da
 
 async def user_traffic_totals(session: AsyncSession, user_id: int) -> tuple[int, int, int]:
     """Суммы up_bytes, down_bytes и их сумма по всем узлам (последний снимок на узел)."""
-    latest = user_server_traffic_latest_subquery()
-    stmt = select(
-        func.coalesce(func.sum(latest.c.up_bytes), 0),
-        func.coalesce(func.sum(latest.c.down_bytes), 0),
-    ).where(latest.c.user_id == user_id)
-    row = (await session.execute(stmt)).one()
-    up_b = int(row[0])
-    down_b = int(row[1])
+    rows = (await session.execute(user_traffic_latest_per_server_stmt(user_id))).all()
+    up_b = 0
+    down_b = 0
+    for _sid, up_raw, down_raw in rows:
+        up_b += int(up_raw or 0)
+        down_b += int(down_raw or 0)
     return up_b, down_b, up_b + down_b
 
 

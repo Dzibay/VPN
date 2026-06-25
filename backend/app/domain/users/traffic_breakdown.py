@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
@@ -15,7 +15,7 @@ from app.domain.models.server_traffic import (
     UserTrafficByServersBundle,
     UserTrafficPerServerRow,
 )
-from app.domain.user_traffic import user_server_traffic_latest_subquery
+from app.domain.user_traffic import user_traffic_latest_per_server_stmt
 from app.infrastructure.persistence.models.server import Server
 from app.infrastructure.persistence.models.user import User
 from app.infrastructure.persistence.models.user_server_traffic import UserServerTraffic
@@ -70,26 +70,19 @@ async def user_traffic_by_servers_bundle(
     user = await session.get(User, user_id)
     if user is None:
         raise NotFoundError("Пользователь не найден")
-    latest = user_server_traffic_latest_subquery().alias("ut_latest")
-    stmt = (
-        select(Server, latest.c.up_bytes, latest.c.down_bytes)
-        .select_from(Server)
-        .outerjoin(
-            latest,
-            and_(
-                latest.c.server_id == Server.id,
-                latest.c.user_id == user_id,
-            ),
-        )
-        .order_by(Server.id.asc())
-    )
-    rows = (await session.execute(stmt)).all()
+    latest_rows = {
+        int(sid): (int(up_raw or 0), int(down_raw or 0))
+        for sid, up_raw, down_raw in (
+            await session.execute(user_traffic_latest_per_server_stmt(user_id))
+        ).all()
+    }
+    stmt = select(Server).order_by(Server.id.asc())
+    rows = (await session.execute(stmt)).scalars().all()
     out: list[UserTrafficPerServerRow] = []
     total_up = 0
     total_down = 0
-    for srv, up_raw, down_raw in rows:
-        up = int(up_raw or 0)
-        down = int(down_raw or 0)
+    for srv in rows:
+        up, down = latest_rows.get(int(srv.id), (0, 0))
         total_up += up
         total_down += down
         out.append(

@@ -36,6 +36,7 @@ const route = useRoute()
 const router = useRouter()
 
 const loading = ref(false)
+const chartsLoading = ref(false)
 const error = ref(null)
 const profileError = ref(null)
 /** @type {import('vue').Ref<Record<string, unknown> | null>} */
@@ -815,11 +816,23 @@ async function load() {
     return
   }
   loading.value = true
+  chartsLoading.value = true
   resetAnalyticsPageState()
   try {
     const uid = userId.value
-    const [r0, r1, r2, rPay, rTasks, rBalance] = await Promise.allSettled([
-      fetchJson(`/api/users/${uid}`),
+    let profileRes
+    try {
+      profileRes = await fetchJson(`/api/users/${uid}`)
+    } catch (e) {
+      profile.value = null
+      profileError.value = e?.message || String(e ?? 'Ошибка загрузки карточки пользователя')
+    }
+    if (profileRes && typeof profileRes === 'object') {
+      profile.value = profileRes
+    }
+    loading.value = false
+
+    const [r1, r2, rPay, rTasks, rBalance] = await Promise.allSettled([
       fetchJson(`/api/users/${uid}/traffic-by-server`),
       fetchJson(`/api/users/${uid}/traffic-by-day`),
       fetchJson(
@@ -832,15 +845,6 @@ async function load() {
         `/api/users/${uid}/balance-ledger?limit=${LEDGER_PAGE_LIMIT}&offset=0`,
       ),
     ])
-    if (r0.status === 'fulfilled') {
-      profile.value =
-        r0.value && typeof r0.value === 'object' ? r0.value : null
-    } else {
-      profile.value = null
-      profileError.value =
-        r0.reason?.message ||
-        String(r0.reason ?? 'Ошибка загрузки карточки пользователя')
-    }
     if (r1.status === 'fulfilled') {
       bundle.value = r1.value
     } else {
@@ -890,8 +894,10 @@ async function load() {
         rBalance.reason?.message ||
         String(rBalance.reason ?? 'Ошибка загрузки журнала баланса')
     }
+    chartsLoading.value = false
+
     if (profile.value) {
-      await Promise.all([
+      void Promise.all([
         loadSourceReferralLink(),
         loadOwnedReferralLink(),
         loadRefereesByOwnedLink(),
@@ -899,6 +905,7 @@ async function load() {
     }
   } finally {
     loading.value = false
+    chartsLoading.value = false
   }
 }
 
@@ -924,7 +931,8 @@ onMounted(() => {
 
     <p v-if="profileError" class="banner-err">{{ profileError }}</p>
     <p v-if="error" class="banner-err">{{ error }}</p>
-    <p v-if="loading" class="loading-line">Загрузка…</p>
+    <p v-if="loading" class="loading-line">Загрузка карточки…</p>
+    <p v-else-if="chartsLoading" class="loading-line loading-line--muted">Загрузка графиков и журналов…</p>
 
     <div v-if="!loading && profile" class="user-profile glass">
       <div class="profile-head">
@@ -1635,7 +1643,7 @@ onMounted(() => {
       </template>
     </div>
 
-    <div v-if="userId != null && !loading" class="ledger-widget glass">
+    <div v-if="userId != null && !chartsLoading && profile" class="ledger-widget glass">
       <div class="ledger-widget__head">
         <h2 class="ledger-widget__title">Платежи</h2>
         <RouterLink class="btn-secondary btn-tiny" to="/admin/payments">
@@ -1748,7 +1756,7 @@ onMounted(() => {
       </AdminTableWrap>
     </div>
 
-    <div v-if="userId != null && !loading" class="ledger-widget glass">
+    <div v-if="userId != null && !chartsLoading && profile" class="ledger-widget glass">
       <div class="ledger-widget__head">
         <h2 class="ledger-widget__title">Задачи</h2>
         <RouterLink class="btn-secondary btn-tiny" to="/admin/tasks">
@@ -1899,7 +1907,7 @@ onMounted(() => {
     </div>
 
     <AdminLineChartPanel
-      v-if="userId != null && !loading"
+      v-if="userId != null && !chartsLoading && profile"
       aria-label="Потребление трафика пользователя по календарным дням UTC"
       :error="trafficByDayError"
       :has-data="trafficByDay.length > 0"
@@ -1914,7 +1922,7 @@ onMounted(() => {
       :get-tooltip-label="trafficDayTooltipLabel"
     />
 
-    <template v-if="!loading && bundle">
+    <template v-if="!chartsLoading && bundle">
       <AdminBarChartPanel
         title="Распределение по узлам"
         unit-label="МиБ"
@@ -2409,6 +2417,10 @@ tr.referee-row-active-today {
 .loading-line {
   color: var(--muted);
   font-size: 0.92rem;
+}
+.loading-line--muted {
+  font-size: 0.85rem;
+  opacity: 0.85;
 }
 .empty-hint {
   margin: 0;
