@@ -27,6 +27,8 @@ TRAFFIC_ARCHIVE_NAME = "Архив (удалённые узлы)"
 TRAFFIC_ARCHIVE_VLESS_UUID = "00000000-0000-0000-0000-000000000001"
 TRAFFIC_ARCHIVE_REALITY_SHORT_ID = "00000000"
 
+ARCHIVE_REBUILD_ONE_TIME_MIGRATION = "traffic_archive_rebuild_from_raw_20260625"
+
 
 async def ensure_traffic_archive_server(session: AsyncSession) -> Server:
     """Узел id=0 для накопления трафика после удаления реальных серверов."""
@@ -175,8 +177,139 @@ async def relocate_server_traffic_to_archive(
     return moved
 
 
+def _merge_axis(total: int, raw_old: int, raw_new: int) -> tuple[int, int]:
+    """Как в xray_stats_collect: накопление с учётом сброса счётчика Xray."""
+    if raw_new >= raw_old:
+        delta = raw_new - raw_old
+    else:
+        total += raw_old
+        delta = raw_new
+    return total + delta, raw_new
+
+
+def _rebuild_archive_rows_from_raw(rows: list[UserServerTraffic]) -> int:
+    """Пересчитать up_bytes/down_bytes из raw_up/raw_down (их не трогала ошибочная починка)."""
+    if not rows:
+        return 0
+    has_raw = any(int(r.raw_up or 0) or int(r.raw_down or 0) for r in rows)
+    if not has_raw:
+        return 0
+
+    updated = 0
+    cum_up = 0
+    cum_down = 0
+    raw_up_prev = 0
+    raw_down_prev = 0
+    for row in rows:
+        cum_up, raw_up_prev = _merge_axis(cum_up, raw_up_prev, int(row.raw_up or 0))
+        cum_down, raw_down_prev = _merge_axis(cum_down, raw_down_prev, int(row.raw_down or 0))
+        new_up = int(cum_up)
+        new_down = int(cum_down)
+        if int(row.up_bytes) != new_up or int(row.down_bytes) != new_down:
+            row.up_bytes = new_up
+            row.down_bytes = new_down
+            updated += 1
+    return updated
+
+
+def rebuild_inflated_traffic_archive_sync() -> dict[str, int]:
+    """Одноразовый пересчёт архива (server_id=0): raw → cumulative, затем forward-fill.
+
+    Возвращает счётчики для лога: users, rows_rebuilt, rows_forward_filled.
+    """
+    from app.infrastructure.database.session import SessionLocal
+
+    stats = {"users": 0, "rows_rebuilt": 0, "rows_forward_filled": 0}
+    with SessionLocal() as session:
+        user_ids = list(
+            session.scalars(
+                select(UserServerTraffic.user_id)
+                .where(UserServerTraffic.server_id == TRAFFIC_ARCHIVE_SERVER_ID)
+                .distinct()
+                .order_by(UserServerTraffic.user_id.asc()),
+            ).all(),
+        )
+        stats["users"] = len(user_ids)
+        for user_id in user_ids:
+            rows = list(
+                session.scalars(
+                    select(UserServerTraffic)
+                    .where(
+                        UserServerTraffic.user_id == user_id,
+                        UserServerTraffic.server_id == TRAFFIC_ARCHIVE_SERVER_ID,
+                    )
+                    .order_by(UserServerTraffic.traffic_date.asc()),
+                ).all(),
+            )
+            stats["rows_rebuilt"] += _rebuild_archive_rows_from_raw(rows)
+
+        # forward-fill после пересчёта (на случай оставшихся провалов)
+        for user_id in user_ids:
+            prev_total = 0
+            rows = list(
+                session.scalars(
+                    select(UserServerTraffic)
+                    .where(
+                        UserServerTraffic.user_id == user_id,
+                        UserServerTraffic.server_id == TRAFFIC_ARCHIVE_SERVER_ID,
+                    )
+                    .order_by(UserServerTraffic.traffic_date.asc()),
+                ).all(),
+            )
+            for row in rows:
+                total = int(row.up_bytes) + int(row.down_bytes)
+                if total < prev_total:
+                    if prev_total > 0 and total > 0:
+                        up_share = int(row.up_bytes) / total
+                        row.up_bytes = int(round(prev_total * up_share))
+                        row.down_bytes = prev_total - int(row.up_bytes)
+                    else:
+                        row.up_bytes = 0
+                        row.down_bytes = prev_total
+                    stats["rows_forward_filled"] += 1
+                else:
+                    prev_total = total
+
+        session.commit()
+    return stats
+
+
+async def rebuild_inflated_traffic_archive(session: AsyncSession) -> dict[str, int]:
+    """Async-обёртка: пересчёт архива в текущей сессии."""
+    user_ids = (
+        await session.scalars(
+            select(UserServerTraffic.user_id)
+            .where(UserServerTraffic.server_id == TRAFFIC_ARCHIVE_SERVER_ID)
+            .distinct()
+            .order_by(UserServerTraffic.user_id.asc()),
+        )
+    ).all()
+    stats = {"users": len(user_ids), "rows_rebuilt": 0, "rows_forward_filled": 0}
+    for user_id in user_ids:
+        rows = list(
+            (
+                await session.scalars(
+                    select(UserServerTraffic)
+                    .where(
+                        UserServerTraffic.user_id == user_id,
+                        UserServerTraffic.server_id == TRAFFIC_ARCHIVE_SERVER_ID,
+                    )
+                    .order_by(UserServerTraffic.traffic_date.asc()),
+                )
+            ).all(),
+        )
+        stats["rows_rebuilt"] += _rebuild_archive_rows_from_raw(rows)
+    stats["rows_forward_filled"] = await repair_traffic_archive_totals(session)
+    return stats
+
+
 async def repair_traffic_archive_totals(session: AsyncSession) -> int:
-    """Починить архив после старого переноса без carry-forward (падающий накопительный ряд)."""
+    """Выровнять накопительный ряд архива (id=0): cumulative не должен убывать.
+
+    Старый перенос без carry-forward иногда записывал в архив только cumulative
+    удалённого узла (меньше предыдущего архивного снимка). Здесь не «добавляем»
+    cur к prev (это каскадно раздувает график), а forward-fill: total := prev_total.
+    """
     user_ids = (
         await session.scalars(
             select(UserServerTraffic.user_id)
@@ -201,16 +334,14 @@ async def repair_traffic_archive_totals(session: AsyncSession) -> int:
         for row in rows:
             total = int(row.up_bytes) + int(row.down_bytes)
             if total < prev_total:
-                new_total = prev_total + total
-                if total > 0:
+                if prev_total > 0 and total > 0:
                     up_share = int(row.up_bytes) / total
-                    row.up_bytes = int(round(new_total * up_share))
-                    row.down_bytes = new_total - int(row.up_bytes)
+                    row.up_bytes = int(round(prev_total * up_share))
+                    row.down_bytes = prev_total - int(row.up_bytes)
                 else:
                     row.up_bytes = 0
-                    row.down_bytes = new_total
+                    row.down_bytes = prev_total
                 fixed += 1
-                prev_total = new_total
             else:
                 prev_total = total
     if fixed:

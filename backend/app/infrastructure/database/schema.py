@@ -176,6 +176,39 @@ def _apply_schema_once(
             _execute_sql_file(conn, rollup_path)
 
 
+def _python_one_time_migration_applied(conn, name: str) -> bool:
+    row = conn.execute(
+        text("SELECT 1 FROM schema_one_time_migrations WHERE name = :n"),
+        {"n": name},
+    ).first()
+    return row is not None
+
+
+def _apply_python_one_time_migrations(eng: Engine) -> None:
+    from app.domain.servers.traffic_archive import (
+        ARCHIVE_REBUILD_ONE_TIME_MIGRATION,
+        rebuild_inflated_traffic_archive_sync,
+    )
+
+    with eng.connect() as conn:
+        if _python_one_time_migration_applied(conn, ARCHIVE_REBUILD_ONE_TIME_MIGRATION):
+            return
+
+    stats = rebuild_inflated_traffic_archive_sync()
+    log.info(
+        "one-time migration %s: users=%s rows_rebuilt=%s rows_forward_filled=%s",
+        ARCHIVE_REBUILD_ONE_TIME_MIGRATION,
+        stats.get("users"),
+        stats.get("rows_rebuilt"),
+        stats.get("rows_forward_filled"),
+    )
+    with eng.begin() as conn:
+        conn.execute(
+            text("INSERT INTO schema_one_time_migrations (name) VALUES (:n)"),
+            {"n": ARCHIVE_REBUILD_ONE_TIME_MIGRATION},
+        )
+
+
 def ensure_schema(engine: Engine | None = None) -> None:
     """init → migrate → rollups/pre → rpc → rollups/post; повтор при deadlock."""
     from app.infrastructure.database.session import engine as default_engine
@@ -203,6 +236,7 @@ def ensure_schema(engine: Engine | None = None) -> None:
                     rpc_paths=rpc_paths,
                     rollup_post_paths=rollup_post_paths,
                 )
+                _apply_python_one_time_migrations(eng)
                 break
             except OperationalError as exc:
                 if not _is_deadlock(exc) or attempt >= _SCHEMA_MIGRATION_MAX_ATTEMPTS:

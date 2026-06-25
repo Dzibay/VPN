@@ -309,13 +309,13 @@ CREATE INDEX IF NOT EXISTS idx_stats_users_daily_dirty_at
     ON stats_users_daily_dirty (dirty_at);
 
 -- Починка архива трафика (server_id=0): старый перенос без carry-forward давал падающий ряд.
+-- Forward-fill (total := prev), без prev+cur — иначе каскадное завышение на графике.
 DO $$
 DECLARE
     uid bigint;
     r RECORD;
     prev_total bigint;
     cur_total bigint;
-    new_total bigint;
     up_share double precision;
 BEGIN
     FOR uid IN
@@ -333,27 +333,31 @@ BEGIN
         LOOP
             cur_total := COALESCE(r.up_bytes, 0) + COALESCE(r.down_bytes, 0);
             IF cur_total < prev_total THEN
-                new_total := prev_total + cur_total;
-                IF cur_total > 0 THEN
+                IF prev_total > 0 AND cur_total > 0 THEN
                     up_share := r.up_bytes::double precision / cur_total::double precision;
                     UPDATE user_server_traffic
                     SET
-                        up_bytes = ROUND(new_total * up_share)::bigint,
-                        down_bytes = new_total - ROUND(new_total * up_share)::bigint
+                        up_bytes = ROUND(prev_total * up_share)::bigint,
+                        down_bytes = prev_total - ROUND(prev_total * up_share)::bigint
                     WHERE server_id = 0
                       AND user_id = uid
                       AND traffic_date = r.traffic_date;
                 ELSE
                     UPDATE user_server_traffic
-                    SET up_bytes = 0, down_bytes = new_total
+                    SET up_bytes = 0, down_bytes = prev_total
                     WHERE server_id = 0
                       AND user_id = uid
                       AND traffic_date = r.traffic_date;
                 END IF;
-                prev_total := new_total;
             ELSE
                 prev_total := cur_total;
             END IF;
         END LOOP;
     END LOOP;
 END $$;
+
+-- Одноразовые миграции данных (отметка в Python после apply, см. schema.py).
+CREATE TABLE IF NOT EXISTS schema_one_time_migrations (
+    name text PRIMARY KEY,
+    applied_at timestamptz NOT NULL DEFAULT now()
+);
