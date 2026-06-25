@@ -247,7 +247,7 @@ CREATE INDEX IF NOT EXISTS idx_users_sub_baseline
 -- 1) /api/telegram/notification-tasks: Task.status='pending' + task_type IN (...) + delivery_channel='telegram'.
 --    Частичный индекс по pending устраняет фильтрацию по всем тысячам completed/failed строк.
 CREATE INDEX IF NOT EXISTS idx_tasks_pending_delivery_type
-    ON tasks (delivery_channel, task_type, created_at ASC)
+    ON tasks (delivery_channel, type, created_at ASC)
     WHERE status = 'pending';
 
 -- Rollup-таблицы платежей (триггер и backfill — database/rollups/pre_payments_rollup.sql).
