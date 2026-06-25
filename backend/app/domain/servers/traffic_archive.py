@@ -188,7 +188,7 @@ def _merge_axis(total: int, raw_old: int, raw_new: int) -> tuple[int, int]:
 
 
 def _rebuild_archive_rows_from_raw(rows: list[UserServerTraffic]) -> int:
-    """Пересчитать up_bytes/down_bytes из raw_up/raw_down (их не трогала ошибочная починка)."""
+    """Пересчитать up_bytes/down_bytes из raw_up/raw_down (ORM-сессия, не при старте)."""
     if not rows:
         return 0
     has_raw = any(int(r.raw_up or 0) or int(r.raw_down or 0) for r in rows)
@@ -215,62 +215,104 @@ def _rebuild_archive_rows_from_raw(rows: list[UserServerTraffic]) -> int:
 def rebuild_inflated_traffic_archive_sync() -> dict[str, int]:
     """Одноразовый пересчёт архива (server_id=0): raw → cumulative, затем forward-fill.
 
-    Возвращает счётчики для лога: users, rows_rebuilt, rows_forward_filled.
+    Чистый SQL — без ORM flush (при ensure_schema() модели users/servers ещё не в registry).
     """
-    from app.infrastructure.database.session import SessionLocal
+    from sqlalchemy import text
 
+    from app.infrastructure.database.session import engine
+
+    sid = TRAFFIC_ARCHIVE_SERVER_ID
     stats = {"users": 0, "rows_rebuilt": 0, "rows_forward_filled": 0}
-    with SessionLocal() as session:
-        user_ids = list(
-            session.scalars(
-                select(UserServerTraffic.user_id)
-                .where(UserServerTraffic.server_id == TRAFFIC_ARCHIVE_SERVER_ID)
-                .distinct()
-                .order_by(UserServerTraffic.user_id.asc()),
-            ).all(),
-        )
-        stats["users"] = len(user_ids)
-        for user_id in user_ids:
-            rows = list(
-                session.scalars(
-                    select(UserServerTraffic)
-                    .where(
-                        UserServerTraffic.user_id == user_id,
-                        UserServerTraffic.server_id == TRAFFIC_ARCHIVE_SERVER_ID,
-                    )
-                    .order_by(UserServerTraffic.traffic_date.asc()),
-                ).all(),
-            )
-            stats["rows_rebuilt"] += _rebuild_archive_rows_from_raw(rows)
 
-        # forward-fill после пересчёта (на случай оставшихся провалов)
+    with engine.begin() as conn:
+        user_ids = [
+            int(r[0])
+            for r in conn.execute(
+                text(
+                    """
+                    SELECT DISTINCT user_id
+                    FROM user_server_traffic
+                    WHERE server_id = :sid
+                    ORDER BY user_id
+                    """,
+                ),
+                {"sid": sid},
+            ).all()
+        ]
+        stats["users"] = len(user_ids)
+
+        update_sql = text(
+            """
+            UPDATE user_server_traffic
+            SET up_bytes = :up, down_bytes = :down
+            WHERE server_id = :sid AND user_id = :uid AND traffic_date = :d
+            """,
+        )
+        select_sql = text(
+            """
+            SELECT up_bytes, down_bytes, raw_up, raw_down, traffic_date
+            FROM user_server_traffic
+            WHERE server_id = :sid AND user_id = :uid
+            ORDER BY traffic_date
+            """,
+        )
+
         for user_id in user_ids:
-            prev_total = 0
-            rows = list(
-                session.scalars(
-                    select(UserServerTraffic)
-                    .where(
-                        UserServerTraffic.user_id == user_id,
-                        UserServerTraffic.server_id == TRAFFIC_ARCHIVE_SERVER_ID,
+            rows = conn.execute(select_sql, {"sid": sid, "uid": user_id}).all()
+            has_raw = any(int(r[2] or 0) or int(r[3] or 0) for r in rows)
+            if has_raw:
+                cum_up = 0
+                cum_down = 0
+                raw_up_prev = 0
+                raw_down_prev = 0
+                for up_b, down_b, raw_up, raw_down, traffic_date in rows:
+                    cum_up, raw_up_prev = _merge_axis(
+                        cum_up, raw_up_prev, int(raw_up or 0),
                     )
-                    .order_by(UserServerTraffic.traffic_date.asc()),
-                ).all(),
-            )
-            for row in rows:
-                total = int(row.up_bytes) + int(row.down_bytes)
+                    cum_down, raw_down_prev = _merge_axis(
+                        cum_down, raw_down_prev, int(raw_down or 0),
+                    )
+                    new_up = int(cum_up)
+                    new_down = int(cum_down)
+                    if new_up != int(up_b or 0) or new_down != int(down_b or 0):
+                        conn.execute(
+                            update_sql,
+                            {
+                                "up": new_up,
+                                "down": new_down,
+                                "sid": sid,
+                                "uid": user_id,
+                                "d": traffic_date,
+                            },
+                        )
+                        stats["rows_rebuilt"] += 1
+
+            prev_total = 0
+            rows_after = conn.execute(select_sql, {"sid": sid, "uid": user_id}).all()
+            for up_b, down_b, _raw_up, _raw_down, traffic_date in rows_after:
+                total = int(up_b or 0) + int(down_b or 0)
                 if total < prev_total:
                     if prev_total > 0 and total > 0:
-                        up_share = int(row.up_bytes) / total
-                        row.up_bytes = int(round(prev_total * up_share))
-                        row.down_bytes = prev_total - int(row.up_bytes)
+                        up_share = int(up_b or 0) / total
+                        new_up = int(round(prev_total * up_share))
+                        new_down = prev_total - new_up
                     else:
-                        row.up_bytes = 0
-                        row.down_bytes = prev_total
+                        new_up = 0
+                        new_down = prev_total
+                    conn.execute(
+                        update_sql,
+                        {
+                            "up": new_up,
+                            "down": new_down,
+                            "sid": sid,
+                            "uid": user_id,
+                            "d": traffic_date,
+                        },
+                    )
                     stats["rows_forward_filled"] += 1
                 else:
                     prev_total = total
 
-        session.commit()
     return stats
 
 

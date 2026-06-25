@@ -29,6 +29,7 @@ _ROLLUP_PRE_PREFIX = "pre_"
 _ROLLUP_POST_PREFIX = "post_"
 # Один процесс на кластер: несколько uvicorn workers не должны параллельно гонять DDL.
 _SCHEMA_MIGRATION_ADVISORY_LOCK_ID = 72490001
+_PYTHON_ONE_TIME_MIGRATION_LOCK_ID = 72490002
 _SCHEMA_MIGRATION_MAX_ATTEMPTS = 5
 _DEADLOCK_SQLSTATE = "40P01"
 
@@ -177,10 +178,13 @@ def _apply_schema_once(
 
 
 def _python_one_time_migration_applied(conn, name: str) -> bool:
-    row = conn.execute(
-        text("SELECT 1 FROM schema_one_time_migrations WHERE name = :n"),
-        {"n": name},
-    ).first()
+    try:
+        row = conn.execute(
+            text("SELECT 1 FROM schema_one_time_migrations WHERE name = :n"),
+            {"n": name},
+        ).first()
+    except OperationalError:
+        return False
     return row is not None
 
 
@@ -190,7 +194,11 @@ def _apply_python_one_time_migrations(eng: Engine) -> None:
         rebuild_inflated_traffic_archive_sync,
     )
 
-    with eng.connect() as conn:
+    with eng.begin() as conn:
+        conn.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_id)"),
+            {"lock_id": _PYTHON_ONE_TIME_MIGRATION_LOCK_ID},
+        )
         if _python_one_time_migration_applied(conn, ARCHIVE_REBUILD_ONE_TIME_MIGRATION):
             return
 
@@ -204,7 +212,10 @@ def _apply_python_one_time_migrations(eng: Engine) -> None:
     )
     with eng.begin() as conn:
         conn.execute(
-            text("INSERT INTO schema_one_time_migrations (name) VALUES (:n)"),
+            text(
+                "INSERT INTO schema_one_time_migrations (name) VALUES (:n) "
+                "ON CONFLICT (name) DO NOTHING",
+            ),
             {"n": ARCHIVE_REBUILD_ONE_TIME_MIGRATION},
         )
 
