@@ -1,6 +1,4 @@
 -- Сводка админки за календарный период [p_from, p_to] (Europe/Moscow).
-DROP FUNCTION IF EXISTS rpc_admin_summary (date, date);
-
 CREATE OR REPLACE FUNCTION rpc_admin_summary (p_from date, p_to date)
 RETURNS jsonb
 LANGUAGE sql
@@ -58,17 +56,15 @@ expiring AS (
 ),
 payments_period AS (
     SELECT
-        COUNT(*)::bigint AS cnt,
-        COALESCE(SUM(p.amount), 0)::numeric(14, 2) AS revenue
-    FROM payments p
-    WHERE (p.created_at AT TIME ZONE 'Europe/Moscow')::date
-          BETWEEN p_from AND p_to
+        COALESCE(SUM(s.cnt), 0)::bigint AS cnt,
+        COALESCE(SUM(s.gross), 0)::numeric(14, 2) AS revenue
+    FROM stats_payments_daily_msk s
+    WHERE s.day_msk BETWEEN p_from AND p_to
 ),
 payments_total AS (
-    SELECT COALESCE(SUM(p.amount), 0)::numeric(14, 2) AS revenue
-    FROM payments p
-),
-paying_users AS (
+    SELECT COALESCE(SUM(s.gross), 0)::numeric(14, 2) AS revenue
+    FROM stats_payments_daily_msk s
+),paying_users AS (
     SELECT COUNT(DISTINCT p.user_id)::bigint AS n
     FROM payments p
     INNER JOIN qualified_users qu ON qu.id = p.user_id

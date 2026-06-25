@@ -1,6 +1,4 @@
 -- 24 часа внутри календарного дня ``p_day`` по часовому поясу Europe/Moscow.
-DROP FUNCTION IF EXISTS rpc_users_hourly_stats (date);
-
 CREATE OR REPLACE FUNCTION rpc_users_hourly_stats (p_day date)
 RETURNS TABLE (
     period_start_utc timestamptz,

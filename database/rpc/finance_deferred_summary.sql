@@ -1,7 +1,5 @@
 -- Признание выручки помесячно от даты платежа и баланс обязательств («замороженные деньги»).
 -- Оптимизация: recognition_dates вместо generate_series внутри thaw_frac на каждую eval_point.
-DROP FUNCTION IF EXISTS rpc_finance_deferred_summary (date, date);
-
 CREATE OR REPLACE FUNCTION rpc_finance_deferred_summary (p_from date, p_to date)
 RETURNS jsonb
 LANGUAGE sql

@@ -18,6 +18,7 @@ import {
   formatMskDateTimeShort,
   mskMonthInputDefault,
   mskTodayIso,
+  subtractCalendarDaysIso,
 } from '../utils/mskDate.js'
 
 /** @typedef {{ id: number; event_at: string; title: string; color: string; created_at: string }} ChartEventRow */
@@ -96,7 +97,15 @@ async function removeChartEvent(id) {
   }
 }
 
-const chart = useUsersDailyStatsChart()
+const CHART_API_MSK_DAYS = 120
+
+const chartDateRange = computed(() => {
+  const to = mskTodayIso()
+  const from = subtractCalendarDaysIso(to, CHART_API_MSK_DAYS - 1)
+  return { from, to }
+})
+
+const chart = useUsersDailyStatsChart(chartDateRange)
 const {
   granularity,
   hourDayMsk,

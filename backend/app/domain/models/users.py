@@ -228,6 +228,25 @@ class UsersDailyStatsResponse(BaseModel):
         default=None,
         description="Только granularity=hour: пользователи без registered_at (уже включены в hour_baseline_* и в каждый час).",
     )
+    day_baseline_users_count: int | None = Field(
+        default=None,
+        description=(
+            "Только granularity=day при заданном from: сумма users_count по дням МСК строго до from "
+            "(для накопительных графиков на частичном диапазоне)."
+        ),
+    )
+    day_baseline_users_with_traffic_count: int | None = Field(
+        default=None,
+        description="Только granularity=day при from: сумма users_with_traffic_count до from.",
+    )
+    day_baseline_subscription_devices_users_count: int | None = Field(
+        default=None,
+        description="Только granularity=day при from: сумма subscription_devices_users_count до from.",
+    )
+    day_baseline_users_with_payment_count: int | None = Field(
+        default=None,
+        description="Только granularity=day при from: сумма users_with_payment_count до from.",
+    )
 
 
 class DailyPaymentsExpiryStatsRow(BaseModel):

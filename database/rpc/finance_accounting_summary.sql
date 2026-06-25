@@ -1,6 +1,4 @@
 -- Сводка бухгалтерии (P&L) по месяцам в диапазоне [p_from, p_to].
-DROP FUNCTION IF EXISTS rpc_finance_accounting_summary (date, date);
-
 CREATE OR REPLACE FUNCTION rpc_finance_accounting_summary (p_from date, p_to date)
 RETURNS jsonb
 LANGUAGE sql
@@ -24,13 +22,13 @@ months AS (
 ),
 pay AS (
     SELECT
-        date_trunc('month', p.created_at AT TIME ZONE 'Europe/Moscow')::date AS m_start,
-        p.payment_kind,
-        SUM(p.amount)::numeric(14, 2) AS gross,
-        SUM(p.net_amount)::numeric(14, 2) AS net,
-        COUNT(*)::bigint AS cnt
-    FROM payments p
-    WHERE date_trunc('month', p.created_at AT TIME ZONE 'Europe/Moscow')::date
+        date_trunc('month', s.day_msk::timestamp)::date AS m_start,
+        s.payment_kind,
+        SUM(s.gross)::numeric(14, 2) AS gross,
+        SUM(s.net)::numeric(14, 2) AS net,
+        SUM(s.cnt)::bigint AS cnt
+    FROM stats_payments_daily_msk s
+    WHERE date_trunc('month', s.day_msk::timestamp)::date
           BETWEEN (SELECT m_from FROM bounds) AND (SELECT m_to FROM bounds)
     GROUP BY 1, 2
 ),

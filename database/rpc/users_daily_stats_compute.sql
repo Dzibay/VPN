@@ -1,11 +1,5 @@
--- Дневная сводка: registered_at, payments, devices — календарь Europe/Moscow;
--- traffic_date (снимки) — календарный день UTC на момент сбора (см. xray_stats_collect).
--- p_from / p_to — опциональный диапазон календарных дней МСК (включительно); NULL = вся история.
-DROP FUNCTION IF EXISTS rpc_users_daily_stats ();
-
-DROP FUNCTION IF EXISTS rpc_users_daily_stats (date, date);
-
-CREATE OR REPLACE FUNCTION rpc_users_daily_stats (
+-- Тяжёлый расчёт дневной статистики пользователей (МСК). Источник для materialized view.
+CREATE OR REPLACE FUNCTION fn_users_daily_stats_compute (
     p_from date DEFAULT NULL,
     p_to date DEFAULT NULL
 )

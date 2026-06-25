@@ -1,6 +1,4 @@
 -- Сводные суммы для cash position (один round-trip вместо 7 запросов).
-DROP FUNCTION IF EXISTS rpc_finance_cash_position (date);
-
 CREATE OR REPLACE FUNCTION rpc_finance_cash_position (p_as_of date)
 RETURNS jsonb
 LANGUAGE sql

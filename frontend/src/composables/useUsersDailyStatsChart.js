@@ -103,6 +103,11 @@ export function useUsersDailyStatsChart(dateRangeRef = null) {
   const hourBaselineDevices = ref(0)
   const hourUndatedUsers = ref(0)
 
+  const dayBaselineUsers = ref(0)
+  const dayBaselineTraffic = ref(0)
+  const dayBaselineDevices = ref(0)
+  const dayBaselinePayment = ref(0)
+
   /** @type {import('vue').Ref<DailyStatsRow[]>} */
   const rows = ref([])
   const loading = ref(false)
@@ -119,6 +124,12 @@ export function useUsersDailyStatsChart(dateRangeRef = null) {
   watch(hourDayMsk, () => {
     if (granularity.value === 'hour') void load()
   })
+
+  if (dateRangeRef) {
+    watch(dateRangeRef, () => {
+      if (granularity.value === 'day') void load()
+    }, { deep: true })
+  }
 
   /** Явная смена режима (не деструктурировать ``granularity`` из композабла — потеряется реактивность). */
   function setGranularity(g) {
@@ -198,10 +209,10 @@ export function useUsersDailyStatsChart(dateRangeRef = null) {
       }))
     }
 
-    let cumDatedUsers = 0
-    let cumDatedTraffic = 0
-    let cumDatedDevices = 0
-    let cumDatedPayment = 0
+    let cumDatedUsers = dayBaselineUsers.value
+    let cumDatedTraffic = dayBaselineTraffic.value
+    let cumDatedDevices = dayBaselineDevices.value
+    let cumDatedPayment = dayBaselinePayment.value
     return dense.map((row) => {
       cumDatedUsers += row.dayUsers
       cumDatedTraffic += row.dayTraffic
@@ -794,6 +805,14 @@ export function useUsersDailyStatsChart(dateRangeRef = null) {
         hourBaselineTraffic.value = 0
         hourBaselineDevices.value = 0
         hourUndatedUsers.value = 0
+        dayBaselineUsers.value =
+          Number(data.day_baseline_users_count) || 0
+        dayBaselineTraffic.value =
+          Number(data.day_baseline_users_with_traffic_count) || 0
+        dayBaselineDevices.value =
+          Number(data.day_baseline_subscription_devices_users_count) || 0
+        dayBaselinePayment.value =
+          Number(data.day_baseline_users_with_payment_count) || 0
       }
     } catch (e) {
       error.value = e.message || String(e)
@@ -802,6 +821,10 @@ export function useUsersDailyStatsChart(dateRangeRef = null) {
       hourBaselineTraffic.value = 0
       hourBaselineDevices.value = 0
       hourUndatedUsers.value = 0
+      dayBaselineUsers.value = 0
+      dayBaselineTraffic.value = 0
+      dayBaselineDevices.value = 0
+      dayBaselinePayment.value = 0
     } finally {
       loading.value = false
     }

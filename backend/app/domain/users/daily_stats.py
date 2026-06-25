@@ -114,6 +114,22 @@ def _hour_extras_from_first_rpc_row(row: object | None) -> tuple[int, int, int, 
     )
 
 
+async def _day_baseline_from_mv(
+    session: AsyncSession,
+    *,
+    date_before: date,
+) -> tuple[int, int, int, int]:
+    stmt = text("SELECT rpc_users_daily_stats_baseline(:p_before) AS payload")
+    row = (await session.execute(stmt, {"p_before": date_before})).one()
+    raw = row.payload if isinstance(row.payload, dict) else {}
+    return (
+        int(raw.get("users_count") or 0),
+        int(raw.get("users_with_traffic_count") or 0),
+        int(raw.get("subscription_devices_users_count") or 0),
+        int(raw.get("users_with_payment_count") or 0),
+    )
+
+
 async def users_daily_stats(
     session: AsyncSession,
     *,
@@ -170,10 +186,20 @@ async def users_daily_stats(
             hour_undated_users_count=undated_n,
         )
     dated = await stats_by_date_merged(session, date_from=date_from, date_to=date_to)
+    day_baseline: tuple[int, int, int, int] | None = None
+    if date_from is not None:
+        try:
+            day_baseline = await _day_baseline_from_mv(session, date_before=date_from)
+        except Exception:
+            day_baseline = None
     return UsersDailyStatsResponse(
         granularity="day",
         hour_day=None,
         stats_by_date=_with_day_period_start(dated),
+        day_baseline_users_count=day_baseline[0] if day_baseline else None,
+        day_baseline_users_with_traffic_count=day_baseline[1] if day_baseline else None,
+        day_baseline_subscription_devices_users_count=day_baseline[2] if day_baseline else None,
+        day_baseline_users_with_payment_count=day_baseline[3] if day_baseline else None,
     )
 
 

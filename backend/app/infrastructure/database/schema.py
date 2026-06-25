@@ -1,7 +1,9 @@
 """
 Идемпотентное приведение схемы PostgreSQL: database/init.sql (CREATE/индексы),
 затем database/migrate.sql (опционально: может содержать только комментарии),
-затем все ``database/rpc/*.sql`` (функции RPC, например ``rpc_users_daily_stats``).
+затем ``database/rollups/pre_*.sql`` (rollup-таблицы),
+затем все ``database/rpc/*.sql``,
+затем ``database/rollups/post_*.sql`` (materialized views).
 
 docker-entrypoint-initdb.d выполняется только при пустом data directory; старые БД
 догоняются при старте приложения через ensure_schema().
@@ -20,6 +22,9 @@ log = logging.getLogger(__name__)
 _INIT_NAME = "init.sql"
 _MIGRATE_NAME = "migrate.sql"
 _RPC_DIR_NAME = "rpc"
+_ROLLUPS_DIR_NAME = "rollups"
+_ROLLUP_PRE_PREFIX = "pre_"
+_ROLLUP_POST_PREFIX = "post_"
 
 
 def _repo_root_candidates() -> list[Path]:
@@ -45,6 +50,18 @@ def resolve_schema_sql_paths() -> tuple[Path, Path]:
     raise FileNotFoundError(
         f"Нужны database/{_INIT_NAME} и database/{_MIGRATE_NAME} "
         "(рядом с корнем репозитория или в /app/database/).",
+    )
+
+
+def resolve_rollup_sql_paths(*, phase: str) -> list[Path]:
+    """``pre_*`` — до RPC (rollup-таблицы); ``post_*`` — после RPC (materialized views)."""
+    init_path, _migrate_path = resolve_schema_sql_paths()
+    rollups_dir = init_path.parent / _ROLLUPS_DIR_NAME
+    if not rollups_dir.is_dir():
+        return []
+    prefix = _ROLLUP_PRE_PREFIX if phase == "pre" else _ROLLUP_POST_PREFIX
+    return sorted(
+        p for p in rollups_dir.glob(f"{prefix}*.sql") if p.is_file()
     )
 
 
@@ -114,28 +131,49 @@ def _execute_sql_file(conn, path: Path, *, allow_empty: bool = False) -> None:
         conn.execute(text(stmt))
 
 
+def _dispose_connection_pools() -> None:
+    """Сброс пулов после DDL — старые соединения не держат планы с устаревшими OID."""
+    from app.infrastructure.database.session import async_engine, engine as sync_engine
+
+    sync_engine.dispose()
+    async_engine.sync_engine.dispose()
+
+
 def ensure_schema(engine: Engine | None = None) -> None:
-    """init.sql → migrate.sql (может быть пустым по смыслу) → database/rpc/*.sql в одной транзакции."""
+    """init → migrate → rollups/pre → rpc → rollups/post в одной транзакции."""
     from app.infrastructure.database.session import engine as default_engine
 
     eng = engine or default_engine
     init_path, migrate_path = resolve_schema_sql_paths()
+    rollup_pre_paths = resolve_rollup_sql_paths(phase="pre")
     rpc_paths = resolve_rpc_sql_paths()
+    rollup_post_paths = resolve_rollup_sql_paths(phase="post")
 
     try:
         with eng.begin() as conn:
             _execute_sql_file(conn, init_path)
             _execute_sql_file(conn, migrate_path, allow_empty=True)
+            for rollup_path in rollup_pre_paths:
+                _execute_sql_file(conn, rollup_path)
             for rpc_path in rpc_paths:
                 _execute_sql_file(conn, rpc_path)
+            for rollup_path in rollup_post_paths:
+                _execute_sql_file(conn, rollup_path)
     except SQLAlchemyError:
         log.exception("Ошибка применения схемы (%s, %s)", init_path, migrate_path)
         raise
+    finally:
+        if engine is None:
+            _dispose_connection_pools()
 
+    rollup_names = ", ".join(
+        p.name for p in (*rollup_pre_paths, *rollup_post_paths)
+    ) or "—"
     rpc_names = ", ".join(p.name for p in rpc_paths) or "—"
     log.info(
-        "Схема БД синхронизирована (%s + %s; rpc: %s)",
+        "Схема БД синхронизирована (%s + %s; rollups: %s; rpc: %s)",
         init_path.name,
         migrate_path.name,
+        rollup_names,
         rpc_names,
     )
