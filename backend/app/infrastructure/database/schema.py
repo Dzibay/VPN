@@ -12,10 +12,12 @@ docker-entrypoint-initdb.d выполняется только при пусто
 from __future__ import annotations
 
 import logging
+import random
+import time
 from pathlib import Path
 
 from sqlalchemy import Engine, text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +29,8 @@ _ROLLUP_PRE_PREFIX = "pre_"
 _ROLLUP_POST_PREFIX = "post_"
 # Один процесс на кластер: несколько uvicorn workers не должны параллельно гонять DDL.
 _SCHEMA_MIGRATION_ADVISORY_LOCK_ID = 72490001
+_SCHEMA_MIGRATION_MAX_ATTEMPTS = 5
+_DEADLOCK_SQLSTATE = "40P01"
 
 
 def _repo_root_candidates() -> list[Path]:
@@ -141,8 +145,39 @@ def _dispose_connection_pools() -> None:
     async_engine.sync_engine.dispose()
 
 
-def ensure_schema(engine: Engine | None = None) -> None:
+def _is_deadlock(exc: BaseException) -> bool:
+    orig = getattr(exc, "orig", None)
+    return getattr(orig, "sqlstate", None) == _DEADLOCK_SQLSTATE
+
+
+def _apply_schema_once(
+    eng: Engine,
+    *,
+    init_path: Path,
+    migrate_path: Path,
+    rollup_pre_paths: list[Path],
+    rpc_paths: list[Path],
+    rollup_post_paths: list[Path],
+) -> None:
     """init → migrate → rollups/pre → rpc → rollups/post в одной транзакции."""
+    with eng.begin() as conn:
+        # Сериализация миграций между uvicorn workers (иначе ALTER TABLE → deadlock).
+        conn.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_id)"),
+            {"lock_id": _SCHEMA_MIGRATION_ADVISORY_LOCK_ID},
+        )
+        _execute_sql_file(conn, init_path)
+        _execute_sql_file(conn, migrate_path, allow_empty=True)
+        for rollup_path in rollup_pre_paths:
+            _execute_sql_file(conn, rollup_path)
+        for rpc_path in rpc_paths:
+            _execute_sql_file(conn, rpc_path)
+        for rollup_path in rollup_post_paths:
+            _execute_sql_file(conn, rollup_path)
+
+
+def ensure_schema(engine: Engine | None = None) -> None:
+    """init → migrate → rollups/pre → rpc → rollups/post; повтор при deadlock."""
     from app.infrastructure.database.session import engine as default_engine
 
     eng = engine or default_engine
@@ -158,23 +193,34 @@ def ensure_schema(engine: Engine | None = None) -> None:
         )
 
     try:
-        with eng.begin() as conn:
-            # Сериализация миграций между uvicorn workers (иначе ALTER TABLE → deadlock).
-            conn.execute(
-                text("SELECT pg_advisory_xact_lock(:lock_id)"),
-                {"lock_id": _SCHEMA_MIGRATION_ADVISORY_LOCK_ID},
-            )
-            _execute_sql_file(conn, init_path)
-            _execute_sql_file(conn, migrate_path, allow_empty=True)
-            for rollup_path in rollup_pre_paths:
-                _execute_sql_file(conn, rollup_path)
-            for rpc_path in rpc_paths:
-                _execute_sql_file(conn, rpc_path)
-            for rollup_path in rollup_post_paths:
-                _execute_sql_file(conn, rollup_path)
-    except SQLAlchemyError:
-        log.exception("Ошибка применения схемы (%s, %s)", init_path, migrate_path)
-        raise
+        for attempt in range(1, _SCHEMA_MIGRATION_MAX_ATTEMPTS + 1):
+            try:
+                _apply_schema_once(
+                    eng,
+                    init_path=init_path,
+                    migrate_path=migrate_path,
+                    rollup_pre_paths=rollup_pre_paths,
+                    rpc_paths=rpc_paths,
+                    rollup_post_paths=rollup_post_paths,
+                )
+                break
+            except OperationalError as exc:
+                if not _is_deadlock(exc) or attempt >= _SCHEMA_MIGRATION_MAX_ATTEMPTS:
+                    log.exception("Ошибка применения схемы (%s, %s)", init_path, migrate_path)
+                    raise
+                delay = min(2.0**attempt + random.uniform(0, 0.5), 30.0)
+                log.warning(
+                    "Deadlock при миграции схемы, повтор %s/%s через %.1f с",
+                    attempt + 1,
+                    _SCHEMA_MIGRATION_MAX_ATTEMPTS,
+                    delay,
+                )
+                if engine is None:
+                    _dispose_connection_pools()
+                time.sleep(delay)
+            except SQLAlchemyError:
+                log.exception("Ошибка применения схемы (%s, %s)", init_path, migrate_path)
+                raise
     finally:
         if engine is None:
             _dispose_connection_pools()

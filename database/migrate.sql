@@ -307,3 +307,53 @@ CREATE TABLE IF NOT EXISTS stats_users_daily_dirty (
 
 CREATE INDEX IF NOT EXISTS idx_stats_users_daily_dirty_at
     ON stats_users_daily_dirty (dirty_at);
+
+-- Починка архива трафика (server_id=0): старый перенос без carry-forward давал падающий ряд.
+DO $$
+DECLARE
+    uid bigint;
+    r RECORD;
+    prev_total bigint;
+    cur_total bigint;
+    new_total bigint;
+    up_share double precision;
+BEGIN
+    FOR uid IN
+        SELECT DISTINCT user_id
+        FROM user_server_traffic
+        WHERE server_id = 0
+        ORDER BY user_id
+    LOOP
+        prev_total := 0;
+        FOR r IN
+            SELECT traffic_date, up_bytes, down_bytes
+            FROM user_server_traffic
+            WHERE server_id = 0 AND user_id = uid
+            ORDER BY traffic_date
+        LOOP
+            cur_total := COALESCE(r.up_bytes, 0) + COALESCE(r.down_bytes, 0);
+            IF cur_total < prev_total THEN
+                new_total := prev_total + cur_total;
+                IF cur_total > 0 THEN
+                    up_share := r.up_bytes::double precision / cur_total::double precision;
+                    UPDATE user_server_traffic
+                    SET
+                        up_bytes = ROUND(new_total * up_share)::bigint,
+                        down_bytes = new_total - ROUND(new_total * up_share)::bigint
+                    WHERE server_id = 0
+                      AND user_id = uid
+                      AND traffic_date = r.traffic_date;
+                ELSE
+                    UPDATE user_server_traffic
+                    SET up_bytes = 0, down_bytes = new_total
+                    WHERE server_id = 0
+                      AND user_id = uid
+                      AND traffic_date = r.traffic_date;
+                END IF;
+                prev_total := new_total;
+            ELSE
+                prev_total := cur_total;
+            END IF;
+        END LOOP;
+    END LOOP;
+END $$;

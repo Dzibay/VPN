@@ -54,6 +54,7 @@ from app.domain.servers.traffic_archive import (
     assert_deletable_server_id,
     ensure_traffic_archive_server,
     relocate_server_traffic_to_archive,
+    repair_traffic_archive_totals,
 )
 from app.infrastructure.cache import get_redis
 from app.infrastructure.cache.server_reachability_store import (
@@ -274,6 +275,12 @@ async def delete_server(session: AsyncSession, server_id: int) -> None:
             "delete_server: перенесено %s строк user_server_traffic server_id=%s → id=0",
             moved,
             server_id,
+        )
+    repaired = await repair_traffic_archive_totals(session)
+    if repaired:
+        log.info(
+            "delete_server: исправлено %s строк архива трафика (carry-forward)",
+            repaired,
         )
     await session.delete(server)
     await session.flush()

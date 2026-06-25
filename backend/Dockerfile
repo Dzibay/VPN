@@ -22,6 +22,7 @@ COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/app ./app
+COPY backend/scripts ./scripts
 COPY backend/worker ./worker
 COPY database/init.sql ./database/init.sql
 COPY database/migrate.sql ./database/migrate.sql
@@ -34,7 +35,8 @@ ENV PYTHONUNBUFFERED=1 \
 
 ARG APP_UID=10001
 ARG APP_GID=10001
-RUN groupadd --system --gid ${APP_GID} app \
+RUN chmod +x /app/scripts/docker_entrypoint_api.sh \
+    && groupadd --system --gid ${APP_GID} app \
     && useradd --system --uid ${APP_UID} --gid ${APP_GID} \
         --home-dir /app --shell /sbin/nologin app \
     && chown -R ${APP_UID}:${APP_GID} /app
