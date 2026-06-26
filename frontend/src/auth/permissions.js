@@ -15,7 +15,7 @@ export function canUseCabinetUserFeatures(role) {
 
 /** Куда вести после входа по умолчанию (без учёта query.redirect). */
 export function defaultPathAfterLogin(role) {
-  if (role === 'admin') return '/admin/users/analytics'
+  if (role === 'admin') return '/admin/summary'
   if (role === 'manager') return '/admin/referrals'
   return '/cabinet'
 }

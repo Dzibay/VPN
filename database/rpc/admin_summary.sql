@@ -61,6 +61,52 @@ payments_period AS (
     FROM stats_payments_daily_msk s
     WHERE s.day_msk BETWEEN p_from AND p_to
 ),
+payments_in_period AS (
+    SELECT
+        p.user_id,
+        (p.created_at AT TIME ZONE 'Europe/Moscow')::date AS pay_day
+    FROM payments p
+    INNER JOIN qualified_users qu ON qu.id = p.user_id
+    WHERE p.user_id IS NOT NULL
+      AND (p.created_at AT TIME ZONE 'Europe/Moscow')::date BETWEEN p_from AND p_to
+),
+paying_users_in_period AS (
+    SELECT COUNT(DISTINCT pip.user_id)::bigint AS n
+    FROM payments_in_period pip
+),
+expiry_renewal_base AS (
+    SELECT
+        qu.id AS user_id,
+        qu.subscription_until AS expiry_day,
+        EXISTS (
+            SELECT 1
+            FROM payments p
+            WHERE p.user_id = qu.id
+        ) AS had_paid_before,
+        EXISTS (
+            SELECT 1
+            FROM payments p
+            WHERE p.user_id = qu.id
+              AND (p.created_at AT TIME ZONE 'Europe/Moscow')::date = qu.subscription_until
+        ) AS paid_on_expiry,
+        EXISTS (
+            SELECT 1
+            FROM payments p
+            WHERE p.user_id = qu.id
+              AND (p.created_at AT TIME ZONE 'Europe/Moscow')::date >= qu.subscription_until
+              AND (p.created_at AT TIME ZONE 'Europe/Moscow')::date BETWEEN p_from AND p_to
+        ) AS returned_in_period
+    FROM qualified_users qu
+    WHERE qu.subscription_until IS NOT NULL
+      AND qu.subscription_until BETWEEN p_from AND p_to
+),
+renewal_stats AS (
+    SELECT
+        COUNT(*) FILTER (WHERE had_paid_before)::bigint AS eligible,
+        COUNT(*) FILTER (WHERE had_paid_before AND paid_on_expiry)::bigint AS renewed,
+        COUNT(*) FILTER (WHERE had_paid_before AND returned_in_period)::bigint AS returned
+    FROM expiry_renewal_base
+),
 payments_total AS (
     SELECT COALESCE(SUM(s.gross), 0)::numeric(14, 2) AS revenue
     FROM stats_payments_daily_msk s
@@ -92,6 +138,10 @@ SELECT jsonb_build_object(
     'payments_count', (SELECT cnt FROM payments_period),
     'revenue_total', (SELECT revenue FROM payments_total),
     'paying_users_total', (SELECT n FROM paying_users),
-    'avg_revenue_per_paying_user', (SELECT avg_revenue FROM avg_per_payer)
+    'avg_revenue_per_paying_user', (SELECT avg_revenue FROM avg_per_payer),
+    'paying_users_in_period', (SELECT n FROM paying_users_in_period),
+    'renewal_eligible', (SELECT eligible FROM renewal_stats),
+    'renewed_on_expiry', (SELECT renewed FROM renewal_stats),
+    'returned_after_expiry', (SELECT returned FROM renewal_stats)
 );
 $$;

@@ -39,3 +39,35 @@ class AdminSummaryResponse(BaseModel):
         ge=0,
         description="Конверсия: paying_users_total / users_total, %",
     )
+
+    paying_users_in_period: int = Field(
+        ge=0,
+        description="Уникальных платящих за период (МСК)",
+    )
+    ltv_period: Decimal = Field(
+        description="LTV за период: revenue_period / paying_users_in_period",
+    )
+    payments_per_paying_user: float = Field(
+        ge=0,
+        description="Среднее число платежей на платящего за период",
+    )
+    renewal_pct: float = Field(
+        ge=0,
+        description="Продление в день окончания: renewed_on_expiry / renewal_eligible, %",
+    )
+    return_pct: float = Field(
+        ge=0,
+        description="Возвратность: returned_after_expiry / renewal_eligible, %",
+    )
+    renewal_eligible: int = Field(
+        ge=0,
+        description="Истекла подписка в периоде у пользователей с оплатами",
+    )
+    renewed_on_expiry: int = Field(
+        ge=0,
+        description="Оплатили в день окончания подписки",
+    )
+    returned_after_expiry: int = Field(
+        ge=0,
+        description="Оплатили в периоде в день окончания или позже",
+    )

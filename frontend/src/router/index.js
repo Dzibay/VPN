@@ -262,7 +262,7 @@ const routes = [
     redirect: (to) =>
       to.query.tab === 'servers'
         ? { path: '/admin/servers' }
-        : { path: '/admin/users/analytics' },
+        : { path: '/admin/summary' },
   },
 ]
 
@@ -328,7 +328,7 @@ router.beforeEach(async (to, _from, next) => {
 
   if ((to.name === 'login' || to.name === 'register') && token) {
     if (isAdminRole(role)) {
-      return next({ path: '/admin/users/analytics' })
+      return next({ path: defaultPathAfterLogin(role) })
     }
     if (role === 'manager') {
       return next({ path: '/admin/referrals' })

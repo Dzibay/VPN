@@ -156,7 +156,7 @@ onMounted(() => {
           </p>
         </StatWidget>
 
-        <StatWidget title="Платежи">
+        <StatWidget title="Платежи за период">
           <StatWidgetSplit
             v-if="!loading && !error"
             :items="[
@@ -169,12 +169,12 @@ onMounted(() => {
           </p>
         </StatWidget>
 
-        <StatWidget title="Платящие">
+        <StatWidget title="Платящие за период">
           <StatWidgetSplit
             v-if="!loading && !error"
             :items="[
-              { label: 'Ср. доход / плательщик', value: `${money(data?.avg_revenue_per_paying_user)} ₽` },
-              { label: 'Всего платящих', value: int(data?.paying_users_total) },
+              { label: 'Всего', value: int(data?.paying_users_in_period) },
+              { label: 'LTV', value: `${money(data?.ltv_period)} ₽` },
             ]"
           />
           <p v-else class="stat-widget-value stat-widget-value--muted">
@@ -187,7 +187,33 @@ onMounted(() => {
             {{ loading ? '…' : error ? '—' : `${pct(data?.conversion_pct)}%` }}
           </p>
           <p v-if="!loading && !error" class="stat-widget-meta">
-            {{ int(data?.paying_users_total) }} из {{ int(data?.users_total) }}
+            доля платящих от всех пользователей
+          </p>
+        </StatWidget>
+
+        <StatWidget title="Платежей на плательщика">
+          <p class="stat-widget-value">
+            {{ loading ? '…' : error ? '—' : pct(data?.payments_per_paying_user) }}
+          </p>
+          <p v-if="!loading && !error" class="stat-widget-meta">
+            среднее число платежей на одного платящего за период
+          </p>
+        </StatWidget>
+
+        <StatWidget title="Удержание платящих">
+          <StatWidgetSplit
+            v-if="!loading && !error"
+            :items="[
+              { label: 'Продление в день окончания', value: `${pct(data?.renewal_pct)}%` },
+              { label: 'Возвратность', value: `${pct(data?.return_pct)}%` },
+            ]"
+          />
+          <p v-else class="stat-widget-value stat-widget-value--muted">
+            {{ loading ? '…' : '—' }}
+          </p>
+          <p v-if="!loading && !error" class="stat-widget-meta">
+            истекло с оплатой: {{ int(data?.renewal_eligible) }} · продлили
+            {{ int(data?.renewed_on_expiry) }} · вернулись {{ int(data?.returned_after_expiry) }}
           </p>
         </StatWidget>
       </div>

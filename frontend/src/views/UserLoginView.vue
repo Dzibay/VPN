@@ -65,7 +65,7 @@ async function submit() {
     const r = route.query.redirect
     if (data.role === 'admin') {
       router.replace(
-        typeof r === 'string' && r.startsWith('/admin') ? r : '/admin/users/analytics',
+        typeof r === 'string' && r.startsWith('/admin') ? r : '/admin/summary',
       )
     } else if (data.role === 'manager') {
       const rPath = typeof r === 'string' ? r.split('?')[0] : ''
@@ -75,6 +75,7 @@ async function submit() {
         typeof r === 'string' &&
         (r.startsWith('/admin/referrals') ||
           r.startsWith('/admin/funnel') ||
+          r.startsWith('/admin/summary') ||
           r.startsWith('/admin/users/registrations-by-date') ||
           r.startsWith('/admin/users/analytics') ||
           isUserPerAnalyticsRedirect ||

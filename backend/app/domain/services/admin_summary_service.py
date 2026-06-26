@@ -39,10 +39,25 @@ async def get_admin_summary(
     payments_count = int(raw.get("payments_count") or 0)
     revenue_period = _to_decimal(raw.get("revenue_period"))
 
+    paying_users_in_period = int(raw.get("paying_users_in_period") or 0)
+    renewal_eligible = int(raw.get("renewal_eligible") or 0)
+    renewed_on_expiry = int(raw.get("renewed_on_expiry") or 0)
+    returned_after_expiry = int(raw.get("returned_after_expiry") or 0)
+
     avg_check = (
         (revenue_period / payments_count).quantize(Decimal("0.01"))
         if payments_count > 0
         else Decimal(0)
+    )
+    ltv_period = (
+        (revenue_period / paying_users_in_period).quantize(Decimal("0.01"))
+        if paying_users_in_period > 0
+        else Decimal(0)
+    )
+    payments_per_paying_user = (
+        round(payments_count / paying_users_in_period, 2)
+        if paying_users_in_period > 0
+        else 0.0
     )
 
     return AdminSummaryResponse(
@@ -62,4 +77,12 @@ async def get_admin_summary(
         avg_revenue_per_paying_user=_to_decimal(raw.get("avg_revenue_per_paying_user")),
         paying_users_total=paying_users_total,
         conversion_pct=_pct(paying_users_total, users_total),
+        paying_users_in_period=paying_users_in_period,
+        ltv_period=ltv_period,
+        payments_per_paying_user=payments_per_paying_user,
+        renewal_pct=_pct(renewed_on_expiry, renewal_eligible),
+        return_pct=_pct(returned_after_expiry, renewal_eligible),
+        renewal_eligible=renewal_eligible,
+        renewed_on_expiry=renewed_on_expiry,
+        returned_after_expiry=returned_after_expiry,
     )
