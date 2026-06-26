@@ -384,6 +384,12 @@ class Settings(BaseSettings):
         le=3600,
         description="Интервал flush очереди stats_users_daily_dirty (сек).",
     )
+    stats_users_daily_flush_initial_delay_seconds: int = Field(
+        default=50,
+        ge=0,
+        le=600,
+        description="Задержка перед первым flush очереди stats_users_daily_dirty после старта scheduler.",
+    )
     stats_users_daily_traffic_dirty_days: int = Field(
         default=31,
         ge=7,

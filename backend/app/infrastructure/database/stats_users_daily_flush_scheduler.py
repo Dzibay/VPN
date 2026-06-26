@@ -15,7 +15,7 @@ log = logging.getLogger("app.stats_users_daily_flush_scheduler")
 
 async def periodic_stats_users_daily_flush_loop() -> None:
     interval = max(15, int(settings.stats_users_daily_flush_interval_seconds))
-    initial = max(0, int(settings.scheduler_initial_delay_seconds))
+    initial = max(0, int(settings.stats_users_daily_flush_initial_delay_seconds))
     log.info(
         "stats users daily flush: запущен (интервал=%ss, задержка=%ss)",
         interval,
