@@ -53,7 +53,7 @@ class AdminSummaryResponse(BaseModel):
     )
     renewal_pct: float = Field(
         ge=0,
-        description="Продление в день окончания: renewed_on_expiry / renewal_eligible, %",
+        description="Удержание: (renewed_on_expiry + renewed_early) / renewal_eligible, %",
     )
     return_pct: float = Field(
         ge=0,
@@ -61,13 +61,17 @@ class AdminSummaryResponse(BaseModel):
     )
     renewal_eligible: int = Field(
         ge=0,
-        description="Истекла подписка в периоде у пользователей с оплатами",
+        description="Расчётных окончаний подписки (months×31) в периоде",
     )
     renewed_on_expiry: int = Field(
         ge=0,
-        description="Оплатили в день окончания подписки",
+        description="Следующая оплата ровно в день расчётного окончания",
+    )
+    renewed_early: int = Field(
+        ge=0,
+        description="Следующая оплата до расчётного окончания (досрочно)",
     )
     returned_after_expiry: int = Field(
         ge=0,
-        description="Оплатили в периоде в день окончания или позже",
+        description="Следующая оплата позже окончания, в пределах периода",
     )

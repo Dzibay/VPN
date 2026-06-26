@@ -4,7 +4,8 @@ RETURNS jsonb
 LANGUAGE sql
 STABLE
 AS $$
-WITH msk AS (
+WITH RECURSIVE
+msk AS (
     SELECT (NOW() AT TIME ZONE 'Europe/Moscow')::date AS today
 ),
 qualified_users AS (
@@ -74,38 +75,75 @@ paying_users_in_period AS (
     SELECT COUNT(DISTINCT pip.user_id)::bigint AS n
     FROM payments_in_period pip
 ),
-expiry_renewal_base AS (
+payments_for_replay AS (
     SELECT
-        qu.id AS user_id,
-        qu.subscription_until AS expiry_day,
-        EXISTS (
-            SELECT 1
-            FROM payments p
-            WHERE p.user_id = qu.id
-        ) AS had_paid_before,
-        EXISTS (
-            SELECT 1
-            FROM payments p
-            WHERE p.user_id = qu.id
-              AND (p.created_at AT TIME ZONE 'Europe/Moscow')::date = qu.subscription_until
-        ) AS paid_on_expiry,
-        EXISTS (
-            SELECT 1
-            FROM payments p
-            WHERE p.user_id = qu.id
-              AND (p.created_at AT TIME ZONE 'Europe/Moscow')::date >= qu.subscription_until
-              AND (p.created_at AT TIME ZONE 'Europe/Moscow')::date BETWEEN p_from AND p_to
-        ) AS returned_in_period
-    FROM qualified_users qu
-    WHERE qu.subscription_until IS NOT NULL
-      AND qu.subscription_until BETWEEN p_from AND p_to
+        p.user_id,
+        p.id,
+        (p.created_at AT TIME ZONE 'Europe/Moscow')::date AS pay_day,
+        GREATEST(COALESCE(NULLIF(p.months, 0), 1), 1) AS months,
+        ROW_NUMBER() OVER (
+            PARTITION BY p.user_id ORDER BY p.created_at ASC, p.id ASC
+        )::bigint AS pay_num
+    FROM payments p
+    INNER JOIN qualified_users qu ON qu.id = p.user_id
+    WHERE p.user_id IS NOT NULL
+      AND COALESCE(p.months, 0) >= 1
+),
+payment_chain AS (
+    SELECT
+        pr.user_id,
+        pr.pay_day,
+        pr.months,
+        pr.pay_num,
+        pr.pay_day AS sub_start,
+        pr.pay_day + pr.months * 31 AS sub_until_after
+    FROM payments_for_replay pr
+    WHERE pr.pay_num = 1
+
+    UNION ALL
+
+    SELECT
+        pr.user_id,
+        pr.pay_day,
+        pr.months,
+        pr.pay_num,
+        CASE
+            WHEN pc.sub_until_after >= pr.pay_day THEN pc.sub_until_after
+            ELSE pr.pay_day
+        END AS sub_start,
+        (CASE
+            WHEN pc.sub_until_after >= pr.pay_day THEN pc.sub_until_after
+            ELSE pr.pay_day
+        END) + pr.months * 31 AS sub_until_after
+    FROM payments_for_replay pr
+    INNER JOIN payment_chain pc
+        ON pc.user_id = pr.user_id
+       AND pr.pay_num = pc.pay_num + 1
+),
+expiry_with_next AS (
+    SELECT
+        pc.user_id,
+        pc.sub_until_after AS expiry_day,
+        LEAD(pc.pay_day) OVER (
+            PARTITION BY pc.user_id ORDER BY pc.pay_num
+        ) AS next_pay_day
+    FROM payment_chain pc
 ),
 renewal_stats AS (
     SELECT
-        COUNT(*) FILTER (WHERE had_paid_before)::bigint AS eligible,
-        COUNT(*) FILTER (WHERE had_paid_before AND paid_on_expiry)::bigint AS renewed,
-        COUNT(*) FILTER (WHERE had_paid_before AND returned_in_period)::bigint AS returned
-    FROM expiry_renewal_base
+        COUNT(*)::bigint AS eligible,
+        COUNT(*) FILTER (
+            WHERE ewn.next_pay_day = ewn.expiry_day
+        )::bigint AS renewed,
+        COUNT(*) FILTER (
+            WHERE ewn.next_pay_day < ewn.expiry_day
+        )::bigint AS renewed_early,
+        COUNT(*) FILTER (
+            WHERE ewn.next_pay_day > ewn.expiry_day
+              AND ewn.next_pay_day BETWEEN p_from AND p_to
+        )::bigint AS returned
+    FROM expiry_with_next ewn
+    WHERE ewn.expiry_day BETWEEN p_from AND p_to
 ),
 payments_total AS (
     SELECT COALESCE(SUM(s.gross), 0)::numeric(14, 2) AS revenue
@@ -142,6 +180,7 @@ SELECT jsonb_build_object(
     'paying_users_in_period', (SELECT n FROM paying_users_in_period),
     'renewal_eligible', (SELECT eligible FROM renewal_stats),
     'renewed_on_expiry', (SELECT renewed FROM renewal_stats),
+    'renewed_early', (SELECT renewed_early FROM renewal_stats),
     'returned_after_expiry', (SELECT returned FROM renewal_stats)
 );
 $$;

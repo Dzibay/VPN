@@ -204,7 +204,7 @@ onMounted(() => {
           <StatWidgetSplit
             v-if="!loading && !error"
             :items="[
-              { label: 'Продление в день окончания', value: `${pct(data?.renewal_pct)}%` },
+              { label: 'Удержание', value: `${pct(data?.renewal_pct)}%` },
               { label: 'Возвратность', value: `${pct(data?.return_pct)}%` },
             ]"
           />
@@ -212,7 +212,8 @@ onMounted(() => {
             {{ loading ? '…' : '—' }}
           </p>
           <p v-if="!loading && !error" class="stat-widget-meta">
-            истекло с оплатой: {{ int(data?.renewal_eligible) }} · продлили
+            окончаний: {{ int(data?.renewal_eligible) }} · досрочно
+            {{ int(data?.renewed_early) }} · в день окончания
             {{ int(data?.renewed_on_expiry) }} · вернулись {{ int(data?.returned_after_expiry) }}
           </p>
         </StatWidget>

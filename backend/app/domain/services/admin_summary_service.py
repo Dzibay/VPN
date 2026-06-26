@@ -42,6 +42,7 @@ async def get_admin_summary(
     paying_users_in_period = int(raw.get("paying_users_in_period") or 0)
     renewal_eligible = int(raw.get("renewal_eligible") or 0)
     renewed_on_expiry = int(raw.get("renewed_on_expiry") or 0)
+    renewed_early = int(raw.get("renewed_early") or 0)
     returned_after_expiry = int(raw.get("returned_after_expiry") or 0)
 
     avg_check = (
@@ -80,9 +81,10 @@ async def get_admin_summary(
         paying_users_in_period=paying_users_in_period,
         ltv_period=ltv_period,
         payments_per_paying_user=payments_per_paying_user,
-        renewal_pct=_pct(renewed_on_expiry, renewal_eligible),
+        renewal_pct=_pct(renewed_on_expiry + renewed_early, renewal_eligible),
         return_pct=_pct(returned_after_expiry, renewal_eligible),
         renewal_eligible=renewal_eligible,
         renewed_on_expiry=renewed_on_expiry,
+        renewed_early=renewed_early,
         returned_after_expiry=returned_after_expiry,
     )
