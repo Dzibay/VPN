@@ -61,7 +61,7 @@ class AdminSummaryResponse(BaseModel):
     )
     renewal_eligible: int = Field(
         ge=0,
-        description="Расчётных окончаний подписки (months×31) в периоде",
+        description="Расчётных окончаний по notify_payment (paid_months×31 + бонусы) в периоде",
     )
     renewed_on_expiry: int = Field(
         ge=0,

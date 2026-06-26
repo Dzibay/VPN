@@ -75,29 +75,32 @@ paying_users_in_period AS (
     SELECT COUNT(DISTINCT pip.user_id)::bigint AS n
     FROM payments_in_period pip
 ),
-payments_for_replay AS (
+notify_payment_for_replay AS (
     SELECT
-        p.user_id,
-        p.id,
-        (p.created_at AT TIME ZONE 'Europe/Moscow')::date AS pay_day,
-        GREATEST(COALESCE(NULLIF(p.months, 0), 1), 1) AS months,
+        t.user_id,
+        t.id AS task_id,
+        (t.created_at AT TIME ZONE 'Europe/Moscow')::date AS pay_day,
+        (
+            GREATEST(COALESCE(t.paid_months, 1), 1) * 31
+            + COALESCE(t.bonus_days, 0)
+            + COALESCE(t.early_payment_bonus_days, 0)
+        ) AS total_days,
         ROW_NUMBER() OVER (
-            PARTITION BY p.user_id ORDER BY p.created_at ASC, p.id ASC
+            PARTITION BY t.user_id ORDER BY t.created_at ASC, t.id ASC
         )::bigint AS pay_num
-    FROM payments p
-    INNER JOIN qualified_users qu ON qu.id = p.user_id
-    WHERE p.user_id IS NOT NULL
-      AND COALESCE(p.months, 0) >= 1
+    FROM tasks t
+    INNER JOIN qualified_users qu ON qu.id = t.user_id
+    WHERE t.type = 'notify_payment'
+      AND COALESCE(t.paid_months, 0) >= 1
 ),
 payment_chain AS (
     SELECT
         pr.user_id,
         pr.pay_day,
-        pr.months,
         pr.pay_num,
         pr.pay_day AS sub_start,
-        pr.pay_day + pr.months * 31 AS sub_until_after
-    FROM payments_for_replay pr
+        pr.pay_day + pr.total_days AS sub_until_after
+    FROM notify_payment_for_replay pr
     WHERE pr.pay_num = 1
 
     UNION ALL
@@ -105,7 +108,6 @@ payment_chain AS (
     SELECT
         pr.user_id,
         pr.pay_day,
-        pr.months,
         pr.pay_num,
         CASE
             WHEN pc.sub_until_after >= pr.pay_day THEN pc.sub_until_after
@@ -114,8 +116,8 @@ payment_chain AS (
         (CASE
             WHEN pc.sub_until_after >= pr.pay_day THEN pc.sub_until_after
             ELSE pr.pay_day
-        END) + pr.months * 31 AS sub_until_after
-    FROM payments_for_replay pr
+        END) + pr.total_days AS sub_until_after
+    FROM notify_payment_for_replay pr
     INNER JOIN payment_chain pc
         ON pc.user_id = pr.user_id
        AND pr.pay_num = pc.pay_num + 1

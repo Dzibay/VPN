@@ -212,7 +212,7 @@ onMounted(() => {
             {{ loading ? '…' : '—' }}
           </p>
           <p v-if="!loading && !error" class="stat-widget-meta">
-            окончаний: {{ int(data?.renewal_eligible) }} · досрочно
+            по notify_payment · окончаний: {{ int(data?.renewal_eligible) }} · досрочно
             {{ int(data?.renewed_early) }} · в день окончания
             {{ int(data?.renewed_on_expiry) }} · вернулись {{ int(data?.returned_after_expiry) }}
           </p>
