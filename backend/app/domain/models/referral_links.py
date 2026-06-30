@@ -1,5 +1,6 @@
 import re
 from datetime import date, datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -14,6 +15,10 @@ class ReferralLinkRead(BaseModel):
     token: str
     owner_kind: str
     owner_user_id: int | None = None
+    group_id: int | None = Field(
+        default=None,
+        description="referral_link_groups.id; null — токен не в группе",
+    )
     clicks_count: int = Field(ge=0)
     registrations_count: int = Field(ge=0)
     payments_count: int = Field(ge=0)
@@ -144,6 +149,11 @@ class ReferralFunnelSummary(BaseModel):
 class ReferralLinkOut(ReferralLinkRead):
     """Ответ админ-API: те же поля + готовые ссылки (SITE_ADDRESS на API, TELEGRAM_BOT_USERNAME)."""
 
+    revenue_net: Decimal = Field(
+        default=Decimal("0"),
+        ge=0,
+        description="Доход (net_amount): сумма оплат пользователей с users.referral_link_id = id",
+    )
     site_entry_url: str | None = Field(
         default=None,
         description="Главная страница сайта: /?ref={token}",

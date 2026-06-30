@@ -14,6 +14,7 @@ from app.api.endpoints import (
     payments,
     prometheus_sd,
     referral_links,
+    referral_link_groups,
     seo_pages,
     server_metrics,
     servers,
@@ -44,6 +45,7 @@ api_router.include_router(staff_chart_events.router)
 api_router.include_router(staff_support_messages.router)
 api_router.include_router(http_audit_staff.router)
 api_router.include_router(referral_links.staff_router)
+api_router.include_router(referral_link_groups.router)
 api_router.include_router(seo_pages.staff_router)
 api_router.include_router(servers.router)
 api_router.include_router(server_metrics.router)

@@ -19,6 +19,11 @@ class ReferralLink(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=True,
     )
+    group_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("referral_link_groups.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     clicks_count: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")
     registrations_count: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")
     payments_count: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")

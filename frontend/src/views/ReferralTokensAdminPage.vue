@@ -1,27 +1,36 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import AdminHighlightListLink from '../components/AdminHighlightListLink.vue'
 import AdminChartsGrid from '../components/AdminChartsGrid.vue'
 import AdminLineChartPanel from '../components/AdminLineChartPanel.vue'
 import AdminStaffShell from '../components/AdminStaffShell.vue'
-import AdminSortTh from '../components/AdminSortTh.vue'
-import AdminTableWrap from '../components/AdminTableWrap.vue'
+import ReferralTokenGroupModal from '../components/ReferralTokenGroupModal.vue'
+import ReferralTokensGroupedTable from '../components/ReferralTokensGroupedTable.vue'
 import AppModal from '../components/AppModal.vue'
 import AppRefreshButton from '../components/AppRefreshButton.vue'
-import RowActionsDropdown from '../components/RowActionsDropdown.vue'
 import StatWidget from '../components/StatWidget.vue'
-import { fetchJson, sitePublicUrl } from '../api/client.js'
+import { fetchJson } from '../api/client.js'
 import { rgbTupleFromVar } from '../utils/adminChartTheme.js'
 import { useTableSort } from '../utils/adminTableSort.js'
 import {
   chartLineCountTooltipLabel,
   formatChartCountTick,
 } from '../utils/adminChartFormatters.js'
-import { formatMskApiDateTime, formatMskCalendarDayShort } from '../utils/mskDate.js'
+import { formatMskCalendarDayShort } from '../utils/mskDate.js'
 
 const route = useRoute()
 const rows = ref([])
+/** @type {import('vue').Ref<Array<{ id: number; name: string; color: string; sort_order: number; link_ids: number[] }>>} */
+const groups = ref([])
+const groupsLoading = ref(false)
+const groupsError = ref(null)
+const groupModalOpen = ref(false)
+const groupModalBusy = ref(false)
+const groupModalError = ref(null)
+/** @type {import('vue').Ref<{ id: number; name: string; color: string; link_ids: number[] } | null>} */
+const editingGroup = ref(null)
+/** @type {import('vue').Ref<import('vue').ComponentPublicInstance | null>} */
+const groupedTableRef = ref(null)
 const loading = ref(false)
 const error = ref(null)
 /** @type {import('vue').Ref<{ direct: { total: number; with_telegram_id: number; without_telegram_id: number }; channel_links: { total: number; with_telegram_id: number; without_telegram_id: number }; user_referrals: { total: number; with_telegram_id: number; without_telegram_id: number } } | null>} */
@@ -240,6 +249,19 @@ async function loadTrafficStats() {
   }
 }
 
+async function loadGroups() {
+  groupsLoading.value = true
+  groupsError.value = null
+  try {
+    groups.value = await fetchJson('/api/referral-link-groups')
+  } catch (e) {
+    groupsError.value = e.message || String(e)
+    groups.value = []
+  } finally {
+    groupsLoading.value = false
+  }
+}
+
 async function load() {
   loading.value = true
   error.value = null
@@ -254,7 +276,13 @@ async function load() {
 }
 
 async function reloadAll() {
-  await Promise.all([load(), loadTrafficStats(), loadTokenRegChart(), loadSourceRegChart()])
+  await Promise.all([
+    load(),
+    loadGroups(),
+    loadTrafficStats(),
+    loadTokenRegChart(),
+    loadSourceRegChart(),
+  ])
 }
 
 function openModal() {
@@ -286,10 +314,6 @@ function openEditModal(r) {
 function closeModal() {
   modalOpen.value = false
   editingId.value = null
-}
-
-function fmtDate(iso) {
-  return formatMskApiDateTime(iso, { dateStyle: 'short', timeStyle: 'medium' })
 }
 
 async function submitModal() {
@@ -352,7 +376,7 @@ async function submitModal() {
     }
     modalOpen.value = false
     editingId.value = null
-    await load()
+    await reloadAll()
   } catch (e) {
     createError.value = e.message || String(e)
   } finally {
@@ -360,17 +384,108 @@ async function submitModal() {
   }
 }
 
-function fallbackSiteEntry(token) {
-  const base = sitePublicUrl().replace(/\/$/, '')
-  return `${base}/?ref=${encodeURIComponent(token)}`
+function openCreateGroupModal() {
+  groupModalError.value = null
+  editingGroup.value = null
+  groupModalOpen.value = true
 }
 
-function siteUrlForRow(r) {
-  return r.site_entry_url || fallbackSiteEntry(r.token)
+function openEditGroupModal(group) {
+  groupModalError.value = null
+  editingGroup.value = group
+  groupModalOpen.value = true
 }
 
-function telegramUrlForRow(r) {
-  return r.telegram_deep_link || ''
+function closeGroupModal() {
+  if (groupModalBusy.value) return
+  groupModalOpen.value = false
+  editingGroup.value = null
+}
+
+async function submitGroupModal(payload) {
+  groupModalBusy.value = true
+  groupModalError.value = null
+  try {
+    if (editingGroup.value?.id != null) {
+      await fetchJson(`/api/referral-link-groups/${editingGroup.value.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: payload.name,
+          color: payload.color,
+        }),
+      })
+      await fetchJson(`/api/referral-link-groups/${editingGroup.value.id}/members`, {
+        method: 'PUT',
+        body: JSON.stringify({ link_ids: payload.link_ids }),
+      })
+    } else {
+      await fetchJson('/api/referral-link-groups', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+    }
+    groupModalOpen.value = false
+    editingGroup.value = null
+    groupedTableRef.value?.clearSelection?.()
+    await Promise.all([load(), loadGroups()])
+  } catch (e) {
+    groupModalError.value = e.message || String(e)
+  } finally {
+    groupModalBusy.value = false
+  }
+}
+
+async function deleteGroup(group) {
+  if (
+    !window.confirm(
+      `Удалить группу «${group.name}»? Токены останутся в системе, но выйдут из группы.`,
+    )
+  ) {
+    return
+  }
+  groupModalBusy.value = true
+  error.value = null
+  try {
+    await fetchJson(`/api/referral-link-groups/${group.id}`, { method: 'DELETE' })
+    await Promise.all([load(), loadGroups()])
+  } catch (e) {
+    error.value = e.message || String(e)
+  } finally {
+    groupModalBusy.value = false
+  }
+}
+
+async function addLinksToGroup({ groupId, linkIds }) {
+  if (!linkIds?.length) return
+  groupModalBusy.value = true
+  error.value = null
+  try {
+    await fetchJson(`/api/referral-link-groups/${groupId}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ link_ids: linkIds }),
+    })
+    groupedTableRef.value?.clearSelection?.()
+    await Promise.all([load(), loadGroups()])
+  } catch (e) {
+    error.value = e.message || String(e)
+  } finally {
+    groupModalBusy.value = false
+  }
+}
+
+async function removeLinkFromGroup({ groupId, linkId }) {
+  groupModalBusy.value = true
+  error.value = null
+  try {
+    await fetchJson(`/api/referral-link-groups/${groupId}/members/${linkId}`, {
+      method: 'DELETE',
+    })
+    await Promise.all([load(), loadGroups()])
+  } catch (e) {
+    error.value = e.message || String(e)
+  } finally {
+    groupModalBusy.value = false
+  }
 }
 
 function isUserToken(r) {
@@ -383,15 +498,21 @@ const rowsForTable = computed(() =>
   showUserTokens.value ? rows.value : rows.value.filter((r) => !isUserToken(r)),
 )
 
+const linksForGroupPicker = computed(() => rowsForTable.value)
+
 const referralSortAccessors = {
   id: (r) => r.id,
   token: (r) => String(r.token ?? '').toLowerCase(),
-  owner_user_id: (r) => (r.owner_user_id != null ? r.owner_user_id : -1),
-  site: (r) => siteUrlForRow(r).toLowerCase(),
-  telegram: (r) => (telegramUrlForRow(r) || '').toLowerCase(),
+  owner: (r) => {
+    if (r.owner_kind === 'user') {
+      return r.owner_user_id != null ? r.owner_user_id : -1
+    }
+    return String(r.owner_kind ?? '').toLowerCase()
+  },
   clicks_count: (r) => Number(r.clicks_count) || 0,
   registrations_count: (r) => Number(r.registrations_count) || 0,
   payments_count: (r) => Number(r.payments_count) || 0,
+  revenue_net: (r) => Number(r.revenue_net) || 0,
   created_at: (r) => Date.parse(r.created_at) || 0,
 }
 
@@ -488,7 +609,7 @@ onMounted(() => {
         <h2 class="section-heading">Конверсия по токенам</h2>
         <div class="head-actions">
           <AppRefreshButton
-            :busy="loading || trafficStatsLoading || tokenRegLoading || sourceRegLoading"
+            :busy="loading || groupsLoading || groupModalBusy || trafficStatsLoading || tokenRegLoading || sourceRegLoading"
             @click="reloadAll"
           />
           <button type="button" class="btn-primary" @click="openModal">
@@ -731,171 +852,37 @@ onMounted(() => {
       выше.
     </p>
 
-    <AdminTableWrap aria-label="Таблица реферальных токенов">
-      <table class="admin-table">
-        <thead>
-          <tr>
-            <AdminSortTh
-              label="ID"
-              column-key="id"
-              align="right"
-              :sort-key="sortKey"
-              :sort-dir="sortDir"
-              @sort="toggleSort"
-            />
-            <AdminSortTh
-              label="Токен"
-              column-key="token"
-              :sort-key="sortKey"
-              :sort-dir="sortDir"
-              @sort="toggleSort"
-            />
-            <AdminSortTh
-              label="User id"
-              column-key="owner_user_id"
-              align="right"
-              :sort-key="sortKey"
-              :sort-dir="sortDir"
-              @sort="toggleSort"
-            />
-            <AdminSortTh
-              label="Сайт"
-              column-key="site"
-              :sort-key="sortKey"
-              :sort-dir="sortDir"
-              @sort="toggleSort"
-            />
-            <AdminSortTh
-              label="Telegram"
-              column-key="telegram"
-              :sort-key="sortKey"
-              :sort-dir="sortDir"
-              @sort="toggleSort"
-            />
-            <AdminSortTh
-              label="Клики"
-              column-key="clicks_count"
-              align="right"
-              :sort-key="sortKey"
-              :sort-dir="sortDir"
-              @sort="toggleSort"
-            />
-            <AdminSortTh
-              label="Рег."
-              column-key="registrations_count"
-              align="right"
-              :sort-key="sortKey"
-              :sort-dir="sortDir"
-              @sort="toggleSort"
-            />
-            <AdminSortTh
-              label="Оплаты"
-              column-key="payments_count"
-              align="right"
-              :sort-key="sortKey"
-              :sort-dir="sortDir"
-              @sort="toggleSort"
-            />
-            <AdminSortTh
-              label="Создан"
-              column-key="created_at"
-              :sort-key="sortKey"
-              :sort-dir="sortDir"
-              @sort="toggleSort"
-            />
-            <AdminSortTh
-              label="Действия"
-              column-key="actions"
-              :sortable="false"
-              :sort-key="sortKey"
-              :sort-dir="sortDir"
-            />
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="10" class="muted">Загрузка…</td>
-          </tr>
-          <tr v-else-if="error">
-            <td colspan="10" class="error-cell">{{ error }}</td>
-          </tr>
-          <tr v-else-if="rowsForTable.length === 0">
-            <td colspan="10" class="muted">Пока нет записей</td>
-          </tr>
-          <tr
-            v-for="r in sortedRows"
-            :key="r.id"
-            :id="'ref-' + r.id"
-            :class="{ 'admin-row-highlight': highlightRowId === r.id }"
-          >
-            <td class="num">{{ r.id }}</td>
-            <td class="mono-cell">{{ r.token }}</td>
-            <td class="owner-user-id-cell">
-              <span class="owner-user-id-inner">
-                <template v-if="r.owner_user_id != null">
-                  <span>{{ r.owner_user_id }}</span>
-                  <AdminHighlightListLink list="users" :highlight="r.owner_user_id" />
-                </template>
-                <template v-else>—</template>
-              </span>
-            </td>
-            <td class="link-actions">
-              <button
-                type="button"
-                class="btn-secondary btn-tiny"
-                title="Копировать ссылку на сайт (?ref)"
-                @click="copyUrl(siteUrlForRow(r))"
-              >
-                Копировать
-              </button>
-            </td>
-            <td class="link-actions">
-              <button
-                v-if="telegramUrlForRow(r)"
-                type="button"
-                class="btn-secondary btn-tiny"
-                title="Копировать ссылку на Telegram-бота (?start)"
-                @click="copyUrl(telegramUrlForRow(r))"
-              >
-                Копировать
-              </button>
-              <span v-else class="muted">—</span>
-            </td>
-            <td class="num">{{ r.clicks_count }}</td>
-            <td class="num">{{ r.registrations_count }}</td>
-            <td class="num">{{ r.payments_count }}</td>
-            <td class="date-cell">{{ fmtDate(r.created_at) }}</td>
-            <td class="col-actions">
-              <RowActionsDropdown
-                :menu-id-suffix="'ref-' + r.id"
-                panel-aria-label="Действия с реферальным токеном"
-              >
-                <template #default="{ close }">
-                  <button
-                    type="button"
-                    class="dropdown-item"
-                    role="menuitem"
-                    :disabled="deletingId === r.id"
-                    @click="close(); openEditModal(r)"
-                  >
-                    Изменить
-                  </button>
-                  <button
-                    type="button"
-                    class="dropdown-item dropdown-item--danger"
-                    role="menuitem"
-                    :disabled="deletingId === r.id"
-                    @click="close(); removeReferral(r)"
-                  >
-                    {{ deletingId === r.id ? '…' : 'Удалить' }}
-                  </button>
-                </template>
-              </RowActionsDropdown>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </AdminTableWrap>
+    <ReferralTokensGroupedTable
+      ref="groupedTableRef"
+      :rows="sortedRows"
+      :groups="groups"
+      :loading="loading || groupsLoading"
+      :error="error || groupsError"
+      :sort-key="sortKey"
+      :sort-dir="sortDir"
+      :highlight-row-id="highlightRowId"
+      :deleting-id="deletingId"
+      :group-busy="groupModalBusy"
+      @sort="toggleSort"
+      @copy-url="copyUrl"
+      @edit-token="openEditModal"
+      @delete-token="removeReferral"
+      @create-group="openCreateGroupModal"
+      @edit-group="openEditGroupModal"
+      @delete-group="deleteGroup"
+      @add-to-group="addLinksToGroup"
+      @remove-from-group="removeLinkFromGroup"
+    />
+
+    <ReferralTokenGroupModal
+      :open="groupModalOpen"
+      :busy="groupModalBusy"
+      :error="groupModalError"
+      :editing-group="editingGroup"
+      :available-links="linksForGroupPicker"
+      @close="closeGroupModal"
+      @submit="submitGroupModal"
+    />
 
     <AppModal
       v-if="modalOpen"
@@ -1065,36 +1052,5 @@ onMounted(() => {
 .table-filter-hint {
   margin: 0 0 0.65rem;
   font-size: 0.85rem;
-}
-.error-cell {
-  color: var(--danger);
-}
-.num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.mono-cell {
-  font-family: ui-monospace, monospace;
-  font-size: 0.78rem;
-  word-break: break-all;
-  max-width: 14rem;
-}
-.date-cell {
-  white-space: nowrap;
-  font-size: 0.8rem;
-  color: var(--muted);
-}
-.link-actions {
-  vertical-align: middle;
-  text-align: center;
-  white-space: nowrap;
-}
-.col-actions {
-  vertical-align: middle;
-  text-align: center;
-}
-.btn-tiny {
-  font-size: 0.75rem;
-  padding: 0.25rem 0.45rem;
 }
 </style>

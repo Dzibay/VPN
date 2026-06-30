@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import asyncio
+from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,6 +42,7 @@ from app.domain.referrals.registrations_daily import (
     referral_traffic_registrations_daily,
 )
 from app.domain.users.stats_qualification import user_counts_in_admin_stats
+from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.user import User
 
@@ -117,11 +119,42 @@ async def referral_traffic_registrations_daily_summary(
     return await referral_traffic_registrations_daily(session, days=days)
 
 
+async def _referral_links_revenue_by_id(session: AsyncSession) -> dict[int, Decimal]:
+    stmt = (
+        select(User.referral_link_id, func.coalesce(func.sum(Payment.net_amount), 0))
+        .select_from(User)
+        .join(Payment, Payment.user_id == User.id)
+        .where(User.referral_link_id.is_not(None))
+        .group_by(User.referral_link_id)
+    )
+    rows = (await session.execute(stmt)).all()
+    return {
+        int(link_id): Decimal(str(total))
+        for link_id, total in rows
+        if link_id is not None
+    }
+
+
+async def _referral_link_revenue_net(session: AsyncSession, link_id: int) -> Decimal:
+    stmt = (
+        select(func.coalesce(func.sum(Payment.net_amount), 0))
+        .select_from(User)
+        .join(Payment, Payment.user_id == User.id)
+        .where(User.referral_link_id == link_id)
+    )
+    total = await session.scalar(stmt)
+    return Decimal(str(total or 0))
+
+
 async def list_staff_referral_links(session: AsyncSession, cfg: object) -> list:
     """Все реферальные записи в админке, новейшие первыми; URL подставляются из ``cfg``."""
     stmt = select(ReferralLink).order_by(ReferralLink.id.desc())
     rows = list((await session.scalars(stmt)).all())
-    return [referral_link_to_response(r, cfg) for r in rows]
+    revenues = await _referral_links_revenue_by_id(session)
+    return [
+        referral_link_to_response(r, cfg, revenue_net=revenues.get(int(r.id), Decimal("0")))
+        for r in rows
+    ]
 
 
 async def get_staff_referral_link_by_id(session: AsyncSession, link_id: int, cfg: object):
@@ -129,7 +162,8 @@ async def get_staff_referral_link_by_id(session: AsyncSession, link_id: int, cfg
     row = await session.get(ReferralLink, link_id)
     if row is None:
         raise NotFoundError("Токен не найден")
-    return referral_link_to_response(row, cfg)
+    revenue_net = await _referral_link_revenue_net(session, link_id)
+    return referral_link_to_response(row, cfg, revenue_net=revenue_net)
 
 
 async def delete_referral_link_row(session: AsyncSession, link_id: int) -> None:

@@ -93,11 +93,21 @@ CREATE TABLE IF NOT EXISTS user_server_traffic (
     PRIMARY KEY (user_id, server_id, traffic_date)
 );
 
+CREATE TABLE IF NOT EXISTS referral_link_groups (
+    id BIGSERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#58d68d',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT referral_link_groups_name_nonempty CHECK (char_length(trim(name)) > 0)
+);
+
 CREATE TABLE IF NOT EXISTS referral_links (
     id BIGSERIAL PRIMARY KEY,
     token TEXT NOT NULL,
     owner_kind TEXT NOT NULL,
     owner_user_id BIGINT REFERENCES users (id) ON DELETE CASCADE,
+    group_id BIGINT REFERENCES referral_link_groups (id) ON DELETE SET NULL,
     clicks_count BIGINT NOT NULL DEFAULT 0 CHECK (clicks_count >= 0),
     registrations_count BIGINT NOT NULL DEFAULT 0 CHECK (registrations_count >= 0),
     payments_count BIGINT NOT NULL DEFAULT 0 CHECK (payments_count >= 0),

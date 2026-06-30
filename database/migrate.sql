@@ -389,3 +389,18 @@ BEGIN
     VALUES ('traffic_archive_forward_fill_20260625')
     ON CONFLICT (name) DO NOTHING;
 END $$;
+
+CREATE TABLE IF NOT EXISTS referral_link_groups (
+    id BIGSERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#58d68d',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT referral_link_groups_name_nonempty CHECK (char_length(trim(name)) > 0)
+);
+
+ALTER TABLE referral_links
+    ADD COLUMN IF NOT EXISTS group_id BIGINT REFERENCES referral_link_groups (id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_referral_links_group_id ON referral_links (group_id)
+    WHERE group_id IS NOT NULL;

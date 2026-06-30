@@ -32,6 +32,13 @@ class ReferralLinkNotFoundError(NotFoundError):
         super().__init__(detail)
 
 
+class ReferralLinkGroupNotFoundError(NotFoundError):
+    """Группа referral_link_groups не найдена (HTTP 404)."""
+
+    def __init__(self, detail: str = "Группа не найдена") -> None:
+        super().__init__(detail)
+
+
 class ReferralTokenTakenError(ConflictError):
     """Запрошенный токен уже занят другой записью (HTTP 409)."""
 

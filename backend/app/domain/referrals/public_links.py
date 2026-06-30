@@ -6,6 +6,7 @@ URL встраиваются в ответ административного AP
 
 from __future__ import annotations
 
+from decimal import Decimal
 from urllib.parse import quote
 
 from app.domain.public_urls import _telegram_bot_username_clean, public_spa_base_url
@@ -28,13 +29,19 @@ def referral_telegram_deep_link(settings: object, token: str) -> str | None:
     return f"https://t.me/{bot}?start={quote(token, safe='')}"
 
 
-def referral_link_to_response(link: ReferralLink, settings: object):
+def referral_link_to_response(
+    link: ReferralLink,
+    settings: object,
+    *,
+    revenue_net: Decimal | None = None,
+):
     """Сборка ``ReferralLinkOut`` с подставленными URL (для list/me-эндпоинтов)."""
     from app.domain.models.referral_links import ReferralLinkOut, ReferralLinkRead
 
     core = ReferralLinkRead.model_validate(link)
     return ReferralLinkOut(
         **core.model_dump(),
+        revenue_net=revenue_net if revenue_net is not None else Decimal("0"),
         site_entry_url=referral_site_register_url(settings, link.token),
         telegram_deep_link=referral_telegram_deep_link(settings, link.token),
     )
