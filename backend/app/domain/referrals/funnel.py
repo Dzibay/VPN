@@ -7,18 +7,24 @@
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from datetime import date
+
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
 from app.core.time import utc_today
+from app.domain.referrals.errors import ReferralLinkGroupNotFoundError
 from app.domain.user_traffic import user_server_traffic_latest_subquery
 from app.domain.users.daily_stats import (
     active_users_count_for_utc_date,
     count_users_with_subscription_device,
 )
 from app.domain.users.stats_qualification import user_counts_in_admin_stats
+from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.referral_link import ReferralLink
+from app.infrastructure.persistence.models.referral_link_group import ReferralLinkGroup
+from app.infrastructure.persistence.models.subscription_device import SubscriptionDevice
 from app.infrastructure.persistence.models.user import User
 
 
@@ -34,9 +40,10 @@ def _nz_metric(v: object) -> int:
 async def referral_funnel_compute(
     session: AsyncSession,
     referral_link_id: int | None,
+    referral_link_group_id: int | None,
     _cfg: object,
 ):
-    """Сводка воронки по выбранной ссылке (``referral_link_id``) или по всем пользователям сайта."""
+    """Сводка воронки по ссылке, группе токенов или по всем пользователям сайта."""
     from app.domain.models.referral_links import ReferralFunnelSummary
 
     latest = user_server_traffic_latest_subquery()
@@ -58,6 +65,58 @@ async def referral_funnel_compute(
         )
         .subquery()
     )
+    today = utc_today()
+
+    if referral_link_group_id is not None:
+        group = await session.get(ReferralLinkGroup, referral_link_group_id)
+        if group is None:
+            raise ReferralLinkGroupNotFoundError
+        link_ids = list(
+            (
+                await session.scalars(
+                    select(ReferralLink.id).where(
+                        ReferralLink.group_id == referral_link_group_id,
+                    ),
+                )
+            ).all(),
+        )
+        if not link_ids:
+            return ReferralFunnelSummary(
+                clicks_total=0,
+                registrations_total=0,
+                users_with_traffic=0,
+                users_with_subscription_device=0,
+                users_with_payment=0,
+                active_users_today_utc=0,
+            )
+        clicks_total_raw = await session.scalar(
+            select(func.coalesce(func.sum(ReferralLink.clicks_count), 0)).where(
+                ReferralLink.id.in_(link_ids),
+            ),
+        )
+        link_filter = User.referral_link_id.in_(link_ids)
+        registrations_total_raw = await session.scalar(
+            select(func.count())
+            .select_from(User)
+            .where(link_filter, user_counts_in_admin_stats(User)),
+        )
+        users_with_traffic_raw = await session.scalar(
+            select(func.count())
+            .select_from(per_user_traffic)
+            .join(User, User.id == per_user_traffic.c.uid)
+            .where(link_filter, user_counts_in_admin_stats(User)),
+        )
+        with_dev = await _count_users_with_subscription_device_for_links(session, link_ids)
+        with_payment = await _count_users_with_payment_for_links(session, link_ids)
+        active_today = await _active_users_count_for_utc_date_by_links(session, today, link_ids)
+        return ReferralFunnelSummary(
+            clicks_total=_nz_metric(clicks_total_raw),
+            registrations_total=_nz_metric(registrations_total_raw),
+            users_with_traffic=_nz_metric(users_with_traffic_raw),
+            users_with_subscription_device=_nz_metric(with_dev),
+            users_with_payment=_nz_metric(with_payment),
+            active_users_today_utc=_nz_metric(active_today),
+        )
 
     if referral_link_id is not None:
         row = (
@@ -86,12 +145,14 @@ async def referral_funnel_compute(
         )
         today = utc_today()
         with_dev = await count_users_with_subscription_device(session, referral_link_id)
+        with_payment = await _count_users_with_payment(session, referral_link_id)
         active_today = await active_users_count_for_utc_date(session, today, referral_link_id)
         return ReferralFunnelSummary(
             clicks_total=_nz_metric(row.clicks_count),
             registrations_total=_nz_metric(registrations_total_raw),
             users_with_traffic=_nz_metric(users_with_traffic_raw),
             users_with_subscription_device=_nz_metric(with_dev),
+            users_with_payment=_nz_metric(with_payment),
             active_users_today_utc=_nz_metric(active_today),
         )
 
@@ -106,6 +167,7 @@ async def referral_funnel_compute(
     )
     today = utc_today()
     with_dev = await count_users_with_subscription_device(session, None)
+    with_payment = await _count_users_with_payment(session, None)
     active_today = await active_users_count_for_utc_date(session, today, None)
 
     return ReferralFunnelSummary(
@@ -113,5 +175,122 @@ async def referral_funnel_compute(
         registrations_total=_nz_metric(registrations_total_raw),
         users_with_traffic=_nz_metric(users_with_traffic_raw),
         users_with_subscription_device=_nz_metric(with_dev),
+        users_with_payment=_nz_metric(with_payment),
         active_users_today_utc=_nz_metric(active_today),
+    )
+
+
+async def _count_users_with_payment(
+    session: AsyncSession,
+    referral_link_id: int | None,
+) -> int:
+    stmt = (
+        select(func.count(func.distinct(Payment.user_id)))
+        .select_from(Payment)
+        .join(User, User.id == Payment.user_id)
+        .where(
+            Payment.user_id.is_not(None),
+            user_counts_in_admin_stats(User),
+        )
+    )
+    if referral_link_id is not None:
+        stmt = stmt.where(User.referral_link_id == referral_link_id)
+    return int(await session.scalar(stmt) or 0)
+
+
+async def _count_users_with_payment_for_links(
+    session: AsyncSession,
+    link_ids: list[int],
+) -> int:
+    stmt = (
+        select(func.count(func.distinct(Payment.user_id)))
+        .select_from(Payment)
+        .join(User, User.id == Payment.user_id)
+        .where(
+            Payment.user_id.is_not(None),
+            User.referral_link_id.in_(link_ids),
+            user_counts_in_admin_stats(User),
+        )
+    )
+    return int(await session.scalar(stmt) or 0)
+
+
+async def _count_users_with_subscription_device_for_links(
+    session: AsyncSession,
+    link_ids: list[int],
+) -> int:
+    stmt = (
+        select(func.count(func.distinct(SubscriptionDevice.user_id)))
+        .select_from(SubscriptionDevice)
+        .join(User, User.id == SubscriptionDevice.user_id)
+        .where(
+            User.referral_link_id.in_(link_ids),
+            user_counts_in_admin_stats(User),
+        )
+    )
+    return int(await session.scalar(stmt) or 0)
+
+
+async def _active_users_count_for_utc_date_by_links(
+    session: AsyncSession,
+    cal_day: date,
+    link_ids: list[int],
+) -> int:
+    stmt = text(
+        """
+        WITH qualified AS (
+            SELECT u.id
+            FROM users u
+            WHERE (
+                u.telegram_id IS NOT NULL
+                OR (
+                    u.email IS NOT NULL
+                    AND BTRIM(u.email) <> ''
+                    AND u.email_verified_at IS NOT NULL
+                )
+            )
+            AND u.referral_link_id = ANY(:link_ids)
+        ),
+        traffic_cum AS (
+            SELECT
+                t.user_id,
+                t.server_id,
+                MAX(
+                    CASE
+                        WHEN t.traffic_date <= :cal_day
+                            THEN t.up_bytes + t.down_bytes
+                    END
+                )::bigint AS cum_d,
+                MAX(
+                    CASE
+                        WHEN t.traffic_date < :cal_day
+                            THEN t.up_bytes + t.down_bytes
+                    END
+                )::bigint AS cum_prev
+            FROM user_server_traffic t
+            INNER JOIN qualified q ON q.id = t.user_id
+            WHERE t.traffic_date <= :cal_day
+            GROUP BY t.user_id, t.server_id
+        ),
+        user_totals AS (
+            SELECT
+                user_id,
+                COALESCE(SUM(cum_d), 0)::bigint AS total_d,
+                COALESCE(SUM(cum_prev), 0)::bigint AS total_prev
+            FROM traffic_cum
+            GROUP BY user_id
+        )
+        SELECT COUNT(*)::bigint
+        FROM user_totals
+        WHERE total_d > total_prev
+        """
+    )
+    return int(
+        (
+            await session.execute(
+                stmt,
+                {"cal_day": cal_day, "link_ids": link_ids},
+            )
+        ).scalar()
+        or 0,
     )

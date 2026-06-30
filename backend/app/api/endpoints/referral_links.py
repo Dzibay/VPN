@@ -145,8 +145,27 @@ async def referral_funnel_summary(
             description="Идентификатор реферальной ссылки в базе; без параметра — агрегат по всем пользователям",
         ),
     ] = None,
+    referral_link_group_id: Annotated[
+        int | None,
+        Query(
+            ge=1,
+            description="Идентификатор группы токенов; воронка по всем ссылкам группы",
+        ),
+    ] = None,
 ) -> ReferralFunnelSummary:
-    return await referral_funnel_compute(session, referral_link_id, settings)
+    if referral_link_id is not None and referral_link_group_id is not None:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=422,
+            detail="Укажите только referral_link_id или referral_link_group_id",
+        )
+    return await referral_funnel_compute(
+        session,
+        referral_link_id,
+        referral_link_group_id,
+        settings,
+    )
 
 
 @staff_router.get(

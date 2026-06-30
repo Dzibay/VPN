@@ -140,6 +140,10 @@ class ReferralFunnelSummary(BaseModel):
             "(та же логика, что active_users_count в GET /api/users/daily-stats)"
         ),
     )
+    users_with_payment: int = Field(
+        ge=0,
+        description="Пользователей с хотя бы одной записью в payments",
+    )
     clicks_total: int | None = Field(
         default=None,
         description="Только при referral_link_id: накопительный счётчик кликов по этой ссылке",
