@@ -209,6 +209,10 @@ function emitAddToGroup(groupId) {
   addToGroupOpen.value = false
 }
 
+function emitCreateGroupFromSelection() {
+  emit('create-group', { linkIds: [...selectedLinkIds.value] })
+}
+
 defineExpose({ clearSelection })
 </script>
 
@@ -247,7 +251,7 @@ defineExpose({ clearSelection })
             <button
               type="button"
               class="btn-primary btn-toolbar"
-              @click="emit('create-group')"
+              @click="emitCreateGroupFromSelection"
             >
               Создать группу
             </button>

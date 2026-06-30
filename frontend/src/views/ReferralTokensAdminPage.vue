@@ -384,9 +384,17 @@ async function submitModal() {
   }
 }
 
-function openCreateGroupModal() {
+/** @type {import('vue').Ref<number[]>} */
+const pendingGroupLinkIds = ref([])
+
+function openCreateGroupModal(payload) {
   groupModalError.value = null
   editingGroup.value = null
+  const ids = payload?.linkIds
+  pendingGroupLinkIds.value =
+    Array.isArray(ids) && ids.length > 0
+      ? ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id >= 1)
+      : []
   groupModalOpen.value = true
 }
 
@@ -400,6 +408,7 @@ function closeGroupModal() {
   if (groupModalBusy.value) return
   groupModalOpen.value = false
   editingGroup.value = null
+  pendingGroupLinkIds.value = []
 }
 
 async function submitGroupModal(payload) {
@@ -426,6 +435,7 @@ async function submitGroupModal(payload) {
     }
     groupModalOpen.value = false
     editingGroup.value = null
+    pendingGroupLinkIds.value = []
     groupedTableRef.value?.clearSelection?.()
     await Promise.all([load(), loadGroups()])
   } catch (e) {
@@ -879,6 +889,7 @@ onMounted(() => {
       :busy="groupModalBusy"
       :error="groupModalError"
       :editing-group="editingGroup"
+      :initial-link-ids="pendingGroupLinkIds"
       :available-links="linksForGroupPicker"
       @close="closeGroupModal"
       @submit="submitGroupModal"

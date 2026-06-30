@@ -21,6 +21,8 @@ const props = defineProps({
   editingGroup: { type: Object, default: null },
   /** @type {Array<{ id: number, token: string, owner_kind?: string }>} */
   availableLinks: { type: Array, default: () => [] },
+  /** Предвыбранные токены при создании группы (например из bulk-выбора в таблице) */
+  initialLinkIds: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['close', 'submit'])
@@ -56,12 +58,22 @@ const allFilteredSelected = computed(() => {
 function resetForm() {
   formName.value = props.editingGroup?.name ?? ''
   formColor.value = props.editingGroup?.color ?? GROUP_COLORS[0]
-  selectedLinkIds.value = [...(props.editingGroup?.link_ids ?? [])]
+  if (props.editingGroup?.id != null) {
+    selectedLinkIds.value = [...(props.editingGroup?.link_ids ?? [])]
+  } else {
+    selectedLinkIds.value = [...(props.initialLinkIds ?? [])]
+  }
   tokenFilter.value = ''
 }
 
 watch(
-  () => [props.open, props.editingGroup?.id, props.editingGroup?.name],
+  () =>
+    [
+      props.open,
+      props.editingGroup?.id,
+      props.editingGroup?.name,
+      (props.initialLinkIds ?? []).join(','),
+    ].join(':'),
   () => {
     if (props.open) resetForm()
   },
