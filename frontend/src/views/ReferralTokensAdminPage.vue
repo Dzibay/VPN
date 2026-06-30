@@ -522,6 +522,11 @@ const referralSortAccessors = {
   clicks_count: (r) => Number(r.clicks_count) || 0,
   registrations_count: (r) => Number(r.registrations_count) || 0,
   payments_count: (r) => Number(r.payments_count) || 0,
+  payment_conversion_pct: (r) => {
+    const reg = Number(r.registrations_count) || 0
+    if (reg <= 0) return -1
+    return (Number(r.payments_count) || 0) / reg
+  },
   revenue_net: (r) => Number(r.revenue_net) || 0,
   created_at: (r) => Date.parse(r.created_at) || 0,
 }

@@ -1,9 +1,6 @@
--- Миграция для существующих инстансов.
+-- ALTER TABLE servers
+--     ADD COLUMN IF NOT EXISTS ssh_user TEXT NOT NULL DEFAULT 'root';
 
-ALTER TABLE servers
-    ADD COLUMN IF NOT EXISTS ssh_user TEXT NOT NULL DEFAULT 'root';
-
--- Миграция для существующих инстансов: баланс и политика fixed_first_payment_balance.
 
 -- ALTER TABLE users
 --     ADD COLUMN IF NOT EXISTS referral_fixed_bonus_kopecks BIGINT CHECK (
@@ -213,194 +210,194 @@ ALTER TABLE servers
 -- SELECT 'Расчетный счет', 'bank', 'RUB', 0, CURRENT_DATE, TRUE, TRUE
 -- WHERE NOT EXISTS (SELECT 1 FROM cash_accounts WHERE is_default = TRUE);
 
--- Индексы для ускорения статистики (идемпотентно на существующих БД).
-CREATE INDEX IF NOT EXISTS idx_payments_created_at
-    ON payments (created_at DESC);
+-- -- Индексы для ускорения статистики (идемпотентно на существующих БД).
+-- CREATE INDEX IF NOT EXISTS idx_payments_created_at
+--     ON payments (created_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_payments_created_at_msk_date
-    ON payments (((created_at AT TIME ZONE 'Europe/Moscow')::date));
+-- CREATE INDEX IF NOT EXISTS idx_payments_created_at_msk_date
+--     ON payments (((created_at AT TIME ZONE 'Europe/Moscow')::date));
 
-CREATE INDEX IF NOT EXISTS idx_user_server_traffic_date_user
-    ON user_server_traffic (traffic_date, user_id);
+-- CREATE INDEX IF NOT EXISTS idx_user_server_traffic_date_user
+--     ON user_server_traffic (traffic_date, user_id);
 
-CREATE INDEX IF NOT EXISTS idx_subscription_devices_user_created_at
-    ON subscription_devices (user_id, created_at);
+-- CREATE INDEX IF NOT EXISTS idx_subscription_devices_user_created_at
+--     ON subscription_devices (user_id, created_at);
 
--- Функциональные индексы для compute (GROUP BY по дню МСК — без них seq scan на users).
-CREATE INDEX IF NOT EXISTS idx_users_registered_at_msk_date
-    ON users (((registered_at AT TIME ZONE 'Europe/Moscow')::date))
-    WHERE registered_at IS NOT NULL;
+-- -- Функциональные индексы для compute (GROUP BY по дню МСК — без них seq scan на users).
+-- CREATE INDEX IF NOT EXISTS idx_users_registered_at_msk_date
+--     ON users (((registered_at AT TIME ZONE 'Europe/Moscow')::date))
+--     WHERE registered_at IS NOT NULL;
 
--- Партиционный индекс для traffic_baseline (трафик строго до окна) и
--- traffic_in_range — primary key (user_id, server_id, traffic_date) уже эффективен
--- для index scan по traffic_date >= X, но добавим частичный для ускорения "был ли трафик":
-CREATE INDEX IF NOT EXISTS idx_user_server_traffic_has_traffic
-    ON user_server_traffic (user_id)
-    WHERE up_bytes + down_bytes > 0;
+-- -- Партиционный индекс для traffic_baseline (трафик строго до окна) и
+-- -- traffic_in_range — primary key (user_id, server_id, traffic_date) уже эффективен
+-- -- для index scan по traffic_date >= X, но добавим частичный для ускорения "был ли трафик":
+-- CREATE INDEX IF NOT EXISTS idx_user_server_traffic_has_traffic
+--     ON user_server_traffic (user_id)
+--     WHERE up_bytes + down_bytes > 0;
 
--- subscription_until + registered_at для активных подписок baseline
-CREATE INDEX IF NOT EXISTS idx_users_sub_baseline
-    ON users (subscription_until, registered_at)
-    WHERE registered_at IS NOT NULL AND subscription_until IS NOT NULL;
+-- -- subscription_until + registered_at для активных подписок baseline
+-- CREATE INDEX IF NOT EXISTS idx_users_sub_baseline
+--     ON users (subscription_until, registered_at)
+--     WHERE registered_at IS NOT NULL AND subscription_until IS NOT NULL;
 
--- Хвост частых горячих запросов:
--- 1) /api/telegram/notification-tasks: Task.status='pending' + task_type IN (...) + delivery_channel='telegram'.
---    Частичный индекс по pending устраняет фильтрацию по всем тысячам completed/failed строк.
-CREATE INDEX IF NOT EXISTS idx_tasks_pending_delivery_type
-    ON tasks (delivery_channel, type, created_at ASC)
-    WHERE status = 'pending';
+-- -- Хвост частых горячих запросов:
+-- -- 1) /api/telegram/notification-tasks: Task.status='pending' + task_type IN (...) + delivery_channel='telegram'.
+-- --    Частичный индекс по pending устраняет фильтрацию по всем тысячам completed/failed строк.
+-- CREATE INDEX IF NOT EXISTS idx_tasks_pending_delivery_type
+--     ON tasks (delivery_channel, type, created_at ASC)
+--     WHERE status = 'pending';
 
--- Бейдж поддержки в шапке: DISTINCT ON (user_id) ORDER BY id DESC.
-CREATE INDEX IF NOT EXISTS idx_support_messages_user_id_id_desc
-    ON support_messages (user_id, id DESC);
+-- -- Бейдж поддержки в шапке: DISTINCT ON (user_id) ORDER BY id DESC.
+-- CREATE INDEX IF NOT EXISTS idx_support_messages_user_id_id_desc
+--     ON support_messages (user_id, id DESC);
 
--- Бейдж непрочитанных ответов в ЛК: COUNT staff-сообщений по user_id.
-CREATE INDEX IF NOT EXISTS idx_support_messages_user_staff_created
-    ON support_messages (user_id, created_at)
-    WHERE author_kind = 'staff';
+-- -- Бейдж непрочитанных ответов в ЛК: COUNT staff-сообщений по user_id.
+-- CREATE INDEX IF NOT EXISTS idx_support_messages_user_staff_created
+--     ON support_messages (user_id, created_at)
+--     WHERE author_kind = 'staff';
 
--- Rollup-таблицы платежей (триггер и backfill — database/rollups/pre_payments_rollup.sql).
-CREATE TABLE IF NOT EXISTS stats_payments_daily_utc (
-    day_utc date NOT NULL,
-    payment_kind text NOT NULL,
-    gross numeric(14, 2) NOT NULL DEFAULT 0,
-    net numeric(14, 2) NOT NULL DEFAULT 0,
-    cnt bigint NOT NULL DEFAULT 0,
-    PRIMARY KEY (day_utc, payment_kind),
-    CONSTRAINT stats_payments_daily_utc_kind CHECK (
-        payment_kind IN ('subscription', 'one_time')
-    )
-);
+-- -- Rollup-таблицы платежей (триггер и backfill — database/rollups/pre_payments_rollup.sql).
+-- CREATE TABLE IF NOT EXISTS stats_payments_daily_utc (
+--     day_utc date NOT NULL,
+--     payment_kind text NOT NULL,
+--     gross numeric(14, 2) NOT NULL DEFAULT 0,
+--     net numeric(14, 2) NOT NULL DEFAULT 0,
+--     cnt bigint NOT NULL DEFAULT 0,
+--     PRIMARY KEY (day_utc, payment_kind),
+--     CONSTRAINT stats_payments_daily_utc_kind CHECK (
+--         payment_kind IN ('subscription', 'one_time')
+--     )
+-- );
 
-CREATE TABLE IF NOT EXISTS stats_payments_daily_msk (
-    day_msk date NOT NULL,
-    payment_kind text NOT NULL,
-    gross numeric(14, 2) NOT NULL DEFAULT 0,
-    net numeric(14, 2) NOT NULL DEFAULT 0,
-    cnt bigint NOT NULL DEFAULT 0,
-    PRIMARY KEY (day_msk, payment_kind),
-    CONSTRAINT stats_payments_daily_msk_kind CHECK (
-        payment_kind IN ('subscription', 'one_time')
-    )
-);
+-- CREATE TABLE IF NOT EXISTS stats_payments_daily_msk (
+--     day_msk date NOT NULL,
+--     payment_kind text NOT NULL,
+--     gross numeric(14, 2) NOT NULL DEFAULT 0,
+--     net numeric(14, 2) NOT NULL DEFAULT 0,
+--     cnt bigint NOT NULL DEFAULT 0,
+--     PRIMARY KEY (day_msk, payment_kind),
+--     CONSTRAINT stats_payments_daily_msk_kind CHECK (
+--         payment_kind IN ('subscription', 'one_time')
+--     )
+-- );
 
-CREATE TABLE IF NOT EXISTS stats_payments_spread_monthly_utc (
-    ym char(7) NOT NULL,
-    payment_kind text NOT NULL,
-    gross numeric(14, 6) NOT NULL DEFAULT 0,
-    net numeric(14, 6) NOT NULL DEFAULT 0,
-    PRIMARY KEY (ym, payment_kind),
-    CONSTRAINT stats_payments_spread_monthly_utc_kind CHECK (
-        payment_kind IN ('subscription', 'one_time')
-    )
-);
+-- CREATE TABLE IF NOT EXISTS stats_payments_spread_monthly_utc (
+--     ym char(7) NOT NULL,
+--     payment_kind text NOT NULL,
+--     gross numeric(14, 6) NOT NULL DEFAULT 0,
+--     net numeric(14, 6) NOT NULL DEFAULT 0,
+--     PRIMARY KEY (ym, payment_kind),
+--     CONSTRAINT stats_payments_spread_monthly_utc_kind CHECK (
+--         payment_kind IN ('subscription', 'one_time')
+--     )
+-- );
 
-CREATE INDEX IF NOT EXISTS idx_stats_payments_daily_utc_day
-    ON stats_payments_daily_utc (day_utc);
+-- CREATE INDEX IF NOT EXISTS idx_stats_payments_daily_utc_day
+--     ON stats_payments_daily_utc (day_utc);
 
-CREATE INDEX IF NOT EXISTS idx_stats_payments_daily_msk_day
-    ON stats_payments_daily_msk (day_msk);
+-- CREATE INDEX IF NOT EXISTS idx_stats_payments_daily_msk_day
+--     ON stats_payments_daily_msk (day_msk);
 
-CREATE TABLE IF NOT EXISTS stats_users_daily_msk (
-    stats_date date PRIMARY KEY,
-    users_count bigint NOT NULL DEFAULT 0,
-    users_with_traffic_count bigint NOT NULL DEFAULT 0,
-    active_users_count bigint NOT NULL DEFAULT 0,
-    subscription_devices_users_count bigint NOT NULL DEFAULT 0,
-    users_cumulative_traffic_over_100_mbit_count bigint NOT NULL DEFAULT 0,
-    persistent_traffic_users_count bigint NOT NULL DEFAULT 0,
-    users_with_payment_count bigint NOT NULL DEFAULT 0,
-    payments_first_count bigint NOT NULL DEFAULT 0,
-    payments_repeat_count bigint NOT NULL DEFAULT 0,
-    active_users_with_payment_count bigint NOT NULL DEFAULT 0,
-    users_with_active_subscription_count bigint NOT NULL DEFAULT 0
-);
+-- CREATE TABLE IF NOT EXISTS stats_users_daily_msk (
+--     stats_date date PRIMARY KEY,
+--     users_count bigint NOT NULL DEFAULT 0,
+--     users_with_traffic_count bigint NOT NULL DEFAULT 0,
+--     active_users_count bigint NOT NULL DEFAULT 0,
+--     subscription_devices_users_count bigint NOT NULL DEFAULT 0,
+--     users_cumulative_traffic_over_100_mbit_count bigint NOT NULL DEFAULT 0,
+--     persistent_traffic_users_count bigint NOT NULL DEFAULT 0,
+--     users_with_payment_count bigint NOT NULL DEFAULT 0,
+--     payments_first_count bigint NOT NULL DEFAULT 0,
+--     payments_repeat_count bigint NOT NULL DEFAULT 0,
+--     active_users_with_payment_count bigint NOT NULL DEFAULT 0,
+--     users_with_active_subscription_count bigint NOT NULL DEFAULT 0
+-- );
 
-CREATE TABLE IF NOT EXISTS stats_users_daily_dirty (
-    stats_date date PRIMARY KEY,
-    dirty_at timestamptz NOT NULL DEFAULT now()
-);
+-- CREATE TABLE IF NOT EXISTS stats_users_daily_dirty (
+--     stats_date date PRIMARY KEY,
+--     dirty_at timestamptz NOT NULL DEFAULT now()
+-- );
 
-CREATE INDEX IF NOT EXISTS idx_stats_users_daily_dirty_at
-    ON stats_users_daily_dirty (dirty_at);
+-- CREATE INDEX IF NOT EXISTS idx_stats_users_daily_dirty_at
+--     ON stats_users_daily_dirty (dirty_at);
 
--- Одноразовые миграции данных (отметка после apply, см. schema.py).
-CREATE TABLE IF NOT EXISTS schema_one_time_migrations (
-    name text PRIMARY KEY,
-    applied_at timestamptz NOT NULL DEFAULT now()
-);
+-- -- Одноразовые миграции данных (отметка после apply, см. schema.py).
+-- CREATE TABLE IF NOT EXISTS schema_one_time_migrations (
+--     name text PRIMARY KEY,
+--     applied_at timestamptz NOT NULL DEFAULT now()
+-- );
 
--- Починка архива трафика (server_id=0): старый перенос без carry-forward давал падающий ряд.
--- Forward-fill (total := prev), без prev+cur — иначе каскадное завышение на графике.
--- Одноразово: при каждом ensure_schema полный скан архива не нужен.
-DO $$
-DECLARE
-    uid bigint;
-    r RECORD;
-    prev_total bigint;
-    cur_total bigint;
-    up_share double precision;
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM schema_one_time_migrations
-        WHERE name = 'traffic_archive_forward_fill_20260625'
-    ) THEN
-        RETURN;
-    END IF;
+-- -- Починка архива трафика (server_id=0): старый перенос без carry-forward давал падающий ряд.
+-- -- Forward-fill (total := prev), без prev+cur — иначе каскадное завышение на графике.
+-- -- Одноразово: при каждом ensure_schema полный скан архива не нужен.
+-- DO $$
+-- DECLARE
+--     uid bigint;
+--     r RECORD;
+--     prev_total bigint;
+--     cur_total bigint;
+--     up_share double precision;
+-- BEGIN
+--     IF EXISTS (
+--         SELECT 1 FROM schema_one_time_migrations
+--         WHERE name = 'traffic_archive_forward_fill_20260625'
+--     ) THEN
+--         RETURN;
+--     END IF;
 
-    FOR uid IN
-        SELECT DISTINCT user_id
-        FROM user_server_traffic
-        WHERE server_id = 0
-        ORDER BY user_id
-    LOOP
-        prev_total := 0;
-        FOR r IN
-            SELECT traffic_date, up_bytes, down_bytes
-            FROM user_server_traffic
-            WHERE server_id = 0 AND user_id = uid
-            ORDER BY traffic_date
-        LOOP
-            cur_total := COALESCE(r.up_bytes, 0) + COALESCE(r.down_bytes, 0);
-            IF cur_total < prev_total THEN
-                IF prev_total > 0 AND cur_total > 0 THEN
-                    up_share := r.up_bytes::double precision / cur_total::double precision;
-                    UPDATE user_server_traffic
-                    SET
-                        up_bytes = ROUND(prev_total * up_share)::bigint,
-                        down_bytes = prev_total - ROUND(prev_total * up_share)::bigint
-                    WHERE server_id = 0
-                      AND user_id = uid
-                      AND traffic_date = r.traffic_date;
-                ELSE
-                    UPDATE user_server_traffic
-                    SET up_bytes = 0, down_bytes = prev_total
-                    WHERE server_id = 0
-                      AND user_id = uid
-                      AND traffic_date = r.traffic_date;
-                END IF;
-            ELSE
-                prev_total := cur_total;
-            END IF;
-        END LOOP;
-    END LOOP;
+--     FOR uid IN
+--         SELECT DISTINCT user_id
+--         FROM user_server_traffic
+--         WHERE server_id = 0
+--         ORDER BY user_id
+--     LOOP
+--         prev_total := 0;
+--         FOR r IN
+--             SELECT traffic_date, up_bytes, down_bytes
+--             FROM user_server_traffic
+--             WHERE server_id = 0 AND user_id = uid
+--             ORDER BY traffic_date
+--         LOOP
+--             cur_total := COALESCE(r.up_bytes, 0) + COALESCE(r.down_bytes, 0);
+--             IF cur_total < prev_total THEN
+--                 IF prev_total > 0 AND cur_total > 0 THEN
+--                     up_share := r.up_bytes::double precision / cur_total::double precision;
+--                     UPDATE user_server_traffic
+--                     SET
+--                         up_bytes = ROUND(prev_total * up_share)::bigint,
+--                         down_bytes = prev_total - ROUND(prev_total * up_share)::bigint
+--                     WHERE server_id = 0
+--                       AND user_id = uid
+--                       AND traffic_date = r.traffic_date;
+--                 ELSE
+--                     UPDATE user_server_traffic
+--                     SET up_bytes = 0, down_bytes = prev_total
+--                     WHERE server_id = 0
+--                       AND user_id = uid
+--                       AND traffic_date = r.traffic_date;
+--                 END IF;
+--             ELSE
+--                 prev_total := cur_total;
+--             END IF;
+--         END LOOP;
+--     END LOOP;
 
-    INSERT INTO schema_one_time_migrations (name)
-    VALUES ('traffic_archive_forward_fill_20260625')
-    ON CONFLICT (name) DO NOTHING;
-END $$;
+--     INSERT INTO schema_one_time_migrations (name)
+--     VALUES ('traffic_archive_forward_fill_20260625')
+--     ON CONFLICT (name) DO NOTHING;
+-- END $$;
 
-CREATE TABLE IF NOT EXISTS referral_link_groups (
-    id BIGSERIAL PRIMARY KEY,
-    name TEXT NOT NULL,
-    color TEXT NOT NULL DEFAULT '#58d68d',
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT referral_link_groups_name_nonempty CHECK (char_length(trim(name)) > 0)
-);
+-- CREATE TABLE IF NOT EXISTS referral_link_groups (
+--     id BIGSERIAL PRIMARY KEY,
+--     name TEXT NOT NULL,
+--     color TEXT NOT NULL DEFAULT '#58d68d',
+--     sort_order INTEGER NOT NULL DEFAULT 0,
+--     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+--     CONSTRAINT referral_link_groups_name_nonempty CHECK (char_length(trim(name)) > 0)
+-- );
 
-ALTER TABLE referral_links
-    ADD COLUMN IF NOT EXISTS group_id BIGINT REFERENCES referral_link_groups (id) ON DELETE SET NULL;
+-- ALTER TABLE referral_links
+--     ADD COLUMN IF NOT EXISTS group_id BIGINT REFERENCES referral_link_groups (id) ON DELETE SET NULL;
 
-CREATE INDEX IF NOT EXISTS idx_referral_links_group_id ON referral_links (group_id)
-    WHERE group_id IS NOT NULL;
+-- CREATE INDEX IF NOT EXISTS idx_referral_links_group_id ON referral_links (group_id)
+--     WHERE group_id IS NOT NULL;

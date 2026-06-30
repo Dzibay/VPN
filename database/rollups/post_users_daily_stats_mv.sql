@@ -275,26 +275,6 @@ BEGIN
 END;
 $$;
 
--- Baseline = накопительные счётчики до p_before (для частичных периодов).
--- Использует rpc_users_daily_stats(NULL, p_before-1) — один compute,
--- кэш + горячее окно обрабатываются единообразно.
-CREATE OR REPLACE FUNCTION rpc_users_daily_stats_baseline (p_before date)
-RETURNS jsonb
-LANGUAGE sql
-STABLE
-SET search_path TO public
-AS $$
-SELECT jsonb_build_object(
-    'users_count', COALESCE(SUM(s.users_count), 0)::bigint,
-    'users_with_traffic_count', COALESCE(SUM(s.users_with_traffic_count), 0)::bigint,
-    'subscription_devices_users_count',
-        COALESCE(SUM(s.subscription_devices_users_count), 0)::bigint,
-    'users_with_payment_count', COALESCE(SUM(s.users_with_payment_count), 0)::bigint
-)
-FROM rpc_users_daily_stats(NULL, p_before - 1) s
-WHERE s.stats_date IS NOT NULL AND s.stats_date < p_before;
-$$;
-
 -- Главная функция чтения статистики.
 -- Стратегия:
 --   * холодная часть периода (stats_date < hot_start) — из кэша stats_users_daily_msk,
@@ -411,4 +391,24 @@ BEGIN
     SELECT u.*
     FROM fn_users_daily_stats_undated_row() u;
 END;
+$$;
+
+-- Baseline = накопительные счётчики до p_before (для частичных периодов).
+-- Использует rpc_users_daily_stats(NULL, p_before-1) — один compute,
+-- кэш + горячее окно обрабатываются единообразно.
+CREATE OR REPLACE FUNCTION rpc_users_daily_stats_baseline (p_before date)
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SET search_path TO public
+AS $$
+SELECT jsonb_build_object(
+    'users_count', COALESCE(SUM(s.users_count), 0)::bigint,
+    'users_with_traffic_count', COALESCE(SUM(s.users_with_traffic_count), 0)::bigint,
+    'subscription_devices_users_count',
+        COALESCE(SUM(s.subscription_devices_users_count), 0)::bigint,
+    'users_with_payment_count', COALESCE(SUM(s.users_with_payment_count), 0)::bigint
+)
+FROM rpc_users_daily_stats(NULL::date, p_before - 1) s
+WHERE s.stats_date IS NOT NULL AND s.stats_date < p_before;
 $$;

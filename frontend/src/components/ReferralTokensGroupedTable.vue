@@ -70,17 +70,39 @@ if (expandedGroupIds.value.size === 0 && props.groups.length > 0) {
   expandedGroupIds.value = loadExpandedGroups()
 }
 
-function fmtDate(iso) {
+function fmtDatePart(iso) {
   if (!iso) return '—'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'medium' })
+  return d.toLocaleString('ru-RU', { dateStyle: 'short' })
+}
+
+function fmtTimePart(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleString('ru-RU', { timeStyle: 'medium' })
 }
 
 function fmtMoney(v) {
   const n = Number(String(v ?? '').replace(',', '.'))
   if (!Number.isFinite(n)) return '—'
   return n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function paymentConversionPct(payments, registrations) {
+  const pay = Number(payments) || 0
+  const reg = Number(registrations) || 0
+  if (reg <= 0) return null
+  return (pay / reg) * 100
+}
+
+function fmtConversionPct(payments, registrations) {
+  const pct = paymentConversionPct(payments, registrations)
+  if (pct == null || Number.isNaN(pct)) return '—'
+  if (pct >= 100) return `${pct.toFixed(1)}%`
+  if (pct >= 10) return `${pct.toFixed(1)}%`
+  return `${pct.toFixed(2)}%`
 }
 
 function fallbackSiteEntry(token) {
@@ -356,6 +378,14 @@ defineExpose({ clearSelection })
               @sort="toggleSort"
             />
             <AdminSortTh
+              label="Конверсия"
+              column-key="payment_conversion_pct"
+              align="right"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              @sort="toggleSort"
+            />
+            <AdminSortTh
               label="Доход"
               column-key="revenue_net"
               align="right"
@@ -370,24 +400,18 @@ defineExpose({ clearSelection })
               :sort-dir="sortDir"
               @sort="toggleSort"
             />
-            <AdminSortTh
-              label="Действия"
-              column-key="actions"
-              :sortable="false"
-              :sort-key="sortKey"
-              :sort-dir="sortDir"
-            />
+            <th class="admin-th row-actions-head col-actions" aria-label="Действия" />
           </tr>
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="11" class="muted">Загрузка…</td>
+            <td colspan="12" class="muted">Загрузка…</td>
           </tr>
           <tr v-else-if="error">
-            <td colspan="11" class="error-cell">{{ error }}</td>
+            <td colspan="12" class="error-cell">{{ error }}</td>
           </tr>
           <tr v-else-if="rows.length === 0">
-            <td colspan="11" class="muted">Пока нет записей</td>
+            <td colspan="12" class="muted">Пока нет записей</td>
           </tr>
           <template v-else>
             <template v-for="section in groupSections" :key="'group-' + section.group.id">
@@ -451,6 +475,9 @@ defineExpose({ clearSelection })
                 <td class="num ref-group-row__metric">{{ section.totals.clicks }}</td>
                 <td class="num ref-group-row__metric">{{ section.totals.registrations }}</td>
                 <td class="num ref-group-row__metric">{{ section.totals.payments }}</td>
+                <td class="num ref-group-row__metric">{{
+                  fmtConversionPct(section.totals.payments, section.totals.registrations)
+                }}</td>
                 <td class="num ref-group-row__metric">{{ fmtMoney(section.totals.revenue) }}</td>
                 <td class="ref-group-row__muted">—</td>
                 <td class="col-actions" @click.stop>
@@ -557,8 +584,12 @@ defineExpose({ clearSelection })
                 <td class="num">{{ r.clicks_count }}</td>
                 <td class="num">{{ r.registrations_count }}</td>
                 <td class="num">{{ r.payments_count }}</td>
+                <td class="num">{{ fmtConversionPct(r.payments_count, r.registrations_count) }}</td>
                 <td class="num">{{ fmtMoney(r.revenue_net) }}</td>
-                <td class="date-cell">{{ fmtDate(r.created_at) }}</td>
+                <td class="date-cell task-dates-cell">
+                  <span class="task-dates-cell__line">{{ fmtDatePart(r.created_at) }}</span>
+                  <span class="task-dates-cell__line">{{ fmtTimePart(r.created_at) }}</span>
+                </td>
                 <td class="col-actions">
                   <RowActionsDropdown
                     :menu-id-suffix="'ref-' + r.id"
@@ -598,7 +629,7 @@ defineExpose({ clearSelection })
             </template>
 
             <tr v-if="ungroupedRows.length > 0 && groups.length > 0" class="ref-ungrouped-head">
-              <td colspan="11">Без группы</td>
+              <td colspan="12">Без группы</td>
             </tr>
 
             <tr
@@ -677,8 +708,12 @@ defineExpose({ clearSelection })
               <td class="num">{{ r.clicks_count }}</td>
               <td class="num">{{ r.registrations_count }}</td>
               <td class="num">{{ r.payments_count }}</td>
+              <td class="num">{{ fmtConversionPct(r.payments_count, r.registrations_count) }}</td>
               <td class="num">{{ fmtMoney(r.revenue_net) }}</td>
-              <td class="date-cell">{{ fmtDate(r.created_at) }}</td>
+              <td class="date-cell task-dates-cell">
+                <span class="task-dates-cell__line">{{ fmtDatePart(r.created_at) }}</span>
+                <span class="task-dates-cell__line">{{ fmtTimePart(r.created_at) }}</span>
+              </td>
               <td class="col-actions">
                 <RowActionsDropdown
                   :menu-id-suffix="'ref-' + r.id"
@@ -930,6 +965,17 @@ defineExpose({ clearSelection })
   white-space: nowrap;
   font-size: 0.8rem;
   color: var(--muted);
+}
+.task-dates-cell {
+  white-space: normal;
+  line-height: 1.35;
+}
+.task-dates-cell__line {
+  display: block;
+}
+.task-dates-cell__line + .task-dates-cell__line {
+  margin-top: 0.15rem;
+  opacity: 0.92;
 }
 .link-actions {
   vertical-align: middle;
