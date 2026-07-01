@@ -11,6 +11,8 @@ from app.config import settings
 from app.core.dependencies import ReadonlySessionDep, SessionDep, require_admin, require_referrals_staff
 from app.core.exceptions import BadRequestError
 from app.domain.models.staff_ledger import (
+    StaffCreateAllTaskTypesBody,
+    StaffCreateAllTaskTypesResponse,
     StaffCreateTaskBody,
     StaffCreateTributePaymentBody,
     StaffCreateTributePaymentResponse,
@@ -23,6 +25,7 @@ from app.domain.models.staff_ledger import (
     StaffTasksListResponse,
 )
 from app.domain.services.staff_ledger_service import (
+    create_all_staff_task_types,
     create_staff_task,
     create_staff_manual_payment_record,
     delete_staff_task,
@@ -232,6 +235,41 @@ async def staff_get_task(
             detail="Задача не найдена",
         )
     return row
+
+
+@tasks_staff_router.post(
+    "/create-all-types",
+    response_model=StaffCreateAllTaskTypesResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Создать все типы задач для пользователя",
+    description="Создаёт по одной pending-задаче каждого разрешённого типа из tasks.type для указанного user_id.",
+)
+async def staff_create_all_task_types(
+    session: SessionDep,
+    body: StaffCreateAllTaskTypesBody,
+) -> StaffCreateAllTaskTypesResponse:
+    try:
+        return await create_all_staff_task_types(
+            session,
+            user_id=body.user_id,
+            referee_id=body.referee_id,
+            bonus_days=body.bonus_days,
+            early_payment_bonus_days=body.early_payment_bonus_days,
+            paid_months=body.paid_months,
+        )
+    except LookupError as err:
+        code = err.args[0] if err.args else ""
+        if code == "user_not_found":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Пользователь с таким user_id не найден",
+            ) from err
+        if code == "referee_not_found":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Пользователь с таким referee_id не найден",
+            ) from err
+        raise
 
 
 @tasks_staff_router.post(

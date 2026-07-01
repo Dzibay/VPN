@@ -96,6 +96,7 @@ const formBonusDays = ref('')
 const formEarlyPaymentBonusDays = ref('')
 const formPaidMonths = ref('')
 const createLoading = ref(false)
+const createAllTypesLoading = ref(false)
 const createError = ref(null)
 
 const editModalOpen = ref(false)
@@ -183,7 +184,7 @@ function openCreateModal() {
 }
 
 function closeCreateModal() {
-  if (createLoading.value) return
+  if (createLoading.value || createAllTypesLoading.value) return
   modalOpen.value = false
   createError.value = null
 }
@@ -263,6 +264,65 @@ async function submitCreateTask() {
     createError.value = e.message || String(e)
   } finally {
     createLoading.value = false
+  }
+}
+
+async function submitCreateAllTaskTypes() {
+  const uid = parseFormUserId()
+  if (!Number.isFinite(uid) || uid < 1) {
+    createError.value = 'Укажите корректный User ID (целое число ≥ 1).'
+    return
+  }
+  const refereeId = parseOptionalPositiveInt(formRefereeId.value)
+  if (refereeId === 'invalid') {
+    createError.value = 'referee_id: целое число ≥ 1 или пусто.'
+    return
+  }
+  const bonusDaysParsed = parseOptionalNonNegInt(formBonusDays.value)
+  if (bonusDaysParsed === 'invalid') {
+    createError.value = 'bonus_days: целое число ≥ 0 или пусто.'
+    return
+  }
+  const earlyPaymentBonusDaysParsed = parseOptionalNonNegInt(formEarlyPaymentBonusDays.value)
+  if (earlyPaymentBonusDaysParsed === 'invalid') {
+    createError.value = 'early_payment_bonus_days: целое число ≥ 0 или пусто.'
+    return
+  }
+  const paidMonthsParsed = parseOptionalPositiveInt(formPaidMonths.value)
+  if (paidMonthsParsed === 'invalid') {
+    createError.value = 'paid_months: целое число ≥ 1 или пусто.'
+    return
+  }
+
+  const ok = window.confirm(
+    `Создать все ${TASK_TYPE_OPTIONS.length} типов задач для пользователя #${uid}?`,
+  )
+  if (!ok) return
+
+  const body = {
+    user_id: uid,
+    bonus_days: bonusDaysParsed === undefined ? 7 : bonusDaysParsed,
+    early_payment_bonus_days:
+      earlyPaymentBonusDaysParsed === undefined ? 0 : earlyPaymentBonusDaysParsed,
+    paid_months: paidMonthsParsed === undefined ? 1 : paidMonthsParsed,
+  }
+  if (refereeId !== undefined) body.referee_id = refereeId
+
+  createAllTypesLoading.value = true
+  createError.value = null
+  try {
+    const data = await fetchJson('/api/admin/tasks/create-all-types', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
+    modalOpen.value = false
+    await load()
+    const created = Number(data?.created_count) || TASK_TYPE_OPTIONS.length
+    window.alert(`Создано задач: ${created}`)
+  } catch (e) {
+    createError.value = e.message || String(e)
+  } finally {
+    createAllTypesLoading.value = false
   }
 }
 
@@ -577,7 +637,12 @@ onMounted(() => {
       </AdminTableWrap>
     </template>
 
-    <AppModal v-if="modalOpen" title="Новая задача" :busy="createLoading" @close="closeCreateModal">
+    <AppModal
+      v-if="modalOpen"
+      title="Новая задача"
+      :busy="createLoading || createAllTypesLoading"
+      @close="closeCreateModal"
+    >
       <form class="modal-form" @submit.prevent="submitCreateTask">
         <label class="field">
           <span>User ID</span>
@@ -642,12 +707,20 @@ onMounted(() => {
           <button
             type="button"
             class="btn-secondary"
-            :disabled="createLoading"
+            :disabled="createLoading || createAllTypesLoading"
             @click="closeCreateModal"
           >
             Отмена
           </button>
-          <button type="submit" class="btn-primary" :disabled="createLoading">
+          <button
+            type="button"
+            class="btn-secondary"
+            :disabled="createLoading || createAllTypesLoading"
+            @click="submitCreateAllTaskTypes"
+          >
+            {{ createAllTypesLoading ? 'Создание всех…' : 'Создать все типы' }}
+          </button>
+          <button type="submit" class="btn-primary" :disabled="createLoading || createAllTypesLoading">
             {{ createLoading ? 'Создание…' : 'Создать' }}
           </button>
         </div>

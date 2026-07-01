@@ -14,6 +14,7 @@ from app.core.time import utc_now
 from app.domain.tenant.admin_project_scope import apply_project_scope, rpc_project_params
 from app.domain.models.staff_ledger import (
     StaffCreatableTaskType,
+    StaffCreateAllTaskTypesResponse,
     StaffCreateTributePaymentResponse,
     StaffPatchTaskBody,
     StaffPaymentItem,
@@ -24,6 +25,12 @@ from app.domain.models.staff_ledger import (
 from app.domain.services.payment_service import create_staff_manual_payment
 from app.domain.list_sort import SortDir, order_clause
 from app.domain.tasks.delivery_channel import delivery_channel_for_user
+from app.domain.tasks.notification_task_types import (
+    NOTIFICATION_TASK_TYPES,
+    NOTIFY_PAYMENT,
+    NOTIFY_REF_PAY,
+    NOTIFY_REF_REG,
+)
 from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.task import Task
 from app.infrastructure.persistence.models.user import User
@@ -289,6 +296,7 @@ async def create_staff_task(
             raise LookupError("referee_not_found")
 
     task = Task(
+        project_id=int(recipient.project_id),
         task_type=task_type,
         user_id=user_id,
         referee_id=referee_id,
@@ -302,6 +310,50 @@ async def create_staff_task(
     await session.flush()
     await session.refresh(task)
     return _staff_task_item_from_orm(task)
+
+
+async def create_all_staff_task_types(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    referee_id: int | None,
+    bonus_days: int,
+    early_payment_bonus_days: int,
+    paid_months: int,
+) -> StaffCreateAllTaskTypesResponse:
+    """Создать по одной pending-задаче каждого разрешённого типа для пользователя."""
+    recipient = await session.get(User, int(user_id))
+    if recipient is None:
+        raise LookupError("user_not_found")
+    if referee_id is not None:
+        if await session.scalar(select(User.id).where(User.id == referee_id)) is None:
+            raise LookupError("referee_not_found")
+
+    delivery_channel = delivery_channel_for_user(recipient)
+    tasks: list[Task] = []
+    for task_type in NOTIFICATION_TASK_TYPES:
+        task = Task(
+            project_id=int(recipient.project_id),
+            task_type=task_type,
+            user_id=int(user_id),
+            referee_id=referee_id if task_type in (NOTIFY_REF_REG, NOTIFY_REF_PAY) else None,
+            bonus_days=bonus_days if task_type in (NOTIFY_REF_REG, NOTIFY_REF_PAY) else None,
+            early_payment_bonus_days=(
+                early_payment_bonus_days if task_type == NOTIFY_PAYMENT else None
+            ),
+            paid_months=paid_months if task_type == NOTIFY_PAYMENT else None,
+            status="pending",
+            delivery_channel=delivery_channel,
+        )
+        session.add(task)
+        tasks.append(task)
+
+    await session.flush()
+    for task in tasks:
+        await session.refresh(task)
+
+    items = [_staff_task_item_from_orm(task) for task in tasks]
+    return StaffCreateAllTaskTypesResponse(created_count=len(items), items=items)
 
 
 async def update_staff_task(

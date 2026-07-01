@@ -157,6 +157,37 @@ class StaffCreateTaskBody(BaseModel):
     )
 
 
+class StaffCreateAllTaskTypesBody(BaseModel):
+    """Создать по одной pending-задаче каждого разрешённого типа для пользователя."""
+
+    user_id: int = Field(ge=1, description="Целевой пользователь: users.id")
+    referee_id: int | None = Field(
+        default=None,
+        ge=1,
+        description="Опционально для notify_ref_*: второй пользователь в сценарии.",
+    )
+    bonus_days: int = Field(
+        default=7,
+        ge=0,
+        description="bonus_days для notify_ref_reg / notify_ref_pay.",
+    )
+    early_payment_bonus_days: int = Field(
+        default=0,
+        ge=0,
+        description="early_payment_bonus_days для notify_payment.",
+    )
+    paid_months: int = Field(
+        default=1,
+        ge=1,
+        description="paid_months для notify_payment.",
+    )
+
+
+class StaffCreateAllTaskTypesResponse(BaseModel):
+    created_count: int = Field(ge=0)
+    items: list[StaffTaskItem]
+
+
 StaffTaskStatus = Literal["pending", "completed", "failed"]
 
 
