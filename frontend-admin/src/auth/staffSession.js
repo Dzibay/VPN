@@ -8,6 +8,8 @@
  * оттуда, а бэкенд теперь принимает staff-JWT в require_roles (см. decode_access_token,
  * маппинг super_admin/admin → 'admin', manager → 'manager').
  */
+import { clearStaffSwaggerCookie } from './swaggerStaffCookie.js'
+
 const KEY = 'STAFF_JWT'
 const PROFILE_KEY = 'STAFF_PROFILE'
 const PROJECT_KEY = 'STAFF_CURRENT_PROJECT'
@@ -58,6 +60,7 @@ export function clearStaffSession() {
     localStorage.removeItem(LEGACY_TOKEN_KEY)
     localStorage.removeItem(LEGACY_ROLE_KEY)
   } catch (_) { /* ignore */ }
+  clearStaffSwaggerCookie()
 }
 
 /** Восстановление bridge после reload — вызывается один раз в main.js. */

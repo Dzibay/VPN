@@ -15,7 +15,8 @@ import {
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { canAccessRoute } from '../auth/roleAccess.js'
-import { getStaffProfile } from '../auth/staffSession.js'
+import { getStaffProfile, getStaffToken } from '../auth/staffSession.js'
+import { startStaffSwaggerWithToken } from '../auth/swaggerStaffCookie.js'
 
 const open = defineModel('open', { type: Boolean, default: true })
 
@@ -98,6 +99,13 @@ const visibleSections = computed(() =>
     .filter((section) => section.items.length > 0),
 )
 
+const showSwagger = computed(() => canAccessRoute(role.value, 'staff'))
+
+function openSwagger() {
+  startStaffSwaggerWithToken(getStaffToken())
+  onNavClick()
+}
+
 function onNavClick() {
   if (window.matchMedia('(max-width: 900px)').matches) {
     open.value = false
@@ -146,17 +154,15 @@ function onNavClick() {
       </section>
     </nav>
 
-    <a
-      v-if="role === 'super_admin'"
+    <button
+      v-if="showSwagger"
+      type="button"
       class="swagger-link"
-      href="/swagger"
-      target="_blank"
-      rel="noopener"
-      @click="onNavClick"
+      @click="openSwagger"
     >
       <ExternalLink :size="15" />
       <span>Swagger API</span>
-    </a>
+    </button>
 
     <button
       class="sidebar-collapse"
@@ -337,7 +343,11 @@ function onNavClick() {
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 600;
+  font-family: inherit;
   text-decoration: none;
+  cursor: pointer;
+  width: calc(100% - 8px);
+  text-align: left;
 }
 
 .swagger-link:hover {
