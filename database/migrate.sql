@@ -720,3 +720,61 @@ BEGIN
     VALUES (_migration_name)
     ON CONFLICT (name) DO NOTHING;
 END $$;
+
+-- Юридические плейсхолдеры для SPA: projects.brand.legal (редактируются в админке).
+DO $$
+DECLARE
+    _migration_name TEXT := '20260703_projects_brand_legal_defaults';
+    _legal JSONB := jsonb_build_object(
+        'operator_name', 'Балыбин Антон Денисович',
+        'operator_inn', '524929428660',
+        'dispute_jurisdiction', 'г. Санкт-Петербург, Российская Федерация',
+        'effective_date', '09.06.2026'
+    );
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM schema_one_time_migrations WHERE name = _migration_name
+    ) THEN
+        RETURN;
+    END IF;
+
+    UPDATE projects
+    SET brand = COALESCE(brand, '{}'::jsonb)
+        || jsonb_build_object('legal', _legal)
+    WHERE brand IS NULL
+       OR brand->'legal' IS NULL
+       OR brand->'legal' = 'null'::jsonb;
+
+    INSERT INTO schema_one_time_migrations (name)
+    VALUES (_migration_name)
+    ON CONFLICT (name) DO NOTHING;
+END $$;
+
+-- Юридические плейсхолдеры для SPA: projects.brand.legal (редактируются в админке).
+DO $$
+DECLARE
+    _migration_name TEXT := '20260703_projects_brand_legal_defaults';
+    _legal JSONB := jsonb_build_object(
+        'operator_name', 'Балыбин Антон Денисович',
+        'operator_inn', '524929428660',
+        'dispute_jurisdiction', 'г. Санкт-Петербург, Российская Федерация',
+        'effective_date', '09.06.2026'
+    );
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM schema_one_time_migrations WHERE name = _migration_name
+    ) THEN
+        RETURN;
+    END IF;
+
+    UPDATE projects
+    SET brand = COALESCE(brand, '{}'::jsonb)
+        || jsonb_build_object('legal', _legal)
+    WHERE brand IS NULL
+       OR brand->'legal' IS NULL
+       OR brand->'legal' = 'null'::jsonb;
+
+    INSERT INTO schema_one_time_migrations (name)
+    VALUES (_migration_name)
+    ON CONFLICT (name) DO NOTHING;
+END $$;

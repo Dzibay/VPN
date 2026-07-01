@@ -1,8 +1,9 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import CabinetBackLink from '../components/CabinetBackLink.vue'
 import SitePageLayout from '../components/SitePageLayout.vue'
+import { ensureProjectLegalLoaded } from '../composables/useProjectLegal.js'
 import {
   LEGAL_FOOTER_LINKS,
   getLegalDocument,
@@ -10,8 +11,16 @@ import {
 import { linkifyText } from '../utils/linkifyText.js'
 
 const route = useRoute()
+const legalReady = ref(false)
 
-const doc = computed(() => getLegalDocument(route.meta.legalDoc))
+onMounted(async () => {
+  await ensureProjectLegalLoaded()
+  legalReady.value = true
+})
+
+const doc = computed(() => (
+  legalReady.value ? getLegalDocument(route.meta.legalDoc) : null
+))
 
 const toc = computed(() =>
   (doc.value?.sections ?? []).map((section, index) => ({
@@ -58,8 +67,15 @@ const linkify = linkifyText
       label="На главную"
     />
 
+    <p
+      v-if="!legalReady"
+      class="legal-loading"
+    >
+      Загрузка документа…
+    </p>
+
     <div
-      v-if="doc"
+      v-else-if="doc"
       class="legal-layout"
     >
       <nav
@@ -258,6 +274,12 @@ const linkify = linkifyText
 <style scoped>
 .legal-page {
   --page-content-max: 52rem;
+}
+
+.legal-loading {
+  margin: 0.5rem 0 1rem;
+  color: var(--muted);
+  font-size: 0.95rem;
 }
 
 .legal-page :deep(.site-page-layout__body) {

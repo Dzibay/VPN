@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { Headphones, ShieldBan } from 'lucide-vue-next'
 import SitePageLayout from '../components/SitePageLayout.vue'
 import { fetchJson } from '../api/client.js'
-import { SUPPORT_TELEGRAM } from '../content/legal.js'
+import { applyProjectLegalFromSiteLinks, ensureProjectLegalLoaded, getProjectLegalTokens } from '../composables/useProjectLegal.js'
 
 const BLOCKED_IMAGE_SRC = '/images/blocked/blocked.png'
 
@@ -19,22 +19,26 @@ function telegramUrlFromHandle(handle) {
 const supportUrl = computed(() => {
   const fromApi = siteLinks.value?.support_telegram_url
   if (typeof fromApi === 'string' && fromApi.trim()) return fromApi.trim()
-  return telegramUrlFromHandle(SUPPORT_TELEGRAM)
+  const handle = getProjectLegalTokens().supportTelegram || getProjectLegalTokens().telegramBot
+  return telegramUrlFromHandle(handle)
 })
 
 const supportLabel = computed(() => {
   const url = supportUrl.value
-  if (!url) return SUPPORT_TELEGRAM
+  const fallback = getProjectLegalTokens().supportTelegram || getProjectLegalTokens().telegramBot
+  if (!url) return fallback
   const m = url.match(/t\.me\/([^/?#]+)/i)
-  return m?.[1] ? `@${m[1]}` : SUPPORT_TELEGRAM
+  return m?.[1] ? `@${m[1]}` : fallback
 })
 
 onMounted(async () => {
   try {
     siteLinks.value = await fetchJson('/api/public/site-links')
+    applyProjectLegalFromSiteLinks(siteLinks.value?.legal)
   } catch {
     siteLinks.value = null
   }
+  await ensureProjectLegalLoaded()
 })
 </script>
 

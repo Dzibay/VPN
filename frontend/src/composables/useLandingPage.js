@@ -37,7 +37,8 @@ import {
 } from 'lucide-vue-next'
 import { getAccessToken, getSessionRole } from '../auth/session.js'
 import { sitePublicUrl, fetchJson } from '../api/client.js'
-import { LEGAL_FOOTER_LINKS, SUPPORT_TELEGRAM } from '../content/legal.js'
+import { LEGAL_FOOTER_LINKS } from '../content/legal.js'
+import { applyProjectLegalFromSiteLinks, getProjectLegalTokens } from './useProjectLegal.js'
 import { buildLandingPlans, useYookassaPricing } from './useYookassaPricing.js'
 
 export const LANDING_PAGE_KEY = Symbol('landingPage')
@@ -282,14 +283,16 @@ export function createLandingPageContext() {
   const supportTelegramUrl = computed(() => {
     const fromApi = siteLinks.value?.support_telegram_url
     if (typeof fromApi === 'string' && fromApi.trim()) return fromApi.trim()
-    return telegramUrlFromHandle(SUPPORT_TELEGRAM)
+    const handle = getProjectLegalTokens().supportTelegram || getProjectLegalTokens().telegramBot
+    return telegramUrlFromHandle(handle)
   })
 
   const supportTelegramLabel = computed(() => {
     const url = supportTelegramUrl.value
-    if (!url) return SUPPORT_TELEGRAM
+    const fallback = getProjectLegalTokens().supportTelegram || getProjectLegalTokens().telegramBot
+    if (!url) return fallback
     const m = url.match(/t\.me\/([^/?#]+)/i)
-    return m?.[1] ? `@${m[1]}` : SUPPORT_TELEGRAM
+    return m?.[1] ? `@${m[1]}` : fallback
   })
 
   const footerSeoLinks = [
@@ -319,6 +322,7 @@ export function createLandingPageContext() {
   async function loadSiteLinks() {
     try {
       siteLinks.value = await fetchJson('/api/public/site-links')
+      applyProjectLegalFromSiteLinks(siteLinks.value?.legal)
     } catch {
       siteLinks.value = null
     }

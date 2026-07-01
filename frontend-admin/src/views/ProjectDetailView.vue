@@ -93,7 +93,18 @@ const sections = [
       { key: 'brand.frontend_mode', label: 'Режим публичного сайта', type: 'text',
         hint: 'full — общий SPA; placeholder — заглушка «в разработке» (/api для бота работает).' },
       { key: 'brand.brand_name', label: 'Название бренда', type: 'text',
-        hint: 'Тексты бота и YAML подписки.' },
+        hint: 'Тексты бота, YAML подписки и юридических документов на сайте.' },
+    ],
+  },
+  {
+    title: 'Юридические документы',
+    fields: [
+      { key: 'brand.legal.effective_date', label: 'Дата редакции документов', type: 'text',
+        hint: 'Например: 09.06.2026 — показывается на страницах /terms, /privacy и др.' },
+      { key: 'brand.legal.operator_name', label: 'ФИО оператора', type: 'text' },
+      { key: 'brand.legal.operator_inn', label: 'ИНН оператора', type: 'text' },
+      { key: 'brand.legal.dispute_jurisdiction', label: 'Подсудность', type: 'text',
+        hint: 'Например: г. Санкт-Петербург, Российская Федерация' },
     ],
   },
 ]

@@ -2,11 +2,9 @@
 # node:22-alpine ломает npm ci — используем Debian slim (как deploy/nginx/Dockerfile).
 FROM node:22-bookworm-slim AS frontend-build
 ARG SITE_ADDRESS=halyal-connect.ru
-ARG TELEGRAM_BOT_USERNAME=
 ENV SITE_ADDRESS=$SITE_ADDRESS
 ENV VITE_BRAND=halyal
 ENV VITE_DISABLE_SEO_PAGES=true
-ENV VITE_TELEGRAM_BOT_USERNAME=$TELEGRAM_BOT_USERNAME
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --no-audit --no-fund
