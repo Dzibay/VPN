@@ -3,6 +3,7 @@ import { useLandingPageContext } from '../../composables/useLandingPage.js'
 
 const {
   HOME_IMAGES,
+  landingCopy,
   ArrowRight,
   Building2,
   CheckCircle2,
@@ -67,7 +68,7 @@ const {
     >
       <div class="section-inner section-why__inner">
         <h2 id="why-heading" class="section-why__title">
-          Почему выбирают наш VPN?
+          {{ landingCopy.whyTitle }}
         </h2>
 
         <div class="why-grid" role="list">

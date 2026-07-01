@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 
 const {
   HOME_IMAGES,
+  landingCopy,
   ArrowRight,
   Building2,
   CheckCircle2,
@@ -80,12 +81,10 @@ const {
               id="final-cta-heading"
               class="final-cta-card__title"
             >
-              Забудьте про постоянное включение и выключение
-              <span class="final-cta-card__accent">VPN</span>
+              {{ landingCopy.finalTitle }}
             </h2>
             <p class="final-cta-card__lead">
-              Один раз настроили маршруты — дальше интернет ведёт себя предсказуемо:
-              зарубежные сервисы через туннель, российские приложения без лишних обходов.
+              {{ landingCopy.finalLead }}
             </p>
             <ul
               class="final-cta-card__features"

@@ -3,6 +3,7 @@ import { useLandingPageContext } from '../../composables/useLandingPage.js'
 
 const {
   HOME_IMAGES,
+  landingCopy,
   ArrowRight,
   Building2,
   CheckCircle2,
@@ -79,8 +80,7 @@ const {
             Частые вопросы
           </h2>
           <p class="faq-head__lead">
-            Коротко о том, как устроен Подорожник VPN и чего ждать после регистрации.
-            Если не нашли ответ — мы всегда на связи.
+            {{ landingCopy.faqLead }}
           </p>
 
           <div

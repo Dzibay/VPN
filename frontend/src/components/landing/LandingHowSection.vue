@@ -3,6 +3,7 @@ import { useLandingPageContext } from '../../composables/useLandingPage.js'
 
 const {
   HOME_IMAGES,
+  landingCopy,
   ArrowRight,
   Building2,
   CheckCircle2,
@@ -115,15 +116,13 @@ const {
       <div class="section-inner how-inner">
         <p class="how-eyebrow">
           <span class="how-eyebrow__dot" aria-hidden="true" />
-          Умная маршрутизация
+          {{ landingCopy.howEyebrow }}
         </p>
         <h2 id="how-heading" class="how-title">
-          Две дороги из одного <span class="how-title__accent">VPN</span>
+          {{ landingCopy.howTitlePrefix }} <span class="how-title__accent">VPN</span>
         </h2>
         <p class="how-lead">
-          Подорожник делит трафик автоматически: международные сервисы идут через
-          защищённый VPN-канал, а привычные российские приложения — по вашему
-          обычному IP, без лишних задержек
+          {{ landingCopy.howLead }}
         </p>
 
         <div class="how-stage">
@@ -131,13 +130,13 @@ const {
             <header class="how-card__head">
               <span class="how-card__badge how-card__badge--vpn">
                 <Lock :size="12" stroke-width="2.5" aria-hidden="true" />
-                Туннель
+                {{ landingCopy.howVpnBadge }}
               </span>
               <h3 class="how-card__title">
-                Через <span class="how-card__title-accent">VPN</span>
+                {{ landingCopy.howVpnTitle }}
               </h3>
               <p class="how-card__desc">
-                Стриминг, соцсети, ИИ и всё, что за рубежом
+                {{ landingCopy.howVpnDesc }}
               </p>
             </header>
 
@@ -202,13 +201,13 @@ const {
             <header class="how-card__head">
               <span class="how-card__badge how-card__badge--direct">
                 <Shield :size="12" stroke-width="2.5" aria-hidden="true" />
-                Прямой IP
+                {{ landingCopy.howDirectBadge }}
               </span>
               <h3 class="how-card__title">
-                Напрямую <span class="how-card__title-accent">(РФ)</span>
+                {{ landingCopy.howDirectTitle }}
               </h3>
               <p class="how-card__desc">
-                Банки, госуслуги и локальные сервисы без обходов
+                {{ landingCopy.howDirectDesc }}
               </p>
             </header>
 

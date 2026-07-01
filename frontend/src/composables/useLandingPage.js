@@ -42,6 +42,86 @@ import { buildLandingPlans, useYookassaPricing } from './useYookassaPricing.js'
 
 export const LANDING_PAGE_KEY = Symbol('landingPage')
 
+const FRONTEND_BRAND = String(import.meta.env.VITE_BRAND || '').trim().toLowerCase()
+const isHalyalBrand = FRONTEND_BRAND === 'halyal'
+const brandName = isHalyalBrand ? 'Halyal VPN' : 'Подорожник VPN'
+
+const landingCopy = isHalyalBrand
+  ? {
+      brandName,
+      heroBadge: 'Чистый • Быстрый • Надёжный',
+      heroTitle: 'VPN для спокойного доступа к нужным сервисам',
+      heroLead:
+        'Halyal VPN помогает пользоваться зарубежными сервисами через защищённый канал, а привычные российские приложения оставляет работать напрямую.',
+      heroPrimaryCta: 'Подключить Halyal VPN',
+      heroSecondaryCta: 'Посмотреть тарифы',
+      heroSocialCount: 'Пользователи выбирают Halyal VPN за стабильность',
+      whyTitle: 'Почему выбирают Halyal VPN?',
+      howEyebrow: 'Умная маршрутизация',
+      howTitlePrefix: 'Два маршрута в одном',
+      howLead:
+        'Halyal VPN автоматически разделяет трафик: зарубежные сервисы идут через защищённый туннель, а российские банки, госуслуги и локальные приложения — напрямую.',
+      howVpnBadge: 'Туннель',
+      howVpnTitle: 'Через VPN',
+      howVpnDesc: 'Видео, соцсети, ИИ-сервисы и зарубежные сайты',
+      howDirectBadge: 'Прямой IP',
+      howDirectTitle: 'Напрямую (РФ)',
+      howDirectDesc: 'Банки, госуслуги и локальные сервисы без лишних обходов',
+      trialLead: 'Попробуйте Halyal VPN без ограничений и сложных настроек',
+      trialProofStrong: 'Стабильность, скорость и понятное подключение',
+      trialProofText: 'то, за что пользователи выбирают Halyal VPN каждый день',
+      pricingLead:
+        'Halyal VPN объединяет скорость, приватность и удобное подключение. Выберите подписку, которая подходит именно вам.',
+      pricingBenefitsAria: 'Преимущества Halyal VPN',
+      faqLead:
+        'Коротко о том, как устроен Halyal VPN и чего ждать после регистрации. Если не нашли ответ — мы всегда на связи.',
+      finalTitle: 'Подключите VPN один раз и пользуйтесь интернетом спокойно',
+      finalLead:
+        'Halyal VPN берёт маршрутизацию на себя: нужные зарубежные сервисы открываются через туннель, а локальные приложения продолжают работать привычно.',
+      footerDesc:
+        'VPN с умной маршрутизацией: зарубежные сервисы через защищённый канал, российские — без постоянного переключения.',
+      footerCopyright: '© 2026 Halyal VPN. Все права защищены.',
+      orgDescription:
+        'VPN-сервис Halyal VPN: защищённый доступ к зарубежным сервисам и удобная работа с российскими приложениями без лишних переключений.',
+    }
+  : {
+      brandName,
+      heroBadge: 'Быстрый • Безопасный • Надёжный',
+      heroTitle: 'YouTube, ChatGPT и зарубежные сервисы — через VPN',
+      heroLead:
+        'Российские сервисы работают без постоянного переключения, а зарубежные — через защищённый канал.',
+      heroPrimaryCta: 'Начать пользоваться VPN',
+      heroSecondaryCta: 'Выбрать тариф',
+      heroSocialCount: '10 000+ пользователей доверяют нам',
+      whyTitle: 'Почему выбирают наш VPN?',
+      howEyebrow: 'Умная маршрутизация',
+      howTitlePrefix: 'Две дороги из одного',
+      howLead:
+        'Подорожник делит трафик автоматически: международные сервисы идут через защищённый VPN-канал, а привычные российские приложения — по вашему обычному IP, без лишних задержек',
+      howVpnBadge: 'Туннель',
+      howVpnTitle: 'Через VPN',
+      howVpnDesc: 'Стриминг, соцсети, ИИ и всё, что за рубежом',
+      howDirectBadge: 'Прямой IP',
+      howDirectTitle: 'Напрямую (РФ)',
+      howDirectDesc: 'Банки, госуслуги и локальные сервисы без обходов',
+      trialLead: 'Протестируйте все преимущества Подорожник VPN без ограничений',
+      trialProofStrong: 'Более 10 000 пользователей',
+      trialProofText: 'уже оценили стабильность и скорость соединения Подорожник VPN',
+      pricingLead:
+        'Подорожник VPN объединяет скорость, безопасность и удобство. Выберите подписку, которая подходит именно вам.',
+      pricingBenefitsAria: 'Преимущества Подорожник VPN',
+      faqLead:
+        'Коротко о том, как устроен Подорожник VPN и чего ждать после регистрации. Если не нашли ответ — мы всегда на связи.',
+      finalTitle: 'Забудьте про постоянное включение и выключение VPN',
+      finalLead:
+        'Один раз настроили маршруты — дальше интернет ведёт себя предсказуемо: зарубежные сервисы через туннель, российские приложения без лишних обходов.',
+      footerDesc:
+        'VPN с умной маршрутизацией: зарубежные сервисы через защищённый канал, российские — без постоянного переключения.',
+      footerCopyright: '© 2026 Подорожник VPN. Все права защищены.',
+      orgDescription:
+        'VPN-сервис Подорожник: доступ к зарубежным сервисам через защищённый канал и удобная работа с российскими сервисами без лишних переключений.',
+    }
+
 /** @type {const} */
 export const HOME_IMAGES = {
   bgMap: '/images/home/hero-bg-map.png',
@@ -132,7 +212,7 @@ export function createLandingPageContext() {
     {
       icon: Route,
       title: 'Автоматический выбор маршрута',
-      text: 'Подорожник сам определяет, какой трафик пустить в туннель, а какой — напрямую',
+      text: `${brandName} сам определяет, какой трафик пустить в туннель, а какой — напрямую`,
     },
     {
       icon: CheckCircle2,
@@ -155,7 +235,7 @@ export function createLandingPageContext() {
   ]
 
   const planIncludes = [
-    'Все функции Подорожник VPN',
+    `Все функции ${brandName}`,
     'Шифрование VLESS и умная маршрутизация',
     'До 5 устройств на одной подписке',
     'Поддержка 24/7',
@@ -185,9 +265,9 @@ export function createLandingPageContext() {
   const plans = computed(() => buildLandingPlans(tariffs.value, LANDING_PLAN_MONTHS, LANDING_PLAN_META))
 
   const faqs = [
-    { q: 'Нужно ли выключать ВПН для оплаты картой?', a: 'Нет. Подорожник настроен так, что банковские приложения (Сбер, Т-Банк и др.) и Госуслуги работают через ваше прямое соединение, минуя VPN-сервер.' },
+    { q: 'Нужно ли выключать ВПН для оплаты картой?', a: `Нет. ${brandName} настроен так, что банковские приложения (Сбер, Т-Банк и др.) и Госуслуги работают через ваше прямое соединение, минуя VPN-сервер.` },
     { q: 'Будет ли работать Gemini и ChatGPT?', a: 'Да, все популярные ИИ-сервисы, включая Google Gemini, включены в список умной маршрутизации и открываются без проблем.' },
-    { q: 'На каких устройствах работает Подорожник VPN?', a: 'Windows, macOS, Android, iOS, Linux и даже Android TV. Подключайтесь через клиенты Happ, V2Ray и другие приложения с поддержкой современных протоколов, включая VLESS.' },
+    { q: `На каких устройствах работает ${brandName}?`, a: 'Windows, macOS, Android, iOS, Linux и даже Android TV. Подключайтесь через клиенты Happ, V2Ray и другие приложения с поддержкой современных протоколов, включая VLESS.' },
     { q: 'Сколько устройств можно подключить?', a: 'По одной подписке вы можете подключить до 5 устройств одновременно без потери скорости.' },
   ]
 
@@ -281,10 +361,9 @@ export function createLandingPageContext() {
         },
         {
           '@type': 'Organization',
-          name: 'Подорожник VPN',
+          name: brandName,
           ...(base ? { url: `${base}/` } : {}),
-          description:
-            'VPN-сервис Подорожник: доступ к зарубежным сервисам через защищённый канал и удобная работа с российскими сервисами без лишних переключений.',
+          description: landingCopy.orgDescription,
         },
       ],
     }
@@ -310,6 +389,9 @@ export function createLandingPageContext() {
 
   return {
     HOME_IMAGES,
+    brandName,
+    isHalyalBrand,
+    landingCopy,
     ArrowRight,
     Building2,
     CheckCircle2,

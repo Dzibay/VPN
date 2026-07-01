@@ -6,7 +6,8 @@ import { buildSeoAssets } from './src/seo/buildSeoAssets.js'
 import { prerenderSeoPages } from './src/seo/prerenderSeoPages.js'
 
 // Прокси на API: порт должен совпадать с локальным uvicorn (по умолчанию 5000).
-const API_TARGET = process.env.VITE_DEV_API_TARGET || 'http://127.0.0.1:5000'
+const NODE_ENV = globalThis.process?.env ?? {}
+const API_TARGET = NODE_ENV.VITE_DEV_API_TARGET || 'http://127.0.0.1:5000'
 
 /**
  * @param {Record<string, string>} env result of loadEnv
@@ -16,14 +17,14 @@ const API_TARGET = process.env.VITE_DEV_API_TARGET || 'http://127.0.0.1:5000'
 function siteUrlFromEnv(env) {
   const explicit = (
     env.VITE_PUBLIC_SITE_URL ||
-    process.env.VITE_PUBLIC_SITE_URL ||
+    NODE_ENV.VITE_PUBLIC_SITE_URL ||
     ''
   )
     .trim()
     .replace(/\/$/, '')
   if (explicit) return explicit
 
-  const host = (env.SITE_ADDRESS || process.env.SITE_ADDRESS || '').trim()
+  const host = (env.SITE_ADDRESS || NODE_ENV.SITE_ADDRESS || '').trim()
   if (host) {
     if (/^https?:\/\//i.test(host)) return host.replace(/\/$/, '')
     return `https://${host.replace(/\/$/, '')}`
@@ -31,10 +32,27 @@ function siteUrlFromEnv(env) {
   return 'https://example.com'
 }
 
+function brandMetaFromEnv(env) {
+  if ((env.VITE_BRAND || NODE_ENV.VITE_BRAND || '').trim().toLowerCase() !== 'halyal') {
+    return null
+  }
+  return {
+    siteName: 'Halyal VPN',
+    title: 'Halyal VPN — быстрый и надёжный VPN для ежедневного доступа',
+    description:
+      'Halyal VPN открывает нужные зарубежные сервисы через защищённый канал, а российские банки и Госуслуги работают без постоянного переключения.',
+    keywords:
+      'VPN, Halyal VPN, VPN для YouTube, VPN для Telegram, VPN для ChatGPT, умная маршрутизация, защищенный VPN',
+    schemaDescription:
+      'VPN-сервис Halyal VPN с умной маршрутизацией: зарубежные сервисы через защищённый канал, российские приложения — напрямую.',
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const siteUrl = siteUrlFromEnv(env)
+  const brandMeta = brandMetaFromEnv(env)
   const { robots, sitemap, ogImage, security } = buildSeoAssets(siteUrl)
 
   return {
@@ -48,6 +66,26 @@ export default defineConfig(({ mode }) => {
             return html
               .replaceAll('__SITE_URL__', siteUrl)
               .replaceAll('__OG_IMAGE__', ogImage)
+              .replaceAll(
+                'Подорожник VPN — YouTube, Telegram и ChatGPT без выключения VPN',
+                brandMeta?.title || 'Подорожник VPN — YouTube, Telegram и ChatGPT без выключения VPN',
+              )
+              .replaceAll(
+                'YouTube, Gemini и ChatGPT через VPN. Российские банки и Госуслуги работают без постоянного переключения. Пробный период 3 дня, до 5 устройств.',
+                brandMeta?.description ||
+                  'YouTube, Gemini и ChatGPT через VPN. Российские банки и Госуслуги работают без постоянного переключения. Пробный период 3 дня, до 5 устройств.',
+              )
+              .replaceAll(
+                'VPN, VPN для YouTube, VPN для Telegram, VPN для ChatGPT, VPN для Gemini, VPN Россия, умная маршрутизация, VPN без выключения, Подорожник',
+                brandMeta?.keywords ||
+                  'VPN, VPN для YouTube, VPN для Telegram, VPN для ChatGPT, VPN для Gemini, VPN Россия, умная маршрутизация, VPN без выключения, Подорожник',
+              )
+              .replaceAll('Подорожник VPN', brandMeta?.siteName || 'Подорожник VPN')
+              .replaceAll(
+                'VPN-сервис с умной маршрутизацией: зарубежные сервисы через защищённый канал, российские банки и Госуслуги — без постоянного переключения.',
+                brandMeta?.schemaDescription ||
+                  'VPN-сервис с умной маршрутизацией: зарубежные сервисы через защищённый канал, российские банки и Госуслуги — без постоянного переключения.',
+              )
           },
         },
         generateBundle() {

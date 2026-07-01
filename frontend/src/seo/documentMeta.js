@@ -1,11 +1,21 @@
 /** @typedef {{ title: string, description: string, canonicalUrl: string, ogImage: string }} PageDocumentMeta */
 
-export const DEFAULT_DOCUMENT_META = {
-  title: 'Подорожник VPN — YouTube, Telegram и ChatGPT без выключения VPN',
-  description:
-    'YouTube, Gemini и ChatGPT через VPN. Российские банки и Госуслуги работают без постоянного переключения. Пробный период 3 дня, до 5 устройств.',
-  ogImagePath: '/icons/podorozhnik-logo.png',
-}
+const CLIENT_ENV = import.meta.env || {}
+const isHalyalBrand = CLIENT_ENV.VITE_BRAND === 'halyal'
+
+export const DEFAULT_DOCUMENT_META = isHalyalBrand
+  ? {
+      title: 'Halyal VPN — быстрый и надёжный VPN для ежедневного доступа',
+      description:
+        'Halyal VPN открывает нужные зарубежные сервисы через защищённый канал, а российские банки и Госуслуги работают без постоянного переключения.',
+      ogImagePath: '/icons/podorozhnik-logo.png',
+    }
+  : {
+      title: 'Подорожник VPN — YouTube, Telegram и ChatGPT без выключения VPN',
+      description:
+        'YouTube, Gemini и ChatGPT через VPN. Российские банки и Госуслуги работают без постоянного переключения. Пробный период 3 дня, до 5 устройств.',
+      ogImagePath: '/icons/podorozhnik-logo.png',
+    }
 
 /** @returns {string} */
 export function resolvePublicSiteUrl() {

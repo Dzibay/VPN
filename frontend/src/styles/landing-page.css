@@ -2643,6 +2643,13 @@
   height: auto;
 }
 
+.footer-brand__logo--text {
+  color: var(--footer-text);
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
 .footer-brand__desc {
   margin: 0 0 1rem;
   color: var(--footer-muted);

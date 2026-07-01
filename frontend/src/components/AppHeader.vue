@@ -74,12 +74,14 @@ const homeNavLinks = [
 ]
 
 const showUserLogout = computed(() => Boolean(hasToken.value))
+const isHalyalBrand = import.meta.env.VITE_BRAND === 'halyal'
+const brandName = isHalyalBrand ? 'Halyal VPN' : 'Подорожник VPN'
 
 /** Wordmark: header-logo.png (светлая тема), header-logo-white.png (тёмная). */
 const SITE_LOGO_WORDMARK = '/images/home/header-logo.png'
 const SITE_LOGO_WORDMARK_DARK = '/images/home/header-logo-white.png'
 
-const headerWordmarkOk = ref(true)
+const headerWordmarkOk = ref(!isHalyalBrand)
 
 function logout() {
   clearSession()
@@ -141,13 +143,14 @@ router.afterEach(() => {
           :src="SITE_LOGO_WORDMARK"
           width="220"
           height="48"
-          alt="Подорожник VPN"
+          :alt="brandName"
           decoding="async"
           @error="headerWordmarkOk = false"
         />
       </picture>
       <template v-else>
         <img
+          v-if="!isHalyalBrand"
           class="brand-logo"
           src="/icons/podorozhnik-logo.png"
           width="40"
@@ -155,7 +158,7 @@ router.afterEach(() => {
           alt=""
           decoding="async"
         />
-        <span class="brand-text">Подорожник VPN</span>
+        <span class="brand-text">{{ brandName }}</span>
       </template>
     </RouterLink>
 

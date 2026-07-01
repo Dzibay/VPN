@@ -1,5 +1,7 @@
 import { SEO_LANDING_PATHS } from '../content/seo/catalog.js'
 
+const NODE_ENV = globalThis.process?.env ?? {}
+
 /**
  * @param {string} siteUrl
  * @returns {{ robots: string, sitemap: string, ogImage: string, security: string }}
@@ -7,8 +9,10 @@ import { SEO_LANDING_PATHS } from '../content/seo/catalog.js'
 export function buildSeoAssets(siteUrl) {
   const base = siteUrl.replace(/\/$/, '')
   const ogImage = `${base}/icons/podorozhnik-logo.png`
+  const seoLandingPaths =
+    NODE_ENV.VITE_DISABLE_SEO_PAGES === 'true' ? [] : SEO_LANDING_PATHS
 
-  const seoSitemapEntries = SEO_LANDING_PATHS.map(
+  const seoSitemapEntries = seoLandingPaths.map(
     (path) => `  <url>
     <loc>${base}${path}</loc>
     <changefreq>weekly</changefreq>

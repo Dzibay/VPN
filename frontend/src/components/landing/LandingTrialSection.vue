@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 
 const {
   HOME_IMAGES,
+  landingCopy,
   ArrowRight,
   Building2,
   CheckCircle2,
@@ -82,7 +83,7 @@ const {
                 3 дня бесплатно
               </h2>
               <p class="trial-card__lead">
-                Протестируйте все преимущества Подорожник VPN без ограничений
+                {{ landingCopy.trialLead }}
               </p>
               <ul
                 class="trial-card__features"
@@ -165,9 +166,9 @@ const {
                 <Star :size="18" :stroke-width="2" fill="currentColor" />
               </span>
               <div class="trial-card__proof-copy">
-                <strong>Более 10 000 пользователей</strong>
+                <strong>{{ landingCopy.trialProofStrong }}</strong>
                 <span>
-                  уже оценили стабильность и скорость соединения Подорожник VPN
+                  {{ landingCopy.trialProofText }}
                 </span>
               </div>
             </div>

@@ -3,6 +3,9 @@ import { useLandingPageContext } from '../../composables/useLandingPage.js'
 
 const {
   HOME_IMAGES,
+  brandName,
+  isHalyalBrand,
+  landingCopy,
   ArrowRight,
   Building2,
   CheckCircle2,
@@ -68,7 +71,7 @@ const {
       <div class="footer-shell">
         <div class="footer-top">
           <div class="footer-brand">
-            <picture class="footer-brand__logo">
+            <picture v-if="!isHalyalBrand" class="footer-brand__logo">
               <source
                 :srcset="HOME_IMAGES.logoWordmarkDark"
                 media="(prefers-color-scheme: dark)"
@@ -77,13 +80,15 @@ const {
                 :src="HOME_IMAGES.logoWordmark"
                 width="220"
                 height="48"
-                alt="Подорожник VPN"
+                :alt="brandName"
                 decoding="async"
               />
             </picture>
+            <div v-else class="footer-brand__logo footer-brand__logo--text">
+              {{ brandName }}
+            </div>
             <p class="footer-brand__desc">
-              VPN с умной маршрутизацией: зарубежные сервисы через защищённый
-              канал, российские — без постоянного переключения.
+              {{ landingCopy.footerDesc }}
             </p>
             <div class="footer-social" aria-label="Связаться с нами">
               <a
@@ -128,6 +133,7 @@ const {
           </nav>
 
           <nav
+            v-if="!isHalyalBrand"
             class="footer-col"
             aria-label="Сервисы"
           >
@@ -229,7 +235,7 @@ const {
               :stroke-width="2.2"
               aria-hidden="true"
             />
-            © 2026 Подорожник VPN. Все права защищены.
+            {{ landingCopy.footerCopyright }}
           </p>
           <p class="footer-bottom__note footer-bottom__note--center">
             <Lock

@@ -297,7 +297,7 @@ services:
         condition: service_healthy
     networks: [internal]
 
-  # Halyal VPN: заглушка на /, Vue /sub/…/open/…, /api и /sub → backend.
+  # Halyal VPN: отдельная публичная SPA-сборка; /api и /sub → backend.
   nginx-halyal:
     build:
       context: ..

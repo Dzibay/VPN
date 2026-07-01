@@ -17,6 +17,7 @@ import {
 
 const route = useRoute()
 const router = useRouter()
+const brandName = import.meta.env.VITE_BRAND === 'halyal' ? 'Halyal VPN' : 'Подорожник VPN'
 
 const token = computed(() => String(route.params.token ?? ''))
 const client = computed(() => String(route.params.client ?? ''))
@@ -328,12 +329,12 @@ async function load() {
         state: 'error',
         display_name: pub.display_name,
         store_links: pub.store_links,
-        title: `${pub.display_name} — Подорожник VPN`,
+        title: `${pub.display_name} — ${brandName}`,
         deeplink: null,
         lead: null,
       }
       mergeStoreLinks()
-      document.title = `${pub.display_name} — Подорожник VPN`
+      document.title = `${pub.display_name} — ${brandName}`
     } else {
       page.value = null
     }

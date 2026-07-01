@@ -5,6 +5,8 @@ import { SEO_LANDING_PATHS } from '../content/seo/catalog.js'
 import { getSeoPageContent } from '../content/seo/getSeoPageContent.js'
 import { applyMetaToHtml, buildPageMeta } from './documentMeta.js'
 
+const NODE_ENV = globalThis.process?.env ?? {}
+
 /**
  * Генерирует index.html с meta-тегами для каждой SEO-страницы (nginx: try_files $uri $uri/).
  *
@@ -12,6 +14,9 @@ import { applyMetaToHtml, buildPageMeta } from './documentMeta.js'
  * @returns {string[]} записанные пути
  */
 export function prerenderSeoPages({ distDir, siteUrl, indexHtml }) {
+  if (NODE_ENV.VITE_DISABLE_SEO_PAGES === 'true') {
+    return []
+  }
   const written = []
 
   for (const seoPath of SEO_LANDING_PATHS) {

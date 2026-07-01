@@ -19,6 +19,7 @@ import { formatTrafficWithLimit } from '../utils/formatTraffic.js'
 import { formatMskCalendarDayLong } from '../utils/mskDate.js'
 
 const route = useRoute()
+const brandName = import.meta.env.VITE_BRAND === 'halyal' ? 'Halyal VPN' : 'Подорожник VPN'
 const meLoading = ref(true)
 /** @type {import('vue').Ref<Record<string, unknown> | null>} */
 const me = ref(null)
@@ -211,7 +212,7 @@ onMounted(async () => {
 
       <footer class="return-brand" aria-hidden="true">
         <Shield :size="22" :stroke-width="2" />
-        <span>Подорожник VPN</span>
+        <span>{{ brandName }}</span>
       </footer>
     </div>
   </main>

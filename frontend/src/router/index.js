@@ -36,6 +36,8 @@ const CabinetPayReturnBotView = () => import('../views/CabinetPayReturnBotView.v
 const SubscriptionOpenView = () => import('../views/SubscriptionOpenView.vue')
 const LegalDocumentView = () => import('../views/LegalDocumentView.vue')
 const BlockedIpView = () => import('../views/BlockedIpView.vue')
+const seoPageRoutes =
+  import.meta.env.VITE_DISABLE_SEO_PAGES === 'true' ? [] : buildSeoPageRoutes()
 
 const routes = [
   {
@@ -95,7 +97,7 @@ const routes = [
     component: LegalDocumentView,
     meta: { legalDoc: 'marketing', noindex: true },
   },
-  ...buildSeoPageRoutes(),
+  ...seoPageRoutes,
   {
     path: '/link-from-telegram',
     name: 'link-from-telegram',

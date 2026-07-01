@@ -4,6 +4,7 @@ import AppActionButton from '../AppActionButton.vue'
 
 const {
   HOME_IMAGES,
+  landingCopy,
   ArrowRight,
   Building2,
   CheckCircle2,
@@ -77,17 +78,15 @@ const {
         <div class="hero__content">
           <div class="hero__badge">
             <span class="hero__badge-dot" aria-hidden="true" />
-            Быстрый • Безопасный • Надёжный
+            {{ landingCopy.heroBadge }}
           </div>
 
           <h1 id="hero-title" class="hero__title">
-            YouTube, ChatGPT и зарубежные<br />
-            сервисы — через VPN
+            {{ landingCopy.heroTitle }}
           </h1>
 
           <p class="hero__lead">
-            Российские сервисы работают без постоянного переключения, а
-            зарубежные — через защищённый канал.
+            {{ landingCopy.heroLead }}
           </p>
 
           <ul class="hero__features" role="list">
@@ -129,13 +128,13 @@ const {
                 class="hero-cta-btn--trail"
                 to="/register"
               >
-                Начать пользоваться VPN
+                {{ landingCopy.heroPrimaryCta }}
                 <template #icon>
                   <ArrowRight :size="20" :stroke-width="2" aria-hidden="true" />
                 </template>
               </AppActionButton>
               <a class="btn-secondary hero__cta-alt" href="#pricing">
-                Выбрать тариф
+                {{ landingCopy.heroSecondaryCta }}
               </a>
             </template>
           </div>
@@ -156,7 +155,7 @@ const {
               </div>
             </div>
             <div class="hero__social-copy">
-              <p class="hero__social-count">10 000+ пользователей доверяют нам</p>
+              <p class="hero__social-count">{{ landingCopy.heroSocialCount }}</p>
               <p class="hero__social-rating">
                 <span class="hero__stars" aria-hidden="true">
                   <Star

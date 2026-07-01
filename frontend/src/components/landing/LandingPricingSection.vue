@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 
 const {
   HOME_IMAGES,
+  landingCopy,
   ArrowRight,
   Building2,
   CheckCircle2,
@@ -79,8 +80,7 @@ const {
             Один <span class="pricing-head__accent">VPN</span> — максимум возможностей
           </h2>
           <p class="pricing-head__lead">
-            Подорожник VPN объединяет скорость, безопасность и удобство.<br />
-            Выберите подписку, которая подходит именно вам.
+            {{ landingCopy.pricingLead }}
           </p>
 
           <div
@@ -223,7 +223,7 @@ const {
 
         <div
           class="pricing-benefits"
-          aria-label="Преимущества Подорожник VPN"
+          :aria-label="landingCopy.pricingBenefitsAria"
         >
           <article
             v-for="(item, i) in pricingBenefitsBottom"
