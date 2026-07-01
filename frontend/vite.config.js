@@ -32,7 +32,7 @@ function siteUrlFromEnv(env) {
   return 'https://example.com'
 }
 
-function brandMetaFromEnv(env) {
+function brandMetaFromEnv(env = {}) {
   if ((env.VITE_BRAND || NODE_ENV.VITE_BRAND || '').trim().toLowerCase() !== 'halyal') {
     return null
   }
@@ -45,6 +45,45 @@ function brandMetaFromEnv(env) {
       'VPN, Halyal VPN, VPN для YouTube, VPN для Telegram, VPN для ChatGPT, умная маршрутизация, защищенный VPN',
     schemaDescription:
       'VPN-сервис Halyal VPN с умной маршрутизацией: зарубежные сервисы через защищённый канал, российские приложения — напрямую.',
+    ogImagePath: '/icons/halyal-logo.png',
+  }
+}
+
+/** Сборка Halyal: подменяем favicon/манifest в dist/icons из public/icons/halyal. */
+function brandIconsPlugin(env = {}) {
+  const isHalyal = (env.VITE_BRAND || NODE_ENV.VITE_BRAND || '').trim().toLowerCase() === 'halyal'
+  if (!isHalyal) {
+    return { name: 'brand-icons-default' }
+  }
+  return {
+    name: 'brand-icons-halyal',
+    configureServer(server) {
+      const srcIcons = path.resolve(process.cwd(), 'public/icons/halyal')
+      server.middlewares.use((req, res, next) => {
+        const raw = (req.url || '').split('?')[0] || ''
+        if (!raw.startsWith('/icons/')) return next()
+        const rel = raw.slice('/icons/'.length)
+        if (!rel || rel.includes('..')) return next()
+        const filePath = path.join(srcIcons, rel)
+        if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) return next()
+        if (filePath.endsWith('.svg')) res.setHeader('Content-Type', 'image/svg+xml')
+        else if (filePath.endsWith('.png')) res.setHeader('Content-Type', 'image/png')
+        else if (filePath.endsWith('.ico')) res.setHeader('Content-Type', 'image/x-icon')
+        else if (filePath.endsWith('.webmanifest')) res.setHeader('Content-Type', 'application/manifest+json')
+        fs.createReadStream(filePath).pipe(res)
+      })
+    },
+    closeBundle() {
+      const distIcons = path.resolve(process.cwd(), 'dist/icons')
+      const srcIcons = path.resolve(process.cwd(), 'public/icons/halyal')
+      if (!fs.existsSync(srcIcons)) return
+      fs.mkdirSync(distIcons, { recursive: true })
+      for (const name of fs.readdirSync(srcIcons)) {
+        const from = path.join(srcIcons, name)
+        if (!fs.statSync(from).isFile()) continue
+        fs.copyFileSync(from, path.join(distIcons, name))
+      }
+    },
   }
 }
 
@@ -53,11 +92,13 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const siteUrl = siteUrlFromEnv(env)
   const brandMeta = brandMetaFromEnv(env)
-  const { robots, sitemap, ogImage, security } = buildSeoAssets(siteUrl)
+  const ogImagePath = brandMeta?.ogImagePath || '/icons/podorozhnik-logo.png'
+  const { robots, sitemap, ogImage, security } = buildSeoAssets(siteUrl, ogImagePath)
 
   return {
     plugins: [
       vue(),
+      brandIconsPlugin(env),
       {
         name: 'podorozhnik-seo',
         transformIndexHtml: {

@@ -4,11 +4,12 @@ const NODE_ENV = globalThis.process?.env ?? {}
 
 /**
  * @param {string} siteUrl
+ * @param {string} [ogImagePath]
  * @returns {{ robots: string, sitemap: string, ogImage: string, security: string }}
  */
-export function buildSeoAssets(siteUrl) {
+export function buildSeoAssets(siteUrl, ogImagePath = '/icons/podorozhnik-logo.png') {
   const base = siteUrl.replace(/\/$/, '')
-  const ogImage = `${base}/icons/podorozhnik-logo.png`
+  const ogImage = `${base}${ogImagePath.startsWith('/') ? ogImagePath : `/${ogImagePath}`}`
   const seoLandingPaths =
     NODE_ENV.VITE_DISABLE_SEO_PAGES === 'true' ? [] : SEO_LANDING_PATHS
 

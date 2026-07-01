@@ -8,6 +8,7 @@ import {
   stopClientSupportUnreadPolling,
   useClientSupportUnread,
 } from '../composables/useClientSupportUnread.js'
+import { brandLogoPath, brandName, isHalyalBrand } from '../brand/brandAssets.js'
 import {
   clearSession,
   getAccessToken,
@@ -74,10 +75,8 @@ const homeNavLinks = [
 ]
 
 const showUserLogout = computed(() => Boolean(hasToken.value))
-const isHalyalBrand = import.meta.env.VITE_BRAND === 'halyal'
-const brandName = isHalyalBrand ? 'Halyal VPN' : 'Подорожник VPN'
 
-/** Wordmark: header-logo.png (светлая тема), header-logo-white.png (тёмная). */
+/** Wordmark: header-logo.png (светлая тема), header-logo-white.png (tёмная). Только Подорожник. */
 const SITE_LOGO_WORDMARK = '/images/home/header-logo.png'
 const SITE_LOGO_WORDMARK_DARK = '/images/home/header-logo-white.png'
 
@@ -150,9 +149,8 @@ router.afterEach(() => {
       </picture>
       <template v-else>
         <img
-          v-if="!isHalyalBrand"
           class="brand-logo"
-          src="/icons/podorozhnik-logo.png"
+          :src="brandLogoPath"
           width="40"
           height="40"
           alt=""
