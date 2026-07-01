@@ -9,7 +9,6 @@ import {
   PanelLeftClose,
   Search,
   Settings,
-  Shield,
   Users,
 } from 'lucide-vue-next'
 import { computed } from 'vue'
@@ -117,7 +116,15 @@ function onNavClick() {
   <aside class="admin-sidebar" :class="{ 'admin-sidebar--collapsed': !open }">
     <div class="sidebar-head">
       <router-link class="brand" to="/dashboard">
-        <span class="brand-mark"><Shield :size="20" /></span>
+        <span class="brand-mark">
+          <img
+            src="/icons/favicon.svg"
+            width="42"
+            height="42"
+            alt=""
+            decoding="async"
+          />
+        </span>
         <span class="brand-text">
           <strong>VPN Admin</strong>
           <small>multi-project console</small>
@@ -217,14 +224,23 @@ function onNavClick() {
 }
 
 .brand-mark {
-  display: grid;
+  display: flex;
   flex: 0 0 auto;
   width: 42px;
   height: 42px;
-  place-items: center;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
   border-radius: 14px;
-  color: var(--on-accent);
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 80%, transparent);
+}
+
+.brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .brand-text {
