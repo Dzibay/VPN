@@ -1,0 +1,81 @@
+/* Halyal VPN — светлая брендовая тема (референс: крем, зелёный, золото). */
+:root {
+  --halyal-cream: #f7f3ee;
+  --halyal-green: #1b4332;
+  --halyal-green-hover: #245a44;
+  --halyal-gold: #c9a227;
+  --halyal-gold-soft: rgba(201, 162, 39, 0.14);
+
+  --accent: var(--halyal-green);
+  --accent-hover: var(--halyal-green-hover);
+  --accent-muted: #2d6a4f;
+  --accent-soft: rgba(27, 67, 50, 0.1);
+  --accent-border: rgba(27, 67, 50, 0.28);
+  --on-accent: #ffffff;
+
+  --text: #4a5568;
+  --text-h: #1a202c;
+  --muted: #718096;
+
+  --bg: var(--halyal-cream);
+  --bg-elevated: #ffffff;
+  --bg-gradient: linear-gradient(180deg, #faf7f2 0%, var(--halyal-cream) 100%);
+  --surface: #ffffff;
+  --surface-glass: rgba(255, 255, 255, 0.88);
+  --border: rgba(27, 67, 50, 0.12);
+  --code-bg: #f0ebe3;
+
+  --nav-bg: rgba(247, 243, 238, 0.92);
+  --nav-border: rgba(27, 67, 50, 0.1);
+  --nav-link: #4a5568;
+  --nav-link-hover-bg: rgba(27, 67, 50, 0.06);
+
+  --card-bg: rgba(255, 255, 255, 0.94);
+  --card-border: rgba(27, 67, 50, 0.12);
+
+  --shadow-sm: 0 1px 3px rgba(27, 67, 50, 0.08);
+  --shadow-md: 0 8px 24px rgba(27, 67, 50, 0.1);
+  --shadow-lg: 0 16px 40px rgba(27, 67, 50, 0.12);
+
+  --focus-ring: 0 0 0 3px rgba(27, 67, 50, 0.25);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.home {
+  --landing-bg: var(--halyal-cream);
+  --landing-bg-alt: #f0ebe3;
+  --landing-surface: #ffffff;
+  --landing-card: #ffffff;
+  --landing-text: #1a202c;
+  --landing-muted: #4a5568;
+  --landing-border: rgba(27, 67, 50, 0.12);
+  --landing-border-subtle: rgba(27, 67, 50, 0.08);
+  --landing-accent: var(--halyal-green);
+  --landing-accent-hover: var(--halyal-green-hover);
+  --landing-accent-soft: rgba(27, 67, 50, 0.08);
+  --landing-accent-muted: rgba(27, 67, 50, 0.16);
+  --landing-accent-glow: rgba(27, 67, 50, 0.2);
+  --landing-on-accent: #ffffff;
+  --landing-gold: var(--halyal-gold);
+  --landing-gold-soft: var(--halyal-gold-soft);
+  --landing-decor: rgba(27, 67, 50, 0.08);
+  --landing-subtle-bg: #faf7f2;
+  --landing-highlight-bg: #f5f0e8;
+  --landing-shadow: rgba(27, 67, 50, 0.1);
+  --landing-shadow-soft: rgba(27, 67, 50, 0.06);
+  --landing-pin-surface: rgba(255, 255, 255, 0.92);
+  --landing-section-muted-bg: #faf7f2;
+
+  --home-bg: var(--landing-bg);
+  --home-text: var(--landing-text);
+  --home-muted: var(--landing-muted);
+  --home-border: var(--landing-border);
+  --home-accent: var(--landing-accent);
+  --home-accent-hover: var(--landing-accent-hover);
+  --home-accent-soft: var(--landing-accent-soft);
+  --home-on-accent: var(--landing-on-accent);
+}

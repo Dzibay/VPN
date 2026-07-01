@@ -286,17 +286,6 @@ services:
         condition: service_healthy
     networks: [internal]
 
-  # «Скоро запустимся» — универсальный контейнер-заглушка для будущих сценариев.
-  nginx-placeholder:
-    build:
-      context: ..
-      dockerfile: deploy/nginx-placeholder/Dockerfile
-    restart: unless-stopped
-    depends_on:
-      api:
-        condition: service_healthy
-    networks: [internal]
-
   # Halyal VPN: отдельная публичная SPA-сборка; /api и /sub → backend.
   nginx-halyal:
     build:
@@ -332,8 +321,6 @@ services:
       nginx:
         condition: service_started
       nginx-admin:
-        condition: service_started
-      nginx-placeholder:
         condition: service_started
       nginx-halyal:
         condition: service_started

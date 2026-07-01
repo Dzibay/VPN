@@ -1,0 +1,480 @@
+/**
+ * Общие UI-утилиты админки/кабинета: формы, модалки, кнопки, бейджи.
+ *
+ * Эти классы раньше дублировались в scoped-стилях почти каждого view
+ * (модалки, .field, .input-like, .btn-danger, .pill и т.д.). Здесь они
+ * вынесены в одно место — компоненты и страницы используют их напрямую.
+ *
+ * Структурные обёртки вынесены в компоненты: AppModal, AppPager, StatWidget.
+ */
+
+/* ---------- Текстовые помощники ---------- */
+.muted {
+  color: var(--muted);
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.msg-err {
+  color: var(--danger);
+  margin-bottom: 0.75rem;
+}
+
+/* ---------- Ячейки действий/выбора в таблицах ---------- */
+.th-actions,
+.td-actions {
+  text-align: right;
+  white-space: nowrap;
+  width: 1%;
+}
+
+.th-select,
+.td-select {
+  width: 1%;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.row-inactive {
+  opacity: 0.55;
+}
+
+/* ---------- Бейджи статуса ---------- */
+.pill {
+  display: inline-block;
+  padding: 0.12rem 0.45rem;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pill--on {
+  background: color-mix(in srgb, #34d399 18%, transparent);
+  color: #2bb673;
+}
+
+.pill--off {
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid var(--card-border);
+}
+
+/* ---------- Кнопки (дополняют .btn-primary/.btn-secondary из style.css) ---------- */
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-lg);
+  border: none;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: #fff;
+  transition:
+    filter 0.2s ease,
+    transform 0.15s ease;
+}
+
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.btn-danger:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-danger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-danger:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Иконочные кнопки в ячейках действий */
+.btn-icon {
+  font: inherit;
+  cursor: pointer;
+  background: var(--surface);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 0.25rem 0.5rem;
+  color: var(--text-h);
+  margin-left: 0.25rem;
+  line-height: 1;
+}
+
+.btn-icon:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.btn-icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-icon--danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* ---------- Панель фильтра над таблицей (переключатели вида) ---------- */
+.admin-table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.admin-table-toolbar-meta {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  padding: 0.22rem 0.6rem;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--card-border);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+
+.btn-icon-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.8rem 0.35rem 0.4rem;
+  min-height: 2.25rem;
+  border-radius: 999px;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    color 0.18s ease;
+}
+
+.btn-icon-toggle:hover {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--accent-border) 50%, var(--card-border));
+}
+
+.btn-icon-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.btn-icon-toggle--active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: color-mix(in srgb, var(--accent) 88%, var(--text-h));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-border) 40%, transparent);
+}
+
+.btn-icon-toggle__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  color: var(--muted);
+  transition:
+    background 0.18s ease,
+    color 0.18s ease;
+}
+
+.btn-icon-toggle--active .btn-icon-toggle__icon {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+
+.btn-icon-toggle__svg {
+  flex-shrink: 0;
+  display: block;
+}
+
+.btn-icon-toggle__text {
+  white-space: nowrap;
+  line-height: 1.25;
+}
+
+/* ---------- Поля форм ---------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.field > span:first-child {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.field-row {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.field-row .field {
+  flex: 1;
+}
+
+.field-narrow {
+  max-width: 9rem;
+}
+
+.field-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.input-like {
+  font: inherit;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+  color: var(--text-h);
+}
+
+.input-like:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--text-h) 38%, var(--card-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-h) 14%, transparent);
+}
+
+.input-like:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.input-color {
+  width: 100%;
+  height: 2.5rem;
+  padding: 0.15rem;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.form-err {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  color: var(--danger);
+}
+
+/* ---------- Раскладка формы внутри модалки (AppModal) ---------- */
+.modal-form .field {
+  margin-bottom: 0.85rem;
+}
+
+.modal-form .field-check {
+  margin-bottom: 0.85rem;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+/* Раскладка действий с деструктивной кнопкой слева (Удалить) и основными справа. */
+.modal-actions-split {
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.modal-actions-left,
+.modal-actions-right {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+/* Подсказка под полем формы (поясняющий текст мелким шрифтом). */
+.field-hint {
+  margin: -0.55rem 0 0.65rem;
+  font-size: 0.76rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+/* ---------- Виджеты-показатели (StatWidget) ---------- */
+.stat-widget {
+  padding: 1rem 1.1rem;
+  border-radius: 10px;
+  border: 1px solid var(--nav-border);
+  background: var(--surface, color-mix(in srgb, var(--bg) 92%, var(--text) 8%));
+}
+
+.stat-widget-title {
+  margin: 0 0 0.65rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.stat-widget-value {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  color: var(--text-h);
+}
+
+.stat-widget-value--muted {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.stat-widget-meta {
+  margin: 0.4rem 0 0;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+.stat-widget-delta {
+  margin: 0.2rem 0 0;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.stat-delta--up {
+  color: var(--success, #2e7d32);
+}
+
+.stat-delta--down {
+  color: var(--danger, #c62828);
+}
+
+.stat-delta--neutral {
+  color: var(--muted);
+}
+
+.stat-delta--muted {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.stat-widget-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  margin: 0;
+}
+
+.stat-widget-split div {
+  margin: 0;
+  min-width: 0;
+}
+
+.stat-widget-split dt {
+  margin: 0 0 0.2rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.stat-widget-split dd {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  color: var(--text-h);
+  word-break: break-word;
+}
+
+/* Сетки дашбордов */
+.widgets-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 960px) {
+  .widgets-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .widgets-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.widgets-grid--cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.widgets-grid--cols-4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (min-width: 1100px) {
+  .widgets-grid--cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .widgets-grid--cols-2,
+  .widgets-grid--cols-4 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .admin-charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-charts-grid--no-top-margin {
+  margin-top: 0;
+}

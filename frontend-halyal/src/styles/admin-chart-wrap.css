@@ -1,0 +1,17 @@
+/* Общая обёртка canvas для админских графиков (линия + столбцы). */
+.admin-chart-wrap {
+  position: relative;
+  width: 100%;
+  min-height: 220px;
+}
+
+/* Как блок «Финансы» / AdminBarChart по умолчанию. */
+.admin-chart-wrap--finance {
+  height: min(420px, 55vh);
+  min-height: 280px;
+}
+
+/* Как AdminLineChartPanel. */
+.admin-chart-wrap--tall {
+  min-height: min(58vh, 440px);
+}

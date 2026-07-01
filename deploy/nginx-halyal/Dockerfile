@@ -1,14 +1,12 @@
-# Halyal VPN: полноценный Vue SPA + прокси /api и /sub на backend.
-# node:22-alpine ломает npm ci — используем Debian slim (как deploy/nginx/Dockerfile).
+# Halyal VPN: отдельный Vue SPA + прокси /api и /sub на backend.
 FROM node:22-bookworm-slim AS frontend-build
 ARG SITE_ADDRESS=halyal-connect.ru
 ENV SITE_ADDRESS=$SITE_ADDRESS
-ENV VITE_BRAND=halyal
 ENV VITE_DISABLE_SEO_PAGES=true
 WORKDIR /build
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci --no-audit --no-fund
-COPY frontend/ ./
+COPY frontend-halyal/package.json frontend-halyal/package-lock.json* ./
+RUN if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
+COPY frontend-halyal/ ./
 RUN set -eu; \
     host="${SITE_ADDRESS#https://}"; \
     host="${host#http://}"; \

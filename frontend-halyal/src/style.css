@@ -1,0 +1,361 @@
+/* Подорожник VPN — дизайн-токены (тёмный режим по умолчанию, близко к фирменному логотипу) */
+:root {
+  /* Бренд: два зелёных + чёрный */
+  --brand-mint: #58d68d;
+  --brand-teal: #45b39d;
+  /* Акценты фона: фиолет + зелёный (mesh) */
+  --bg-glow-violet: rgba(124, 58, 237, 0.2);
+  --bg-glow-mint: rgba(88, 214, 141, 0.16);
+  --bg-glow-iris: rgba(99, 102, 234, 0.12);
+  --black: #000000;
+
+  --accent: var(--brand-mint);
+  --accent-hover: #6fe9a0;
+  --accent-muted: var(--brand-teal);
+  --accent-soft: rgba(88, 214, 141, 0.16);
+  --accent-border: rgba(88, 214, 141, 0.42);
+  --on-accent: #000000;
+  /* Диаграммы / сетка */
+  --accent-chart-grid: rgba(88, 214, 141, 0.12);
+  --accent-glow: rgba(88, 214, 141, 0.35);
+
+  --text: #a8b8b0;
+  --text-h: #e8f4ec;
+  --muted: #6d8578;
+
+  --bg: #020203;
+  --bg-elevated: #060908;
+  /* Сетка: фиолет + мята на тёмно-синевато-зелёной базе */
+  --bg-gradient:
+    radial-gradient(
+      ellipse 115% 85% at 0% -5%,
+      var(--bg-glow-violet) 0%,
+      transparent 52%
+    ),
+    radial-gradient(
+      ellipse 95% 75% at 100% 5%,
+      var(--bg-glow-mint) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse 70% 55% at 50% 105%,
+      var(--bg-glow-iris) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse 55% 45% at 75% 45%,
+      rgba(45, 179, 157, 0.08) 0%,
+      transparent 50%
+    ),
+    linear-gradient(
+      168deg,
+      #03010a 0%,
+      #040806 24%,
+      #060a14 48%,
+      #05030d 72%,
+      #000000 100%
+    );
+  --surface: #0c100e;
+  --surface-glass: rgba(12, 16, 14, 0.9);
+  --border: #1a2420;
+  --code-bg: #0d1411;
+
+  --nav-bg: rgba(0, 0, 0, 0.86);
+  --nav-border: rgba(88, 214, 141, 0.14);
+  --nav-link: #9fb5a8;
+  --nav-link-hover-bg: rgba(88, 214, 141, 0.1);
+
+  --card-bg: rgba(12, 16, 14, 0.94);
+  --card-border: rgba(88, 214, 141, 0.18);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.55);
+
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.12);
+
+  --focus-ring: 0 0 0 3px rgba(88, 214, 141, 0.4);
+
+  --radius-sm: 8px;
+  --radius: 10px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  /* Узкие страницы (кабинет, вход, open-sub): ширина и отступы — в т.ч. для SitePageLayout */
+  --page-content-max: 36rem;
+  --page-content-pad-block-start: 1.75rem;
+  --page-content-pad-block-start-compact: 1.5rem;
+  --page-content-pad-block-end: 2.5rem;
+
+  --sans: 'Manrope', system-ui, 'Segoe UI', sans-serif;
+  --heading: 'Sora', var(--sans);
+  --mono: ui-monospace, 'Cascadia Code', Consolas, monospace;
+
+  font: 17px/1.55 var(--sans);
+  letter-spacing: 0.01em;
+  color-scheme: dark;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@media (max-width: 1024px) {
+  :root {
+    font-size: 16px;
+  }
+}
+
+/* Светлая тема — опционально, по системной настройке */
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    /* Более тёмный зелёный на светлом фоне для контраста */
+    --accent: #1d9a5c;
+    --accent-hover: #18804d;
+    --accent-muted: #1a7a4a;
+    --accent-soft: rgba(29, 154, 92, 0.12);
+    --accent-border: rgba(29, 154, 92, 0.35);
+    --on-accent: #ffffff;
+    --accent-chart-grid: rgba(29, 154, 92, 0.12);
+    --accent-glow: rgba(29, 154, 92, 0.28);
+
+    --text: #3d4a45;
+    --text-h: #0a0f0d;
+    --muted: #5a6a62;
+
+    --bg-glow-violet: rgba(139, 92, 246, 0.09);
+    --bg-glow-mint: rgba(88, 214, 141, 0.11);
+    --bg-glow-iris: rgba(99, 102, 234, 0.06);
+    --bg: #f3f0fa;
+    --bg-elevated: #ffffff;
+    --bg-gradient:
+      radial-gradient(
+        ellipse 100% 80% at 0% 0%,
+        var(--bg-glow-violet) 0%,
+        transparent 55%
+      ),
+      radial-gradient(
+        ellipse 90% 70% at 100% 15%,
+        var(--bg-glow-mint) 0%,
+        transparent 52%
+      ),
+      radial-gradient(
+        ellipse 80% 60% at 50% 100%,
+        var(--bg-glow-iris) 0%,
+        transparent 50%
+      ),
+      linear-gradient(
+        162deg,
+        #faf6ff 0%,
+        #f0f8f4 38%,
+        #f4f0fb 70%,
+        #f2f7f4 100%
+      );
+    --surface: #ffffff;
+    --surface-glass: rgba(255, 255, 255, 0.9);
+    --border: #d4e2da;
+    --code-bg: #e3eee8;
+
+    --nav-bg: rgba(255, 255, 255, 0.9);
+    --nav-border: rgba(29, 154, 92, 0.14);
+    --nav-link: #3d5248;
+    --nav-link-hover-bg: rgba(29, 154, 92, 0.08);
+
+    --card-bg: rgba(255, 255, 255, 0.95);
+    --card-border: rgba(29, 154, 92, 0.16);
+
+    --shadow-sm: 0 1px 2px rgba(10, 15, 13, 0.06);
+    --shadow-md: 0 10px 28px rgba(10, 30, 20, 0.1);
+    --shadow-lg: 0 20px 48px rgba(10, 30, 20, 0.12);
+
+    --danger: #dc2626;
+    --danger-soft: rgba(220, 38, 38, 0.1);
+
+    --focus-ring: 0 0 0 3px rgba(29, 154, 92, 0.35);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/**
+ * Фикс «прыжка» ширины при появлении/исчезновении вертикального скролла
+ * (разная ширина контента при переходах между страницами админки).
+ */
+html {
+  scrollbar-gutter: stable;
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+@supports not (scrollbar-gutter: stable) {
+  html {
+    overflow-y: scroll;
+  }
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--bg-gradient);
+  color: var(--text);
+  overflow-x: clip;
+}
+
+#app {
+  min-width: 0;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--heading);
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+h1 {
+  font-size: clamp(2rem, 5vw, 3rem);
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  margin: 0 0 0.75rem;
+}
+
+h2 {
+  font-size: 1.35rem;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.5rem;
+}
+
+p {
+  margin: 0;
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  padding: 0.2em 0.45em;
+  border-radius: 6px;
+  background: var(--code-bg);
+  color: var(--text-h);
+}
+
+#app {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.55rem 1.15rem;
+  border-radius: var(--radius-lg);
+  border: none;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  background: linear-gradient(
+    135deg,
+    var(--brand-mint) 0%,
+    var(--brand-teal) 100%
+  );
+  color: var(--on-accent);
+  box-shadow: var(--shadow-sm);
+  transition:
+    filter 0.2s ease,
+    transform 0.15s ease,
+    box-shadow 0.2s ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-primary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring), var(--shadow-sm);
+}
+
+a.btn-primary {
+  text-decoration: none;
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--card-border);
+  background: var(--surface-glass);
+  color: var(--text-h);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-secondary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.btn-secondary.btn-tiny {
+  padding: 0.22rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+a.btn-secondary {
+  text-decoration: none;
+}
+
+@media (prefers-color-scheme: light) {
+  .btn-primary {
+    background: linear-gradient(
+      135deg,
+      var(--accent) 0%,
+      var(--accent-muted) 100%
+    );
+  }
+}
