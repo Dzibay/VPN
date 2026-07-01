@@ -18,28 +18,32 @@ while [ "$TRIES" -gt 0 ]; do
   sleep 2
 done
 
-curl -fsS "http://api:8000/api/edge/placeholder-domains" 2>/dev/null | while IFS= read -r domain; do
+PH_FILE=/tmp/placeholder.caddy
+: > "$PH_FILE"
+HOSTS=""
+while IFS= read -r domain; do
   domain="$(printf '%s' "$domain" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
   [ -z "$domain" ] && continue
-  cat >> "$CONFIG" <<EOF
-
-# Заглушка проекта (brand.frontend_mode=placeholder); /api → backend для бота.
-${domain} {
-    encode gzip zstd
-
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-        X-Content-Type-Options "nosniff"
-        Referrer-Policy "strict-origin-when-cross-origin"
-    }
-
-    forward_auth http://api:8000 {
-        uri /api/tls/ask?domain={host}
-    }
-
-    reverse_proxy nginx-halyal:80
-}
+  HOSTS="${HOSTS} ${domain}"
+done <<EOF
+$(curl -fsS "http://api:8000/api/edge/placeholder-domains" 2>/dev/null || true)
 EOF
-done
+
+HOSTS="$(printf '%s' "$HOSTS" | sed 's/^[[:space:]]*//')"
+if [ -n "$HOSTS" ]; then
+  cat > "$PH_FILE" <<EOF
+    @placeholder host${HOSTS}
+    handle @placeholder {
+        reverse_proxy nginx-halyal:80
+    }
+
+EOF
+  echo "caddy: placeholder hosts:${HOSTS}" >&2
+else
+  echo "caddy: no placeholder frontend domains from API" >&2
+fi
+
+sed -e "/PLACEHOLDER_HANDLES_MARKER/r $PH_FILE" -e "/PLACEHOLDER_HANDLES_MARKER/d" "$CONFIG" > "${CONFIG}.new"
+mv "${CONFIG}.new" "$CONFIG"
 
 exec caddy run --config "$CONFIG" --adapter caddyfile "$@"

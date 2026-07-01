@@ -642,3 +642,35 @@ BEGIN
     VALUES (_migration_name)
     ON CONFLICT (name) DO NOTHING;
 END $$;
+
+-- Halyal: публичный сайт — заглушка (не общий SPA Подорожника).
+DO $$
+DECLARE
+    _migration_name TEXT := '20260701_halyal_placeholder_frontend';
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM schema_one_time_migrations WHERE name = _migration_name
+    ) THEN
+        RETURN;
+    END IF;
+
+    INSERT INTO projects (slug, name, primary_domain, extra_domains, is_active, brand)
+    VALUES (
+        'halyal',
+        'Halyal VPN',
+        'halyal-connect.ru',
+        '{}'::text[],
+        TRUE,
+        '{"frontend_mode": "placeholder", "brand_name": "Halyal VPN"}'::jsonb
+    )
+    ON CONFLICT (slug) DO UPDATE SET
+        name = EXCLUDED.name,
+        primary_domain = EXCLUDED.primary_domain,
+        is_active = TRUE,
+        brand = COALESCE(projects.brand, '{}'::jsonb)
+            || '{"frontend_mode": "placeholder", "brand_name": "Halyal VPN"}'::jsonb;
+
+    INSERT INTO schema_one_time_migrations (name)
+    VALUES (_migration_name)
+    ON CONFLICT (name) DO NOTHING;
+END $$;

@@ -49,5 +49,10 @@
         uri /api/tls/ask?domain={host}
     }
 
-    reverse_proxy nginx:80
+    # PLACEHOLDER_HANDLES_MARKER — блок @placeholder подставляется docker-entrypoint.sh
+    # (домены с projects.brand.frontend_mode=placeholder).
+
+    handle {
+        reverse_proxy nginx:80
+    }
 }

@@ -152,12 +152,16 @@ async def _bootstrap_projects(session: AsyncSession, specs: list[_ProjectSpec]) 
             await session.execute(select(Project).where(Project.slug == spec.slug))
         ).scalars().first()
         if row is None:
+            brand = None
+            if spec.slug == "halyal":
+                brand = {"frontend_mode": "placeholder", "brand_name": "Halyal VPN"}
             row = Project(
                 slug=spec.slug,
                 name=spec.name,
                 primary_domain=spec.primary_domain,
                 extra_domains=spec.extra_domains,
                 is_active=True,
+                brand=brand,
             )
             session.add(row)
             log.info("BOOTSTRAP_PROJECTS: создан проект %s (%s)", spec.slug, spec.primary_domain)
