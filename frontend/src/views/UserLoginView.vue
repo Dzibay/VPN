@@ -25,9 +25,6 @@ const adminSiteUrl = computed(() => {
   return raw.replace(/\/$/, '')
 })
 
-// «Админка переехала» — показать плашку, если пришли из редиректа /admin/*.
-const adminMovedNotice = ref(route.query.admin_moved === '1')
-
 function isEmailNotVerifiedError(e) {
   const d = e?.data?.detail
   return (
@@ -105,19 +102,6 @@ async function submit() {
         <h1>Вход</h1>
       </header>
     </template>
-
-    <div v-if="adminMovedNotice" class="card card-pad admin-moved" role="alert">
-      <strong>Админ-панель переехала.</strong>
-      <p>
-        Для входа используйте
-        <template v-if="adminSiteUrl">
-          <a :href="adminSiteUrl">{{ adminSiteUrl }}</a>.
-        </template>
-        <template v-else>
-          отдельный домен админки.
-        </template>
-      </p>
-    </div>
 
     <div v-if="adminRedirectRole" class="card card-pad admin-moved" role="alert">
       <strong>Доступ для персонала — на отдельном домене.</strong>

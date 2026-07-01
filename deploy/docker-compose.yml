@@ -293,6 +293,17 @@ services:
         condition: service_healthy
     networks: [internal]
 
+  # Halyal VPN: заглушка «сайт в разработке»; /api → backend для Telegram-бота.
+  nginx-halyal:
+    build:
+      context: ..
+      dockerfile: deploy/nginx-halyal/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [internal]
+
   caddy:
     image: caddy:2.8-alpine
     restart: unless-stopped
@@ -316,6 +327,8 @@ services:
       nginx-admin:
         condition: service_started
       nginx-placeholder:
+        condition: service_started
+      nginx-halyal:
         condition: service_started
     networks: [internal]
 

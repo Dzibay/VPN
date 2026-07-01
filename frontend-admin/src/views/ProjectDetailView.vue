@@ -90,14 +90,16 @@ const sections = [
       { key: 'subscription_sub_expire_banner', label: 'Баннер «подписка истекает» (JSON)', type: 'multiline',
         hint: 'Payload YAML-баннера. Пусто → нет баннера.' },
       { key: 'subscription_sub_info_banner', label: 'Info-баннер (JSON)', type: 'multiline' },
-      { key: 'brand', label: 'Брендинг (JSON)', type: 'multiline',
-        hint: 'Пример: {"brand_name":"Acme VPN"}. Используется в текстах бота и YAML.' },
+      { key: 'brand.frontend_mode', label: 'Режим публичного сайта', type: 'text',
+        hint: 'full — общий SPA; placeholder — заглушка «в разработке» (/api для бота работает).' },
+      { key: 'brand.brand_name', label: 'Название бренда', type: 'text',
+        hint: 'Тексты бота и YAML подписки.' },
     ],
   },
 ]
 
 const allEditableKeys = sections.flatMap((s) => s.fields.map((f) => f.key))
-const nestedJsonRoots = ['smtp_settings']
+const nestedJsonRoots = ['smtp_settings', 'brand']
 
 function getFieldValue(row, key) {
   if (!key.includes('.')) return row[key]

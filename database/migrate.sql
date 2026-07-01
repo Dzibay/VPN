@@ -1,507 +1,507 @@
--- Multi-tenant migration v1: добавляет project_id во все tenant-scoped таблицы,
--- backfill'ит существующие данные под project_id=1 ("Подорожник"), пересоздаёт
--- UNIQUE-индексы (project_id, telegram_id / email / token / path / slug), меняет
--- FK created_by/staff_user_id с users на staff_users, переносит тарифы из JSON в
--- project_tariffs, перекладывает app_settings под PK (project_id, key).
---
--- Идемпотентно: гуард через schema_one_time_migrations. Повторные ensure_schema()
--- пропускают блок целиком.
-DO $$
-DECLARE
-    _migration_name TEXT := '20260701_multiproject_v1';
-    _default_project_id BIGINT := 1;
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM schema_one_time_migrations WHERE name = _migration_name
-    ) THEN
-        RETURN;
-    END IF;
+-- -- Multi-tenant migration v1: добавляет project_id во все tenant-scoped таблицы,
+-- -- backfill'ит существующие данные под project_id=1 ("Подорожник"), пересоздаёт
+-- -- UNIQUE-индексы (project_id, telegram_id / email / token / path / slug), меняет
+-- -- FK created_by/staff_user_id с users на staff_users, переносит тарифы из JSON в
+-- -- project_tariffs, перекладывает app_settings под PK (project_id, key).
+-- --
+-- -- Идемпотентно: гуард через schema_one_time_migrations. Повторные ensure_schema()
+-- -- пропускают блок целиком.
+-- DO $$
+-- DECLARE
+--     _migration_name TEXT := '20260701_multiproject_v1';
+--     _default_project_id BIGINT := 1;
+-- BEGIN
+--     IF EXISTS (
+--         SELECT 1 FROM schema_one_time_migrations WHERE name = _migration_name
+--     ) THEN
+--         RETURN;
+--     END IF;
 
-    -- Дефолтный проект уже создан в init.sql (id=1). Убеждаемся, что он есть.
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS slug TEXT;
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS name TEXT;
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS primary_domain TEXT;
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS extra_domains TEXT[] DEFAULT '{}'::text[];
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS telegram_bot_username TEXT;
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS telegram_bot_api_secret TEXT;
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS support_telegram_username TEXT;
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS support_email TEXT;
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS tribute_api_key TEXT;
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS yookassa_shop_id TEXT;
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS yookassa_secret_key TEXT;
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS yookassa_return_url TEXT;
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS smtp_settings JSONB;
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS referral_bonus_days_per_paid_month INTEGER;
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS referral_fixed_first_payment_bonus_rub INTEGER;
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS referral_bonus_policy TEXT;
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS happ_provider_id TEXT;
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS subscription_sub_expire_banner JSONB;
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS subscription_sub_info_banner JSONB;
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS brand JSONB;
+--     -- Дефолтный проект уже создан в init.sql (id=1). Убеждаемся, что он есть.
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS slug TEXT;
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS name TEXT;
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS primary_domain TEXT;
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS extra_domains TEXT[] DEFAULT '{}'::text[];
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS telegram_bot_username TEXT;
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS telegram_bot_api_secret TEXT;
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS support_telegram_username TEXT;
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS support_email TEXT;
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS tribute_api_key TEXT;
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS yookassa_shop_id TEXT;
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS yookassa_secret_key TEXT;
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS yookassa_return_url TEXT;
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS smtp_settings JSONB;
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS referral_bonus_days_per_paid_month INTEGER;
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS referral_fixed_first_payment_bonus_rub INTEGER;
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS referral_bonus_policy TEXT;
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS happ_provider_id TEXT;
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS subscription_sub_expire_banner JSONB;
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS subscription_sub_info_banner JSONB;
+--     ALTER TABLE projects ADD COLUMN IF NOT EXISTS brand JSONB;
 
-    IF NOT EXISTS (SELECT 1 FROM projects WHERE id = _default_project_id) THEN
-        INSERT INTO projects (id, slug, name, primary_domain, extra_domains)
-        VALUES (_default_project_id, 'podorozhnik', 'Подорожник VPN', 'podorozhnik-connect.ru', '{}'::text[])
-        ON CONFLICT (id) DO NOTHING;
-        PERFORM setval(pg_get_serial_sequence('projects', 'id'),
-                       GREATEST((SELECT COALESCE(MAX(id), 0) FROM projects), 1), TRUE);
-    END IF;
+--     IF NOT EXISTS (SELECT 1 FROM projects WHERE id = _default_project_id) THEN
+--         INSERT INTO projects (id, slug, name, primary_domain, extra_domains)
+--         VALUES (_default_project_id, 'podorozhnik', 'Подорожник VPN', 'podorozhnik-connect.ru', '{}'::text[])
+--         ON CONFLICT (id) DO NOTHING;
+--         PERFORM setval(pg_get_serial_sequence('projects', 'id'),
+--                        GREATEST((SELECT COALESCE(MAX(id), 0) FROM projects), 1), TRUE);
+--     END IF;
 
-    -- Полная первичная конфигурация Подорожника: после миграции эти значения
-    -- становятся настройками проекта в БД, а не обязательными env-переменными.
-    UPDATE projects
-    SET
-        slug = 'podorozhnik',
-        name = 'Подорожник VPN',
-        is_active = TRUE,
-        primary_domain = 'podorozhnik-connect.ru',
-        extra_domains = ARRAY['cool-vpn.ru']::text[],
-        telegram_bot_username = 'PodoroznikVPN_bot',
-        telegram_bot_api_secret = 'very-strong-secret-telegram-bot-api-secret',
-        support_email = 'support@podorozhnik-connect.ru',
-        tribute_api_key = '8be3d162-4360-4e16-a479-dd2c9790',
-        yookassa_shop_id = '1302701',
-        yookassa_secret_key = 'live_RfMlwAPEpcWY2HF2AywdjYwBsJjuQXxy0XQRnz2q7jo',
-        yookassa_return_url = 'https://podorozhnik-connect.ru/cabinet/pay/return',
-        smtp_settings = jsonb_build_object(
-            'host', 'smtp.timeweb.ru',
-            'port', 587,
-            'username', 'support@podorozhnik-connect.ru',
-            'password', 'podorozhnik-support',
-            'from_email', 'support@podorozhnik-connect.ru',
-            'from_name', 'Podorozhnik VPN',
-            'use_tls', TRUE,
-            'use_ssl', FALSE
-        ),
-        happ_provider_id = 'dccWrcdz',
-        brand = COALESCE(brand, '{"brand_name":"Podorozhnik VPN"}'::jsonb)
-    WHERE id = _default_project_id;
+--     -- Полная первичная конфигурация Подорожника: после миграции эти значения
+--     -- становятся настройками проекта в БД, а не обязательными env-переменными.
+--     UPDATE projects
+--     SET
+--         slug = 'podorozhnik',
+--         name = 'Подорожник VPN',
+--         is_active = TRUE,
+--         primary_domain = 'podorozhnik-connect.ru',
+--         extra_domains = ARRAY['cool-vpn.ru']::text[],
+--         telegram_bot_username = 'PodoroznikVPN_bot',
+--         telegram_bot_api_secret = 'very-strong-secret-telegram-bot-api-secret',
+--         support_email = 'support@podorozhnik-connect.ru',
+--         tribute_api_key = '8be3d162-4360-4e16-a479-dd2c9790',
+--         yookassa_shop_id = '1302701',
+--         yookassa_secret_key = 'live_RfMlwAPEpcWY2HF2AywdjYwBsJjuQXxy0XQRnz2q7jo',
+--         yookassa_return_url = 'https://podorozhnik-connect.ru/cabinet/pay/return',
+--         smtp_settings = jsonb_build_object(
+--             'host', 'smtp.timeweb.ru',
+--             'port', 587,
+--             'username', 'support@podorozhnik-connect.ru',
+--             'password', 'podorozhnik-support',
+--             'from_email', 'support@podorozhnik-connect.ru',
+--             'from_name', 'Podorozhnik VPN',
+--             'use_tls', TRUE,
+--             'use_ssl', FALSE
+--         ),
+--         happ_provider_id = 'dccWrcdz',
+--         brand = COALESCE(brand, '{"brand_name":"Podorozhnik VPN"}'::jsonb)
+--     WHERE id = _default_project_id;
 
-    ALTER TABLE projects ALTER COLUMN slug SET NOT NULL;
-    ALTER TABLE projects ALTER COLUMN name SET NOT NULL;
-    ALTER TABLE projects ALTER COLUMN is_active SET NOT NULL;
-    ALTER TABLE projects ALTER COLUMN primary_domain SET NOT NULL;
-    ALTER TABLE projects ALTER COLUMN extra_domains SET NOT NULL;
-    CREATE UNIQUE INDEX IF NOT EXISTS projects_slug_key ON projects (slug);
-    CREATE UNIQUE INDEX IF NOT EXISTS projects_primary_domain_key ON projects (primary_domain);
+--     ALTER TABLE projects ALTER COLUMN slug SET NOT NULL;
+--     ALTER TABLE projects ALTER COLUMN name SET NOT NULL;
+--     ALTER TABLE projects ALTER COLUMN is_active SET NOT NULL;
+--     ALTER TABLE projects ALTER COLUMN primary_domain SET NOT NULL;
+--     ALTER TABLE projects ALTER COLUMN extra_domains SET NOT NULL;
+--     CREATE UNIQUE INDEX IF NOT EXISTS projects_slug_key ON projects (slug);
+--     CREATE UNIQUE INDEX IF NOT EXISTS projects_primary_domain_key ON projects (primary_domain);
 
-    -- =================================================================
-    -- 1. USERS: project_id + новые UNIQUE-индексы.
-    -- =================================================================
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE users SET project_id = _default_project_id WHERE project_id IS NULL;
-    ALTER TABLE users ALTER COLUMN project_id SET NOT NULL;
-    ALTER TABLE users DROP CONSTRAINT IF EXISTS users_project_id_fkey;
-    ALTER TABLE users
-        ADD CONSTRAINT users_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+--     -- =================================================================
+--     -- 1. USERS: project_id + новые UNIQUE-индексы.
+--     -- =================================================================
+--     ALTER TABLE users ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE users SET project_id = _default_project_id WHERE project_id IS NULL;
+--     ALTER TABLE users ALTER COLUMN project_id SET NOT NULL;
+--     ALTER TABLE users DROP CONSTRAINT IF EXISTS users_project_id_fkey;
+--     ALTER TABLE users
+--         ADD CONSTRAINT users_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
 
-    DROP INDEX IF EXISTS uq_users_telegram_id;
-    DROP INDEX IF EXISTS uq_users_email;
-    CREATE UNIQUE INDEX IF NOT EXISTS uq_users_project_telegram_id
-        ON users (project_id, telegram_id)
-        WHERE telegram_id IS NOT NULL;
-    CREATE UNIQUE INDEX IF NOT EXISTS uq_users_project_email
-        ON users (project_id, email)
-        WHERE email IS NOT NULL;
-    CREATE UNIQUE INDEX IF NOT EXISTS uq_users_project_token
-        ON users (project_id, token);
-    CREATE INDEX IF NOT EXISTS idx_users_project_id ON users (project_id);
+--     DROP INDEX IF EXISTS uq_users_telegram_id;
+--     DROP INDEX IF EXISTS uq_users_email;
+--     CREATE UNIQUE INDEX IF NOT EXISTS uq_users_project_telegram_id
+--         ON users (project_id, telegram_id)
+--         WHERE telegram_id IS NOT NULL;
+--     CREATE UNIQUE INDEX IF NOT EXISTS uq_users_project_email
+--         ON users (project_id, email)
+--         WHERE email IS NOT NULL;
+--     CREATE UNIQUE INDEX IF NOT EXISTS uq_users_project_token
+--         ON users (project_id, token);
+--     CREATE INDEX IF NOT EXISTS idx_users_project_id ON users (project_id);
 
-    -- =================================================================
-    -- 2. PAYMENTS.
-    -- =================================================================
-    ALTER TABLE payments ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE payments p SET project_id = COALESCE(
-        (SELECT u.project_id FROM users u WHERE u.id = p.user_id),
-        _default_project_id
-    ) WHERE project_id IS NULL;
-    ALTER TABLE payments ALTER COLUMN project_id SET NOT NULL;
-    ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_project_id_fkey;
-    ALTER TABLE payments
-        ADD CONSTRAINT payments_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
-    CREATE INDEX IF NOT EXISTS idx_payments_project_created_at
-        ON payments (project_id, created_at DESC);
+--     -- =================================================================
+--     -- 2. PAYMENTS.
+--     -- =================================================================
+--     ALTER TABLE payments ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE payments p SET project_id = COALESCE(
+--         (SELECT u.project_id FROM users u WHERE u.id = p.user_id),
+--         _default_project_id
+--     ) WHERE project_id IS NULL;
+--     ALTER TABLE payments ALTER COLUMN project_id SET NOT NULL;
+--     ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_project_id_fkey;
+--     ALTER TABLE payments
+--         ADD CONSTRAINT payments_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+--     CREATE INDEX IF NOT EXISTS idx_payments_project_created_at
+--         ON payments (project_id, created_at DESC);
 
-    -- =================================================================
-    -- 3. TASKS.
-    -- =================================================================
-    ALTER TABLE tasks ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE tasks t SET project_id = COALESCE(
-        (SELECT u.project_id FROM users u WHERE u.id = t.user_id),
-        _default_project_id
-    ) WHERE project_id IS NULL;
-    ALTER TABLE tasks ALTER COLUMN project_id SET NOT NULL;
-    ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_project_id_fkey;
-    ALTER TABLE tasks
-        ADD CONSTRAINT tasks_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
-    CREATE INDEX IF NOT EXISTS idx_tasks_project_pending
-        ON tasks (project_id, delivery_channel, created_at ASC)
-        WHERE status = 'pending';
+--     -- =================================================================
+--     -- 3. TASKS.
+--     -- =================================================================
+--     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE tasks t SET project_id = COALESCE(
+--         (SELECT u.project_id FROM users u WHERE u.id = t.user_id),
+--         _default_project_id
+--     ) WHERE project_id IS NULL;
+--     ALTER TABLE tasks ALTER COLUMN project_id SET NOT NULL;
+--     ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_project_id_fkey;
+--     ALTER TABLE tasks
+--         ADD CONSTRAINT tasks_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+--     CREATE INDEX IF NOT EXISTS idx_tasks_project_pending
+--         ON tasks (project_id, delivery_channel, created_at ASC)
+--         WHERE status = 'pending';
 
-    -- =================================================================
-    -- 4. SUBSCRIPTION_DEVICES.
-    -- =================================================================
-    ALTER TABLE subscription_devices ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE subscription_devices sd SET project_id = COALESCE(
-        (SELECT u.project_id FROM users u WHERE u.id = sd.user_id),
-        _default_project_id
-    ) WHERE project_id IS NULL;
-    ALTER TABLE subscription_devices ALTER COLUMN project_id SET NOT NULL;
-    ALTER TABLE subscription_devices DROP CONSTRAINT IF EXISTS subscription_devices_project_id_fkey;
-    ALTER TABLE subscription_devices
-        ADD CONSTRAINT subscription_devices_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+--     -- =================================================================
+--     -- 4. SUBSCRIPTION_DEVICES.
+--     -- =================================================================
+--     ALTER TABLE subscription_devices ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE subscription_devices sd SET project_id = COALESCE(
+--         (SELECT u.project_id FROM users u WHERE u.id = sd.user_id),
+--         _default_project_id
+--     ) WHERE project_id IS NULL;
+--     ALTER TABLE subscription_devices ALTER COLUMN project_id SET NOT NULL;
+--     ALTER TABLE subscription_devices DROP CONSTRAINT IF EXISTS subscription_devices_project_id_fkey;
+--     ALTER TABLE subscription_devices
+--         ADD CONSTRAINT subscription_devices_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
 
-    -- =================================================================
-    -- 5. USER_SERVER_TRAFFIC (денорм для быстрых per-project агрегатов).
-    -- =================================================================
-    ALTER TABLE user_server_traffic ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE user_server_traffic ust SET project_id = COALESCE(
-        (SELECT u.project_id FROM users u WHERE u.id = ust.user_id),
-        _default_project_id
-    ) WHERE project_id IS NULL;
-    ALTER TABLE user_server_traffic ALTER COLUMN project_id SET NOT NULL;
-    ALTER TABLE user_server_traffic DROP CONSTRAINT IF EXISTS user_server_traffic_project_id_fkey;
-    ALTER TABLE user_server_traffic
-        ADD CONSTRAINT user_server_traffic_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
-    CREATE INDEX IF NOT EXISTS idx_user_server_traffic_project_day
-        ON user_server_traffic (project_id, traffic_date);
+--     -- =================================================================
+--     -- 5. USER_SERVER_TRAFFIC (денорм для быстрых per-project агрегатов).
+--     -- =================================================================
+--     ALTER TABLE user_server_traffic ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE user_server_traffic ust SET project_id = COALESCE(
+--         (SELECT u.project_id FROM users u WHERE u.id = ust.user_id),
+--         _default_project_id
+--     ) WHERE project_id IS NULL;
+--     ALTER TABLE user_server_traffic ALTER COLUMN project_id SET NOT NULL;
+--     ALTER TABLE user_server_traffic DROP CONSTRAINT IF EXISTS user_server_traffic_project_id_fkey;
+--     ALTER TABLE user_server_traffic
+--         ADD CONSTRAINT user_server_traffic_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+--     CREATE INDEX IF NOT EXISTS idx_user_server_traffic_project_day
+--         ON user_server_traffic (project_id, traffic_date);
 
-    -- =================================================================
-    -- 6. USER_BALANCE_LEDGER.
-    -- =================================================================
-    ALTER TABLE user_balance_ledger ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE user_balance_ledger ubl SET project_id = COALESCE(
-        (SELECT u.project_id FROM users u WHERE u.id = ubl.user_id),
-        _default_project_id
-    ) WHERE project_id IS NULL;
-    ALTER TABLE user_balance_ledger ALTER COLUMN project_id SET NOT NULL;
-    ALTER TABLE user_balance_ledger DROP CONSTRAINT IF EXISTS user_balance_ledger_project_id_fkey;
-    ALTER TABLE user_balance_ledger
-        ADD CONSTRAINT user_balance_ledger_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+--     -- =================================================================
+--     -- 6. USER_BALANCE_LEDGER.
+--     -- =================================================================
+--     ALTER TABLE user_balance_ledger ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE user_balance_ledger ubl SET project_id = COALESCE(
+--         (SELECT u.project_id FROM users u WHERE u.id = ubl.user_id),
+--         _default_project_id
+--     ) WHERE project_id IS NULL;
+--     ALTER TABLE user_balance_ledger ALTER COLUMN project_id SET NOT NULL;
+--     ALTER TABLE user_balance_ledger DROP CONSTRAINT IF EXISTS user_balance_ledger_project_id_fkey;
+--     ALTER TABLE user_balance_ledger
+--         ADD CONSTRAINT user_balance_ledger_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
 
-    -- =================================================================
-    -- 7. SUPPORT_MESSAGES (+ FK на staff_users).
-    -- =================================================================
-    ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE support_messages sm SET project_id = COALESCE(
-        (SELECT u.project_id FROM users u WHERE u.id = sm.user_id),
-        _default_project_id
-    ) WHERE project_id IS NULL;
-    ALTER TABLE support_messages ALTER COLUMN project_id SET NOT NULL;
-    ALTER TABLE support_messages DROP CONSTRAINT IF EXISTS support_messages_project_id_fkey;
-    ALTER TABLE support_messages
-        ADD CONSTRAINT support_messages_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+--     -- =================================================================
+--     -- 7. SUPPORT_MESSAGES (+ FK на staff_users).
+--     -- =================================================================
+--     ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE support_messages sm SET project_id = COALESCE(
+--         (SELECT u.project_id FROM users u WHERE u.id = sm.user_id),
+--         _default_project_id
+--     ) WHERE project_id IS NULL;
+--     ALTER TABLE support_messages ALTER COLUMN project_id SET NOT NULL;
+--     ALTER TABLE support_messages DROP CONSTRAINT IF EXISTS support_messages_project_id_fkey;
+--     ALTER TABLE support_messages
+--         ADD CONSTRAINT support_messages_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
 
-    -- staff_user_id ссылался на users; теперь на staff_users. Данных персонала пока нет
-    -- (миграция staff → staff_users отдельная задача владельца) — просто занулим ссылку.
-    ALTER TABLE support_messages DROP CONSTRAINT IF EXISTS support_messages_staff_user_id_fkey;
-    UPDATE support_messages SET staff_user_id = NULL WHERE staff_user_id IS NOT NULL;
-    ALTER TABLE support_messages
-        ADD CONSTRAINT support_messages_staff_user_id_fkey
-        FOREIGN KEY (staff_user_id) REFERENCES staff_users (id) ON DELETE SET NULL;
+--     -- staff_user_id ссылался на users; теперь на staff_users. Данных персонала пока нет
+--     -- (миграция staff → staff_users отдельная задача владельца) — просто занулим ссылку.
+--     ALTER TABLE support_messages DROP CONSTRAINT IF EXISTS support_messages_staff_user_id_fkey;
+--     UPDATE support_messages SET staff_user_id = NULL WHERE staff_user_id IS NOT NULL;
+--     ALTER TABLE support_messages
+--         ADD CONSTRAINT support_messages_staff_user_id_fkey
+--         FOREIGN KEY (staff_user_id) REFERENCES staff_users (id) ON DELETE SET NULL;
 
-    -- =================================================================
-    -- 8. USER_HTTP_REQUEST_TRACES (nullable — не все запросы в контексте проекта).
-    -- =================================================================
-    ALTER TABLE user_http_request_traces ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE user_http_request_traces uhrt SET project_id = (
-        SELECT u.project_id FROM users u WHERE u.id = uhrt.user_id
-    )
-    WHERE project_id IS NULL AND user_id IS NOT NULL;
-    ALTER TABLE user_http_request_traces DROP CONSTRAINT IF EXISTS user_http_request_traces_project_id_fkey;
-    ALTER TABLE user_http_request_traces
-        ADD CONSTRAINT user_http_request_traces_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+--     -- =================================================================
+--     -- 8. USER_HTTP_REQUEST_TRACES (nullable — не все запросы в контексте проекта).
+--     -- =================================================================
+--     ALTER TABLE user_http_request_traces ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE user_http_request_traces uhrt SET project_id = (
+--         SELECT u.project_id FROM users u WHERE u.id = uhrt.user_id
+--     )
+--     WHERE project_id IS NULL AND user_id IS NOT NULL;
+--     ALTER TABLE user_http_request_traces DROP CONSTRAINT IF EXISTS user_http_request_traces_project_id_fkey;
+--     ALTER TABLE user_http_request_traces
+--         ADD CONSTRAINT user_http_request_traces_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
 
-    -- =================================================================
-    -- 9. REFERRAL_LINKS + REFERRAL_LINK_GROUPS.
-    -- =================================================================
-    ALTER TABLE referral_link_groups ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE referral_link_groups SET project_id = _default_project_id WHERE project_id IS NULL;
-    ALTER TABLE referral_link_groups ALTER COLUMN project_id SET NOT NULL;
-    ALTER TABLE referral_link_groups DROP CONSTRAINT IF EXISTS referral_link_groups_project_id_fkey;
-    ALTER TABLE referral_link_groups
-        ADD CONSTRAINT referral_link_groups_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+--     -- =================================================================
+--     -- 9. REFERRAL_LINKS + REFERRAL_LINK_GROUPS.
+--     -- =================================================================
+--     ALTER TABLE referral_link_groups ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE referral_link_groups SET project_id = _default_project_id WHERE project_id IS NULL;
+--     ALTER TABLE referral_link_groups ALTER COLUMN project_id SET NOT NULL;
+--     ALTER TABLE referral_link_groups DROP CONSTRAINT IF EXISTS referral_link_groups_project_id_fkey;
+--     ALTER TABLE referral_link_groups
+--         ADD CONSTRAINT referral_link_groups_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
 
-    ALTER TABLE referral_links ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE referral_links rl SET project_id = COALESCE(
-        (SELECT u.project_id FROM users u WHERE u.id = rl.owner_user_id),
-        _default_project_id
-    ) WHERE project_id IS NULL;
-    ALTER TABLE referral_links ALTER COLUMN project_id SET NOT NULL;
-    ALTER TABLE referral_links DROP CONSTRAINT IF EXISTS referral_links_project_id_fkey;
-    ALTER TABLE referral_links
-        ADD CONSTRAINT referral_links_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+--     ALTER TABLE referral_links ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE referral_links rl SET project_id = COALESCE(
+--         (SELECT u.project_id FROM users u WHERE u.id = rl.owner_user_id),
+--         _default_project_id
+--     ) WHERE project_id IS NULL;
+--     ALTER TABLE referral_links ALTER COLUMN project_id SET NOT NULL;
+--     ALTER TABLE referral_links DROP CONSTRAINT IF EXISTS referral_links_project_id_fkey;
+--     ALTER TABLE referral_links
+--         ADD CONSTRAINT referral_links_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
 
-    ALTER TABLE referral_links DROP CONSTRAINT IF EXISTS referral_links_token_key;
-    CREATE UNIQUE INDEX IF NOT EXISTS uq_referral_links_project_token
-        ON referral_links (project_id, token);
-    CREATE INDEX IF NOT EXISTS idx_referral_links_project_id
-        ON referral_links (project_id);
+--     ALTER TABLE referral_links DROP CONSTRAINT IF EXISTS referral_links_token_key;
+--     CREATE UNIQUE INDEX IF NOT EXISTS uq_referral_links_project_token
+--         ON referral_links (project_id, token);
+--     CREATE INDEX IF NOT EXISTS idx_referral_links_project_id
+--         ON referral_links (project_id);
 
-    -- =================================================================
-    -- 10. SEO_PAGES.
-    -- =================================================================
-    ALTER TABLE seo_pages ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE seo_pages SET project_id = _default_project_id WHERE project_id IS NULL;
-    ALTER TABLE seo_pages ALTER COLUMN project_id SET NOT NULL;
-    ALTER TABLE seo_pages DROP CONSTRAINT IF EXISTS seo_pages_project_id_fkey;
-    ALTER TABLE seo_pages
-        ADD CONSTRAINT seo_pages_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
-    ALTER TABLE seo_pages DROP CONSTRAINT IF EXISTS seo_pages_path_key;
-    CREATE UNIQUE INDEX IF NOT EXISTS uq_seo_pages_project_path
-        ON seo_pages (project_id, path);
+--     -- =================================================================
+--     -- 10. SEO_PAGES.
+--     -- =================================================================
+--     ALTER TABLE seo_pages ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE seo_pages SET project_id = _default_project_id WHERE project_id IS NULL;
+--     ALTER TABLE seo_pages ALTER COLUMN project_id SET NOT NULL;
+--     ALTER TABLE seo_pages DROP CONSTRAINT IF EXISTS seo_pages_project_id_fkey;
+--     ALTER TABLE seo_pages
+--         ADD CONSTRAINT seo_pages_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+--     ALTER TABLE seo_pages DROP CONSTRAINT IF EXISTS seo_pages_path_key;
+--     CREATE UNIQUE INDEX IF NOT EXISTS uq_seo_pages_project_path
+--         ON seo_pages (project_id, path);
 
-    -- =================================================================
-    -- 11. STAFF_CHART_EVENTS.
-    -- =================================================================
-    ALTER TABLE staff_chart_events ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE staff_chart_events SET project_id = _default_project_id WHERE project_id IS NULL;
-    ALTER TABLE staff_chart_events ALTER COLUMN project_id SET NOT NULL;
-    ALTER TABLE staff_chart_events DROP CONSTRAINT IF EXISTS staff_chart_events_project_id_fkey;
-    ALTER TABLE staff_chart_events
-        ADD CONSTRAINT staff_chart_events_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+--     -- =================================================================
+--     -- 11. STAFF_CHART_EVENTS.
+--     -- =================================================================
+--     ALTER TABLE staff_chart_events ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE staff_chart_events SET project_id = _default_project_id WHERE project_id IS NULL;
+--     ALTER TABLE staff_chart_events ALTER COLUMN project_id SET NOT NULL;
+--     ALTER TABLE staff_chart_events DROP CONSTRAINT IF EXISTS staff_chart_events_project_id_fkey;
+--     ALTER TABLE staff_chart_events
+--         ADD CONSTRAINT staff_chart_events_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
 
-    -- =================================================================
-    -- 12. APP_SETTINGS: PK становится (project_id, key).
-    -- =================================================================
-    ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE app_settings SET project_id = _default_project_id WHERE project_id IS NULL;
-    ALTER TABLE app_settings ALTER COLUMN project_id SET NOT NULL;
+--     -- =================================================================
+--     -- 12. APP_SETTINGS: PK становится (project_id, key).
+--     -- =================================================================
+--     ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE app_settings SET project_id = _default_project_id WHERE project_id IS NULL;
+--     ALTER TABLE app_settings ALTER COLUMN project_id SET NOT NULL;
 
-    -- Пересобрать PK: сначала дропнуть старый, затем создать новый.
-    ALTER TABLE app_settings DROP CONSTRAINT IF EXISTS app_settings_pkey;
-    ALTER TABLE app_settings
-        ADD CONSTRAINT app_settings_pkey PRIMARY KEY (project_id, key);
-    ALTER TABLE app_settings DROP CONSTRAINT IF EXISTS app_settings_project_id_fkey;
-    ALTER TABLE app_settings
-        ADD CONSTRAINT app_settings_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE;
+--     -- Пересобрать PK: сначала дропнуть старый, затем создать новый.
+--     ALTER TABLE app_settings DROP CONSTRAINT IF EXISTS app_settings_pkey;
+--     ALTER TABLE app_settings
+--         ADD CONSTRAINT app_settings_pkey PRIMARY KEY (project_id, key);
+--     ALTER TABLE app_settings DROP CONSTRAINT IF EXISTS app_settings_project_id_fkey;
+--     ALTER TABLE app_settings
+--         ADD CONSTRAINT app_settings_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE;
 
-    -- updated_by переезжает на staff_users (данных ещё нет — обнуляем).
-    ALTER TABLE app_settings DROP CONSTRAINT IF EXISTS app_settings_updated_by_fkey;
-    UPDATE app_settings SET updated_by = NULL WHERE updated_by IS NOT NULL;
-    ALTER TABLE app_settings
-        ADD CONSTRAINT app_settings_updated_by_fkey
-        FOREIGN KEY (updated_by) REFERENCES staff_users (id) ON DELETE SET NULL;
+--     -- updated_by переезжает на staff_users (данных ещё нет — обнуляем).
+--     ALTER TABLE app_settings DROP CONSTRAINT IF EXISTS app_settings_updated_by_fkey;
+--     UPDATE app_settings SET updated_by = NULL WHERE updated_by IS NOT NULL;
+--     ALTER TABLE app_settings
+--         ADD CONSTRAINT app_settings_updated_by_fkey
+--         FOREIGN KEY (updated_by) REFERENCES staff_users (id) ON DELETE SET NULL;
 
-    -- =================================================================
-    -- 13. Финансовый контур (expenses, expense_categories, recurring_expenses,
-    --     cash_accounts, cash_transactions, payables, refunds, profit_withdrawals).
-    --     Все per-project + created_by → staff_users.
-    -- =================================================================
-    ALTER TABLE expense_categories ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE expense_categories SET project_id = _default_project_id WHERE project_id IS NULL;
-    ALTER TABLE expense_categories ALTER COLUMN project_id SET NOT NULL;
-    ALTER TABLE expense_categories DROP CONSTRAINT IF EXISTS expense_categories_project_id_fkey;
-    ALTER TABLE expense_categories
-        ADD CONSTRAINT expense_categories_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
-    ALTER TABLE expense_categories DROP CONSTRAINT IF EXISTS uq_expense_categories_slug;
-    CREATE UNIQUE INDEX IF NOT EXISTS uq_expense_categories_project_slug
-        ON expense_categories (project_id, slug);
+--     -- =================================================================
+--     -- 13. Финансовый контур (expenses, expense_categories, recurring_expenses,
+--     --     cash_accounts, cash_transactions, payables, refunds, profit_withdrawals).
+--     --     Все per-project + created_by → staff_users.
+--     -- =================================================================
+--     ALTER TABLE expense_categories ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE expense_categories SET project_id = _default_project_id WHERE project_id IS NULL;
+--     ALTER TABLE expense_categories ALTER COLUMN project_id SET NOT NULL;
+--     ALTER TABLE expense_categories DROP CONSTRAINT IF EXISTS expense_categories_project_id_fkey;
+--     ALTER TABLE expense_categories
+--         ADD CONSTRAINT expense_categories_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+--     ALTER TABLE expense_categories DROP CONSTRAINT IF EXISTS uq_expense_categories_slug;
+--     CREATE UNIQUE INDEX IF NOT EXISTS uq_expense_categories_project_slug
+--         ON expense_categories (project_id, slug);
 
-    ALTER TABLE recurring_expenses ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE recurring_expenses SET project_id = _default_project_id WHERE project_id IS NULL;
-    ALTER TABLE recurring_expenses ALTER COLUMN project_id SET NOT NULL;
-    ALTER TABLE recurring_expenses DROP CONSTRAINT IF EXISTS recurring_expenses_project_id_fkey;
-    ALTER TABLE recurring_expenses
-        ADD CONSTRAINT recurring_expenses_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
-    ALTER TABLE recurring_expenses DROP CONSTRAINT IF EXISTS recurring_expenses_created_by_fkey;
-    UPDATE recurring_expenses SET created_by = NULL WHERE created_by IS NOT NULL;
-    ALTER TABLE recurring_expenses
-        ADD CONSTRAINT recurring_expenses_created_by_fkey
-        FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
+--     ALTER TABLE recurring_expenses ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE recurring_expenses SET project_id = _default_project_id WHERE project_id IS NULL;
+--     ALTER TABLE recurring_expenses ALTER COLUMN project_id SET NOT NULL;
+--     ALTER TABLE recurring_expenses DROP CONSTRAINT IF EXISTS recurring_expenses_project_id_fkey;
+--     ALTER TABLE recurring_expenses
+--         ADD CONSTRAINT recurring_expenses_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+--     ALTER TABLE recurring_expenses DROP CONSTRAINT IF EXISTS recurring_expenses_created_by_fkey;
+--     UPDATE recurring_expenses SET created_by = NULL WHERE created_by IS NOT NULL;
+--     ALTER TABLE recurring_expenses
+--         ADD CONSTRAINT recurring_expenses_created_by_fkey
+--         FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
 
-    ALTER TABLE expenses ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE expenses SET project_id = _default_project_id WHERE project_id IS NULL;
-    ALTER TABLE expenses ALTER COLUMN project_id SET NOT NULL;
-    ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_project_id_fkey;
-    ALTER TABLE expenses
-        ADD CONSTRAINT expenses_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
-    ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_created_by_fkey;
-    UPDATE expenses SET created_by = NULL WHERE created_by IS NOT NULL;
-    ALTER TABLE expenses
-        ADD CONSTRAINT expenses_created_by_fkey
-        FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
-    CREATE INDEX IF NOT EXISTS idx_expenses_project_incurred
-        ON expenses (project_id, incurred_on DESC);
+--     ALTER TABLE expenses ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE expenses SET project_id = _default_project_id WHERE project_id IS NULL;
+--     ALTER TABLE expenses ALTER COLUMN project_id SET NOT NULL;
+--     ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_project_id_fkey;
+--     ALTER TABLE expenses
+--         ADD CONSTRAINT expenses_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+--     ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_created_by_fkey;
+--     UPDATE expenses SET created_by = NULL WHERE created_by IS NOT NULL;
+--     ALTER TABLE expenses
+--         ADD CONSTRAINT expenses_created_by_fkey
+--         FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
+--     CREATE INDEX IF NOT EXISTS idx_expenses_project_incurred
+--         ON expenses (project_id, incurred_on DESC);
 
-    ALTER TABLE cash_accounts ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE cash_accounts SET project_id = _default_project_id WHERE project_id IS NULL;
-    ALTER TABLE cash_accounts ALTER COLUMN project_id SET NOT NULL;
-    ALTER TABLE cash_accounts DROP CONSTRAINT IF EXISTS cash_accounts_project_id_fkey;
-    ALTER TABLE cash_accounts
-        ADD CONSTRAINT cash_accounts_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
-    ALTER TABLE cash_accounts DROP CONSTRAINT IF EXISTS cash_accounts_created_by_fkey;
-    UPDATE cash_accounts SET created_by = NULL WHERE created_by IS NOT NULL;
-    ALTER TABLE cash_accounts
-        ADD CONSTRAINT cash_accounts_created_by_fkey
-        FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
-    DROP INDEX IF EXISTS uq_cash_accounts_one_default;
-    CREATE UNIQUE INDEX IF NOT EXISTS uq_cash_accounts_one_default_per_project
-        ON cash_accounts (project_id)
-        WHERE is_default = TRUE;
+--     ALTER TABLE cash_accounts ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE cash_accounts SET project_id = _default_project_id WHERE project_id IS NULL;
+--     ALTER TABLE cash_accounts ALTER COLUMN project_id SET NOT NULL;
+--     ALTER TABLE cash_accounts DROP CONSTRAINT IF EXISTS cash_accounts_project_id_fkey;
+--     ALTER TABLE cash_accounts
+--         ADD CONSTRAINT cash_accounts_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+--     ALTER TABLE cash_accounts DROP CONSTRAINT IF EXISTS cash_accounts_created_by_fkey;
+--     UPDATE cash_accounts SET created_by = NULL WHERE created_by IS NOT NULL;
+--     ALTER TABLE cash_accounts
+--         ADD CONSTRAINT cash_accounts_created_by_fkey
+--         FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
+--     DROP INDEX IF EXISTS uq_cash_accounts_one_default;
+--     CREATE UNIQUE INDEX IF NOT EXISTS uq_cash_accounts_one_default_per_project
+--         ON cash_accounts (project_id)
+--         WHERE is_default = TRUE;
 
-    ALTER TABLE cash_transactions ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE cash_transactions ct SET project_id = COALESCE(
-        (SELECT ca.project_id FROM cash_accounts ca WHERE ca.id = ct.account_id),
-        _default_project_id
-    ) WHERE project_id IS NULL;
-    ALTER TABLE cash_transactions ALTER COLUMN project_id SET NOT NULL;
-    ALTER TABLE cash_transactions DROP CONSTRAINT IF EXISTS cash_transactions_project_id_fkey;
-    ALTER TABLE cash_transactions
-        ADD CONSTRAINT cash_transactions_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
-    ALTER TABLE cash_transactions DROP CONSTRAINT IF EXISTS cash_transactions_created_by_fkey;
-    UPDATE cash_transactions SET created_by = NULL WHERE created_by IS NOT NULL;
-    ALTER TABLE cash_transactions
-        ADD CONSTRAINT cash_transactions_created_by_fkey
-        FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
+--     ALTER TABLE cash_transactions ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE cash_transactions ct SET project_id = COALESCE(
+--         (SELECT ca.project_id FROM cash_accounts ca WHERE ca.id = ct.account_id),
+--         _default_project_id
+--     ) WHERE project_id IS NULL;
+--     ALTER TABLE cash_transactions ALTER COLUMN project_id SET NOT NULL;
+--     ALTER TABLE cash_transactions DROP CONSTRAINT IF EXISTS cash_transactions_project_id_fkey;
+--     ALTER TABLE cash_transactions
+--         ADD CONSTRAINT cash_transactions_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+--     ALTER TABLE cash_transactions DROP CONSTRAINT IF EXISTS cash_transactions_created_by_fkey;
+--     UPDATE cash_transactions SET created_by = NULL WHERE created_by IS NOT NULL;
+--     ALTER TABLE cash_transactions
+--         ADD CONSTRAINT cash_transactions_created_by_fkey
+--         FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
 
-    ALTER TABLE payables ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE payables SET project_id = _default_project_id WHERE project_id IS NULL;
-    ALTER TABLE payables ALTER COLUMN project_id SET NOT NULL;
-    ALTER TABLE payables DROP CONSTRAINT IF EXISTS payables_project_id_fkey;
-    ALTER TABLE payables
-        ADD CONSTRAINT payables_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
-    ALTER TABLE payables DROP CONSTRAINT IF EXISTS payables_created_by_fkey;
-    UPDATE payables SET created_by = NULL WHERE created_by IS NOT NULL;
-    ALTER TABLE payables
-        ADD CONSTRAINT payables_created_by_fkey
-        FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
+--     ALTER TABLE payables ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE payables SET project_id = _default_project_id WHERE project_id IS NULL;
+--     ALTER TABLE payables ALTER COLUMN project_id SET NOT NULL;
+--     ALTER TABLE payables DROP CONSTRAINT IF EXISTS payables_project_id_fkey;
+--     ALTER TABLE payables
+--         ADD CONSTRAINT payables_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+--     ALTER TABLE payables DROP CONSTRAINT IF EXISTS payables_created_by_fkey;
+--     UPDATE payables SET created_by = NULL WHERE created_by IS NOT NULL;
+--     ALTER TABLE payables
+--         ADD CONSTRAINT payables_created_by_fkey
+--         FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
 
-    ALTER TABLE refunds ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE refunds r SET project_id = COALESCE(
-        (SELECT u.project_id FROM users u WHERE u.id = r.user_id),
-        (SELECT p.project_id FROM payments p WHERE p.id = r.payment_id),
-        _default_project_id
-    ) WHERE project_id IS NULL;
-    ALTER TABLE refunds ALTER COLUMN project_id SET NOT NULL;
-    ALTER TABLE refunds DROP CONSTRAINT IF EXISTS refunds_project_id_fkey;
-    ALTER TABLE refunds
-        ADD CONSTRAINT refunds_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
-    ALTER TABLE refunds DROP CONSTRAINT IF EXISTS refunds_created_by_fkey;
-    UPDATE refunds SET created_by = NULL WHERE created_by IS NOT NULL;
-    ALTER TABLE refunds
-        ADD CONSTRAINT refunds_created_by_fkey
-        FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
+--     ALTER TABLE refunds ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE refunds r SET project_id = COALESCE(
+--         (SELECT u.project_id FROM users u WHERE u.id = r.user_id),
+--         (SELECT p.project_id FROM payments p WHERE p.id = r.payment_id),
+--         _default_project_id
+--     ) WHERE project_id IS NULL;
+--     ALTER TABLE refunds ALTER COLUMN project_id SET NOT NULL;
+--     ALTER TABLE refunds DROP CONSTRAINT IF EXISTS refunds_project_id_fkey;
+--     ALTER TABLE refunds
+--         ADD CONSTRAINT refunds_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+--     ALTER TABLE refunds DROP CONSTRAINT IF EXISTS refunds_created_by_fkey;
+--     UPDATE refunds SET created_by = NULL WHERE created_by IS NOT NULL;
+--     ALTER TABLE refunds
+--         ADD CONSTRAINT refunds_created_by_fkey
+--         FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
 
-    ALTER TABLE profit_withdrawals ADD COLUMN IF NOT EXISTS project_id BIGINT;
-    UPDATE profit_withdrawals pw SET project_id = COALESCE(
-        (SELECT ca.project_id FROM cash_accounts ca WHERE ca.id = pw.account_id),
-        _default_project_id
-    ) WHERE project_id IS NULL;
-    ALTER TABLE profit_withdrawals ALTER COLUMN project_id SET NOT NULL;
-    ALTER TABLE profit_withdrawals DROP CONSTRAINT IF EXISTS profit_withdrawals_project_id_fkey;
-    ALTER TABLE profit_withdrawals
-        ADD CONSTRAINT profit_withdrawals_project_id_fkey
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
-    ALTER TABLE profit_withdrawals DROP CONSTRAINT IF EXISTS profit_withdrawals_created_by_fkey;
-    UPDATE profit_withdrawals SET created_by = NULL WHERE created_by IS NOT NULL;
-    ALTER TABLE profit_withdrawals
-        ADD CONSTRAINT profit_withdrawals_created_by_fkey
-        FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
+--     ALTER TABLE profit_withdrawals ADD COLUMN IF NOT EXISTS project_id BIGINT;
+--     UPDATE profit_withdrawals pw SET project_id = COALESCE(
+--         (SELECT ca.project_id FROM cash_accounts ca WHERE ca.id = pw.account_id),
+--         _default_project_id
+--     ) WHERE project_id IS NULL;
+--     ALTER TABLE profit_withdrawals ALTER COLUMN project_id SET NOT NULL;
+--     ALTER TABLE profit_withdrawals DROP CONSTRAINT IF EXISTS profit_withdrawals_project_id_fkey;
+--     ALTER TABLE profit_withdrawals
+--         ADD CONSTRAINT profit_withdrawals_project_id_fkey
+--         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+--     ALTER TABLE profit_withdrawals DROP CONSTRAINT IF EXISTS profit_withdrawals_created_by_fkey;
+--     UPDATE profit_withdrawals SET created_by = NULL WHERE created_by IS NOT NULL;
+--     ALTER TABLE profit_withdrawals
+--         ADD CONSTRAINT profit_withdrawals_created_by_fkey
+--         FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
 
-    -- =================================================================
-    -- 14. Sсиды тарифов Подорожника из legacy JSON-файлов
-    --     (backend/app/data/tribute_tariffs.json + yookassa_tariffs.json).
-    -- =================================================================
-    ALTER TABLE project_tariffs ADD COLUMN IF NOT EXISTS external_tg_link TEXT;
+--     -- =================================================================
+--     -- 14. Sсиды тарифов Подорожника из legacy JSON-файлов
+--     --     (backend/app/data/tribute_tariffs.json + yookassa_tariffs.json).
+--     -- =================================================================
+--     ALTER TABLE project_tariffs ADD COLUMN IF NOT EXISTS external_tg_link TEXT;
 
-    INSERT INTO project_tariffs (
-        project_id, provider, months, amount, name,
-        external_link, external_tg_link, kind, sort_order
-    )
-    VALUES
-        (_default_project_id, 'tribute',  1, 120,  '1 мес',    'https://web.tribute.tg/p/vVI', NULL, 'single', 10),
-        (_default_project_id, 'tribute',  3, 349,  '3 мес',    'https://web.tribute.tg/p/vVJ', NULL, 'single', 20),
-        (_default_project_id, 'tribute',  6, 669,  '6 мес',    'https://web.tribute.tg/p/vVK', NULL, 'single', 30),
-        (_default_project_id, 'tribute', 12, 1299, '1 год',    'https://web.tribute.tg/p/vVL', NULL, 'single', 40),
-        (_default_project_id, 'tribute',  0, 0,    'Подписка', 'https://web.tribute.tg/s/TWv', 'https://t.me/tribute/app?startapp=sTWv', 'recurring', 50),
-        (_default_project_id, 'yookassa', 1, 149,  '1 мес',    NULL, NULL, 'single', 10),
-        (_default_project_id, 'yookassa', 3, 399,  '3 мес',    NULL, NULL, 'single', 20),
-        (_default_project_id, 'yookassa', 6, 769,  '6 мес',    NULL, NULL, 'single', 30),
-        (_default_project_id, 'yookassa', 12, 1399, '1 год',    NULL, NULL, 'single', 40)
-    ON CONFLICT (project_id, provider, months) DO UPDATE SET
-        amount = EXCLUDED.amount,
-        name = EXCLUDED.name,
-        external_link = EXCLUDED.external_link,
-        external_tg_link = EXCLUDED.external_tg_link,
-        kind = EXCLUDED.kind,
-        sort_order = EXCLUDED.sort_order,
-        is_active = TRUE;
+--     INSERT INTO project_tariffs (
+--         project_id, provider, months, amount, name,
+--         external_link, external_tg_link, kind, sort_order
+--     )
+--     VALUES
+--         (_default_project_id, 'tribute',  1, 120,  '1 мес',    'https://web.tribute.tg/p/vVI', NULL, 'single', 10),
+--         (_default_project_id, 'tribute',  3, 349,  '3 мес',    'https://web.tribute.tg/p/vVJ', NULL, 'single', 20),
+--         (_default_project_id, 'tribute',  6, 669,  '6 мес',    'https://web.tribute.tg/p/vVK', NULL, 'single', 30),
+--         (_default_project_id, 'tribute', 12, 1299, '1 год',    'https://web.tribute.tg/p/vVL', NULL, 'single', 40),
+--         (_default_project_id, 'tribute',  0, 0,    'Подписка', 'https://web.tribute.tg/s/TWv', 'https://t.me/tribute/app?startapp=sTWv', 'recurring', 50),
+--         (_default_project_id, 'yookassa', 1, 149,  '1 мес',    NULL, NULL, 'single', 10),
+--         (_default_project_id, 'yookassa', 3, 399,  '3 мес',    NULL, NULL, 'single', 20),
+--         (_default_project_id, 'yookassa', 6, 769,  '6 мес',    NULL, NULL, 'single', 30),
+--         (_default_project_id, 'yookassa', 12, 1399, '1 год',    NULL, NULL, 'single', 40)
+--     ON CONFLICT (project_id, provider, months) DO UPDATE SET
+--         amount = EXCLUDED.amount,
+--         name = EXCLUDED.name,
+--         external_link = EXCLUDED.external_link,
+--         external_tg_link = EXCLUDED.external_tg_link,
+--         kind = EXCLUDED.kind,
+--         sort_order = EXCLUDED.sort_order,
+--         is_active = TRUE;
 
-    -- =================================================================
-    -- 15. Stats/rollup таблицы: добавляем project_id, перестраиваем PK.
-    --     Основной DDL идёт из rollups/*.sql (create-or-replace-ish),
-    --     здесь только backfill старых кэшей под project_id=1.
-    -- =================================================================
-    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'stats_users_daily_msk')
-       AND EXISTS (SELECT 1 FROM information_schema.columns
-                   WHERE table_name = 'stats_users_daily_msk' AND column_name = 'project_id') THEN
-        UPDATE stats_users_daily_msk SET project_id = _default_project_id WHERE project_id IS NULL;
-    END IF;
-    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'stats_users_daily_dirty')
-       AND EXISTS (SELECT 1 FROM information_schema.columns
-                   WHERE table_name = 'stats_users_daily_dirty' AND column_name = 'project_id') THEN
-        UPDATE stats_users_daily_dirty SET project_id = _default_project_id WHERE project_id IS NULL;
-    END IF;
-    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'stats_payments_daily_utc')
-       AND EXISTS (SELECT 1 FROM information_schema.columns
-                   WHERE table_name = 'stats_payments_daily_utc' AND column_name = 'project_id') THEN
-        UPDATE stats_payments_daily_utc SET project_id = _default_project_id WHERE project_id IS NULL;
-    END IF;
-    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'stats_payments_daily_msk')
-       AND EXISTS (SELECT 1 FROM information_schema.columns
-                   WHERE table_name = 'stats_payments_daily_msk' AND column_name = 'project_id') THEN
-        UPDATE stats_payments_daily_msk SET project_id = _default_project_id WHERE project_id IS NULL;
-    END IF;
-    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'stats_payments_spread_monthly_utc')
-       AND EXISTS (SELECT 1 FROM information_schema.columns
-                   WHERE table_name = 'stats_payments_spread_monthly_utc' AND column_name = 'project_id') THEN
-        UPDATE stats_payments_spread_monthly_utc SET project_id = _default_project_id WHERE project_id IS NULL;
-    END IF;
+--     -- =================================================================
+--     -- 15. Stats/rollup таблицы: добавляем project_id, перестраиваем PK.
+--     --     Основной DDL идёт из rollups/*.sql (create-or-replace-ish),
+--     --     здесь только backfill старых кэшей под project_id=1.
+--     -- =================================================================
+--     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'stats_users_daily_msk')
+--        AND EXISTS (SELECT 1 FROM information_schema.columns
+--                    WHERE table_name = 'stats_users_daily_msk' AND column_name = 'project_id') THEN
+--         UPDATE stats_users_daily_msk SET project_id = _default_project_id WHERE project_id IS NULL;
+--     END IF;
+--     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'stats_users_daily_dirty')
+--        AND EXISTS (SELECT 1 FROM information_schema.columns
+--                    WHERE table_name = 'stats_users_daily_dirty' AND column_name = 'project_id') THEN
+--         UPDATE stats_users_daily_dirty SET project_id = _default_project_id WHERE project_id IS NULL;
+--     END IF;
+--     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'stats_payments_daily_utc')
+--        AND EXISTS (SELECT 1 FROM information_schema.columns
+--                    WHERE table_name = 'stats_payments_daily_utc' AND column_name = 'project_id') THEN
+--         UPDATE stats_payments_daily_utc SET project_id = _default_project_id WHERE project_id IS NULL;
+--     END IF;
+--     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'stats_payments_daily_msk')
+--        AND EXISTS (SELECT 1 FROM information_schema.columns
+--                    WHERE table_name = 'stats_payments_daily_msk' AND column_name = 'project_id') THEN
+--         UPDATE stats_payments_daily_msk SET project_id = _default_project_id WHERE project_id IS NULL;
+--     END IF;
+--     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'stats_payments_spread_monthly_utc')
+--        AND EXISTS (SELECT 1 FROM information_schema.columns
+--                    WHERE table_name = 'stats_payments_spread_monthly_utc' AND column_name = 'project_id') THEN
+--         UPDATE stats_payments_spread_monthly_utc SET project_id = _default_project_id WHERE project_id IS NULL;
+--     END IF;
 
-    -- Отметка одноразовой миграции: повторные запуски пропустят весь блок.
-    INSERT INTO schema_one_time_migrations (name)
-    VALUES (_migration_name)
-    ON CONFLICT (name) DO NOTHING;
-END $$;
+--     -- Отметка одноразовой миграции: повторные запуски пропустят весь блок.
+--     INSERT INTO schema_one_time_migrations (name)
+--     VALUES (_migration_name)
+--     ON CONFLICT (name) DO NOTHING;
+-- END $$;
 
--- Demote legacy staff roles in users → client (staff живёт в staff_users).
-DO $$
-DECLARE
-    _migration_name TEXT := '20260701_users_demote_staff_roles';
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM schema_one_time_migrations WHERE name = _migration_name
-    ) THEN
-        RETURN;
-    END IF;
+-- -- Demote legacy staff roles in users → client (staff живёт в staff_users).
+-- DO $$
+-- DECLARE
+--     _migration_name TEXT := '20260701_users_demote_staff_roles';
+-- BEGIN
+--     IF EXISTS (
+--         SELECT 1 FROM schema_one_time_migrations WHERE name = _migration_name
+--     ) THEN
+--         RETURN;
+--     END IF;
 
-    UPDATE users
-    SET account_role = 'client'
-    WHERE account_role IN ('admin', 'manager');
+--     UPDATE users
+--     SET account_role = 'client'
+--     WHERE account_role IN ('admin', 'manager');
 
-    INSERT INTO schema_one_time_migrations (name)
-    VALUES (_migration_name)
-    ON CONFLICT (name) DO NOTHING;
-END $$;
+--     INSERT INTO schema_one_time_migrations (name)
+--     VALUES (_migration_name)
+--     ON CONFLICT (name) DO NOTHING;
+-- END $$;

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Halyal VPN — скоро запуск</title>
+    <style>
+      :root {
+        --bg: #071210;
+        --panel: #0f1a17;
+        --border: #1f3d34;
+        --text: #ecf5f1;
+        --muted: #8aa89c;
+        --accent: #2ecc8f;
+        --accent-soft: rgba(46, 204, 143, 0.14);
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { height: 100%; }
+      body {
+        background:
+          radial-gradient(circle at 18% 22%, var(--accent-soft), transparent 42%),
+          radial-gradient(circle at 82% 68%, rgba(46, 204, 143, 0.08), transparent 45%),
+          var(--bg);
+        color: var(--text);
+        font-family: 'Manrope', -apple-system, 'Segoe UI', Roboto, system-ui, sans-serif;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+      .card {
+        max-width: 520px;
+        text-align: center;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 40px 32px;
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+      }
+      .dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: var(--accent);
+        display: inline-block;
+        margin-right: 8px;
+        animation: pulse 1.4s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); opacity: 0.9; }
+        50% { transform: scale(1.35); opacity: 0.45; }
+      }
+      .brand {
+        color: var(--accent);
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        font-size: 13px;
+      }
+      h1 {
+        font-size: 28px;
+        margin: 14px 0 10px;
+        letter-spacing: -0.02em;
+      }
+      p {
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.65;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="brand">Halyal VPN</span>
+      <h1>Сайт в разработке</h1>
+      <p>
+        Публичный кабинет скоро откроется.<br />
+        Telegram-бот и сервис уже работают.
+      </p>
+    </main>
+  </body>
+</html>

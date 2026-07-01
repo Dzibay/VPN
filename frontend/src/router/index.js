@@ -140,7 +140,7 @@ const routes = [
   // Любые попытки перейти на /admin/* — редиректим на главную (админка переехала на ADMIN_SITE_ADDRESS).
   {
     path: '/admin/:pathMatch(.*)*',
-    redirect: { name: 'login', query: { admin_moved: '1' } },
+    redirect: { name: 'login' },
   },
 ]
 
@@ -185,7 +185,7 @@ router.beforeEach(async (to, _from, next) => {
     clearSession()
     return next({
       name: 'login',
-      query: { admin_moved: '1', redirect: to.fullPath },
+      query: { redirect: to.fullPath },
     })
   }
 
@@ -206,8 +206,7 @@ router.beforeEach(async (to, _from, next) => {
   if ((to.name === 'login' || to.name === 'register') && token) {
     if (isAdminRole(role) || role === 'manager') {
       // На публичном сайте для admin/manager кабинета нет. Сессию не сбрасываем
-      // (её отдал старый /api/auth/login), но UI-навигация ведёт на главную —
-      // а UserLoginView покажет плашку «Войдите в админку на admin.<domain>».
+      // (её отдал старый /api/auth/login), но UI-навигация ведёт на главную.
       return next({ path: '/' })
     }
     return next({ path: defaultPathAfterLogin(role) })

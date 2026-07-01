@@ -163,3 +163,21 @@ async def get_project_by_bot_secret(secret: str) -> ProjectContext | None:
 async def list_active_projects() -> list[ProjectContext]:
     state = await _ensure_loaded()
     return [p for p in state.by_id.values() if p.is_active]
+
+
+async def list_placeholder_frontend_domains() -> list[str]:
+    """Домены проектов с brand.frontend_mode=placeholder (заглушка вместо общего SPA)."""
+    domains: list[str] = []
+    seen: set[str] = set()
+    for project in await list_active_projects():
+        brand = project.brand if isinstance(project.brand, dict) else {}
+        mode = str(brand.get("frontend_mode") or "").strip().lower()
+        if mode != "placeholder":
+            continue
+        for raw in (project.primary_domain, *project.extra_domains):
+            key = _normalize_domain(raw)
+            if key and key not in seen:
+                seen.add(key)
+                domains.append(key)
+    domains.sort()
+    return domains
