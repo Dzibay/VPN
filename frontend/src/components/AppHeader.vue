@@ -482,10 +482,7 @@ router.afterEach(() => {
   display: block;
   width: 2.5rem;
   height: 2.5rem;
-  border-radius: 50%;
   object-fit: contain;
-  box-shadow: 0 1px 3px
-    color-mix(in srgb, var(--accent) 16%, transparent);
   flex-shrink: 0;
 }
 

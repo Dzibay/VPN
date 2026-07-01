@@ -118,7 +118,7 @@ function onNavClick() {
       <router-link class="brand" to="/dashboard">
         <span class="brand-mark">
           <img
-            src="/icons/favicon.svg"
+            src="/icons/admin-logo.png"
             width="42"
             height="42"
             alt=""
@@ -231,9 +231,6 @@ function onNavClick() {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border-radius: 14px;
-  background: var(--surface-raised);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 80%, transparent);
 }
 
 .brand-mark img {
