@@ -55,8 +55,8 @@ const sections = [
         hint: 'Оставить пустым — fallback на глобальный settings.tribute_api_key (если проект #1).' },
       { key: 'yookassa_shop_id', label: 'YooKassa shop_id', type: 'text' },
       { key: 'yookassa_secret_key', label: 'YooKassa secret_key', type: 'text' },
-      { key: 'yookassa_return_url', label: 'YooKassa return URL', type: 'text',
-        hint: 'Например: https://<domain>/cabinet/pay/return' },
+      { key: 'yookassa_return_url', label: 'YooKassa return URL (только сайт)', type: 'text',
+        hint: 'Redirect после оплаты с сайта: https://<domain>/cabinet/pay/return. Пусто — соберётся из primary_domain. Оплата из бота всегда идёт на …/cabinet/pay/return/bot автоматически.' },
     ],
   },
   {
