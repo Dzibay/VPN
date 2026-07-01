@@ -2,15 +2,16 @@
 # Args:
 #   PROJECT_SLUG    — имя папки внутри frontend-projects/ (например 'acme').
 #   SITE_ADDRESS    — основной домен проекта (для canonical/sitemap/og).
-FROM node:22-alpine AS frontend-build
+# node:22-alpine ломает npm ci ("Exit handler never called") — используем Debian slim.
+FROM node:22-bookworm-slim AS frontend-build
 ARG PROJECT_SLUG
 ARG SITE_ADDRESS
 ENV SITE_ADDRESS=$SITE_ADDRESS
 
 WORKDIR /build
 # Копируем именно проектный форк.
-COPY frontend-projects/${PROJECT_SLUG}/package.json ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+COPY frontend-projects/${PROJECT_SLUG}/package.json frontend-projects/${PROJECT_SLUG}/package-lock.json* ./
+RUN if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
 COPY frontend-projects/${PROJECT_SLUG}/ ./
 RUN set -eu; \
     host="${SITE_ADDRESS#https://}"; \

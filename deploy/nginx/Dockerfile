@@ -1,13 +1,14 @@
 # Сборка Vue (Vite) + Nginx: статика и reverse proxy к API
 # SITE_ADDRESS опционален: если пустой, frontend использует текущий window.location.origin.
-FROM node:22-alpine AS frontend-build
+# node:22-alpine ломает npm ci ("Exit handler never called") — используем Debian slim.
+FROM node:22-bookworm-slim AS frontend-build
 ARG SITE_ADDRESS
 ARG ADMIN_SITE_ADDRESS
 ENV SITE_ADDRESS=$SITE_ADDRESS
 ENV ADMIN_SITE_ADDRESS=$ADMIN_SITE_ADDRESS
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 COPY frontend/ ./
 # VITE_PUBLIC_SITE_URL задаём только для single-domain сборки.
 # VITE_ADMIN_SITE_URL — куда UserLoginView отправит staff-пользователей, попавших на публичный сайт.

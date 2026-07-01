@@ -1,8 +1,9 @@
 # Сборка frontend-admin (Vite) + Nginx для админ-домена admin.<your-domain>.
-FROM node:22-alpine AS admin-build
+# node:22-alpine ломает npm ci ("Exit handler never called") — используем Debian slim.
+FROM node:22-bookworm-slim AS admin-build
 WORKDIR /build
 COPY frontend-admin/package.json frontend-admin/package-lock.json* ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+RUN if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
 COPY frontend-admin/ ./
 # frontend-admin — SPA, ходит по абсолютным путям /api/*; SITE_URL здесь не нужен.
 RUN npm run build
