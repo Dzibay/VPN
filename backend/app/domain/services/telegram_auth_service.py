@@ -134,6 +134,19 @@ async def telegram_authenticate(
             await session.rollback()
             user = await user_by_telegram_id_in_project(session, tid, project_id)
             if user is None:
+                other_project_user = (
+                    await session.scalars(
+                        select(User).where(User.telegram_id == tid).limit(1),
+                    )
+                ).first()
+                if (
+                    other_project_user is not None
+                    and int(other_project_user.project_id) != project_id
+                ):
+                    raise ConflictError(
+                        "Этот Telegram уже зарегистрирован в другом проекте VPN. "
+                        "Нужна миграция БД (per-project telegram_id) или обращение в поддержку.",
+                    ) from e
                 raise ConflictError(
                     "Не удалось создать или найти пользователя по telegram_id",
                 ) from e

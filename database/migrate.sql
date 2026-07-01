@@ -674,3 +674,49 @@
 --     VALUES (_migration_name)
 --     ON CONFLICT (name) DO NOTHING;
 -- END $$;
+
+-- Один telegram_id / email на проект (не глобально): иначе Halyal-бот получает 409,
+-- если пользователь уже есть в Подорожнике.
+DO $$
+DECLARE
+    _migration_name TEXT := '20260702_users_per_project_telegram_unique';
+    _default_project_id BIGINT := 1;
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM schema_one_time_migrations WHERE name = _migration_name
+    ) THEN
+        RETURN;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'users'
+          AND column_name = 'project_id'
+    ) THEN
+        ALTER TABLE users ADD COLUMN project_id BIGINT;
+        UPDATE users SET project_id = _default_project_id WHERE project_id IS NULL;
+        ALTER TABLE users ALTER COLUMN project_id SET NOT NULL;
+        ALTER TABLE users DROP CONSTRAINT IF EXISTS users_project_id_fkey;
+        ALTER TABLE users
+            ADD CONSTRAINT users_project_id_fkey
+            FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+        CREATE INDEX IF NOT EXISTS idx_users_project_id ON users (project_id);
+    END IF;
+
+    DROP INDEX IF EXISTS uq_users_telegram_id;
+    DROP INDEX IF EXISTS uq_users_email;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_users_project_telegram_id
+        ON users (project_id, telegram_id)
+        WHERE telegram_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_users_project_email
+        ON users (project_id, email)
+        WHERE email IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_users_project_token
+        ON users (project_id, token);
+
+    INSERT INTO schema_one_time_migrations (name)
+    VALUES (_migration_name)
+    ON CONFLICT (name) DO NOTHING;
+END $$;

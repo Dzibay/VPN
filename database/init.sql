@@ -103,13 +103,12 @@ CREATE TABLE IF NOT EXISTS schema_one_time_migrations (
 );
 
 -- =====================================================================
--- Основные таблицы (без project_id-колонки: она добавляется в migrate.sql,
--- иначе CREATE INDEX IF NOT EXISTS с project_id упадёт на существующей БД
--- до отработки миграции).
+-- Основные таблицы
 -- =====================================================================
 
 CREATE TABLE IF NOT EXISTS users (
     id BIGSERIAL PRIMARY KEY,
+    project_id BIGINT NOT NULL DEFAULT 1 REFERENCES projects (id) ON DELETE RESTRICT,
     telegram_id BIGINT,
     telegram_properties JSONB,
     email TEXT,
@@ -361,11 +360,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_user_balance_ledger_referral_first_payment
 CREATE INDEX IF NOT EXISTS ix_user_balance_ledger_user_id_created_at
     ON user_balance_ledger (user_id, created_at DESC);
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_users_telegram_id ON users (telegram_id)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_project_telegram_id ON users (project_id, telegram_id)
     WHERE telegram_id IS NOT NULL;
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email ON users (email)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_project_email ON users (project_id, email)
     WHERE email IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_project_token ON users (project_id, token);
+
+CREATE INDEX IF NOT EXISTS idx_users_project_id ON users (project_id);
 
 CREATE INDEX IF NOT EXISTS idx_users_subscription_until ON users (subscription_until);
 
