@@ -265,9 +265,13 @@ services:
       args:
         ADMIN_SITE_ADDRESS: ${ADMIN_SITE_ADDRESS:-}
     restart: unless-stopped
+    environment:
+      PLACEHOLDER_FRONTEND_DOMAINS: ${PLACEHOLDER_FRONTEND_DOMAINS:-halyal-connect.ru}
     depends_on:
       api:
         condition: service_healthy
+      nginx-halyal:
+        condition: service_started
     networks: [internal]
 
   # Отдельный nginx для admin.<domain>: собирает frontend-admin/ и проксирует /api → api.
@@ -314,6 +318,7 @@ services:
       - "443:443/udp"
     environment:
       ADMIN_SITE_ADDRESS: ${ADMIN_SITE_ADDRESS:?ADMIN_SITE_ADDRESS is required (e.g. admin.example.com)}
+      PLACEHOLDER_FRONTEND_DOMAINS: ${PLACEHOLDER_FRONTEND_DOMAINS:-halyal-connect.ru}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./caddy/docker-entrypoint.sh:/etc/caddy/docker-entrypoint.sh:ro
