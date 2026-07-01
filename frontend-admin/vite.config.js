@@ -9,6 +9,18 @@ import vue from '@vitejs/plugin-vue'
  * - Часть view-компонентов переиспользуется из ../frontend/src/views/* через alias @legacy-views.
  */
 const API_TARGET = process.env.VITE_DEV_API_TARGET || 'http://127.0.0.1:5000'
+const adminNodeModules = path.resolve(__dirname, 'node_modules')
+
+/** Legacy ../frontend/src/* резолвит npm относительно frontend/; в Docker там нет node_modules. */
+function dep(pkg) {
+  return path.join(adminNodeModules, pkg)
+}
+
+const sharedDepAliases = Object.fromEntries(
+  ['vue', 'vue-router', 'pinia', 'chart.js', 'lucide-vue-next', '@fontsource/manrope', '@fontsource/sora'].map(
+    (pkg) => [pkg, dep(pkg)],
+  ),
+)
 
 export default defineConfig({
   plugins: [vue()],
@@ -21,7 +33,9 @@ export default defineConfig({
       '@legacy-composables': path.resolve(__dirname, '../frontend/src/composables'),
       '@legacy-utils': path.resolve(__dirname, '../frontend/src/utils'),
       '@legacy-api': path.resolve(__dirname, '../frontend/src/api'),
+      ...sharedDepAliases,
     },
+    dedupe: ['vue', 'vue-router', 'pinia'],
   },
   build: {
     chunkSizeWarningLimit: 300,

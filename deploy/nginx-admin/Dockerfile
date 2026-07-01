@@ -10,6 +10,8 @@ RUN if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm inst
 
 COPY frontend-admin/ ./
 COPY frontend/src/ ../frontend/src/
+# Fallback: legacy-файлы ищут node_modules относительно frontend/.
+RUN ln -sfn ../frontend-admin/node_modules ../frontend/node_modules
 
 RUN npm run build
 
