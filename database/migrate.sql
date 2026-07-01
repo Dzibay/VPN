@@ -497,11 +497,148 @@
 --         RETURN;
 --     END IF;
 
---     UPDATE users
---     SET account_role = 'client'
---     WHERE account_role IN ('admin', 'manager');
-
 --     INSERT INTO schema_one_time_migrations (name)
 --     VALUES (_migration_name)
 --     ON CONFLICT (name) DO NOTHING;
 -- END $$;
+
+-- Финансовый контур: project_id + created_by → staff_users.
+-- Догоняющая миграция для БД, где multiproject_v1 прошла без секции 13
+-- (или migrate.sql был закомментирован при деплое).
+DO $$
+DECLARE
+    _migration_name TEXT := '20260701_finance_project_id_v1';
+    _default_project_id BIGINT := 1;
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM schema_one_time_migrations WHERE name = _migration_name
+    ) THEN
+        RETURN;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM projects WHERE id = _default_project_id) THEN
+        RAISE EXCEPTION 'projects.id=% не найден — сначала примените multiproject-миграцию', _default_project_id;
+    END IF;
+
+    ALTER TABLE expense_categories ADD COLUMN IF NOT EXISTS project_id BIGINT;
+    UPDATE expense_categories SET project_id = _default_project_id WHERE project_id IS NULL;
+    ALTER TABLE expense_categories ALTER COLUMN project_id SET NOT NULL;
+    ALTER TABLE expense_categories DROP CONSTRAINT IF EXISTS expense_categories_project_id_fkey;
+    ALTER TABLE expense_categories
+        ADD CONSTRAINT expense_categories_project_id_fkey
+        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+    ALTER TABLE expense_categories DROP CONSTRAINT IF EXISTS uq_expense_categories_slug;
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_expense_categories_project_slug
+        ON expense_categories (project_id, slug);
+
+    ALTER TABLE recurring_expenses ADD COLUMN IF NOT EXISTS project_id BIGINT;
+    UPDATE recurring_expenses SET project_id = _default_project_id WHERE project_id IS NULL;
+    ALTER TABLE recurring_expenses ALTER COLUMN project_id SET NOT NULL;
+    ALTER TABLE recurring_expenses DROP CONSTRAINT IF EXISTS recurring_expenses_project_id_fkey;
+    ALTER TABLE recurring_expenses
+        ADD CONSTRAINT recurring_expenses_project_id_fkey
+        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+    ALTER TABLE recurring_expenses DROP CONSTRAINT IF EXISTS recurring_expenses_created_by_fkey;
+    UPDATE recurring_expenses SET created_by = NULL WHERE created_by IS NOT NULL;
+    ALTER TABLE recurring_expenses
+        ADD CONSTRAINT recurring_expenses_created_by_fkey
+        FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
+
+    ALTER TABLE expenses ADD COLUMN IF NOT EXISTS project_id BIGINT;
+    UPDATE expenses SET project_id = _default_project_id WHERE project_id IS NULL;
+    ALTER TABLE expenses ALTER COLUMN project_id SET NOT NULL;
+    ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_project_id_fkey;
+    ALTER TABLE expenses
+        ADD CONSTRAINT expenses_project_id_fkey
+        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+    ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_created_by_fkey;
+    UPDATE expenses SET created_by = NULL WHERE created_by IS NOT NULL;
+    ALTER TABLE expenses
+        ADD CONSTRAINT expenses_created_by_fkey
+        FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
+    CREATE INDEX IF NOT EXISTS idx_expenses_project_incurred
+        ON expenses (project_id, incurred_on DESC);
+
+    ALTER TABLE cash_accounts ADD COLUMN IF NOT EXISTS project_id BIGINT;
+    UPDATE cash_accounts SET project_id = _default_project_id WHERE project_id IS NULL;
+    ALTER TABLE cash_accounts ALTER COLUMN project_id SET NOT NULL;
+    ALTER TABLE cash_accounts DROP CONSTRAINT IF EXISTS cash_accounts_project_id_fkey;
+    ALTER TABLE cash_accounts
+        ADD CONSTRAINT cash_accounts_project_id_fkey
+        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+    ALTER TABLE cash_accounts DROP CONSTRAINT IF EXISTS cash_accounts_created_by_fkey;
+    UPDATE cash_accounts SET created_by = NULL WHERE created_by IS NOT NULL;
+    ALTER TABLE cash_accounts
+        ADD CONSTRAINT cash_accounts_created_by_fkey
+        FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
+    DROP INDEX IF EXISTS uq_cash_accounts_one_default;
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_cash_accounts_one_default_per_project
+        ON cash_accounts (project_id)
+        WHERE is_default = TRUE;
+
+    ALTER TABLE cash_transactions ADD COLUMN IF NOT EXISTS project_id BIGINT;
+    UPDATE cash_transactions ct SET project_id = COALESCE(
+        (SELECT ca.project_id FROM cash_accounts ca WHERE ca.id = ct.account_id),
+        _default_project_id
+    ) WHERE project_id IS NULL;
+    ALTER TABLE cash_transactions ALTER COLUMN project_id SET NOT NULL;
+    ALTER TABLE cash_transactions DROP CONSTRAINT IF EXISTS cash_transactions_project_id_fkey;
+    ALTER TABLE cash_transactions
+        ADD CONSTRAINT cash_transactions_project_id_fkey
+        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+    ALTER TABLE cash_transactions DROP CONSTRAINT IF EXISTS cash_transactions_created_by_fkey;
+    UPDATE cash_transactions SET created_by = NULL WHERE created_by IS NOT NULL;
+    ALTER TABLE cash_transactions
+        ADD CONSTRAINT cash_transactions_created_by_fkey
+        FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
+
+    ALTER TABLE payables ADD COLUMN IF NOT EXISTS project_id BIGINT;
+    UPDATE payables SET project_id = _default_project_id WHERE project_id IS NULL;
+    ALTER TABLE payables ALTER COLUMN project_id SET NOT NULL;
+    ALTER TABLE payables DROP CONSTRAINT IF EXISTS payables_project_id_fkey;
+    ALTER TABLE payables
+        ADD CONSTRAINT payables_project_id_fkey
+        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+    ALTER TABLE payables DROP CONSTRAINT IF EXISTS payables_created_by_fkey;
+    UPDATE payables SET created_by = NULL WHERE created_by IS NOT NULL;
+    ALTER TABLE payables
+        ADD CONSTRAINT payables_created_by_fkey
+        FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
+
+    ALTER TABLE refunds ADD COLUMN IF NOT EXISTS project_id BIGINT;
+    UPDATE refunds r SET project_id = COALESCE(
+        (SELECT u.project_id FROM users u WHERE u.id = r.user_id),
+        (SELECT p.project_id FROM payments p WHERE p.id = r.payment_id),
+        _default_project_id
+    ) WHERE project_id IS NULL;
+    ALTER TABLE refunds ALTER COLUMN project_id SET NOT NULL;
+    ALTER TABLE refunds DROP CONSTRAINT IF EXISTS refunds_project_id_fkey;
+    ALTER TABLE refunds
+        ADD CONSTRAINT refunds_project_id_fkey
+        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+    ALTER TABLE refunds DROP CONSTRAINT IF EXISTS refunds_created_by_fkey;
+    UPDATE refunds SET created_by = NULL WHERE created_by IS NOT NULL;
+    ALTER TABLE refunds
+        ADD CONSTRAINT refunds_created_by_fkey
+        FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
+
+    ALTER TABLE profit_withdrawals ADD COLUMN IF NOT EXISTS project_id BIGINT;
+    UPDATE profit_withdrawals pw SET project_id = COALESCE(
+        (SELECT ca.project_id FROM cash_accounts ca WHERE ca.id = pw.account_id),
+        _default_project_id
+    ) WHERE project_id IS NULL;
+    ALTER TABLE profit_withdrawals ALTER COLUMN project_id SET NOT NULL;
+    ALTER TABLE profit_withdrawals DROP CONSTRAINT IF EXISTS profit_withdrawals_project_id_fkey;
+    ALTER TABLE profit_withdrawals
+        ADD CONSTRAINT profit_withdrawals_project_id_fkey
+        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT;
+    ALTER TABLE profit_withdrawals DROP CONSTRAINT IF EXISTS profit_withdrawals_created_by_fkey;
+    UPDATE profit_withdrawals SET created_by = NULL WHERE created_by IS NOT NULL;
+    ALTER TABLE profit_withdrawals
+        ADD CONSTRAINT profit_withdrawals_created_by_fkey
+        FOREIGN KEY (created_by) REFERENCES staff_users (id) ON DELETE SET NULL;
+
+    INSERT INTO schema_one_time_migrations (name)
+    VALUES (_migration_name)
+    ON CONFLICT (name) DO NOTHING;
+END $$;
