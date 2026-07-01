@@ -39,7 +39,7 @@ if [ -n "$SERVER_NAMES" ]; then
   cat >"$CONF" <<EOF
 server {
     listen 80;
-    server_name${SERVER_NAMES};
+    server_name ${SERVER_NAMES};
 
     location / {
         proxy_pass http://nginx-halyal:80;

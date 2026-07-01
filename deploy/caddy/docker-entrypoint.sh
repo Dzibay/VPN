@@ -50,7 +50,7 @@ done <"$DOMAINS_FILE"
 HOSTS="$(printf '%s' "$HOSTS" | sed 's/^[[:space:]]*//')"
 if [ -n "$HOSTS" ]; then
   cat >"$PH_FILE" <<EOF
-    @placeholder host${HOSTS}
+    @placeholder host ${HOSTS}
     handle @placeholder {
         reverse_proxy nginx-halyal:80
     }
