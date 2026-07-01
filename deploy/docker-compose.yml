@@ -297,11 +297,13 @@ services:
         condition: service_healthy
     networks: [internal]
 
-  # Halyal VPN: заглушка «сайт в разработке»; /api → backend для Telegram-бота.
+  # Halyal VPN: заглушка на /, Vue /sub/…/open/…, /api и /sub → backend.
   nginx-halyal:
     build:
       context: ..
       dockerfile: deploy/nginx-halyal/Dockerfile
+      args:
+        SITE_ADDRESS: ${HALYAL_SITE_ADDRESS:-halyal-connect.ru}
     restart: unless-stopped
     depends_on:
       api:

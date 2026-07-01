@@ -37,6 +37,7 @@ SERVER_NAMES="$(printf '%s' "$SERVER_NAMES" | sed 's/^[[:space:]]*//')"
 
 if [ -n "$SERVER_NAMES" ]; then
   cat >"$CONF" <<EOF
+# Домены-заглушки (не default_server — см. listen default_server в nginx.conf).
 server {
     listen 80;
     server_name ${SERVER_NAMES};
@@ -54,7 +55,7 @@ server {
 EOF
   echo "nginx: placeholder proxy hosts:${SERVER_NAMES}" >&2
 else
-  rm -f "$CONF"
+  printf '# placeholder frontend domains: none\n' >"$CONF"
   echo "nginx: no placeholder frontend domains (API + PLACEHOLDER_FRONTEND_DOMAINS empty)" >&2
 fi
 

@@ -83,7 +83,9 @@ def _normalize_domain(raw: str | None) -> str | None:
 
 
 async def _load(session: AsyncSession) -> _CacheState:
-    rows = (await session.execute(select(Project))).scalars().all()
+    rows = (
+        await session.execute(select(Project).order_by(Project.id.asc()))
+    ).scalars().all()
     by_id: dict[int, ProjectContext] = {}
     by_slug: dict[str, ProjectContext] = {}
     by_domain: dict[str, ProjectContext] = {}
@@ -99,7 +101,17 @@ async def _load(session: AsyncSession) -> _CacheState:
             if key:
                 by_domain[key] = ctx
         if ctx.telegram_bot_api_secret:
-            by_bot_secret[ctx.telegram_bot_api_secret] = ctx
+            secret = ctx.telegram_bot_api_secret
+            if secret in by_bot_secret:
+                log.warning(
+                    "telegram_bot_api_secret дублируется у проектов %s и %s — "
+                    "для бота используется %s (меньший id)",
+                    by_bot_secret[secret].slug,
+                    ctx.slug,
+                    by_bot_secret[secret].slug,
+                )
+            else:
+                by_bot_secret[secret] = ctx
     return _CacheState(
         by_id=by_id, by_slug=by_slug, by_domain=by_domain, by_bot_secret=by_bot_secret
     )
