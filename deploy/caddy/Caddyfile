@@ -1,10 +1,52 @@
-{$SITE_ADDRESS} {
+{
+    # Caddy получает сертификаты для проектных доменов лениво.
+    # Перед выпуском сертификата спрашивает backend, есть ли домен в active projects.
+    on_demand_tls {
+        ask http://api:8000/api/tls/ask
+        interval 2m
+        burst 10
+    }
+}
+
+# Админ-панель персонала — отдельный домен, отдельный SPA, отдельный staff-JWT.
+# ADMIN_SITE_ADDRESS остаётся в env, потому что Caddy должен знать этот special-case.
+{$ADMIN_SITE_ADDRESS} {
     encode gzip zstd
 
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         X-Content-Type-Options "nosniff"
         Referrer-Policy "strict-origin-when-cross-origin"
+        X-Robots-Tag "noindex, nofollow"
+    }
+
+    reverse_proxy nginx-admin:80
+}
+
+# HTTP для проектных доменов: редирект на HTTPS без перечисления доменов в env.
+:80 {
+    redir https://{host}{uri} permanent
+}
+
+# Все проектные домены обслуживаются одним публичным frontend.
+# Сертификаты выпускаются on-demand только после allowlist-проверки в API.
+:443 {
+    tls {
+        on_demand
+    }
+
+    encode gzip zstd
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # Runtime allowlist: если домен удалили/выключили в админке,
+    # Caddy перестаёт обслуживать его без reload даже при уже выпущенном сертификате.
+    forward_auth http://api:8000 {
+        uri /api/tls/ask?domain={host}
     }
 
     reverse_proxy nginx:80

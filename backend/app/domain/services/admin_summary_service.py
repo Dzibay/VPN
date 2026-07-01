@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.models.admin_summary import AdminSummaryResponse
+from app.domain.tenant.admin_project_scope import rpc_project_params
 
 
 def _to_decimal(v: object) -> Decimal:
@@ -29,8 +30,13 @@ async def get_admin_summary(
     date_from: date,
     date_to: date,
 ) -> AdminSummaryResponse:
-    stmt = text("SELECT rpc_admin_summary(:p_from, :p_to) AS payload")
-    row = (await session.execute(stmt, {"p_from": date_from, "p_to": date_to})).one()
+    stmt = text("SELECT rpc_admin_summary(:p_from, :p_to, :p_project_id) AS payload")
+    row = (
+        await session.execute(
+            stmt,
+            rpc_project_params({"p_from": date_from, "p_to": date_to}),
+        )
+    ).one()
     raw = row.payload if isinstance(row.payload, dict) else {}
 
     users_total = int(raw.get("users_total") or 0)

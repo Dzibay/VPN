@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from typing import TypeAlias
 from urllib.parse import quote
 
-from app.constants import BRAND_NAME
+from app.domain.tenant.branding import resolve_brand_name as _brand
 
 PlatformLinkInput: TypeAlias = str | tuple[str | None, str | None]
 
@@ -179,19 +179,19 @@ _stash_deeplink = _deeplink_query_url("stash://install-config?url=")
 def _shadowrocket_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
     b64 = _b64_utf8(u)
-    return f"shadowrocket://add/sub://{b64}?remark={_q(BRAND_NAME)}"
+    return f"shadowrocket://add/sub://{b64}?remark={_q(_brand())}"
 
 
 def _streisand_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
-    return f"streisand://import/{u}#{_q(BRAND_NAME)}"
+    return f"streisand://import/{u}#{_q(_brand())}"
 
 _flclashx_deeplink = _deeplink_query_url("flclashx://install-config?url=")
 
 
 def _v2rayng_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
-    return f"v2rayng://install-sub?url={u}#{_q(BRAND_NAME)}"
+    return f"v2rayng://install-sub?url={u}#{_q(_brand())}"
 
 
 def _v2raytun_deeplink(subscription_https_url: str) -> str:
@@ -201,7 +201,7 @@ def _v2raytun_deeplink(subscription_https_url: str) -> str:
 
 def _v2box_deeplink(subscription_https_url: str) -> str:
     u = _sub_url_trim(subscription_https_url)
-    return f"v2box://install-sub?url={_q(u)}&name={_q(BRAND_NAME)}"
+    return f"v2box://install-sub?url={_q(u)}&name={_q(_brand())}"
 
 
 def _incy_deeplink(subscription_https_url: str) -> str:

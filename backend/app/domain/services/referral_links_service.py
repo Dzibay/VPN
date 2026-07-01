@@ -41,6 +41,11 @@ from app.domain.referrals.registrations_daily import (
     referral_tokens_registrations_daily,
     referral_traffic_registrations_daily,
 )
+from app.domain.tenant.admin_project_scope import (
+    admin_project_id,
+    apply_project_scope,
+    project_scope_clause,
+)
 from app.domain.users.stats_qualification import user_counts_in_admin_stats
 from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.referral_link import ReferralLink
@@ -81,12 +86,17 @@ async def referral_traffic_overview_stats(session: AsyncSession) -> ReferralTraf
     channel_counts = _counts("channel", is_channel)
     user_ref_counts = _counts("user_ref", is_user_referral)
 
+    scope = project_scope_clause(User)
+    where_parts = [stats_user]
+    if scope is not None:
+        where_parts.append(scope)
+
     row = (
         await session.execute(
             select(*direct_counts, *channel_counts, *user_ref_counts)
             .select_from(User)
             .outerjoin(ReferralLink, User.referral_link_id == ReferralLink.id)
-            .where(stats_user),
+            .where(*where_parts),
         )
     ).one()
     return ReferralTrafficOverviewStats(
@@ -127,6 +137,9 @@ async def _referral_links_revenue_by_id(session: AsyncSession) -> dict[int, Deci
         .where(User.referral_link_id.is_not(None))
         .group_by(User.referral_link_id)
     )
+    scope = project_scope_clause(User)
+    if scope is not None:
+        stmt = stmt.where(scope)
     rows = (await session.execute(stmt)).all()
     return {
         int(link_id): Decimal(str(total))
@@ -142,13 +155,19 @@ async def _referral_link_revenue_net(session: AsyncSession, link_id: int) -> Dec
         .join(Payment, Payment.user_id == User.id)
         .where(User.referral_link_id == link_id)
     )
+    scope = project_scope_clause(User)
+    if scope is not None:
+        stmt = stmt.where(scope)
     total = await session.scalar(stmt)
     return Decimal(str(total or 0))
 
 
 async def list_staff_referral_links(session: AsyncSession, cfg: object) -> list:
     """Все реферальные записи в админке, новейшие первыми; URL подставляются из ``cfg``."""
-    stmt = select(ReferralLink).order_by(ReferralLink.id.desc())
+    stmt = apply_project_scope(
+        select(ReferralLink).order_by(ReferralLink.id.desc()),
+        ReferralLink,
+    )
     rows = list((await session.scalars(stmt)).all())
     revenues = await _referral_links_revenue_by_id(session)
     return [
@@ -161,6 +180,9 @@ async def get_staff_referral_link_by_id(session: AsyncSession, link_id: int, cfg
     """Одна запись для админки; 404 если не найдена."""
     row = await session.get(ReferralLink, link_id)
     if row is None:
+        raise NotFoundError("Токен не найден")
+    pid = admin_project_id()
+    if pid is not None and int(row.project_id) != pid:
         raise NotFoundError("Токен не найден")
     revenue_net = await _referral_link_revenue_net(session, link_id)
     return referral_link_to_response(row, cfg, revenue_net=revenue_net)

@@ -1,5 +1,12 @@
 -- Сводка админки за календарный период [p_from, p_to] (Europe/Moscow).
-CREATE OR REPLACE FUNCTION rpc_admin_summary (p_from date, p_to date)
+DROP FUNCTION IF EXISTS rpc_admin_summary(date, date);
+
+-- Multi-tenant: p_project_id=NULL → агрегат по всем проектам.
+CREATE OR REPLACE FUNCTION rpc_admin_summary (
+    p_from date,
+    p_to date,
+    p_project_id bigint DEFAULT NULL
+)
 RETURNS jsonb
 LANGUAGE sql
 STABLE
@@ -14,17 +21,20 @@ qualified_users AS (
         u.registered_at,
         u.subscription_until
     FROM users u
-    WHERE u.telegram_id IS NOT NULL
-       OR (
-           u.email IS NOT NULL
-           AND BTRIM(u.email) <> ''
-           AND u.email_verified_at IS NOT NULL
-       )
+    WHERE (p_project_id IS NULL OR u.project_id = p_project_id)
+      AND (u.telegram_id IS NOT NULL
+           OR (
+               u.email IS NOT NULL
+               AND BTRIM(u.email) <> ''
+               AND u.email_verified_at IS NOT NULL
+           )
+      )
 ),
 paying_user_ids AS (
     SELECT DISTINCT p.user_id
     FROM payments p
     WHERE p.user_id IS NOT NULL
+      AND (p_project_id IS NULL OR p.project_id = p_project_id)
 ),
 users_total AS (
     SELECT COUNT(*)::bigint AS n
@@ -60,7 +70,8 @@ payments_period AS (
         COALESCE(SUM(s.cnt), 0)::bigint AS cnt,
         COALESCE(SUM(s.gross), 0)::numeric(14, 2) AS revenue
     FROM stats_payments_daily_msk s
-    WHERE s.day_msk BETWEEN p_from AND p_to
+    WHERE (p_project_id IS NULL OR s.project_id = p_project_id)
+      AND s.day_msk BETWEEN p_from AND p_to
 ),
 payments_in_period AS (
     SELECT
@@ -69,6 +80,7 @@ payments_in_period AS (
     FROM payments p
     INNER JOIN qualified_users qu ON qu.id = p.user_id
     WHERE p.user_id IS NOT NULL
+      AND (p_project_id IS NULL OR p.project_id = p_project_id)
       AND (p.created_at AT TIME ZONE 'Europe/Moscow')::date BETWEEN p_from AND p_to
 ),
 paying_users_in_period AS (
@@ -92,6 +104,7 @@ notify_payment_for_replay AS (
     INNER JOIN qualified_users qu ON qu.id = t.user_id
     WHERE t.type = 'notify_payment'
       AND COALESCE(t.paid_months, 0) >= 1
+      AND (p_project_id IS NULL OR t.project_id = p_project_id)
 ),
 payment_chain AS (
     SELECT
@@ -150,11 +163,13 @@ renewal_stats AS (
 payments_total AS (
     SELECT COALESCE(SUM(s.gross), 0)::numeric(14, 2) AS revenue
     FROM stats_payments_daily_msk s
+    WHERE (p_project_id IS NULL OR s.project_id = p_project_id)
 ),paying_users AS (
     SELECT COUNT(DISTINCT p.user_id)::bigint AS n
     FROM payments p
     INNER JOIN qualified_users qu ON qu.id = p.user_id
     WHERE p.user_id IS NOT NULL
+      AND (p_project_id IS NULL OR p.project_id = p_project_id)
 ),
 avg_per_payer AS (
     SELECT

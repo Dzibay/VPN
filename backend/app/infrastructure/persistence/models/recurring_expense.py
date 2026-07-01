@@ -24,6 +24,11 @@ class RecurringExpense(Base):
     __tablename__ = "recurring_expenses"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("projects.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
     title: Mapped[str] = mapped_column(Text, nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     category_id: Mapped[int | None] = mapped_column(
@@ -46,6 +51,6 @@ class RecurringExpense(Base):
     )
     created_by: Mapped[int | None] = mapped_column(
         BigInteger,
-        ForeignKey("users.id", ondelete="SET NULL"),
+        ForeignKey("staff_users.id", ondelete="SET NULL"),
         nullable=True,
     )

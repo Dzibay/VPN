@@ -90,35 +90,51 @@ def _strip_line_comments(sql: str) -> str:
     return "\n".join(out)
 
 
-def split_sql_statements(sql: str) -> list[str]:
-    """Делит SQL на выражения по `;`, не разрывая тела `DO $$ ... $$`.
+import re
 
-    Простое разбиение по «;» ломает PL/pgSQL в migrate.sql."""
+# PostgreSQL dollar-quoted строки: $$...$$ или $tag$...$tag$ (tag = [A-Za-z_][A-Za-z0-9_]*).
+_DOLLAR_TAG_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
+
+
+def split_sql_statements(sql: str) -> list[str]:
+    """Делит SQL на выражения по `;`, не разрывая тела `DO $$…$$` и `$tag$…$tag$`.
+
+    Простое разбиение по «;» ломает PL/pgSQL и любые dollar-quoted строки
+    (в том числе с именованным тегом, например `$mig$…$mig$`)."""
     cleaned = _strip_line_comments(sql)
     parts: list[str] = []
     buf: list[str] = []
     i = 0
     n = len(cleaned)
-    dollar_depth = 0  # счётчик незакрытых пар $$
+    active_tag: str | None = None  # None → вне dollar-quote; иначе — открытый тег ("" для $$).
     while i < n:
-        if dollar_depth == 0 and cleaned[i : i + 2] == "$$":
-            dollar_depth += 1
-            buf.extend(["$", "$"])
-            i += 2
-            continue
-        if dollar_depth > 0 and cleaned[i : i + 2] == "$$":
-            dollar_depth -= 1
-            buf.extend(["$", "$"])
-            i += 2
-            continue
-        if dollar_depth == 0 and cleaned[i] == ";":
+        ch = cleaned[i]
+        if ch == "$":
+            m = _DOLLAR_TAG_RE.match(cleaned, i)
+            if m is not None:
+                tag = m.group(1) or ""
+                if active_tag is None:
+                    active_tag = tag
+                    buf.append(m.group(0))
+                    i = m.end()
+                    continue
+                if active_tag == tag:
+                    active_tag = None
+                    buf.append(m.group(0))
+                    i = m.end()
+                    continue
+                # Другой тег внутри активного блока — просто текст.
+                buf.append(m.group(0))
+                i = m.end()
+                continue
+        if active_tag is None and ch == ";":
             stmt = "".join(buf).strip()
             if stmt:
                 parts.append(stmt)
             buf = []
             i += 1
             continue
-        buf.append(cleaned[i])
+        buf.append(ch)
         i += 1
 
     tail = "".join(buf).strip()

@@ -8,6 +8,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.list_sort import SortDir, order_clause
+from app.domain.tenant.admin_project_scope import project_scope_clause
 from app.infrastructure.persistence.models.user_http_request_trace import UserHttpRequestTrace
 
 _HTTP_TRACE_SORT_KEYS = frozenset({
@@ -75,6 +76,10 @@ async def staff_list_http_request_traces(
         filters.append(UserHttpRequestTrace.created_at >= created_from)
     if created_to is not None:
         filters.append(UserHttpRequestTrace.created_at <= created_to)
+
+    scope = project_scope_clause(UserHttpRequestTrace)
+    if scope is not None:
+        filters.append(scope)
 
     cnt_q = select(func.count(UserHttpRequestTrace.id))
     list_q = select(UserHttpRequestTrace).order_by(

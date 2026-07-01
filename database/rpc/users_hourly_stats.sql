@@ -1,5 +1,11 @@
 -- 24 часа внутри календарного дня ``p_day`` по часовому поясу Europe/Moscow.
-CREATE OR REPLACE FUNCTION rpc_users_hourly_stats (p_day date)
+DROP FUNCTION IF EXISTS rpc_users_hourly_stats(date);
+
+-- Multi-tenant: p_project_id=NULL → агрегат по всем проектам.
+CREATE OR REPLACE FUNCTION rpc_users_hourly_stats (
+    p_day date,
+    p_project_id bigint DEFAULT NULL
+)
 RETURNS TABLE (
     period_start_utc timestamptz,
     users_count bigint,
@@ -17,12 +23,14 @@ AS $$
 WITH qualified_users AS (
     SELECT u.id
     FROM users u
-    WHERE u.telegram_id IS NOT NULL
-       OR (
-           u.email IS NOT NULL
-           AND BTRIM(u.email) <> ''
-           AND u.email_verified_at IS NOT NULL
-       )
+    WHERE (p_project_id IS NULL OR u.project_id = p_project_id)
+      AND (u.telegram_id IS NOT NULL
+           OR (
+               u.email IS NOT NULL
+               AND BTRIM(u.email) <> ''
+               AND u.email_verified_at IS NOT NULL
+           )
+      )
 ),
 bounds AS (
     SELECT (p_day::timestamp AT TIME ZONE 'Europe/Moscow') AS day_start

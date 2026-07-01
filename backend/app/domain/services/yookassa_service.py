@@ -7,17 +7,18 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-from pathlib import Path
 from typing import Any, Literal
 
 import httpx
-from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.core.exceptions import BadRequestError, ServiceUnavailableError
+from app.domain.tenant.project_context import get_current_project
 from app.domain.models.payments import (
     PaymentWebhookAck,
+    SitePaymentTariffItem,
     SitePaymentTariffsResponse,
     YookassaCheckoutResponse,
 )
@@ -27,14 +28,21 @@ from app.domain.services.payment_service import (
     ingest_provider_payment,
     net_amount_from_yookassa_payment_obj,
 )
+from app.infrastructure.persistence.models.project_tariff import ProjectTariff
 
 log = logging.getLogger("app.yookassa_service")
 
-_YOOKASSA_TARIFFS_JSON = Path(__file__).resolve().parents[2] / "data" / "yookassa_tariffs.json"
 _YOOKASSA_API = "https://api.yookassa.ru/v3/payments"
 
 
 def _require_yookassa_credentials(settings: Settings) -> tuple[str, str]:
+    """Per-project (projects.yookassa_*) с fallback на глобальный settings.yookassa_*."""
+    project = get_current_project()
+    if project is not None:
+        p_shop = (project.yookassa_shop_id or "").strip()
+        p_secret = (project.yookassa_secret_key or "").strip()
+        if p_shop and p_secret:
+            return p_shop, p_secret
     shop_id = (settings.yookassa_shop_id or "").strip()
     secret = (settings.yookassa_secret_key or "").strip()
     if not shop_id or not secret:
@@ -44,24 +52,53 @@ def _require_yookassa_credentials(settings: Settings) -> tuple[str, str]:
     return shop_id, secret
 
 
-def yookassa_tariffs_public_response() -> SitePaymentTariffsResponse:
-    try:
-        raw = _YOOKASSA_TARIFFS_JSON.read_text(encoding="utf-8")
-    except OSError as e:
-        log.warning("Не удалось прочитать %s: %s", _YOOKASSA_TARIFFS_JSON, e)
-        return SitePaymentTariffsResponse(tariffs=[])
-    try:
-        return SitePaymentTariffsResponse.model_validate_json(raw)
-    except ValidationError:
-        log.exception("Некорректный JSON тарифов: %s", _YOOKASSA_TARIFFS_JSON)
-        return SitePaymentTariffsResponse(tariffs=[])
+def _current_project_id() -> int:
+    project = get_current_project()
+    return int(project.id) if project is not None else 1
 
 
-def _find_tariff(months: int) -> tuple[int, str, Decimal] | None:
-    tariffs = yookassa_tariffs_public_response().tariffs
-    for t in tariffs:
-        if int(t.months) == int(months):
-            return int(t.months), t.name, Decimal(int(t.price)).quantize(Decimal("0.01"))
+async def yookassa_tariffs_public_response(session: AsyncSession) -> SitePaymentTariffsResponse:
+    rows = (
+        await session.execute(
+            select(ProjectTariff)
+            .where(
+                ProjectTariff.project_id == _current_project_id(),
+                ProjectTariff.provider == "yookassa",
+                ProjectTariff.is_active.is_(True),
+                ProjectTariff.months > 0,
+                ProjectTariff.amount > 0,
+            )
+            .order_by(ProjectTariff.sort_order, ProjectTariff.months)
+        )
+    ).scalars().all()
+    return SitePaymentTariffsResponse(
+        tariffs=[
+            SitePaymentTariffItem(
+                months=int(row.months),
+                price=int(row.amount),
+                name=row.name or f"{int(row.months)} мес",
+            )
+            for row in rows
+        ],
+    )
+
+
+async def _find_tariff(session: AsyncSession, months: int) -> tuple[int, str, Decimal] | None:
+    row = (
+        await session.execute(
+            select(ProjectTariff)
+            .where(
+                ProjectTariff.project_id == _current_project_id(),
+                ProjectTariff.provider == "yookassa",
+                ProjectTariff.is_active.is_(True),
+                ProjectTariff.months == int(months),
+                ProjectTariff.amount > 0,
+            )
+            .limit(1)
+        )
+    ).scalars().first()
+    if row is not None:
+        return int(row.months), row.name or f"{int(row.months)} мес", Decimal(row.amount).quantize(Decimal("0.01"))
     return None
 
 
@@ -84,10 +121,17 @@ def _yookassa_return_url_for_path(settings: Settings, *, path: str, env_override
 
 
 def yookassa_return_url(settings: Settings) -> str:
+    """Per-project override (projects.yookassa_return_url) с fallback на settings.yookassa_return_url."""
+    project = get_current_project()
+    override = ""
+    if project is not None and project.yookassa_return_url:
+        override = project.yookassa_return_url
+    elif settings.yookassa_return_url:
+        override = settings.yookassa_return_url
     return _yookassa_return_url_for_path(
         settings,
         path="/cabinet/pay/return",
-        env_override=settings.yookassa_return_url,
+        env_override=override,
     )
 
 
@@ -100,6 +144,7 @@ def yookassa_bot_return_url(settings: Settings) -> str:
 
 
 async def create_yookassa_checkout(
+    session: AsyncSession,
     settings: Settings,
     *,
     user_id: int,
@@ -108,7 +153,7 @@ async def create_yookassa_checkout(
 ) -> YookassaCheckoutResponse:
     """Создать платёж в ЮKassa и вернуть URL для редиректа (зачисление — в webhook)."""
     shop_id, secret = _require_yookassa_credentials(settings)
-    tariff = _find_tariff(months)
+    tariff = await _find_tariff(session, months)
     if tariff is None:
         raise BadRequestError(detail="Тариф с таким сроком недоступен")
 
@@ -178,7 +223,9 @@ async def _fetch_yookassa_payment(
     return obj if isinstance(obj, dict) else None
 
 
-def _parse_yookassa_succeeded(*, payment_obj: dict[str, Any]) -> PaymentIngestParsed | None:
+async def _parse_yookassa_succeeded(
+    session: AsyncSession, *, payment_obj: dict[str, Any]
+) -> PaymentIngestParsed | None:
     status = (payment_obj.get("status") or "").strip()
     if status != "succeeded":
         return None
@@ -198,7 +245,7 @@ def _parse_yookassa_succeeded(*, payment_obj: dict[str, Any]) -> PaymentIngestPa
     if user_id < 1 or months < 1:
         return None
 
-    tariff = _find_tariff(months)
+    tariff = await _find_tariff(session, months)
     if tariff is None:
         log.warning("ЮKassa: неизвестный months=%s в metadata платежа %s", months, payment_obj.get("id"))
         return None
@@ -293,7 +340,7 @@ async def process_yookassa_webhook_raw_body(
     if verified is None:
         return PaymentWebhookAck(ok=True, event=event, fulfilled=False, skip_reason="verify_failed")
 
-    parsed = _parse_yookassa_succeeded(payment_obj=verified)
+    parsed = await _parse_yookassa_succeeded(session, payment_obj=verified)
     if parsed is None:
         return PaymentWebhookAck(ok=True, event=event, fulfilled=False, skip_reason="not_succeeded")
 

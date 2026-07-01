@@ -12,6 +12,11 @@ class Task(Base):
     __tablename__ = "tasks"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("projects.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
     #: Колонка в БД называется ``type`` (зарезервировано в Python — имя атрибута другое).
     task_type: Mapped[str] = mapped_column("type", Text, nullable=False)
     user_id: Mapped[int] = mapped_column(

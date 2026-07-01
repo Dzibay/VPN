@@ -174,13 +174,14 @@ async def me_payments_history(
     "/payments/tariffs",
     response_model=SitePaymentTariffsResponse,
     dependencies=[Depends(require_cabinet_jwt)],
-    summary="Тарифы разовой оплаты (app/data/yookassa_tariffs.json)",
+    summary="Тарифы разовой оплаты текущего проекта",
 )
 async def me_payment_tariffs(
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
+    session: ReadonlySessionDep,
 ) -> SitePaymentTariffsResponse:
     _require_cabinet_user(principal)
-    return yookassa_tariffs_public_response()
+    return await yookassa_tariffs_public_response(session)
 
 
 @router.post(
@@ -192,9 +193,11 @@ async def me_payment_tariffs(
 async def me_yookassa_checkout(
     principal: Annotated[BearerPrincipal, Depends(get_bearer_principal_dep)],
     body: YookassaCheckoutBody,
+    session: ReadonlySessionDep,
 ) -> YookassaCheckoutResponse:
     _require_cabinet_user(principal)
     return await create_yookassa_checkout(
+        session,
         settings,
         user_id=int(principal.user_id),
         months=int(body.months),

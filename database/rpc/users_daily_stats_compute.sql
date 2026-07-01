@@ -2,9 +2,15 @@
 -- Используется и в кэше (flush dirty / full refresh), и live в горячем окне.
 -- Все источники фильтруются по диапазону дат, чтобы избежать full scan по миллионам строк.
 
+-- Убираем старую (single-tenant) сигнатуру, чтобы CREATE OR REPLACE ниже не создавал
+-- вторую перегрузку — иначе SQL-вызовы будут падать на ambiguity.
+DROP FUNCTION IF EXISTS fn_users_daily_stats_compute(date, date);
+
+-- Multi-tenant: p_project_id=NULL → агрегат по всем проектам, иначе один проект.
 CREATE OR REPLACE FUNCTION fn_users_daily_stats_compute (
     p_from date DEFAULT NULL,
-    p_to date DEFAULT NULL
+    p_to date DEFAULT NULL,
+    p_project_id bigint DEFAULT NULL
 )
 RETURNS TABLE (
     stats_date date,
@@ -36,6 +42,7 @@ msk_bounds AS (
                 SELECT MIN((u.registered_at AT TIME ZONE 'Europe/Moscow')::date)
                 FROM users u
                 WHERE u.registered_at IS NOT NULL
+                  AND (p_project_id IS NULL OR u.project_id = p_project_id)
                   AND (
                       u.telegram_id IS NOT NULL
                       OR (u.email IS NOT NULL
@@ -60,12 +67,15 @@ date_window AS (
 qualified_users AS (
     SELECT u.id, u.registered_at, u.subscription_until
     FROM users u
-    WHERE u.telegram_id IS NOT NULL
-       OR (
-           u.email IS NOT NULL
-           AND BTRIM(u.email) <> ''
-           AND u.email_verified_at IS NOT NULL
-       )
+    WHERE (p_project_id IS NULL OR u.project_id = p_project_id)
+      AND (
+          u.telegram_id IS NOT NULL
+          OR (
+              u.email IS NOT NULL
+              AND BTRIM(u.email) <> ''
+              AND u.email_verified_at IS NOT NULL
+          )
+      )
 ),
 eligible_users AS (
     SELECT id

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.core.time import utc_now
+from app.domain.tenant.admin_project_scope import apply_project_scope, rpc_project_params
 from app.domain.models.staff_ledger import (
     StaffCreatableTaskType,
     StaffCreateTributePaymentResponse,
@@ -41,11 +42,11 @@ async def staff_payments_finance_summary(
         if granularity == "day"
         else "rpc_staff_payments_finance_summary"
     )
-    stmt = text(f"SELECT {rpc_name}(:p_from, :p_to) AS payload")
+    stmt = text(f"SELECT {rpc_name}(:p_from, :p_to, :p_project_id) AS payload")
     row = (
         await session.execute(
             stmt,
-            {"p_from": date_from, "p_to": date_to},
+            rpc_project_params({"p_from": date_from, "p_to": date_to}),
         )
     ).one()
     raw = row.payload
@@ -194,6 +195,8 @@ async def list_staff_payments(
             .limit(limit)
             .offset(offset)
         )
+    count_stmt = apply_project_scope(count_stmt, Payment)
+    stmt = apply_project_scope(stmt, Payment)
     total = int(await session.scalar(count_stmt) or 0)
     rows = list((await session.scalars(stmt)).all())
     return [StaffPaymentItem.model_validate(r) for r in rows], total
@@ -234,6 +237,8 @@ async def list_staff_tasks(
             .limit(limit)
             .offset(offset)
         )
+    count_stmt = apply_project_scope(count_stmt, Task)
+    stmt = apply_project_scope(stmt, Task)
     total = int(await session.scalar(count_stmt) or 0)
     rows = list((await session.scalars(stmt)).all())
     items = [_staff_task_item_from_orm(t) for t in rows]

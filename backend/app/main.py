@@ -14,8 +14,11 @@ from app.core.staff_swagger_html import staff_swagger_ui_html
 from app.core.moscow_api_time import install_moscow_json_encoder
 from app.core.logging_config import setup_logging
 from app.core.middleware.blocked_ip import BlockedIpMiddleware
+from app.core.middleware.project_middleware import ProjectContextMiddleware
 from app.core.middleware.request_context import RequestContextMiddleware
 from app.domain.security.blocked_ip_cache import ensure_blocked_ips_loaded
+from app.domain.tenant.project_cors import build_cors_allow_origins
+from app.domain.tenant.project_id_autoset import install_project_id_autoset
 from app.core.openapi import attach_openapi
 from app.core.startup_checks import validate_production_secrets
 
@@ -24,9 +27,11 @@ log = logging.getLogger("app.main")
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    from app.domain.seo_pages.repository import ensure_seo_pages_catalog
+    from app.domain.tenant.legacy_project_sync import sync_legacy_project_settings
+    from app.domain.tenant.staff_bootstrap import bootstrap_from_env
     from app.infrastructure.database.schema import ensure_schema
     from app.infrastructure.database.session import AsyncSessionLocal
-    from app.domain.seo_pages.repository import ensure_seo_pages_catalog
 
     # Сами периодические корутины (Xray-сбор, Prometheus-load, ежедневный sync, TCP-доступность → Redis)
     # переехали в отдельный процесс `python -m app.scheduler.run` — см. backend/app/scheduler/run.py.
@@ -36,6 +41,9 @@ async def lifespan(_app: FastAPI):
     async with AsyncSessionLocal() as session:
         await ensure_seo_pages_catalog(session)
         await session.commit()
+        await sync_legacy_project_settings(session, settings)
+        # Bootstrap проектов+staff из env: idempotent, каждый старт приводит БД к состоянию env.
+        await bootstrap_from_env(session, settings)
     await ensure_blocked_ips_loaded(force=True)
     yield
 
@@ -67,11 +75,15 @@ def create_app() -> FastAPI:
     )
     register_exception_handlers(application)
     attach_openapi(application)
-    application.add_middleware(RequestContextMiddleware)
+    # ASGI-middlewares оборачиваются в обратном порядке добавления: последний add_middleware
+    # оборачивает предыдущие. Порядок исполнения (снаружи внутрь):
+    #   CORS → RequestContext → BlockedIp → ProjectContext → app.
+    application.add_middleware(ProjectContextMiddleware)
     application.add_middleware(BlockedIpMiddleware)
+    application.add_middleware(RequestContextMiddleware)
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_allow_origins(),
+        allow_origins=build_cors_allow_origins(),
         allow_origin_regex=settings.cors_origin_regex or None,
         allow_credentials=True,
         allow_methods=["*"],
@@ -106,4 +118,5 @@ def create_app() -> FastAPI:
 # (uvicorn делает это до первого запроса; неправильный конфиг = падение процесса).
 setup_logging(settings.log_level)
 validate_production_secrets(settings)
+install_project_id_autoset()
 app = create_app()

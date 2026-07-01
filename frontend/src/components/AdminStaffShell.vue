@@ -29,7 +29,7 @@ const aria = computed(() => {
 const resolvedBackTo = computed(() => {
   if (props.backTo !== undefined && props.backTo !== null && props.backTo !== '')
     return props.backTo
-  return getSessionRole() === 'admin' ? '/admin/summary' : '/cabinet'
+  return getSessionRole() === 'admin' ? '/dashboard' : '/cabinet'
 })
 
 const resolvedBackLabel = computed(() => {

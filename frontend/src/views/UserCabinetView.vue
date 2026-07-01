@@ -114,10 +114,6 @@ const me = ref(null)
 const subscriptionConnectionDeletingId = ref(null)
 const subscriptionConnectionDeleteError = ref(null)
 
-const referralsStaffVisible = computed(
-  () => me.value?.role === 'admin' || me.value?.role === 'manager',
-)
-
 const cabinetUserFeatures = computed(() =>
   canUseCabinetUserFeatures(me.value?.role),
 )
@@ -1017,13 +1013,6 @@ onBeforeUnmount(() => {
         aria-labelledby="cabinet-tab-profile"
       >
         <div class="stack">
-          <div v-if="me.role === 'admin'" class="card card-pad">
-            <h2 class="block-title">Администратор</h2>
-            <p class="hint">
-              Управление серверами и пользователями — в разделе ниже в шапке или
-              <RouterLink class="sub-link" to="/admin/users/analytics">перейти к данным</RouterLink>.
-            </p>
-          </div>
           <div class="card card-pad">
             <h2 class="block-title">Профиль</h2>
             <dl class="dl">
@@ -1254,9 +1243,6 @@ onBeforeUnmount(() => {
             <h2 class="block-title">Реферальная система</h2>
             <p v-if="cabinetUserFeatures" class="hint referral-card-lead">
               Делитесь ссылкой — учитываются клики, регистрации и оплаты приглашённых.
-            </p>
-            <p v-else-if="referralsStaffVisible" class="hint">
-              Сотрудникам: выпуск и учёт всех реферальных токенов — в админ-панели.
             </p>
             <p v-else class="hint">
               Персональные ссылки для клиентов доступны в личном кабинете для учётной записи пользователя.
@@ -1492,15 +1478,6 @@ onBeforeUnmount(() => {
               <p v-else class="hint referral-my-status">
                 Не удалось получить реферальную ссылку. Обновите страницу или попробуйте позже.
               </p>
-            </div>
-
-            <div v-if="referralsStaffVisible" class="referral-staff-actions">
-              <RouterLink
-                class="client-btn referral-staff-btn"
-                :to="{ path: '/admin/referrals' }"
-              >
-                Управление реферальными токенами
-              </RouterLink>
             </div>
           </div>
         </div>

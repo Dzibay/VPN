@@ -13,11 +13,15 @@ from app.domain.models.auth import (
     build_subscription_open_client_items,
 )
 from app.domain.subscription.public_base import site_address_to_public_origin
+from app.domain.tenant.project_context import get_current_project
 from app.infrastructure.persistence.models.user import User
 
 
 def subscription_open_clients_payload(settings: Settings) -> TelegramSubscriptionOpenClientsResponse:
-    base = site_address_to_public_origin(settings.site_address)
+    project = get_current_project()
+    base = site_address_to_public_origin(
+        project.primary_domain if project is not None else settings.site_address
+    )
     return TelegramSubscriptionOpenClientsResponse(
         clients=build_subscription_open_client_items(),
         public_base_url=base or None,

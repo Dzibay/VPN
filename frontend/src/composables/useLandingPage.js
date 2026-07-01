@@ -36,7 +36,6 @@ import {
   Zap,
 } from 'lucide-vue-next'
 import { getAccessToken, getSessionRole } from '../auth/session.js'
-import { defaultPathAfterLogin } from '../auth/permissions.js'
 import { sitePublicUrl, fetchJson } from '../api/client.js'
 import { LEGAL_FOOTER_LINKS, SUPPORT_TELEGRAM } from '../content/legal.js'
 import { buildLandingPlans, useYookassaPricing } from './useYookassaPricing.js'
@@ -62,10 +61,11 @@ export function createLandingPageContext() {
     sessionRole.value = getSessionRole()
   }
 
-  const isLoggedIn = computed(() => hasToken.value)
-  const loggedInHomeCtaPath = computed(() =>
-    defaultPathAfterLogin(sessionRole.value),
+  const isLoggedIn = computed(
+    () => hasToken.value && sessionRole.value === 'user',
   )
+  /** Всегда /cabinet — кнопки «Перейти в кабинет» на лендинге. */
+  const loggedInHomeCtaPath = '/cabinet'
 
   router.afterEach(refreshAuth)
 

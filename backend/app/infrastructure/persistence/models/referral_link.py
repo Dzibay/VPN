@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.base import Base
@@ -10,9 +10,18 @@ class ReferralLink(Base):
     """Реферальный токен: владелец (пользователь или кампания) и счётчики конверсии."""
 
     __tablename__ = "referral_links"
+    __table_args__ = (
+        Index("uq_referral_links_project_token", "project_id", "token", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    token: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    project_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("projects.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    #: Уникальность теперь per-project (см. __table_args__).
+    token: Mapped[str] = mapped_column(Text, nullable=False)
     owner_kind: Mapped[str] = mapped_column(String(64), nullable=False)
     owner_user_id: Mapped[int | None] = mapped_column(
         BigInteger,

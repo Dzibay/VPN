@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from app.domain.subscription.public_base import site_address_to_public_origin
+from app.domain.tenant.project_context import get_current_project
 
 
 def _telegram_bot_username_clean(settings: object) -> str:
@@ -42,5 +43,10 @@ def public_spa_base_url(settings: object) -> str | None:
     Нормализует http→https для публичных хостов; для локальной сети остаётся http (см.
     :mod:`app.domain.subscription.public_base`).
     """
+    project = get_current_project()
+    if project is not None and project.primary_domain:
+        from_site = site_address_to_public_origin(project.primary_domain)
+        if from_site:
+            return from_site
     from_site = site_address_to_public_origin(getattr(settings, "site_address", None) or "")
     return from_site or None

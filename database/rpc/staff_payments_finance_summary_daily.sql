@@ -1,8 +1,12 @@
 -- Сводка платежей: календарные дни Europe/Moscow, суммы по payment_kind (net и gross).
 -- Источник: stats_payments_daily_msk (триггер на payments).
+DROP FUNCTION IF EXISTS rpc_staff_payments_finance_summary_daily(date, date);
+
+-- Multi-tenant: p_project_id=NULL → агрегат.
 CREATE OR REPLACE FUNCTION rpc_staff_payments_finance_summary_daily (
     p_from date DEFAULT NULL,
-    p_to date DEFAULT NULL
+    p_to date DEFAULT NULL,
+    p_project_id bigint DEFAULT NULL
 )
 RETURNS jsonb
 LANGUAGE sql
@@ -16,14 +20,9 @@ WITH filtered AS (
         s.net,
         s.cnt
     FROM stats_payments_daily_msk s
-    WHERE (
-        p_from IS NULL
-        OR s.day_msk >= p_from
-    )
-    AND (
-        p_to IS NULL
-        OR s.day_msk <= p_to
-    )
+    WHERE (p_project_id IS NULL OR s.project_id = p_project_id)
+      AND (p_from IS NULL OR s.day_msk >= p_from)
+      AND (p_to IS NULL OR s.day_msk <= p_to)
 ),
 grand AS (
     SELECT

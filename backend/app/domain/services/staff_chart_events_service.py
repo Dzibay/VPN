@@ -5,11 +5,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
 from app.domain.models.staff_chart_events import StaffChartEventCreate, StaffChartEventRead
+from app.domain.tenant.admin_project_scope import apply_project_scope
 from app.infrastructure.persistence.models.staff_chart_event import StaffChartEvent
 
 
 async def list_staff_chart_events(session: AsyncSession) -> list[StaffChartEventRead]:
-    stmt = select(StaffChartEvent).order_by(StaffChartEvent.event_at.asc())
+    stmt = apply_project_scope(
+        select(StaffChartEvent).order_by(StaffChartEvent.event_at.asc()),
+        StaffChartEvent,
+    )
     rows = (await session.scalars(stmt)).all()
     return [StaffChartEventRead.model_validate(r) for r in rows]
 

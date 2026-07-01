@@ -69,7 +69,7 @@ class SitePaymentTariffsResponse(BaseModel):
 
 
 class YookassaCheckoutBody(BaseModel):
-    months: int = Field(ge=1, le=120, description="Срок из yookassa_tariffs.json")
+    months: int = Field(ge=1, le=120, description="Срок из project_tariffs текущего проекта")
 
 
 class TelegramYookassaCheckoutBody(BaseModel):
@@ -79,7 +79,7 @@ class TelegramYookassaCheckoutBody(BaseModel):
     months: int = Field(
         ge=1,
         le=120,
-        description="Срок разовой оплаты в месяцах; цена берётся из yookassa_tariffs.json (не из запроса).",
+        description="Срок разовой оплаты; цена берётся из project_tariffs текущего проекта.",
     )
 
 

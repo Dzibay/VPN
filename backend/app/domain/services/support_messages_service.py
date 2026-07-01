@@ -12,6 +12,7 @@ from app.domain.models.support_messages import (
     StaffSupportMessageRead,
     SupportMessageRead,
 )
+from app.domain.tenant.admin_project_scope import admin_project_id, project_scope_clause
 from app.infrastructure.persistence.models.support_message import SupportMessage
 from app.infrastructure.persistence.models.user import User
 
@@ -181,15 +182,18 @@ async def mark_support_seen_for_user(
 
 async def staff_support_needs_reply_count(session: AsyncSession) -> int:
     """Число чатов, где последнее сообщение от пользователя (один запрос, для бейджа в шапке)."""
-    latest_per_user = (
+    latest_q = (
         select(
             SupportMessage.user_id,
             SupportMessage.author_kind,
         )
         .distinct(SupportMessage.user_id)
         .order_by(SupportMessage.user_id, SupportMessage.id.desc())
-        .subquery()
     )
+    scope = project_scope_clause(SupportMessage)
+    if scope is not None:
+        latest_q = latest_q.where(scope)
+    latest_per_user = latest_q.subquery()
     stmt = (
         select(func.count())
         .select_from(latest_per_user)
@@ -205,15 +209,15 @@ async def list_staff_support_chats(
     offset: int,
     only_needs_reply: bool = False,
 ) -> tuple[list[StaffSupportChatSummary], int, int]:
-    latest_subq = (
-        select(
-            SupportMessage.user_id.label("user_id"),
-            func.max(SupportMessage.id).label("last_message_id"),
-            func.count().label("messages_count"),
-        )
-        .group_by(SupportMessage.user_id)
-        .subquery()
-    )
+    msg_scope = project_scope_clause(SupportMessage)
+    latest_base = select(
+        SupportMessage.user_id.label("user_id"),
+        func.max(SupportMessage.id).label("last_message_id"),
+        func.count().label("messages_count"),
+    ).group_by(SupportMessage.user_id)
+    if msg_scope is not None:
+        latest_base = latest_base.where(msg_scope)
+    latest_subq = latest_base.subquery()
 
     base_stmt = (
         select(
@@ -270,12 +274,18 @@ async def list_user_support_messages_for_staff(
     user = await session.get(User, user_id)
     if user is None:
         raise NotFoundError("Пользователь не найден")
+    pid = admin_project_id()
+    if pid is not None and int(user.project_id) != pid:
+        raise NotFoundError("Пользователь не найден")
 
     count_stmt = (
         select(func.count())
         .select_from(SupportMessage)
         .where(SupportMessage.user_id == user_id)
     )
+    scope = project_scope_clause(SupportMessage)
+    if scope is not None:
+        count_stmt = count_stmt.where(scope)
     stmt = (
         select(SupportMessage)
         .where(SupportMessage.user_id == user_id)
@@ -283,6 +293,8 @@ async def list_user_support_messages_for_staff(
         .limit(limit)
         .offset(offset)
     )
+    if scope is not None:
+        stmt = stmt.where(scope)
     total = int(await session.scalar(count_stmt) or 0)
     rows = list((await session.scalars(stmt)).all())
     staff_users = (

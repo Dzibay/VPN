@@ -1,6 +1,13 @@
 -- Признание выручки помесячно от даты платежа и баланс обязательств («замороженные деньги»).
 -- Оптимизация: recognition_dates вместо generate_series внутри thaw_frac на каждую eval_point.
-CREATE OR REPLACE FUNCTION rpc_finance_deferred_summary (p_from date, p_to date)
+DROP FUNCTION IF EXISTS rpc_finance_deferred_summary(date, date);
+
+-- Multi-tenant: p_project_id=NULL → агрегат.
+CREATE OR REPLACE FUNCTION rpc_finance_deferred_summary (
+    p_from date,
+    p_to date,
+    p_project_id bigint DEFAULT NULL
+)
 RETURNS jsonb
 LANGUAGE sql
 STABLE
@@ -35,7 +42,8 @@ pp AS (
         GREATEST(p.months, 0) AS pay_months
     FROM payments p
     CROSS JOIN params pr
-    WHERE (p.created_at AT TIME ZONE 'Europe/Moscow')::date <= pr.unlock_horizon
+    WHERE (p_project_id IS NULL OR p.project_id = p_project_id)
+      AND (p.created_at AT TIME ZONE 'Europe/Moscow')::date <= pr.unlock_horizon
       AND (
           p.months = 0
           AND (p.created_at AT TIME ZONE 'Europe/Moscow')::date
@@ -148,6 +156,7 @@ refund_snap AS (
     FROM refunds r
     WHERE r.status = 'succeeded'
       AND r.refunded_on <= (SELECT as_of FROM params)
+      AND (p_project_id IS NULL OR r.project_id = p_project_id)
 ),
 snap AS (
     SELECT
@@ -169,6 +178,7 @@ paid_sub_users AS (
     FROM payments p
     WHERE p.user_id IS NOT NULL
       AND p.months > 0
+      AND (p_project_id IS NULL OR p.project_id = p_project_id)
 ),
 active_paid AS (
     SELECT COUNT(DISTINCT u.id)::bigint AS cnt
@@ -178,6 +188,7 @@ active_paid AS (
     WHERE u.registered_at IS NOT NULL
       AND u.subscription_until IS NOT NULL
       AND u.subscription_until >= pr.as_of
+      AND (p_project_id IS NULL OR u.project_id = p_project_id)
 ),
 unlock_chunks AS (
     SELECT

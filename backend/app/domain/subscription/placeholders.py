@@ -7,8 +7,8 @@ from typing import Any, Literal
 import yaml
 
 from app.config import Settings, settings
-from app.constants import BRAND_NAME
 from app.domain.models.subscription import SubscriptionPayload
+from app.domain.tenant.branding import resolve_brand_name
 from app.domain.public_urls import _telegram_bot_username_clean
 from app.domain.subscription.happ_subscription_encode import (
     encode_subscription_base64_lines,
@@ -124,16 +124,17 @@ def build_clash_subscription_placeholder_yaml(
     cfg = cfg or settings
     remarks = subscription_placeholder_remarks(reason, cfg=cfg)
     proxies = [{"name": remark, "type": "direct", "udp": True} for remark in remarks]
+    brand = resolve_brand_name()
     doc: dict[str, Any] = {
         "proxies": proxies,
         "proxy-groups": [
             {
-                "name": BRAND_NAME,
+                "name": brand,
                 "type": "select",
                 "proxies": list(remarks),
             }
         ],
-        "rules": [f"MATCH,{BRAND_NAME}"],
+        "rules": [f"MATCH,{brand}"],
     }
     return yaml.safe_dump(
         doc,

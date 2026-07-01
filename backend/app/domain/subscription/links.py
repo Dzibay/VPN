@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings, settings
 from app.core.request_subject import bind_request_subject_from_subscription_user
 from app.domain.subscription.public_base import site_address_to_public_origin
+from app.domain.tenant.project_context import get_current_project
 from app.infrastructure.database.operations import table_select_one
 from app.infrastructure.persistence.models.user import User
 
@@ -22,6 +23,9 @@ def normalize_subscription_store_platform(raw: str | None) -> str | None:
 
 def subscription_public_base_url(cfg: Settings | None = None) -> str:
     cfg = cfg or settings
+    project = get_current_project()
+    if project is not None and project.primary_domain:
+        return site_address_to_public_origin(project.primary_domain)
     return site_address_to_public_origin(cfg.site_address)
 
 

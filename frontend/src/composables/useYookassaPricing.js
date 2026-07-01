@@ -135,7 +135,7 @@ export function buildLandingPlans(tariffs, monthsList, metaByMonths) {
 }
 
 /**
- * Тарифы с API (источник — backend/app/data/yookassa_tariffs.json).
+ * Тарифы с API (источник — project_tariffs текущего проекта).
  * @param {string} [fetchPath='/api/payments/tariffs']
  */
 export function useYookassaPricing(fetchPath = '/api/payments/tariffs') {

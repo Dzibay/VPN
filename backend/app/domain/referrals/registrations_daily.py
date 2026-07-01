@@ -15,6 +15,7 @@ from app.domain.models.referral_links import (
     ReferralTrafficRegistrationsDailySummary,
 )
 from app.domain.users.stats_qualification import user_counts_in_admin_stats
+from app.domain.tenant.admin_project_scope import apply_project_scope, project_scope_clause
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.user import User
 
@@ -39,6 +40,16 @@ async def referral_traffic_registrations_daily(
     with_tg = User.telegram_id.is_not(None)
     without_tg = User.telegram_id.is_(None)
 
+    scope = project_scope_clause(User)
+    where_parts = [
+        stats_user,
+        User.registered_at.is_not(None),
+        reg_msk_day >= start,
+        reg_msk_day <= today,
+    ]
+    if scope is not None:
+        where_parts.append(scope)
+
     count_rows = (
         await session.execute(
             select(
@@ -51,12 +62,7 @@ async def referral_traffic_registrations_daily(
             )
             .select_from(User)
             .outerjoin(ReferralLink, User.referral_link_id == ReferralLink.id)
-            .where(
-                stats_user,
-                User.registered_at.is_not(None),
-                reg_msk_day >= start,
-                reg_msk_day <= today,
-            )
+            .where(*where_parts)
             .group_by(reg_msk_day),
         )
     ).all()
@@ -118,13 +124,16 @@ async def referral_tokens_registrations_daily(
 
     link_rows = (
         await session.execute(
-            select(
-                ReferralLink.id,
-                ReferralLink.token,
-                ReferralLink.registrations_count,
-            )
-            .where(ReferralLink.registrations_count > threshold)
-            .order_by(ReferralLink.registrations_count.desc(), ReferralLink.id.asc()),
+            apply_project_scope(
+                select(
+                    ReferralLink.id,
+                    ReferralLink.token,
+                    ReferralLink.registrations_count,
+                )
+                .where(ReferralLink.registrations_count > threshold)
+                .order_by(ReferralLink.registrations_count.desc(), ReferralLink.id.asc()),
+                ReferralLink,
+            ),
         )
     ).all()
     if not link_rows:
@@ -136,6 +145,17 @@ async def referral_tokens_registrations_daily(
     link_ids = [int(r[0]) for r in link_rows]
     reg_msk_day = cast(func.timezone("Europe/Moscow", User.registered_at), Date)
 
+    scope = project_scope_clause(User)
+    user_where = [
+        User.referral_link_id.in_(link_ids),
+        User.registered_at.is_not(None),
+        user_counts_in_admin_stats(User),
+        reg_msk_day >= start,
+        reg_msk_day <= today,
+    ]
+    if scope is not None:
+        user_where.append(scope)
+
     count_rows = (
         await session.execute(
             select(
@@ -143,13 +163,7 @@ async def referral_tokens_registrations_daily(
                 reg_msk_day.label("reg_day"),
                 func.count().label("cnt"),
             )
-            .where(
-                User.referral_link_id.in_(link_ids),
-                User.registered_at.is_not(None),
-                user_counts_in_admin_stats(User),
-                reg_msk_day >= start,
-                reg_msk_day <= today,
-            )
+            .where(*user_where)
             .group_by(User.referral_link_id, reg_msk_day),
         )
     ).all()

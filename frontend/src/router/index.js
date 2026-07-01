@@ -1,22 +1,23 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import {
-  canAccessReferralsAdmin,
-  defaultPathAfterLogin,
-  isAdminRole,
-} from '../auth/permissions.js'
+import { defaultPathAfterLogin, isAdminRole } from '../auth/permissions.js'
 import {
   consumeCabinetSsoFragment,
+  clearSession,
   getAccessToken,
   getSessionRole,
-  isAdminJwtRequired,
 } from '../auth/session.js'
-import { fetchJson } from '../api/client.js'
 import { ensureIpBlockStatus } from '../auth/ipBlock.js'
 import { buildSeoPageRoutes } from '../content/seo/index.js'
 
 /**
- * Ленивые импорты вью: каждый роут — отдельный chunk.
- * Посетитель лендинга `/` не грузит админку и Chart.js.
+ * ВНИМАНИЕ: с момента переноса админки на отдельный домен (frontend-admin, ADMIN_SITE_ADDRESS)
+ * публичный SPA больше НЕ содержит роутов /admin/*. Файлы во frontend/src/views/Admin*.vue,
+ * components/Admin*.vue и т.п. физически остаются (их через vite alias @legacy-* импортирует
+ * frontend-admin), но здесь они не роутятся и не попадают в клиентский бандл (tree-shaking
+ * по import chunks — админские import()'ы удалены отсюда).
+ *
+ * Всё, что осталось: лендинг, кабинет пользователя, аутентификация клиента, юридические
+ * страницы, SEO-лендинги и подписка.
  */
 const HomeView = () => import('../views/HomeView.vue')
 const UserLoginView = () => import('../views/UserLoginView.vue')
@@ -33,35 +34,7 @@ const CabinetPayView = () => import('../views/CabinetPayView.vue')
 const CabinetPayReturnView = () => import('../views/CabinetPayReturnView.vue')
 const CabinetPayReturnBotView = () => import('../views/CabinetPayReturnBotView.vue')
 const SubscriptionOpenView = () => import('../views/SubscriptionOpenView.vue')
-const AdminTablesPage = () => import('../views/AdminTablesPage.vue')
-const ReferralFunnelView = () => import('../views/ReferralFunnelView.vue')
-const ReferralTokensAdminPage = () =>
-  import('../views/ReferralTokensAdminPage.vue')
-const RegistrationsByDateStaffView = () =>
-  import('../views/RegistrationsByDateStaffView.vue')
-const ServerAnalyticsView = () => import('../views/ServerAnalyticsView.vue')
-const AdminTrafficStaffView = () => import('../views/AdminTrafficStaffView.vue')
-const UserAnalyticsView = () => import('../views/UserAnalyticsView.vue')
-const UsersAnalyticsStaffView = () =>
-  import('../views/UsersAnalyticsStaffView.vue')
-
-const AdminHttpRequestLogsView = () =>
-  import('../views/AdminHttpRequestLogsView.vue')
-const AdminBlockedIpsView = () => import('../views/AdminBlockedIpsView.vue')
-const AdminSubscriptionUserAgentStatsView = () =>
-  import('../views/AdminSubscriptionUserAgentStatsView.vue')
-const AdminServersReachabilityView = () =>
-  import('../views/AdminServersReachabilityView.vue')
-const AdminPaymentsStaffView = () =>
-  import('../views/AdminPaymentsStaffView.vue')
-const AdminFinanceStaffView = () =>
-  import('../views/AdminFinanceStaffView.vue')
-const AdminSummaryStaffView = () =>
-  import('../views/AdminSummaryStaffView.vue')
-const AdminTasksStaffView = () => import('../views/AdminTasksStaffView.vue')
-const AdminSupportStaffView = () => import('../views/AdminSupportStaffView.vue')
 const LegalDocumentView = () => import('../views/LegalDocumentView.vue')
-const SeoPagesAdminView = () => import('../views/SeoPagesAdminView.vue')
 const BlockedIpView = () => import('../views/BlockedIpView.vue')
 
 const routes = [
@@ -164,105 +137,10 @@ const routes = [
     name: 'subscription-open',
     component: SubscriptionOpenView,
   },
+  // Любые попытки перейти на /admin/* — редиректим на главную (админка переехала на ADMIN_SITE_ADDRESS).
   {
-    path: '/admin/summary',
-    name: 'admin-summary-staff',
-    component: AdminSummaryStaffView,
-  },
-  {
-    path: '/admin/logs',
-    name: 'admin-http-logs',
-    component: AdminHttpRequestLogsView,
-  },
-  {
-    path: '/admin/blocked-ips',
-    name: 'admin-blocked-ips',
-    component: AdminBlockedIpsView,
-    meta: { adminOnly: true },
-  },
-  {
-    path: '/admin/referrals',
-    name: 'admin-referrals',
-    component: ReferralTokensAdminPage,
-  },
-  {
-    path: '/admin/seo-pages',
-    name: 'admin-seo-pages',
-    component: SeoPagesAdminView,
-  },
-  {
-    path: '/admin/payments',
-    name: 'admin-payments-staff',
-    component: AdminPaymentsStaffView,
-  },
-  {
-    path: '/admin/finance',
-    name: 'admin-finance-staff',
-    component: AdminFinanceStaffView,
-  },
-  {
-    path: '/admin/tasks',
-    name: 'admin-tasks-staff',
-    component: AdminTasksStaffView,
-  },
-  {
-    path: '/admin/support',
-    name: 'admin-support-staff',
-    component: AdminSupportStaffView,
-  },
-  {
-    path: '/admin/funnel',
-    name: 'admin-funnel',
-    component: ReferralFunnelView,
-  },
-  {
-    path: '/admin/users/analytics',
-    name: 'admin-users-staff-analytics',
-    component: UsersAnalyticsStaffView,
-  },
-  {
-    path: '/admin/users/registrations-by-date',
-    name: 'admin-users-registrations-by-date',
-    component: RegistrationsByDateStaffView,
-  },
-  {
-    path: '/admin/users/subscription-user-agent-stats',
-    name: 'admin-subscription-user-agent-stats',
-    component: AdminSubscriptionUserAgentStatsView,
-  },
-  {
-    path: '/admin/users/:userId/analytics',
-    name: 'admin-user-analytics',
-    component: UserAnalyticsView,
-  },
-  { path: '/admin/users', redirect: '/admin/users/analytics' },
-  {
-    path: '/admin/servers',
-    name: 'admin-servers',
-    component: AdminTablesPage,
-  },
-  {
-    path: '/admin/servers/reachability',
-    name: 'admin-servers-reachability',
-    component: AdminServersReachabilityView,
-  },
-  {
-    path: '/admin/analytics',
-    name: 'admin-analytics',
-    component: ServerAnalyticsView,
-  },
-  {
-    path: '/admin/traffic',
-    name: 'admin-traffic',
-    component: AdminTrafficStaffView,
-  },
-  { path: '/admin/users-analytics', redirect: '/admin/users/analytics' },
-  {
-    path: '/admin',
-    redirect: (to) =>
-      to.query.tab === 'servers'
-        ? { path: '/admin/servers' }
-        : { path: '/admin/summary' },
+    path: '/admin/:pathMatch(.*)*',
+    redirect: { name: 'login', query: { admin_moved: '1' } },
   },
 ]
 
@@ -280,10 +158,6 @@ export const router = createRouter({
   },
 })
 
-function isAdminProtectedRoute(to) {
-  return to.path.startsWith('/admin')
-}
-
 router.beforeEach(async (to, _from, next) => {
   if (consumeCabinetSsoFragment(to.name)) {
     return next({ name: 'cabinet', replace: true })
@@ -300,16 +174,19 @@ router.beforeEach(async (to, _from, next) => {
   const token = getAccessToken()
   const role = getSessionRole()
 
-  if (to.meta?.adminOnly) {
-    if (!isAdminRole(role)) {
-      if (!token) {
-        return next({
-          name: 'login',
-          query: { redirect: to.fullPath },
-        })
-      }
-      return next({ path: defaultPathAfterLogin(role) })
-    }
+  // Устаревший JWT с ролью admin/manager (из users до переноса админки) — сбрасываем.
+  const isCabinetRoute =
+    to.name === 'cabinet' ||
+    to.name === 'cabinet-instructions' ||
+    to.name === 'cabinet-support' ||
+    to.name === 'cabinet-pay' ||
+    to.name === 'cabinet-pay-return'
+  if (isCabinetRoute && token && (isAdminRole(role) || role === 'manager')) {
+    clearSession()
+    return next({
+      name: 'login',
+      query: { admin_moved: '1', redirect: to.fullPath },
+    })
   }
 
   if (
@@ -327,64 +204,13 @@ router.beforeEach(async (to, _from, next) => {
   }
 
   if ((to.name === 'login' || to.name === 'register') && token) {
-    if (isAdminRole(role)) {
-      return next({ path: defaultPathAfterLogin(role) })
+    if (isAdminRole(role) || role === 'manager') {
+      // На публичном сайте для admin/manager кабинета нет. Сессию не сбрасываем
+      // (её отдал старый /api/auth/login), но UI-навигация ведёт на главную —
+      // а UserLoginView покажет плашку «Войдите в админку на admin.<domain>».
+      return next({ path: '/' })
     }
-    if (role === 'manager') {
-      return next({ path: '/admin/referrals' })
-    }
-    return next({ path: '/cabinet' })
-  }
-
-  const isAdminSection = isAdminProtectedRoute(to)
-
-  if (isAdminSection) {
-    const required = await isAdminJwtRequired()
-    if (required) {
-      if (!token) {
-        return next({
-          name: 'login',
-          query: { redirect: to.fullPath },
-        })
-      }
-      const isReferralsRoute = to.name === 'admin-referrals'
-      const isSeoPagesRoute = to.name === 'admin-seo-pages'
-      const isSummaryStaff = to.name === 'admin-summary-staff'
-      const isUsersAnalyticsStaff = to.name === 'admin-users-staff-analytics'
-      const isUserPerAnalytics = to.name === 'admin-user-analytics'
-      const isMarketingFunnel = to.name === 'admin-funnel'
-      const isRegistrationsByDate = to.name === 'admin-users-registrations-by-date'
-      const isHttpLogsStaff = to.name === 'admin-http-logs'
-      const isSubscriptionUaStatsStaff =
-        to.name === 'admin-subscription-user-agent-stats'
-      const isPaymentsStaff = to.name === 'admin-payments-staff'
-      const isFinanceStaff = to.name === 'admin-finance-staff'
-      const isTasksStaff = to.name === 'admin-tasks-staff'
-      const isSupportStaff = to.name === 'admin-support-staff'
-      if (
-        isReferralsRoute ||
-        isSeoPagesRoute ||
-        isSummaryStaff ||
-        isUsersAnalyticsStaff ||
-        isUserPerAnalytics ||
-        isMarketingFunnel ||
-        isRegistrationsByDate ||
-        isHttpLogsStaff ||
-        isSubscriptionUaStatsStaff ||
-        isPaymentsStaff ||
-        isFinanceStaff ||
-        isTasksStaff ||
-        isSupportStaff
-      ) {
-        if (!canAccessReferralsAdmin(role)) {
-          return next({ path: '/cabinet' })
-        }
-      } else if (!isAdminRole(role)) {
-        return next({
-          path: defaultPathAfterLogin(role),
-        })
-      }
-    }
+    return next({ path: defaultPathAfterLogin(role) })
   }
 
   return next()

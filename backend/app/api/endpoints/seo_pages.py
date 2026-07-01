@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Response
 from app.core.dependencies import ReadonlySessionDep, SessionDep, require_referrals_staff
 from app.domain.models.seo_pages import SeoPageOut, SeoPageTrackBody
 from app.domain.seo_pages.repository import increment_seo_page_views, list_seo_pages
+from app.domain.tenant.admin_project_scope import admin_project_id
 
 staff_router = APIRouter(
     prefix="/seo-pages",
@@ -44,5 +45,5 @@ async def track_seo_page_view(
     summary="Список SEO-страниц и счётчики переходов",
 )
 async def get_seo_pages_staff(session: ReadonlySessionDep) -> list[SeoPageOut]:
-    rows = await list_seo_pages(session)
+    rows = await list_seo_pages(session, project_id=admin_project_id())
     return [_row_to_out(r) for r in rows]

@@ -23,8 +23,10 @@ import { useTableSort, appendTableSortParams } from '../utils/adminTableSort.js'
 
 const route = useRoute()
 
+const SERVER_SECTION_ROUTE_NAMES = new Set(['admin-servers', 'infra-servers'])
+
 const section = computed(() =>
-  route.name === 'admin-servers' ? 'servers' : 'users',
+  SERVER_SECTION_ROUTE_NAMES.has(route.name) ? 'servers' : 'users',
 )
 
 const users = ref([])

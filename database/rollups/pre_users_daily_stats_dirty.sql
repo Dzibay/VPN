@@ -1,10 +1,33 @@
--- Умный кэш stats_users_daily_msk: очередь «грязных» холодных дней + триггеры на источники.
--- «Горячее» окно (последние N дней МСК) всегда считается на чтении в rpc_users_daily_stats.
+-- Multi-tenant очередь «грязных» дней + триггеры на источники.
+-- PK: (project_id, stats_date). Триггеры пишут project_id из NEW/OLD-строк.
+
+-- Убираем старые (single-tenant) сигнатуры, чтобы CREATE OR REPLACE ниже не создавал
+-- вторую перегрузку — иначе SQL-вызовы будут падать на ambiguity.
+DROP FUNCTION IF EXISTS fn_stats_users_daily_mark_dirty(date, date);
+DROP FUNCTION IF EXISTS fn_stats_users_daily_mark_recent_cold_dirty(integer);
+DROP FUNCTION IF EXISTS fn_stats_users_daily_mark_cache_gaps_dirty();
 
 CREATE TABLE IF NOT EXISTS stats_users_daily_dirty (
-    stats_date date PRIMARY KEY,
+    stats_date date NOT NULL,
     dirty_at timestamptz NOT NULL DEFAULT now()
 );
+
+DO $mig$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'stats_users_daily_dirty' AND column_name = 'project_id'
+    ) THEN
+        ALTER TABLE stats_users_daily_dirty
+            ADD COLUMN project_id BIGINT NOT NULL DEFAULT 1
+                REFERENCES projects (id) ON DELETE CASCADE;
+        ALTER TABLE stats_users_daily_dirty ALTER COLUMN project_id DROP DEFAULT;
+        ALTER TABLE stats_users_daily_dirty DROP CONSTRAINT IF EXISTS stats_users_daily_dirty_pkey;
+        ALTER TABLE stats_users_daily_dirty
+            ADD CONSTRAINT stats_users_daily_dirty_pkey
+                PRIMARY KEY (project_id, stats_date);
+    END IF;
+END $mig$;
 
 CREATE INDEX IF NOT EXISTS idx_stats_users_daily_dirty_at
     ON stats_users_daily_dirty (dirty_at);
@@ -31,6 +54,7 @@ SELECT (
 $$;
 
 CREATE OR REPLACE FUNCTION fn_stats_users_daily_mark_dirty (
+    p_project_id bigint,
     p_from date,
     p_to date
 )
@@ -43,6 +67,9 @@ DECLARE
     d_to date;
     cold_to date;
 BEGIN
+    IF p_project_id IS NULL THEN
+        RAISE EXCEPTION 'fn_stats_users_daily_mark_dirty: p_project_id обязателен';
+    END IF;
     IF p_from IS NULL AND p_to IS NULL THEN
         RETURN;
     END IF;
@@ -63,24 +90,40 @@ BEGIN
         RETURN;
     END IF;
 
-    INSERT INTO stats_users_daily_dirty (stats_date)
-    SELECT gs::date
+    INSERT INTO stats_users_daily_dirty (project_id, stats_date)
+    SELECT p_project_id, gs::date
     FROM generate_series(d_from, d_to, interval '1 day') AS gs
-    ON CONFLICT (stats_date) DO NOTHING;
+    ON CONFLICT (project_id, stats_date) DO NOTHING;
 END;
 $$;
 
 CREATE OR REPLACE FUNCTION fn_stats_users_daily_mark_recent_cold_dirty (
+    p_project_id bigint,
     p_days integer DEFAULT 90
 )
 RETURNS void
-LANGUAGE sql
+LANGUAGE plpgsql
 SET search_path TO public
 AS $$
-SELECT fn_stats_users_daily_mark_dirty(
-    fn_stats_users_daily_hot_start() - GREATEST(p_days, 1),
-    fn_stats_users_daily_hot_start() - 1
-);
+DECLARE
+    pid bigint;
+BEGIN
+    IF p_project_id IS NOT NULL THEN
+        PERFORM fn_stats_users_daily_mark_dirty(
+            p_project_id,
+            fn_stats_users_daily_hot_start() - GREATEST(p_days, 1),
+            fn_stats_users_daily_hot_start() - 1
+        );
+        RETURN;
+    END IF;
+    FOR pid IN SELECT id FROM projects WHERE is_active = TRUE LOOP
+        PERFORM fn_stats_users_daily_mark_dirty(
+            pid,
+            fn_stats_users_daily_hot_start() - GREATEST(p_days, 1),
+            fn_stats_users_daily_hot_start() - 1
+        );
+    END LOOP;
+END;
 $$;
 
 CREATE OR REPLACE FUNCTION fn_stats_users_daily_dirty_count ()
@@ -92,8 +135,11 @@ AS $$
 SELECT COUNT(*)::bigint FROM stats_users_daily_dirty;
 $$;
 
--- Пометить холодные дни, отсутствующие в кэше (догон после частичного заполнения).
-CREATE OR REPLACE FUNCTION fn_stats_users_daily_mark_cache_gaps_dirty ()
+-- Пометить холодные дни, отсутствующие в кэше (догон после частичного заполнения),
+-- для одного проекта.
+CREATE OR REPLACE FUNCTION fn_stats_users_daily_mark_cache_gaps_dirty (
+    p_project_id bigint
+)
 RETURNS integer
 LANGUAGE plpgsql
 SET search_path TO public
@@ -103,6 +149,9 @@ DECLARE
     d_from date;
     n integer;
 BEGIN
+    IF p_project_id IS NULL THEN
+        RAISE EXCEPTION 'fn_stats_users_daily_mark_cache_gaps_dirty: p_project_id обязателен';
+    END IF;
     IF cold_to < '1970-01-01'::date THEN
         RETURN 0;
     END IF;
@@ -111,6 +160,7 @@ BEGIN
     INTO d_from
     FROM users u
     WHERE u.registered_at IS NOT NULL
+      AND u.project_id = p_project_id
       AND (
           u.telegram_id IS NOT NULL
           OR (
@@ -125,27 +175,23 @@ BEGIN
         RETURN 0;
     END IF;
 
-    INSERT INTO stats_users_daily_dirty (stats_date)
-    SELECT gs::date
+    INSERT INTO stats_users_daily_dirty (project_id, stats_date)
+    SELECT p_project_id, gs::date
     FROM generate_series(d_from, cold_to, interval '1 day') AS gs
     WHERE NOT EXISTS (
         SELECT 1
         FROM stats_users_daily_msk s
-        WHERE s.stats_date = gs::date
+        WHERE s.project_id = p_project_id AND s.stats_date = gs::date
     )
-    ON CONFLICT (stats_date) DO NOTHING;
+    ON CONFLICT (project_id, stats_date) DO NOTHING;
 
     GET DIAGNOSTICS n = ROW_COUNT;
     RETURN n;
 END;
 $$;
 
--- fn_stats_users_daily_flush_dirty — в post_users_daily_stats_mv.sql (после compute).
-
 -- --- триггеры ---
 
--- Триггер на users: помечаем только ХОЛОДНЫЕ дни. Горячее окно всегда live-compute,
--- поэтому пометки внутри него — пустая работа.
 CREATE OR REPLACE FUNCTION trg_users_daily_stats_dirty ()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -157,8 +203,10 @@ DECLARE
     d_to date := NULL;
     d date;
     candidates date[];
+    pid bigint;
 BEGIN
     IF TG_OP = 'DELETE' THEN
+        pid := OLD.project_id;
         candidates := ARRAY[
             CASE WHEN OLD.registered_at IS NOT NULL
                  THEN (OLD.registered_at AT TIME ZONE 'Europe/Moscow')::date END,
@@ -166,6 +214,7 @@ BEGIN
                  THEN OLD.subscription_until::date + 1 END
         ];
     ELSE
+        pid := NEW.project_id;
         IF TG_OP = 'UPDATE' AND NOT (
             OLD.registered_at IS DISTINCT FROM NEW.registered_at
             OR OLD.subscription_until IS DISTINCT FROM NEW.subscription_until
@@ -196,8 +245,8 @@ BEGIN
         IF d_to IS NULL OR d > d_to THEN d_to := d; END IF;
     END LOOP;
 
-    IF d_from IS NOT NULL THEN
-        PERFORM fn_stats_users_daily_mark_dirty(d_from, d_to);
+    IF d_from IS NOT NULL AND pid IS NOT NULL THEN
+        PERFORM fn_stats_users_daily_mark_dirty(pid, d_from, d_to);
     END IF;
 
     IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
@@ -223,27 +272,31 @@ DECLARE
     d_new date;
     d_from date;
     d_to date;
+    pid bigint;
 BEGIN
     IF TG_OP = 'DELETE' THEN
+        pid := OLD.project_id;
         d_old := (OLD.created_at AT TIME ZONE 'Europe/Moscow')::date;
-        IF d_old <= cold_to THEN
-            PERFORM fn_stats_users_daily_mark_dirty(d_old, d_old);
+        IF pid IS NOT NULL AND d_old <= cold_to THEN
+            PERFORM fn_stats_users_daily_mark_dirty(pid, d_old, d_old);
         END IF;
         RETURN OLD;
     ELSIF TG_OP = 'UPDATE' THEN
+        pid := NEW.project_id;
         d_old := (OLD.created_at AT TIME ZONE 'Europe/Moscow')::date;
         d_new := (NEW.created_at AT TIME ZONE 'Europe/Moscow')::date;
         d_from := LEAST(d_old, d_new);
         d_to := LEAST(GREATEST(d_old, d_new), cold_to);
-        IF d_from <= cold_to THEN
-            PERFORM fn_stats_users_daily_mark_dirty(d_from, d_to);
+        IF pid IS NOT NULL AND d_from <= cold_to THEN
+            PERFORM fn_stats_users_daily_mark_dirty(pid, d_from, d_to);
         END IF;
         RETURN NEW;
     END IF;
 
+    pid := NEW.project_id;
     d_new := (NEW.created_at AT TIME ZONE 'Europe/Moscow')::date;
-    IF d_new <= cold_to THEN
-        PERFORM fn_stats_users_daily_mark_dirty(d_new, d_new);
+    IF pid IS NOT NULL AND d_new <= cold_to THEN
+        PERFORM fn_stats_users_daily_mark_dirty(pid, d_new, d_new);
     END IF;
     RETURN NEW;
 END;
@@ -264,15 +317,18 @@ AS $$
 DECLARE
     cold_to date := fn_stats_users_daily_hot_start() - 1;
     d_day date;
+    pid bigint;
 BEGIN
     IF TG_OP = 'DELETE' THEN
+        pid := OLD.project_id;
         d_day := (OLD.created_at AT TIME ZONE 'Europe/Moscow')::date;
     ELSE
+        pid := NEW.project_id;
         d_day := (NEW.created_at AT TIME ZONE 'Europe/Moscow')::date;
     END IF;
 
-    IF d_day <= cold_to THEN
-        PERFORM fn_stats_users_daily_mark_dirty(d_day, d_day);
+    IF pid IS NOT NULL AND d_day <= cold_to THEN
+        PERFORM fn_stats_users_daily_mark_dirty(pid, d_day, d_day);
     END IF;
 
     IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
@@ -287,43 +343,42 @@ AFTER INSERT OR DELETE ON subscription_devices
 FOR EACH ROW
 EXECUTE FUNCTION trg_subscription_devices_daily_stats_dirty ();
 
--- Триггер на трафик: мы метим dirty только ХОЛОДНЫЕ дни.
--- Горячее окно всегда live-compute, его пометки бесполезны и расточительны.
--- Большая часть трафика пишется за вчера/сегодня → попадает в горячее окно
--- → trg вообще ничего не помечает. mark_dirty внутри уже отфильтровывает
--- > cold_to, но мы дополнительно избегаем вызова функции через быструю проверку.
+-- Statement-level trigger по трафику: помечаем dirty ПО КАЖДОМУ project_id, встречающемуся
+-- в OLD/NEW-строках. Один проход через GROUP BY project_id.
 CREATE OR REPLACE FUNCTION trg_user_server_traffic_stats_dirty_stmt ()
 RETURNS trigger
 LANGUAGE plpgsql
 SET search_path TO public
 AS $$
 DECLARE
-    d_min date;
-    d_max date;
-    cold_to date;
+    cold_to date := fn_stats_users_daily_hot_start() - 1;
+    rec RECORD;
 BEGIN
-    cold_to := fn_stats_users_daily_hot_start() - 1;
-
     IF TG_OP = 'DELETE' THEN
-        SELECT MIN(traffic_date), MAX(traffic_date)
-        INTO d_min, d_max
-        FROM old_traffic;
+        FOR rec IN
+            SELECT project_id, MIN(traffic_date) AS d_min, MAX(traffic_date) AS d_max
+            FROM old_traffic
+            GROUP BY project_id
+        LOOP
+            IF rec.d_min IS NOT NULL AND rec.d_min <= cold_to AND rec.project_id IS NOT NULL THEN
+                PERFORM fn_stats_users_daily_mark_dirty(
+                    rec.project_id, rec.d_min - 1, LEAST(rec.d_max, cold_to)
+                );
+            END IF;
+        END LOOP;
     ELSE
-        SELECT MIN(traffic_date), MAX(traffic_date)
-        INTO d_min, d_max
-        FROM new_traffic;
+        FOR rec IN
+            SELECT project_id, MIN(traffic_date) AS d_min, MAX(traffic_date) AS d_max
+            FROM new_traffic
+            GROUP BY project_id
+        LOOP
+            IF rec.d_min IS NOT NULL AND rec.d_min <= cold_to AND rec.project_id IS NOT NULL THEN
+                PERFORM fn_stats_users_daily_mark_dirty(
+                    rec.project_id, rec.d_min - 1, LEAST(rec.d_max, cold_to)
+                );
+            END IF;
+        END LOOP;
     END IF;
-
-    -- ничего нового или всё в горячем окне → нечего помечать
-    IF d_min IS NULL OR d_min > cold_to THEN
-        RETURN NULL;
-    END IF;
-
-    -- Расширяем на один день вниз: LAG берёт предыдущий снимок.
-    PERFORM fn_stats_users_daily_mark_dirty(
-        d_min - 1,
-        LEAST(d_max, cold_to)
-    );
     RETURN NULL;
 END;
 $$;

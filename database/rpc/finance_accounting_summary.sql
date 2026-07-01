@@ -1,5 +1,12 @@
 -- Сводка бухгалтерии (P&L) по месяцам в диапазоне [p_from, p_to].
-CREATE OR REPLACE FUNCTION rpc_finance_accounting_summary (p_from date, p_to date)
+DROP FUNCTION IF EXISTS rpc_finance_accounting_summary(date, date);
+
+-- Multi-tenant: p_project_id=NULL → агрегат по всем проектам.
+CREATE OR REPLACE FUNCTION rpc_finance_accounting_summary (
+    p_from date,
+    p_to date,
+    p_project_id bigint DEFAULT NULL
+)
 RETURNS jsonb
 LANGUAGE sql
 STABLE
@@ -28,7 +35,8 @@ pay AS (
         SUM(s.net)::numeric(14, 2) AS net,
         SUM(s.cnt)::bigint AS cnt
     FROM stats_payments_daily_msk s
-    WHERE date_trunc('month', s.day_msk::timestamp)::date
+    WHERE (p_project_id IS NULL OR s.project_id = p_project_id)
+      AND date_trunc('month', s.day_msk::timestamp)::date
           BETWEEN (SELECT m_from FROM bounds) AND (SELECT m_to FROM bounds)
     GROUP BY 1, 2
 ),
@@ -49,7 +57,8 @@ exp_once AS (
         e.category_id,
         SUM(e.amount)::numeric(14, 2) AS amt
     FROM expenses e
-    WHERE date_trunc('month', e.incurred_on)::date
+    WHERE (p_project_id IS NULL OR e.project_id = p_project_id)
+      AND date_trunc('month', e.incurred_on)::date
           BETWEEN (SELECT m_from FROM bounds) AND (SELECT m_to FROM bounds)
     GROUP BY 1, 2
 ),
@@ -63,6 +72,7 @@ exp_recur AS (
         ON r.active = TRUE
         AND date_trunc('month', r.start_month)::date <= m.m_start
         AND (r.end_month IS NULL OR date_trunc('month', r.end_month)::date >= m.m_start)
+    WHERE (p_project_id IS NULL OR r.project_id = p_project_id)
     GROUP BY 1, 2
 ),
 exp_all AS (

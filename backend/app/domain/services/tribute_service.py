@@ -1,6 +1,6 @@
-"""Tribute: webhook подписки и разовой цифровой покупки; ссылки — ``app/data/tribute_tariffs.json``.
+"""Tribute: webhook подписки и разовой цифровой покупки.
 
-Цены для бота и сайта — ``app/data/yookassa_tariffs.json`` (см. :func:`tribute_payments_links_public_response`).
+Ссылки/цены для UI берутся из ``project_tariffs`` текущего проекта.
 
 Каждый HTTP webhook пишется в ``user_http_request_traces`` (см. ``http_audit_always_persist_for_path``).
 Зачисление подписки — через :func:`app.domain.services.payment_service.ingest_provider_payment`.
@@ -16,17 +16,19 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import constants
 from app.config import Settings
 from app.core.exceptions import BadRequestError, ServiceUnavailableError, UnauthorizedError
+from app.domain.tenant.project_context import get_current_project
 from app.domain.models.payments import (
     PaymentWebhookAck,
+    TributePaymentOptionItem,
     TributePaymentsLinksResponse,
     TributeWebhookAck,
 )
@@ -36,45 +38,50 @@ from app.domain.services.payment_service import (
     compute_tribute_net_amount,
     ingest_provider_payment,
 )
-from app.domain.services.yookassa_service import yookassa_tariffs_public_response
+from app.infrastructure.persistence.models.project_tariff import ProjectTariff
 from app.infrastructure.persistence.models.user import User
 
 log = logging.getLogger("app.tribute_service")
-
-_TRIBUTE_TARIFFS_JSON = Path(__file__).resolve().parents[2] / "data" / "tribute_tariffs.json"
 
 _PAID_SUBSCRIPTION_EVENTS = frozenset({"new_subscription", "renewed_subscription"})
 _PAID_DIGITAL_EVENTS = frozenset({"new_digital_product"})
 
 
-def tribute_payments_links_public_response() -> TributePaymentsLinksResponse:
-    """Ссылки из ``tribute_tariffs.json``; цены разовых тарифов — из ``yookassa_tariffs.json``."""
-    try:
-        raw = _TRIBUTE_TARIFFS_JSON.read_text(encoding="utf-8")
-    except OSError as e:
-        log.warning("Не удалось прочитать %s: %s", _TRIBUTE_TARIFFS_JSON, e)
-        return TributePaymentsLinksResponse(tariffs=[])
-    try:
-        response = TributePaymentsLinksResponse.model_validate_json(raw)
-    except ValidationError:
-        log.exception("Некорректный JSON тарифов: %s", _TRIBUTE_TARIFFS_JSON)
-        return TributePaymentsLinksResponse(tariffs=[])
+def _current_project_id() -> int:
+    project = get_current_project()
+    return int(project.id) if project is not None else 1
 
-    yookassa_prices = {
-        int(t.months): int(t.price)
-        for t in yookassa_tariffs_public_response().tariffs
-    }
-    if not yookassa_prices:
-        return response
 
-    merged = []
-    for item in response.tariffs:
-        if item.type != "single" or item.months is None:
-            merged.append(item)
+async def tribute_payments_links_public_response(session: AsyncSession) -> TributePaymentsLinksResponse:
+    rows = (
+        await session.execute(
+            select(ProjectTariff)
+            .where(
+                ProjectTariff.project_id == _current_project_id(),
+                ProjectTariff.provider == "tribute",
+                ProjectTariff.is_active.is_(True),
+                ProjectTariff.external_link.is_not(None),
+            )
+            .order_by(ProjectTariff.sort_order, ProjectTariff.months)
+        )
+    ).scalars().all()
+    items: list[TributePaymentOptionItem] = []
+    for row in rows:
+        link = (row.external_link or "").strip()
+        if not link:
             continue
-        price = yookassa_prices.get(int(item.months))
-        merged.append(item if price is None else item.model_copy(update={"price": price}))
-    return TributePaymentsLinksResponse(tariffs=merged)
+        is_recurring = (row.kind or "").strip().lower() == "recurring" or int(row.months) <= 0
+        items.append(
+            TributePaymentOptionItem(
+                months=None if is_recurring else int(row.months),
+                price=None if is_recurring or row.amount <= 0 else int(row.amount),
+                tg_link=row.external_tg_link,
+                web_link=link,
+                name=row.name or ("Подписка" if is_recurring else f"{int(row.months)} мес"),
+                type="recurring" if is_recurring else "single",
+            )
+        )
+    return TributePaymentsLinksResponse(tariffs=items)
 
 
 _PERIOD_TO_MONTHS: dict[str, int] = {
@@ -98,6 +105,12 @@ class _TributeWebhookParsed:
 
 
 def _require_tribute_api_key(settings: Settings) -> str:
+    """Per-project ключ (projects.tribute_api_key) с fallback на глобальный settings.tribute_api_key."""
+    project = get_current_project()
+    if project is not None:
+        project_key = (project.tribute_api_key or "").strip()
+        if project_key:
+            return project_key
     key = (settings.tribute_api_key or "").strip()
     if not key:
         raise ServiceUnavailableError(
@@ -152,7 +165,7 @@ class _DigitalProductPaidPayload(BaseModel):
     period: str | None = None
 
 
-def _resolve_new_digital_product_months(p: _DigitalProductPaidPayload) -> int | None:
+def _resolve_new_digital_product_months_legacy(p: _DigitalProductPaidPayload) -> int | None:
     if p.months is not None:
         m = int(p.months)
         if 1 <= m <= 120:
@@ -173,6 +186,33 @@ def _resolve_new_digital_product_months(p: _DigitalProductPaidPayload) -> int | 
         cfg = (label or "").strip()
         if cfg and cfg == pn:
             return months
+    return None
+
+
+async def _resolve_new_digital_product_months(
+    session: AsyncSession, p: _DigitalProductPaidPayload
+) -> int | None:
+    direct = _resolve_new_digital_product_months_legacy(p)
+    if direct is not None:
+        return direct
+
+    product_id = str(p.product_id).strip() if p.product_id is not None else ""
+    product_name = (p.product_name or "").strip()
+    if not product_id and not product_name:
+        return None
+
+    stmt = select(ProjectTariff).where(
+        ProjectTariff.project_id == _current_project_id(),
+        ProjectTariff.provider == "tribute",
+        ProjectTariff.is_active.is_(True),
+        ProjectTariff.months > 0,
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    for row in rows:
+        if product_id and str(row.external_product_id or "").strip() == product_id:
+            return int(row.months)
+        if product_name and (row.name or "").strip() == product_name:
+            return int(row.months)
     return None
 
 
@@ -228,13 +268,15 @@ def _parse_subscription_paid(*, event_name: str, payload: dict[str, Any]) -> _Tr
     )
 
 
-def _parse_digital_product_paid(*, payload: dict[str, Any]) -> _TributeWebhookParsed:
+async def _parse_digital_product_paid(
+    session: AsyncSession, *, payload: dict[str, Any]
+) -> _TributeWebhookParsed:
     try:
         p = _DigitalProductPaidPayload.model_validate(payload)
     except ValidationError:
         p = _DigitalProductPaidPayload()
 
-    months = _resolve_new_digital_product_months(p) or 0
+    months = await _resolve_new_digital_product_months(session, p) or 0
     amount_minor = _coerce_int(p.amount if p.amount is not None else payload.get("amount")) or 0
     telegram_user_id = _coerce_int(
         p.telegram_user_id if p.telegram_user_id is not None else payload.get("telegram_user_id"),
@@ -397,7 +439,7 @@ async def process_tribute_webhook_event(
         )
 
     if n == "new_digital_product":
-        parsed = _parse_digital_product_paid(payload=payload)
+        parsed = await _parse_digital_product_paid(session, payload=payload)
         return await _ingest_tribute_webhook(
             session,
             settings,

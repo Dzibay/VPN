@@ -197,10 +197,10 @@ async def get_user_by_topic_id_ep(
     "/payments/tribute-links",
     response_model=TributePaymentsLinksResponse,
     dependencies=[Depends(require_telegram_bot_api_secret)],
-    summary="Tribute: тарифы из app/data/tribute_tariffs.json для бота",
+    summary="Tribute: тарифы текущего проекта для бота",
 )
-async def telegram_tribute_links_ep() -> TributePaymentsLinksResponse:
-    return tribute_payments_links_public_response()
+async def telegram_tribute_links_ep(session: ReadonlySessionDep) -> TributePaymentsLinksResponse:
+    return await tribute_payments_links_public_response(session)
 
 
 @router.post(
@@ -209,7 +209,7 @@ async def telegram_tribute_links_ep() -> TributePaymentsLinksResponse:
     dependencies=[Depends(require_telegram_bot_api_secret)],
     summary="ЮKassa: создать платёж и получить URL оплаты по telegram_id",
     description=(
-        "Сумма и срок из app/data/yookassa_tariffs.json; после оплаты redirect на "
+        "Сумма и срок из project_tariffs текущего проекта; после оплаты redirect на "
         "/cabinet/pay/return/bot; зачисление — webhook ЮKassa."
     ),
 )
@@ -219,6 +219,7 @@ async def telegram_yookassa_checkout_ep(
 ) -> YookassaCheckoutResponse:
     user = await require_user_by_telegram_id(session, body.telegram_id)
     return await create_yookassa_checkout(
+        session,
         settings,
         user_id=int(user.id),
         months=int(body.months),

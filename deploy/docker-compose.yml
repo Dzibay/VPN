@@ -1,6 +1,6 @@
 # Продакшен-стек: Caddy (TLS) → Nginx (SPA + /api) → FastAPI; Prometheus; Postgres; Redis; RQ worker.
 # Запуск из каталога deploy/:
-#   cp env.production.example .env   # SITE_ADDRESS=основной домен, SITE_EXTRA_ADDRESSES=старые (301 → основной)
+#   cp env.production.example .env   # ADMIN_SITE_ADDRESS=домен админки
 #   Для метрик в админке задайте в .env PROMETHEUS_SD_TOKEN (одна строка) — API и Prometheus подхватят его сами.
 #   mkdir -p secrets/ssh  # положите ключ для PROVISION_SSH_KEY_PATH
 #   docker compose up -d --build
@@ -263,7 +263,30 @@ services:
       context: ..
       dockerfile: deploy/nginx/Dockerfile
       args:
-        SITE_ADDRESS: ${SITE_ADDRESS:?SITE_ADDRESS is required (e.g. vpn.example.com)}
+        ADMIN_SITE_ADDRESS: ${ADMIN_SITE_ADDRESS:-}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [internal]
+
+  # Отдельный nginx для admin.<domain>: собирает frontend-admin/ и проксирует /api → api.
+  # Поднимается всегда (Phase 3 multi-tenant), Caddy направит трафик admin-домена сюда.
+  nginx-admin:
+    build:
+      context: ..
+      dockerfile: deploy/nginx-admin/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [internal]
+
+  # «Скоро запустимся» — универсальный контейнер-заглушка для будущих сценариев.
+  nginx-placeholder:
+    build:
+      context: ..
+      dockerfile: deploy/nginx-placeholder/Dockerfile
     restart: unless-stopped
     depends_on:
       api:
@@ -279,15 +302,21 @@ services:
       - "443:443"
       - "443:443/udp"
     environment:
-      SITE_ADDRESS: ${SITE_ADDRESS:?SITE_ADDRESS is required (e.g. vpn.example.com)}
-      SITE_EXTRA_ADDRESSES: ${SITE_EXTRA_ADDRESSES:-}
+      ADMIN_SITE_ADDRESS: ${ADMIN_SITE_ADDRESS:?ADMIN_SITE_ADDRESS is required (e.g. admin.example.com)}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./caddy/docker-entrypoint.sh:/etc/caddy/docker-entrypoint.sh:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - nginx
+      api:
+        condition: service_healthy
+      nginx:
+        condition: service_started
+      nginx-admin:
+        condition: service_started
+      nginx-placeholder:
+        condition: service_started
     networks: [internal]
 
 networks:

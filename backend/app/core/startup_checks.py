@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 
 from app.config import Settings
-from app.infrastructure.email.smtp_sender import smtp_configured
+from app.infrastructure.email.smtp_sender import smtp_configured_in_env
 
 log = logging.getLogger("app.startup_checks")
 
@@ -53,8 +53,8 @@ def validate_production_secrets(settings: Settings) -> None:
             f"{bullets}",
         )
 
-    if not smtp_configured(settings):
+    if not smtp_configured_in_env(settings):
         log.warning(
-            "SMTP не настроен (SMTP_HOST пуст): подтверждение email при регистрации "
-            "недоступно. Задайте SMTP_HOST, SMTP_USER, SMTP_PASSWORD и др.",
+            "SMTP_HOST в env пуст: подтверждение email будет работать только для "
+            "проектов с заполненным projects.smtp_settings.",
         )

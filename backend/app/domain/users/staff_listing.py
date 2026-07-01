@@ -22,6 +22,7 @@ from app.domain.models.users import (
 )
 from app.domain.referrals.referral_bonus_policy import normalize_referral_bonus_policy
 from app.domain.referrals.repository import get_user_owned_referral_link
+from app.domain.tenant.admin_project_scope import admin_project_id, apply_project_scope, project_scope_clause
 from app.domain.users.staff_balance_fields import staff_user_balance_fields
 from app.domain.subscription.devices import list_subscription_connection_records_for_users
 from app.domain.user_traffic import (
@@ -54,6 +55,9 @@ async def _user_rows_count(
     referral_link_id: int | None = None,
 ) -> int:
     stmt = select(func.count()).select_from(User)
+    scope = project_scope_clause(User)
+    if scope is not None:
+        stmt = stmt.where(scope)
     if referral_link_id is not None:
         stmt = stmt.where(User.referral_link_id == referral_link_id)
     return int((await session.scalar(stmt)) or 0)
@@ -155,6 +159,9 @@ async def _user_rows_with_traffic(
             ),
         )
     )
+    scope = project_scope_clause(User)
+    if scope is not None:
+        stmt = stmt.where(scope)
     if referral_link_id is not None:
         stmt = stmt.where(User.referral_link_id == referral_link_id)
     if offset is not None:
@@ -184,6 +191,9 @@ async def staff_get_user_list_item(
     """Одна строка пользователя в формате списка админки (агрегаты и устройства)."""
     user = await session.get(User, user_id)
     if user is None:
+        raise NotFoundError("Пользователь не найден")
+    pid = admin_project_id()
+    if pid is not None and int(user.project_id) != pid:
         raise NotFoundError("Пользователь не найден")
     _, _, total_raw = await user_traffic_totals(session, user_id)
     total = int(total_raw or 0)

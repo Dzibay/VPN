@@ -10,10 +10,15 @@ from app.infrastructure.database.base import Base
 
 
 class AppSetting(Base):
-    """Универсальная staff-редактируемая настройка: ключ → JSONB (например, 'finance')."""
+    """Универсальная staff-редактируемая настройка: (project_id, key) → JSONB (например, 'finance')."""
 
     __tablename__ = "app_settings"
 
+    project_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
     key: Mapped[str] = mapped_column(Text, primary_key=True)
     value: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -21,8 +26,9 @@ class AppSetting(Base):
         nullable=False,
         default=utc_now,
     )
+    #: FK на staff_users (не users).
     updated_by: Mapped[int | None] = mapped_column(
         BigInteger,
-        ForeignKey("users.id", ondelete="SET NULL"),
+        ForeignKey("staff_users.id", ondelete="SET NULL"),
         nullable=True,
     )

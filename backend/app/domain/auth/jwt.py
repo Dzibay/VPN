@@ -11,12 +11,11 @@ from app.infrastructure.persistence.models.user import User
 
 
 def jwt_role_for_user(user: User) -> Literal["user", "manager", "admin"]:
-    """API-роль для JWT по полю ``account_role`` (``client`` → ``user``)."""
-    ar = getattr(user, "account_role", None) or "client"
-    if ar == "admin":
-        return "admin"
-    if ar == "manager":
-        return "manager"
+    """API-роль для JWT клиентского входа.
+
+    Роли admin/manager живут в ``staff_users`` (отдельная админ-панель).
+    Таблица ``users`` — только клиенты (``account_role='client'`` → JWT ``user``).
+    """
     return "user"
 
 

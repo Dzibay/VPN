@@ -74,6 +74,58 @@ class Settings(BaseSettings):
             "Сгенерировать сильный ключ: `openssl rand -hex 32`."
         ),
     )
+    staff_super_admins: str = Field(
+        default="",
+        description=(
+            "Список super_admin аккаунтов (bootstrap). Формат: "
+            "``email1|password1,email2|password2`` (запятая между записями, | между email и паролем). "
+            "На каждом старте API проверяется: аккаунт с ролью super_admin и таким email или "
+            "создаётся, или обновляется (пароль перезаписывается, роль повышается до super_admin). "
+            "Пусто — ничего не делает. Обратная совместимость: если задан только один "
+            "STAFF_ADMIN_EMAIL+STAFF_ADMIN_PASSWORD (legacy), используется как одна запись."
+        ),
+    )
+    staff_managers: str = Field(
+        default="",
+        description=(
+            "Список admin/manager аккаунтов (bootstrap). Формат: "
+            "``email|password|role|project_slugs``, записи через запятую. "
+            "role: admin | manager. project_slugs: список slug'ов через ``;`` (``*`` = все). "
+            "Пример: ``pm@acme.com|secret|admin|podorozhnik;halyal,ops@acme.com|s|manager|*``. "
+            "На каждом старте: аккаунт создаётся/обновляется (email, пароль, роль, проекты синхронизируются). "
+            "Записи из env — источник истины: удаление из env НЕ удаляет staff, но их можно "
+            "удалить через админку. Проекты доступа удаляются, если их нет в env."
+        ),
+    )
+    staff_admin_email: str = Field(
+        default="",
+        description=(
+            "Legacy-поле: bootstrap-логин одного super_admin. Оставлено для обратной совместимости. "
+            "Рекомендуется использовать STAFF_SUPER_ADMINS (поддерживает несколько записей)."
+        ),
+    )
+    staff_admin_password: str = Field(
+        default="",
+        description="Legacy-пароль к STAFF_ADMIN_EMAIL. См. STAFF_SUPER_ADMINS.",
+    )
+    admin_site_address: str = Field(
+        default="",
+        description=(
+            "Отдельный домен админки (ADMIN_SITE_ADDRESS в env), напр. admin.example.com. "
+            "Используется в CORS и как источник Origin, куда admin-UI шлёт X-Admin-Project. "
+            "Не является tenant-доменом — на нём живёт только staff-панель."
+        ),
+    )
+    bootstrap_projects: str = Field(
+        default="",
+        description=(
+            "Bootstrap списка проектов при старте API. Формат: ``slug|name|primary_domain|extra_domains``, "
+            "записи через запятую, extra_domains через ``;``. Пример: "
+            "``podorozhnik|Подорожник VPN|podorozhnik-connect.ru|,halyal|Halyal VPN|halyal-connect.ru|``. "
+            "Если проект по slug уже есть — обновляются только name/primary_domain/extra_domains, "
+            "остальные поля (ключи, брендинг) не трогаются. Пусто — bootstrap выключен."
+        ),
+    )
     telegram_bot_api_secret: str = Field(
         default="",
         description=(

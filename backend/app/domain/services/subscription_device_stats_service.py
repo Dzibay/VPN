@@ -5,6 +5,7 @@ from __future__ import annotations
 from sqlalchemy import case, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.tenant.admin_project_scope import project_scope_clause
 from app.infrastructure.persistence.models.subscription_device import SubscriptionDevice
 from app.infrastructure.persistence.models.user_server_traffic import UserServerTraffic
 
@@ -17,25 +18,33 @@ async def admin_stats_subscription_devices_by_user_agent(
     с таким устройством и число из них с суммарным VPN-трафиком (up_bytes + down_bytes) > 0
     по всем строкам user_server_traffic.
     """
-    traffic_users = (
+    scope = project_scope_clause(SubscriptionDevice)
+    traffic_scope = project_scope_clause(UserServerTraffic)
+    traffic_users_q = (
         select(UserServerTraffic.user_id.label("uid"))
         .group_by(UserServerTraffic.user_id)
         .having(func.sum(UserServerTraffic.up_bytes + UserServerTraffic.down_bytes) > 0)
-        .subquery()
     )
-    heavy_traffic_users = (
+    if traffic_scope is not None:
+        traffic_users_q = traffic_users_q.where(traffic_scope)
+    traffic_users = traffic_users_q.subquery()
+    heavy_traffic_users_q = (
         select(UserServerTraffic.user_id.label("uid"))
         .group_by(UserServerTraffic.user_id)
         .having(func.sum(UserServerTraffic.up_bytes + UserServerTraffic.down_bytes) > 100 * 1024 * 1024)
-        .subquery()
     )
-    traffic_users_today = (
+    if traffic_scope is not None:
+        heavy_traffic_users_q = heavy_traffic_users_q.where(traffic_scope)
+    heavy_traffic_users = heavy_traffic_users_q.subquery()
+    traffic_users_today_q = (
         select(UserServerTraffic.user_id.label("uid"))
         .where(UserServerTraffic.traffic_date == func.current_date())
         .group_by(UserServerTraffic.user_id)
         .having(func.sum(UserServerTraffic.up_bytes + UserServerTraffic.down_bytes) > 0)
-        .subquery()
     )
+    if traffic_scope is not None:
+        traffic_users_today_q = traffic_users_today_q.where(traffic_scope)
+    traffic_users_today = traffic_users_today_q.subquery()
 
     traffic_match = SubscriptionDevice.user_id.in_(select(traffic_users.c.uid))
     heavy_traffic_match = SubscriptionDevice.user_id.in_(select(heavy_traffic_users.c.uid))
@@ -68,6 +77,11 @@ async def admin_stats_subscription_devices_by_user_agent(
         .where(SubscriptionDevice.user_agent.is_not(None))
         .where(func.trim(SubscriptionDevice.user_agent) != "")
         .where(ua_prefix != "")
+    )
+    if scope is not None:
+        stmt = stmt.where(scope)
+    stmt = (
+        stmt
         .group_by(ua_prefix, os_bucket)
         .order_by(func.count(func.distinct(SubscriptionDevice.user_id)).desc())
     )

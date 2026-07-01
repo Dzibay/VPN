@@ -5,10 +5,12 @@ from __future__ import annotations
 import logging
 import smtplib
 import socket
+from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import formataddr, formatdate, make_msgid, parseaddr
 
 from app.config import Settings
+from app.domain.tenant.project_context import get_current_project
 
 log = logging.getLogger("app.smtp")
 
@@ -17,7 +19,56 @@ class SmtpDeliveryError(RuntimeError):
     """Ошибка доставки письма через SMTP (с понятным сообщением для API)."""
 
 
+@dataclass(frozen=True)
+class _SmtpRuntimeConfig:
+    smtp_host: str
+    smtp_port: int
+    smtp_user: str
+    smtp_password: str
+    smtp_from_email: str
+    smtp_from_name: str
+    smtp_use_tls: bool
+    smtp_use_ssl: bool
+    app_name: str
+
+
+def _smtp_bool(settings: dict, key: str, default: bool) -> bool:
+    raw = settings.get(key)
+    if raw is None:
+        return default
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, (int, float)):
+        return bool(raw)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolved_smtp_config(cfg: Settings) -> _SmtpRuntimeConfig:
+    project = get_current_project()
+    p = project.smtp_settings if project and isinstance(project.smtp_settings, dict) else {}
+    host = str(p.get("host") or cfg.smtp_host or "").strip()
+    user = str(p.get("username") or p.get("user") or cfg.smtp_user or "").strip()
+    from_email = str(p.get("from_email") or cfg.smtp_from_email or user or "").strip()
+    from_name = str(p.get("from_name") or cfg.smtp_from_name or cfg.app_name or "VPN").strip()
+    return _SmtpRuntimeConfig(
+        smtp_host=host,
+        smtp_port=int(p.get("port") or cfg.smtp_port),
+        smtp_user=user,
+        smtp_password=str(p.get("password") or cfg.smtp_password or ""),
+        smtp_from_email=from_email,
+        smtp_from_name=from_name,
+        smtp_use_tls=_smtp_bool(p, "use_tls", bool(cfg.smtp_use_tls)),
+        smtp_use_ssl=_smtp_bool(p, "use_ssl", bool(cfg.smtp_use_ssl)),
+        app_name=cfg.app_name,
+    )
+
+
 def smtp_configured(cfg: Settings) -> bool:
+    return bool((_resolved_smtp_config(cfg).smtp_host or "").strip())
+
+
+def smtp_configured_in_env(cfg: Settings) -> bool:
+    """Startup-check helper: at import time there is no request project context."""
     return bool((cfg.smtp_host or "").strip())
 
 
@@ -88,24 +139,25 @@ def send_email_sync(
     text_body: str,
     html_body: str | None = None,
 ) -> None:
-    host = (cfg.smtp_host or "").strip()
+    smtp_cfg = _resolved_smtp_config(cfg)
+    host = (smtp_cfg.smtp_host or "").strip()
     if not host:
         raise RuntimeError("SMTP не настроен (smtp_host пуст)")
 
     msg = _build_email_message(
-        cfg,
+        smtp_cfg,
         to_email=to_email,
         subject=subject,
         text_body=text_body,
         html_body=html_body,
     )
 
-    user = (cfg.smtp_user or "").strip() or None
-    password = cfg.smtp_password or None
-    port = int(cfg.smtp_port)
+    user = (smtp_cfg.smtp_user or "").strip() or None
+    password = smtp_cfg.smtp_password or None
+    port = int(smtp_cfg.smtp_port)
 
     try:
-        if cfg.smtp_use_ssl:
+        if smtp_cfg.smtp_use_ssl:
             with smtplib.SMTP_SSL(host, port, timeout=30) as smtp:
                 if user and password:
                     smtp.login(user, password)
@@ -113,7 +165,7 @@ def send_email_sync(
             return
 
         with smtplib.SMTP(host, port, timeout=30) as smtp:
-            if cfg.smtp_use_tls:
+            if smtp_cfg.smtp_use_tls:
                 smtp.starttls()
             if user and password:
                 smtp.login(user, password)
@@ -123,7 +175,8 @@ def send_email_sync(
 
 
 def send_verification_email_sync(cfg: Settings, *, to_email: str, verify_url: str) -> None:
-    brand = (cfg.smtp_from_name or cfg.app_name or "VPN").strip()
+    smtp_cfg = _resolved_smtp_config(cfg)
+    brand = (smtp_cfg.smtp_from_name or cfg.app_name or "VPN").strip()
     subject = f"Подтверждение регистрации — {brand}"
     text = (
         "Здравствуйте!\n\n"

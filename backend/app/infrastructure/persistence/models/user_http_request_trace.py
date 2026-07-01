@@ -19,6 +19,12 @@ class UserHttpRequestTrace(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     request_id: Mapped[str] = mapped_column(Text, nullable=False)
+    #: Проект, в контексте которого пришёл запрос (может быть NULL для не-tenant роутов: /health, /prometheus/sd).
+    project_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("projects.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
     user_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey("users.id", ondelete="SET NULL"),

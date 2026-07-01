@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import BadRequestError
 from app.core.request_subject import get_request_subject
 from app.core.time import moscow_today, utc_now
 from app.domain.models.accounting import (
@@ -57,6 +58,11 @@ from app.infrastructure.persistence.models.finance import (
     Refund,
 )
 from app.infrastructure.persistence.models.recurring_expense import RecurringExpense
+from app.domain.tenant.admin_project_scope import (
+    admin_project_id,
+    apply_project_scope,
+    rpc_project_params,
+)
 
 _FINANCE_SETTINGS_KEY = "finance"
 
@@ -105,7 +111,10 @@ def _settings_to_jsonable(s: FinanceSettings) -> dict[str, object]:
 
 
 async def get_finance_settings(session: AsyncSession) -> FinanceSettings:
-    row = await session.get(AppSetting, _FINANCE_SETTINGS_KEY)
+    pid = admin_project_id()
+    if pid is None:
+        return FinanceSettings()
+    row = await session.get(AppSetting, (pid, _FINANCE_SETTINGS_KEY))
     if row is None:
         return FinanceSettings()
     return _settings_from_value(row.value)
@@ -115,7 +124,10 @@ async def update_finance_settings(
     session: AsyncSession,
     patch: FinanceSettingsPatch,
 ) -> FinanceSettings:
-    row = await session.get(AppSetting, _FINANCE_SETTINGS_KEY)
+    pid = admin_project_id()
+    if pid is None:
+        raise BadRequestError("Выберите конкретный проект для изменения настроек")
+    row = await session.get(AppSetting, (pid, _FINANCE_SETTINGS_KEY))
     current = _settings_from_value(row.value) if row is not None else FinanceSettings()
 
     data = current.model_dump()
@@ -124,7 +136,12 @@ async def update_finance_settings(
     payload = _settings_to_jsonable(merged)
 
     if row is None:
-        row = AppSetting(key=_FINANCE_SETTINGS_KEY, value=payload, updated_by=_current_user_id())
+        row = AppSetting(
+            project_id=pid,
+            key=_FINANCE_SETTINGS_KEY,
+            value=payload,
+            updated_by=_current_user_id(),
+        )
         session.add(row)
     else:
         row.value = payload
@@ -153,12 +170,22 @@ async def get_accounting_summary(
 ) -> FinanceAccountingSummaryResponse:
     settings = await get_finance_settings(session)
 
-    stmt = text("SELECT rpc_finance_accounting_summary(:p_from, :p_to) AS payload")
-    row = (await session.execute(stmt, {"p_from": date_from, "p_to": date_to})).one()
+    stmt = text("SELECT rpc_finance_accounting_summary(:p_from, :p_to, :p_project_id) AS payload")
+    row = (
+        await session.execute(
+            stmt,
+            rpc_project_params({"p_from": date_from, "p_to": date_to}),
+        )
+    ).one()
     raw = row.payload if isinstance(row.payload, dict) else {}
 
-    def_stmt = text("SELECT rpc_finance_deferred_summary(:p_from, :p_to) AS payload")
-    def_row = (await session.execute(def_stmt, {"p_from": date_from, "p_to": date_to})).one()
+    def_stmt = text("SELECT rpc_finance_deferred_summary(:p_from, :p_to, :p_project_id) AS payload")
+    def_row = (
+        await session.execute(
+            def_stmt,
+            rpc_project_params({"p_from": date_from, "p_to": date_to}),
+        )
+    ).one()
     def_raw = def_row.payload if isinstance(def_row.payload, dict) else {}
 
     months = [str(m) for m in (raw.get("months") or [])]
@@ -188,6 +215,7 @@ async def get_accounting_summary(
                 SUM(r.net_amount)::numeric(14, 2) AS net
             FROM refunds r
             WHERE r.status = 'succeeded'
+              AND (:p_project_id IS NULL OR r.project_id = :p_project_id)
               AND date_trunc('month', r.refunded_on)::date
                   BETWEEN date_trunc('month', CAST(:p_from AS date))::date
                       AND date_trunc('month', CAST(:p_to AS date))::date
@@ -205,7 +233,12 @@ async def get_accounting_summary(
         ) AS payload
         """
     )
-    refund_row = (await session.execute(refund_stmt, {"p_from": date_from, "p_to": date_to})).one()
+    refund_row = (
+        await session.execute(
+            refund_stmt,
+            rpc_project_params({"p_from": date_from, "p_to": date_to}),
+        )
+    ).one()
     refund_raw = refund_row.payload if isinstance(refund_row.payload, dict) else {}
     refunds_gross = _decimal_list(refund_raw.get("gross"), n)
     refunds_net = _decimal_list(refund_raw.get("net"), n)
@@ -364,8 +397,8 @@ async def _build_cash_position(
 ) -> FinanceCashPosition:
     row = (
         await session.execute(
-            text("SELECT rpc_finance_cash_position(:p_as_of) AS payload"),
-            {"p_as_of": as_of},
+            text("SELECT rpc_finance_cash_position(:p_as_of, :p_project_id) AS payload"),
+            rpc_project_params({"p_as_of": as_of}),
         )
     ).one()
     raw = row.payload if isinstance(row.payload, dict) else {}
@@ -418,7 +451,7 @@ async def _build_cash_position(
 # Категории
 # --------------------------------------------------------------------------- #
 async def _categories_meta_by_slug(session: AsyncSession) -> dict[str, tuple[str, str]]:
-    rows = (await session.scalars(select(ExpenseCategory))).all()
+    rows = (await session.scalars(apply_project_scope(select(ExpenseCategory), ExpenseCategory))).all()
     return {str(r.slug): (str(r.title), str(r.color)) for r in rows}
 
 
@@ -427,7 +460,7 @@ async def list_categories(
     *,
     include_archived: bool = True,
 ) -> list[ExpenseCategoryItem]:
-    stmt = select(ExpenseCategory)
+    stmt = apply_project_scope(select(ExpenseCategory), ExpenseCategory)
     if not include_archived:
         stmt = stmt.where(ExpenseCategory.archived.is_(False))
     stmt = stmt.order_by(ExpenseCategory.sort_order.asc(), ExpenseCategory.id.asc())
@@ -503,8 +536,8 @@ async def list_expenses(
     if date_to is not None:
         conds.append(Expense.incurred_on <= date_to)
 
-    count_stmt = select(func.count()).select_from(Expense)
-    list_stmt = select(Expense)
+    count_stmt = apply_project_scope(select(func.count()).select_from(Expense), Expense)
+    list_stmt = apply_project_scope(select(Expense), Expense)
     if conds:
         count_stmt = count_stmt.where(*conds)
         list_stmt = list_stmt.where(*conds)
@@ -634,7 +667,7 @@ async def delete_expenses_by_ids(session: AsyncSession, *, ids: list[int]) -> in
 # Повторяющиеся расходы (шаблоны)
 # --------------------------------------------------------------------------- #
 async def list_recurring_expenses(session: AsyncSession) -> list[RecurringExpenseItem]:
-    stmt = select(RecurringExpense).order_by(
+    stmt = apply_project_scope(select(RecurringExpense), RecurringExpense).order_by(
         RecurringExpense.active.desc(), RecurringExpense.id.desc()
     )
     rows = (await session.scalars(stmt)).all()
@@ -726,7 +759,10 @@ async def _ensure_cash_account_exists(session: AsyncSession, account_id: int | N
 async def list_cash_accounts(session: AsyncSession) -> list[CashAccountItem]:
     rows = (
         await session.scalars(
-            select(CashAccount).order_by(CashAccount.active.desc(), CashAccount.id.asc())
+            apply_project_scope(
+                select(CashAccount).order_by(CashAccount.active.desc(), CashAccount.id.asc()),
+                CashAccount,
+            ),
         )
     ).all()
     return [CashAccountItem.model_validate(r) for r in rows]
@@ -784,13 +820,19 @@ async def list_cash_transactions(
     limit: int,
     offset: int,
 ) -> tuple[list[CashTransactionItem], int]:
-    total = int(await session.scalar(select(func.count()).select_from(CashTransaction)) or 0)
+    total = int(
+        await session.scalar(apply_project_scope(select(func.count()).select_from(CashTransaction), CashTransaction))
+        or 0,
+    )
     rows = (
         await session.scalars(
-            select(CashTransaction)
-            .order_by(CashTransaction.occurred_on.desc(), CashTransaction.id.desc())
-            .limit(limit)
-            .offset(offset)
+            apply_project_scope(
+                select(CashTransaction)
+                .order_by(CashTransaction.occurred_on.desc(), CashTransaction.id.desc())
+                .limit(limit)
+                .offset(offset),
+                CashTransaction,
+            ),
         )
     ).all()
     return [CashTransactionItem.model_validate(r) for r in rows], total
@@ -829,8 +871,8 @@ async def list_payables(
     conds = []
     if status_filter:
         conds.append(Payable.status == status_filter)
-    count_stmt = select(func.count()).select_from(Payable)
-    list_stmt = select(Payable)
+    count_stmt = apply_project_scope(select(func.count()).select_from(Payable), Payable)
+    list_stmt = apply_project_scope(select(Payable), Payable)
     if conds:
         count_stmt = count_stmt.where(*conds)
         list_stmt = list_stmt.where(*conds)
@@ -963,13 +1005,19 @@ async def list_refunds(
     limit: int,
     offset: int,
 ) -> tuple[list[RefundItem], int]:
-    total = int(await session.scalar(select(func.count()).select_from(Refund)) or 0)
+    total = int(
+        await session.scalar(apply_project_scope(select(func.count()).select_from(Refund), Refund))
+        or 0,
+    )
     rows = (
         await session.scalars(
-            select(Refund)
-            .order_by(Refund.refunded_on.desc(), Refund.id.desc())
-            .limit(limit)
-            .offset(offset)
+            apply_project_scope(
+                select(Refund)
+                .order_by(Refund.refunded_on.desc(), Refund.id.desc())
+                .limit(limit)
+                .offset(offset),
+                Refund,
+            ),
         )
     ).all()
     return [RefundItem.model_validate(r) for r in rows], total
@@ -1017,13 +1065,21 @@ async def list_profit_withdrawals(
     limit: int,
     offset: int,
 ) -> tuple[list[ProfitWithdrawalItem], int]:
-    total = int(await session.scalar(select(func.count()).select_from(ProfitWithdrawal)) or 0)
+    total = int(
+        await session.scalar(
+            apply_project_scope(select(func.count()).select_from(ProfitWithdrawal), ProfitWithdrawal),
+        )
+        or 0,
+    )
     rows = (
         await session.scalars(
-            select(ProfitWithdrawal)
-            .order_by(ProfitWithdrawal.withdrawn_on.desc(), ProfitWithdrawal.id.desc())
-            .limit(limit)
-            .offset(offset)
+            apply_project_scope(
+                select(ProfitWithdrawal)
+                .order_by(ProfitWithdrawal.withdrawn_on.desc(), ProfitWithdrawal.id.desc())
+                .limit(limit)
+                .offset(offset),
+                ProfitWithdrawal,
+            ),
         )
     ).all()
     return [ProfitWithdrawalItem.model_validate(r) for r in rows], total

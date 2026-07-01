@@ -1,0 +1,210 @@
+/**
+ * Стили legacy admin-view (../frontend) для standalone frontend-admin.
+ * Подключается после base.css; токены темы — из base.css.
+ */
+
+@import '../../../frontend/src/styles/admin-ui.css';
+@import '../../../frontend/src/styles/admin-table.css';
+@import '../../../frontend/src/styles/admin-chart-wrap.css';
+@import '../../../frontend/src/styles/admin-chart-panel.css';
+@import '../../../frontend/src/styles/admin-period-presets.css';
+
+/* ---------- Кнопки действий (из public style.css, адаптированы под admin-тему) ---------- */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 38px;
+  padding: 0.55rem 1.15rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--on-accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition:
+    filter var(--duration) ease,
+    transform var(--duration) ease,
+    box-shadow var(--duration) ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-primary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 38px;
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text-h);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color var(--duration) ease,
+    background var(--duration) ease,
+    color var(--duration) ease;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-secondary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}
+
+.btn-secondary.btn-tiny {
+  min-height: 30px;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.78rem;
+}
+
+/* ---------- Шапки legacy-страниц (дублируются в scoped view — выносим сюда) ---------- */
+.head-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.section-heading {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--text-h);
+}
+
+/* ---------- Виджеты и сетки ---------- */
+.stat-widget {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  min-height: 128px;
+  padding: 1rem 1.15rem;
+}
+
+.stat-widget-title {
+  flex: 0 0 auto;
+}
+
+.stat-widget-value,
+.stat-widget-split {
+  flex: 1 1 auto;
+}
+
+.stat-widget-meta {
+  margin-top: auto;
+  padding-top: 0.45rem;
+  line-height: 1.45;
+}
+
+.widgets-grid {
+  gap: 14px;
+}
+
+.widgets-grid--summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (min-width: 1280px) {
+  .widgets-grid--summary .stat-widget:nth-child(9) {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 1100px) {
+  .widgets-grid--summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .widgets-grid--summary .stat-widget:nth-child(9) {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .widgets-grid--summary {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- Графики ---------- */
+.admin-charts-grid {
+  gap: 14px;
+  margin-top: 0;
+}
+
+.admin-chart-panel {
+  min-height: 240px;
+}
+
+.admin-chart-panel .admin-chart-wrap {
+  flex: 1 1 auto;
+}
+
+.admin-chart-panel:not(:has(.admin-chart-wrap)) .empty-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  padding: 1rem 0;
+  text-align: center;
+}
+
+.admin-period-presets--segmented .admin-period-btn--active,
+.admin-period-btn--active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border-color: var(--accent-border);
+}
+
+.admin-period-presets--segmented .admin-period-btn--active {
+  border-color: transparent;
+}
+
+.admin-period-btn {
+  min-height: 36px;
+}
+
+.admin-period-presets--segmented .admin-period-btn {
+  padding: 0.5rem 0.85rem;
+}

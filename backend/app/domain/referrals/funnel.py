@@ -21,11 +21,19 @@ from app.domain.users.daily_stats import (
     count_users_with_subscription_device,
 )
 from app.domain.users.stats_qualification import user_counts_in_admin_stats
+from app.domain.tenant.admin_project_scope import admin_project_id, project_scope_clause
 from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.referral_link_group import ReferralLinkGroup
 from app.infrastructure.persistence.models.subscription_device import SubscriptionDevice
 from app.infrastructure.persistence.models.user import User
+
+
+_USER_PROJECT_SQL = "AND (:p_project_id IS NULL OR u.project_id = :p_project_id)"
+
+
+def _user_scope_filter():
+    return project_scope_clause(User)
 
 
 def _nz_metric(v: object) -> int:
@@ -71,6 +79,9 @@ async def referral_funnel_compute(
         group = await session.get(ReferralLinkGroup, referral_link_group_id)
         if group is None:
             raise ReferralLinkGroupNotFoundError
+        pid = admin_project_id()
+        if pid is not None and int(group.project_id) != pid:
+            raise ReferralLinkGroupNotFoundError
         link_ids = list(
             (
                 await session.scalars(
@@ -95,16 +106,21 @@ async def referral_funnel_compute(
             ),
         )
         link_filter = User.referral_link_id.in_(link_ids)
+        user_stats = user_counts_in_admin_stats(User)
+        scope = _user_scope_filter()
+        reg_where = [link_filter, user_stats]
+        if scope is not None:
+            reg_where.append(scope)
         registrations_total_raw = await session.scalar(
             select(func.count())
             .select_from(User)
-            .where(link_filter, user_counts_in_admin_stats(User)),
+            .where(*reg_where),
         )
         users_with_traffic_raw = await session.scalar(
             select(func.count())
             .select_from(per_user_traffic)
             .join(User, User.id == per_user_traffic.c.uid)
-            .where(link_filter, user_counts_in_admin_stats(User)),
+            .where(*reg_where),
         )
         with_dev = await _count_users_with_subscription_device_for_links(session, link_ids)
         with_payment = await _count_users_with_payment_for_links(session, link_ids)
@@ -126,22 +142,24 @@ async def referral_funnel_compute(
         ).first()
         if row is None:
             raise NotFoundError("Реферальная ссылка не найдена")
+        pid = admin_project_id()
+        if pid is not None and int(row.project_id) != pid:
+            raise NotFoundError("Реферальная ссылка не найдена")
+        user_stats = user_counts_in_admin_stats(User)
+        scope = _user_scope_filter()
+        reg_where = [User.referral_link_id == referral_link_id, user_stats]
+        if scope is not None:
+            reg_where.append(scope)
         registrations_total_raw = await session.scalar(
             select(func.count())
             .select_from(User)
-            .where(
-                User.referral_link_id == referral_link_id,
-                user_counts_in_admin_stats(User),
-            ),
+            .where(*reg_where),
         )
         users_with_traffic_raw = await session.scalar(
             select(func.count())
             .select_from(per_user_traffic)
             .join(User, User.id == per_user_traffic.c.uid)
-            .where(
-                User.referral_link_id == referral_link_id,
-                user_counts_in_admin_stats(User),
-            ),
+            .where(*reg_where),
         )
         today = utc_today()
         with_dev = await count_users_with_subscription_device(session, referral_link_id)
@@ -156,14 +174,19 @@ async def referral_funnel_compute(
             active_users_today_utc=_nz_metric(active_today),
         )
 
+    user_stats = user_counts_in_admin_stats(User)
+    scope = _user_scope_filter()
+    site_where = [user_stats]
+    if scope is not None:
+        site_where.append(scope)
     registrations_total_raw = await session.scalar(
-        select(func.count()).select_from(User).where(user_counts_in_admin_stats(User)),
+        select(func.count()).select_from(User).where(*site_where),
     )
     users_with_traffic_raw = await session.scalar(
         select(func.count())
         .select_from(per_user_traffic)
         .join(User, User.id == per_user_traffic.c.uid)
-        .where(user_counts_in_admin_stats(User)),
+        .where(*site_where),
     )
     today = utc_today()
     with_dev = await count_users_with_subscription_device(session, None)
@@ -193,6 +216,9 @@ async def _count_users_with_payment(
             user_counts_in_admin_stats(User),
         )
     )
+    scope = _user_scope_filter()
+    if scope is not None:
+        stmt = stmt.where(scope)
     if referral_link_id is not None:
         stmt = stmt.where(User.referral_link_id == referral_link_id)
     return int(await session.scalar(stmt) or 0)
@@ -212,6 +238,9 @@ async def _count_users_with_payment_for_links(
             user_counts_in_admin_stats(User),
         )
     )
+    scope = _user_scope_filter()
+    if scope is not None:
+        stmt = stmt.where(scope)
     return int(await session.scalar(stmt) or 0)
 
 
@@ -228,6 +257,9 @@ async def _count_users_with_subscription_device_for_links(
             user_counts_in_admin_stats(User),
         )
     )
+    scope = _user_scope_filter()
+    if scope is not None:
+        stmt = stmt.where(scope)
     return int(await session.scalar(stmt) or 0)
 
 
@@ -249,6 +281,7 @@ async def _active_users_count_for_utc_date_by_links(
                     AND u.email_verified_at IS NOT NULL
                 )
             )
+            {_USER_PROJECT_SQL}
             AND u.referral_link_id = ANY(:link_ids)
         ),
         traffic_cum AS (
@@ -289,7 +322,7 @@ async def _active_users_count_for_utc_date_by_links(
         (
             await session.execute(
                 stmt,
-                {"cal_day": cal_day, "link_ids": link_ids},
+                {"cal_day": cal_day, "link_ids": link_ids, "p_project_id": admin_project_id()},
             )
         ).scalar()
         or 0,

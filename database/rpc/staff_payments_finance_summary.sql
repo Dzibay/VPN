@@ -1,8 +1,12 @@
 -- Сводка платежей: cash по месяцам МСК (stats_payments_daily_msk),
 -- spread по месяцам UTC (stats_payments_spread_monthly_utc).
+DROP FUNCTION IF EXISTS rpc_staff_payments_finance_summary(date, date);
+
+-- Multi-tenant: p_project_id=NULL → агрегат по всем проектам.
 CREATE OR REPLACE FUNCTION rpc_staff_payments_finance_summary (
     p_from date DEFAULT NULL,
-    p_to date DEFAULT NULL
+    p_to date DEFAULT NULL,
+    p_project_id bigint DEFAULT NULL
 )
 RETURNS jsonb
 LANGUAGE sql
@@ -16,14 +20,9 @@ WITH filtered AS (
         s.net,
         s.cnt
     FROM stats_payments_daily_msk s
-    WHERE (
-        p_from IS NULL
-        OR s.day_msk >= p_from
-    )
-    AND (
-        p_to IS NULL
-        OR s.day_msk <= p_to
-    )
+    WHERE (p_project_id IS NULL OR s.project_id = p_project_id)
+      AND (p_from IS NULL OR s.day_msk >= p_from)
+      AND (p_to IS NULL OR s.day_msk <= p_to)
 ),
 grand AS (
     SELECT
@@ -54,14 +53,9 @@ agg_spread AS (
         sp.payment_kind,
         SUM(sp.net)::numeric(14, 2) AS total_amount
     FROM stats_payments_spread_monthly_utc sp
-    WHERE (
-        p_from IS NULL
-        OR sp.ym >= to_char(date_trunc('month', p_from::timestamp), 'YYYY-MM')
-    )
-    AND (
-        p_to IS NULL
-        OR sp.ym <= to_char(date_trunc('month', p_to::timestamp), 'YYYY-MM')
-    )
+    WHERE (p_project_id IS NULL OR sp.project_id = p_project_id)
+      AND (p_from IS NULL OR sp.ym >= to_char(date_trunc('month', p_from::timestamp), 'YYYY-MM'))
+      AND (p_to IS NULL OR sp.ym <= to_char(date_trunc('month', p_to::timestamp), 'YYYY-MM'))
     GROUP BY 1, 2
 ),
 agg_spread_gross AS (
@@ -70,14 +64,9 @@ agg_spread_gross AS (
         sp.payment_kind,
         SUM(sp.gross)::numeric(14, 2) AS total_amount
     FROM stats_payments_spread_monthly_utc sp
-    WHERE (
-        p_from IS NULL
-        OR sp.ym >= to_char(date_trunc('month', p_from::timestamp), 'YYYY-MM')
-    )
-    AND (
-        p_to IS NULL
-        OR sp.ym <= to_char(date_trunc('month', p_to::timestamp), 'YYYY-MM')
-    )
+    WHERE (p_project_id IS NULL OR sp.project_id = p_project_id)
+      AND (p_from IS NULL OR sp.ym >= to_char(date_trunc('month', p_from::timestamp), 'YYYY-MM'))
+      AND (p_to IS NULL OR sp.ym <= to_char(date_trunc('month', p_to::timestamp), 'YYYY-MM'))
     GROUP BY 1, 2
 ),
 all_ym AS (

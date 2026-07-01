@@ -14,14 +14,35 @@ class User(Base):
     __tablename__ = "users"
     __table_args__ = (
         Index(
-            "uq_users_telegram_id",
+            "uq_users_project_telegram_id",
+            "project_id",
             "telegram_id",
             unique=True,
             postgresql_where=text("telegram_id IS NOT NULL"),
         ),
+        Index(
+            "uq_users_project_email",
+            "project_id",
+            "email",
+            unique=True,
+            postgresql_where=text("email IS NOT NULL"),
+        ),
+        Index(
+            "uq_users_project_token",
+            "project_id",
+            "token",
+            unique=True,
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    #: Проект, к которому принадлежит пользователь. UNIQUE (project_id, telegram_id) /
+    #: (project_id, email) — один и тот же человек может иметь отдельную учётку в разных проектах.
+    project_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("projects.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     telegram_properties: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB,
@@ -76,5 +97,8 @@ class User(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    #: Токен подписки для URL /sub/{token}. Уникален глобально (для совместимости с существующими URL),
+    #: плюс secondary индекс (project_id, token) для быстрого lookup внутри проекта.
     token: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    #: VLESS UUID пользователя на всех узлах — уникален глобально (используется в конфиге xray).
     vless_uuid: Mapped[str] = mapped_column(Text, unique=True, nullable=False)

@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { fetchJson } from '../api/client.js'
 import { normalizeEmailInput } from '../auth/credentialsValidation.js'
@@ -17,6 +17,16 @@ const emailNotVerified = ref(false)
 const resending = ref(false)
 const resendOk = ref(false)
 const resendError = ref(null)
+const adminRedirectRole = ref(null)
+
+// URL админки: VITE_ADMIN_SITE_URL из env (build-time). Пусто → показываем только текст.
+const adminSiteUrl = computed(() => {
+  const raw = (import.meta.env.VITE_ADMIN_SITE_URL || '').trim()
+  return raw.replace(/\/$/, '')
+})
+
+// «Админка переехала» — показать плашку, если пришли из редиректа /admin/*.
+const adminMovedNotice = ref(route.query.admin_moved === '1')
 
 function isEmailNotVerifiedError(e) {
   const d = e?.data?.detail
@@ -53,6 +63,7 @@ async function submit() {
   emailNotVerified.value = false
   resendOk.value = false
   resendError.value = null
+  adminRedirectRole.value = null
   try {
     const data = await fetchJson('/api/auth/login', {
       method: 'POST',
@@ -61,32 +72,16 @@ async function submit() {
         password: password.value,
       }),
     })
+    // Публичный сайт больше не содержит админ-панели. Legacy admin/manager из таблицы
+    // users не должны здесь получать сессию — только сотрудники из staff_users (отдельный
+    // логин на ADMIN_SITE_ADDRESS). Показываем плашку и не устанавливаем сессию.
+    if (data.role === 'admin' || data.role === 'manager') {
+      adminRedirectRole.value = data.role
+      return
+    }
     setSession(data.access_token, data.role)
     const r = route.query.redirect
-    if (data.role === 'admin') {
-      router.replace(
-        typeof r === 'string' && r.startsWith('/admin') ? r : '/admin/summary',
-      )
-    } else if (data.role === 'manager') {
-      const rPath = typeof r === 'string' ? r.split('?')[0] : ''
-      const isUserPerAnalyticsRedirect =
-        typeof r === 'string' && /^\/admin\/users\/\d+\/analytics$/.test(rPath)
-      const rOk =
-        typeof r === 'string' &&
-        (r.startsWith('/admin/referrals') ||
-          r.startsWith('/admin/funnel') ||
-          r.startsWith('/admin/summary') ||
-          r.startsWith('/admin/users/registrations-by-date') ||
-          r.startsWith('/admin/users/analytics') ||
-          isUserPerAnalyticsRedirect ||
-          r.startsWith('/admin/users-analytics') ||
-          r.startsWith('/admin/payments') ||
-          r.startsWith('/admin/finance') ||
-          r.startsWith('/admin/tasks'))
-      router.replace(rOk ? r : '/admin/referrals')
-    } else {
-      router.replace(typeof r === 'string' && r ? r : '/cabinet')
-    }
+    router.replace(typeof r === 'string' && r ? r : '/cabinet')
   } catch (e) {
     if (isEmailNotVerifiedError(e)) {
       emailNotVerified.value = true
@@ -110,6 +105,33 @@ async function submit() {
         <h1>Вход</h1>
       </header>
     </template>
+
+    <div v-if="adminMovedNotice" class="card card-pad admin-moved" role="alert">
+      <strong>Админ-панель переехала.</strong>
+      <p>
+        Для входа используйте
+        <template v-if="adminSiteUrl">
+          <a :href="adminSiteUrl">{{ adminSiteUrl }}</a>.
+        </template>
+        <template v-else>
+          отдельный домен админки.
+        </template>
+      </p>
+    </div>
+
+    <div v-if="adminRedirectRole" class="card card-pad admin-moved" role="alert">
+      <strong>Доступ для персонала — на отдельном домене.</strong>
+      <p>
+        Этот сайт открыт для клиентов. Сотрудникам нужно входить через
+        <template v-if="adminSiteUrl">
+          <a :href="adminSiteUrl">{{ adminSiteUrl }}</a>
+        </template>
+        <template v-else>
+          админ-панель на отдельном домене
+        </template>
+        под учётной записью персонала.
+      </p>
+    </div>
 
     <form class="card card-pad form" @submit.prevent="submit">
       <label class="field">
@@ -290,5 +312,22 @@ h1 {
 
 .extra a:hover {
   text-decoration: underline;
+}
+
+.admin-moved {
+  margin-bottom: 1rem;
+  border-color: var(--accent);
+}
+
+.admin-moved p {
+  margin: 0.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.admin-moved a {
+  color: var(--accent);
+  font-weight: 600;
 }
 </style>

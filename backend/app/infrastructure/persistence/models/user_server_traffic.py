@@ -16,6 +16,12 @@ class UserServerTraffic(Base):
 
     __tablename__ = "user_server_traffic"
 
+    #: Проект пользователя (денормализовано из users для быстрых per-project агрегатов).
+    project_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("projects.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
     user_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("users.id", ondelete="CASCADE"),

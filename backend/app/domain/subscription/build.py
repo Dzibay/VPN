@@ -29,7 +29,7 @@ import yaml
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import BRAND_NAME
+from app.domain.tenant.branding import resolve_brand_name
 from app.domain.models.subscription import SubscriptionPayload
 from app.domain.servers.reality_defaults import normalize_reality_spider_x
 from app.domain.subscription.happ_subscription_encode import (
@@ -1010,7 +1010,7 @@ def build_clash_subscription_yaml(user: User, rows: list[Server]) -> str:
 
     select_proxies.extend(p["name"] for p in proxies)
 
-    group_name = BRAND_NAME
+    group_name = resolve_brand_name()
     if not select_proxies:
         doc: dict[str, Any] = {"proxies": [], "proxy-groups": [], "rules": []}
     else:

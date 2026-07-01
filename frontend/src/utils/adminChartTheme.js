@@ -74,14 +74,11 @@ export function adminChartTheme(extraRgb) {
 
 /** Тики/сетка как у графика «Финансы» (столбцы). */
 export function financeBarTickColor() {
-  if (typeof window === 'undefined') return 'rgba(45, 85, 65, 0.45)'
-  return window.matchMedia('(prefers-color-scheme: dark)').matches
-    ? 'rgba(200, 228, 210, 0.55)'
-    : 'rgba(45, 85, 65, 0.45)'
+  return rootToken('--text-muted', 'rgba(100, 116, 139, 0.72)')
 }
 
 export function financeBarGridColor() {
-  return 'rgba(88, 214, 141, 0.12)'
+  return rootToken('--accent-chart-grid', 'rgba(88, 214, 141, 0.12)')
 }
 
 /** @param {string} css */

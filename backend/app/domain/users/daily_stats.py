@@ -42,6 +42,11 @@ from app.domain.traffic_daily import (
     user_traffic_growth_days,
 )
 from app.domain.users.stats_qualification import user_counts_in_admin_stats
+from app.domain.tenant.admin_project_scope import (
+    admin_project_id,
+    project_scope_clause,
+    rpc_project_params,
+)
 from app.infrastructure.persistence.models.subscription_device import SubscriptionDevice
 from app.infrastructure.persistence.models.user import User
 
@@ -67,6 +72,8 @@ _DAILY_STATS_ROW_SQL = """
                active_users_with_payment_count,
                users_with_active_subscription_count
 """
+
+_USER_PROJECT_SQL = "AND (:p_project_id IS NULL OR u.project_id = :p_project_id)"
 
 
 def _rows_to_stats(rows: list) -> list[UserStatsByDateRow]:
@@ -115,15 +122,14 @@ async def stats_by_date_merged(
     live-compute (для горячего окна) — звать compute напрямую больше не нужно.
     """
     await _set_stats_query_limits(session)
-    params = {"p_from": date_from, "p_to": date_to}
     stmt = text(
         f"""
         {_DAILY_STATS_ROW_SQL}
-        FROM rpc_users_daily_stats(:p_from, :p_to)
+        FROM rpc_users_daily_stats(:p_from, :p_to, :p_project_id)
         ORDER BY stats_date NULLS LAST
         """,
     )
-    rows = (await session.execute(stmt, params)).all()
+    rows = (await session.execute(stmt, rpc_project_params({"p_from": date_from, "p_to": date_to}))).all()
     return _rows_to_stats(rows)
 
 
@@ -146,8 +152,8 @@ async def _day_baseline_from_mv(
     date_before: date,
 ) -> tuple[int, int, int, int]:
     await _set_stats_query_limits(session)
-    stmt = text("SELECT rpc_users_daily_stats_baseline(:p_before) AS payload")
-    row = (await session.execute(stmt, {"p_before": date_before})).one()
+    stmt = text("SELECT rpc_users_daily_stats_baseline(:p_before, :p_project_id) AS payload")
+    row = (await session.execute(stmt, rpc_project_params({"p_before": date_before}))).one()
     raw = row.payload if isinstance(row.payload, dict) else {}
     return (
         int(raw.get("users_count") or 0),
@@ -176,10 +182,12 @@ async def users_daily_stats(
                    active_users_count, subscription_devices_users_count,
                    baseline_users_count, baseline_users_with_traffic_count,
                    baseline_subscription_devices_users_count, undated_users_count
-            FROM rpc_users_hourly_stats(:hour_day)
+            FROM rpc_users_hourly_stats(:hour_day, :p_project_id)
             """,
         )
-        raw_rows = (await session.execute(stmt, {"hour_day": hour_day})).all()
+        raw_rows = (
+            await session.execute(stmt, rpc_project_params({"hour_day": hour_day}))
+        ).all()
         hb_users, hb_traffic, hb_devices, undated_n = _hour_extras_from_first_rpc_row(
             raw_rows[0] if raw_rows else None,
         )
@@ -259,16 +267,16 @@ async def daily_payments_expiry_stats(
 
     msk_td = moscow_today()
     stats_user = user_counts_in_admin_stats(User)
+    scope = project_scope_clause(User)
 
-    elig_raw = (
-        await session.execute(
-            select(User.id, User.subscription_until).where(
-                stats_user,
-                User.registered_at.is_not(None),
-                User.subscription_until.isnot(None),
-            ),
-        )
-    ).all()
+    elig_stmt = select(User.id, User.subscription_until).where(
+        stats_user,
+        User.registered_at.is_not(None),
+        User.subscription_until.isnot(None),
+    )
+    if scope is not None:
+        elig_stmt = elig_stmt.where(scope)
+    elig_raw = (await session.execute(elig_stmt)).all()
     by_su: dict[date, list[int]] = defaultdict(list)
     for uid_raw, su_raw in elig_raw:
         su = as_calendar_date(su_raw)
@@ -277,12 +285,13 @@ async def daily_payments_expiry_stats(
         by_su[su].append(int(uid_raw))
 
     pay_stmt = text(
-        """
+        f"""
         SELECT (p.created_at AT TIME ZONE 'Europe/Moscow')::date AS d, COUNT(*)::bigint AS n
         FROM payments p
         INNER JOIN users u ON u.id = p.user_id
         WHERE u.registered_at IS NOT NULL
           AND u.subscription_until IS NOT NULL
+          {_USER_PROJECT_SQL}
           AND (
               u.telegram_id IS NOT NULL
               OR (
@@ -294,11 +303,11 @@ async def daily_payments_expiry_stats(
         GROUP BY 1
         """,
     )
-    pay_rows = (await session.execute(pay_stmt)).all()
+    pay_rows = (await session.execute(pay_stmt, {"p_project_id": admin_project_id()})).all()
     pay_by: dict[date, int] = {row[0]: int(row[1] or 0) for row in pay_rows if row[0] is not None}
 
     pay_split_stmt = text(
-        """
+        f"""
         WITH pay AS (
             SELECT
                 (p.created_at AT TIME ZONE 'Europe/Moscow')::date AS d,
@@ -309,6 +318,7 @@ async def daily_payments_expiry_stats(
             INNER JOIN users u ON u.id = p.user_id
             WHERE u.registered_at IS NOT NULL
               AND u.subscription_until IS NOT NULL
+              {_USER_PROJECT_SQL}
               AND (
                   u.telegram_id IS NOT NULL
                   OR (
@@ -326,7 +336,9 @@ async def daily_payments_expiry_stats(
         GROUP BY d
         """,
     )
-    pay_split_rows = (await session.execute(pay_split_stmt)).all()
+    pay_split_rows = (
+        await session.execute(pay_split_stmt, {"p_project_id": admin_project_id()})
+    ).all()
     pay_first_by: dict[date, int] = {
         row[0]: int(row[1] or 0) for row in pay_split_rows if row[0] is not None
     }
@@ -335,12 +347,13 @@ async def daily_payments_expiry_stats(
     }
 
     paid_uids_stmt = text(
-        """
+        f"""
         SELECT DISTINCT p.user_id
         FROM payments p
         INNER JOIN users u ON u.id = p.user_id
         WHERE u.registered_at IS NOT NULL
           AND u.subscription_until IS NOT NULL
+          {_USER_PROJECT_SQL}
           AND (
               u.telegram_id IS NOT NULL
               OR (
@@ -353,7 +366,7 @@ async def daily_payments_expiry_stats(
     )
     paid_uids = {
         int(row[0])
-        for row in (await session.execute(paid_uids_stmt)).all()
+        for row in (await session.execute(paid_uids_stmt, {"p_project_id": admin_project_id()})).all()
         if row[0] is not None
     }
     expiring_paid_by: dict[date, int] = defaultdict(int)
@@ -545,16 +558,16 @@ async def daily_payments_expiry_day_detail(
 
     msk_td = moscow_today()
     stats_user = user_counts_in_admin_stats(User)
+    scope = project_scope_clause(User)
 
-    elig_raw = (
-        await session.execute(
-            select(User.id, User.subscription_until).where(
-                stats_user,
-                User.registered_at.is_not(None),
-                User.subscription_until.isnot(None),
-            ),
-        )
-    ).all()
+    elig_stmt = select(User.id, User.subscription_until).where(
+        stats_user,
+        User.registered_at.is_not(None),
+        User.subscription_until.isnot(None),
+    )
+    if scope is not None:
+        elig_stmt = elig_stmt.where(scope)
+    elig_raw = (await session.execute(elig_stmt)).all()
     by_su: dict[date, list[int]] = defaultdict(list)
     for uid_raw, su_raw in elig_raw:
         su = as_calendar_date(su_raw)
@@ -563,12 +576,13 @@ async def daily_payments_expiry_day_detail(
         by_su[su].append(int(uid_raw))
 
     paid_uids_stmt = text(
-        """
+        f"""
         SELECT DISTINCT p.user_id
         FROM payments p
         INNER JOIN users u ON u.id = p.user_id
         WHERE u.registered_at IS NOT NULL
           AND u.subscription_until IS NOT NULL
+          {_USER_PROJECT_SQL}
           AND (
               u.telegram_id IS NOT NULL
               OR (
@@ -581,12 +595,12 @@ async def daily_payments_expiry_day_detail(
     )
     paid_uids = {
         int(row[0])
-        for row in (await session.execute(paid_uids_stmt)).all()
+        for row in (await session.execute(paid_uids_stmt, {"p_project_id": admin_project_id()})).all()
         if row[0] is not None
     }
 
     pay_detail_stmt = text(
-        """
+        f"""
         WITH pay AS (
             SELECT
                 p.id AS payment_id,
@@ -601,6 +615,7 @@ async def daily_payments_expiry_day_detail(
             INNER JOIN users u ON u.id = p.user_id
             WHERE u.registered_at IS NOT NULL
               AND u.subscription_until IS NOT NULL
+              {_USER_PROJECT_SQL}
               AND (
                   u.telegram_id IS NOT NULL
                   OR (
@@ -616,7 +631,12 @@ async def daily_payments_expiry_day_detail(
         ORDER BY created_at ASC, payment_id ASC
         """,
     )
-    pay_rows = (await session.execute(pay_detail_stmt, {"day": day})).all()
+    pay_rows = (
+        await session.execute(
+            pay_detail_stmt,
+            {"day": day, "p_project_id": admin_project_id()},
+        )
+    ).all()
     paid_on_day_uids = {
         int(row[1]) for row in pay_rows if row[1] is not None
     }
@@ -735,6 +755,9 @@ async def count_users_with_subscription_device(
     ).join(User, User.id == SubscriptionDevice.user_id).where(
         user_counts_in_admin_stats(User),
     )
+    scope = project_scope_clause(User)
+    if scope is not None:
+        stmt = stmt.where(scope)
     if referral_link_id is not None:
         stmt = stmt.where(User.referral_link_id == referral_link_id)
     return int(await session.scalar(stmt) or 0)
@@ -748,7 +771,7 @@ async def active_users_count_for_utc_date(
     """«Активные» за календарный день UTC по ``traffic_date`` (воронка рефералов)."""
 
     user_filter_sql = ""
-    params: dict[str, object] = {"cal_day": cal_day}
+    params: dict[str, object] = {"cal_day": cal_day, "p_project_id": admin_project_id()}
     if referral_link_id is not None:
         user_filter_sql = "AND u.referral_link_id = :referral_link_id"
         params["referral_link_id"] = referral_link_id
@@ -766,6 +789,7 @@ async def active_users_count_for_utc_date(
                     AND u.email_verified_at IS NOT NULL
                 )
             )
+            {_USER_PROJECT_SQL}
             {user_filter_sql}
         ),
         traffic_cum AS (

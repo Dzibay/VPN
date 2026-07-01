@@ -18,9 +18,11 @@ from app.api.endpoints import (
     seo_pages,
     server_metrics,
     servers,
+    staff_auth,
     staff_blocked_ips,
     staff_chart_events,
     staff_ledger,
+    staff_projects,
     staff_support_messages,
     subscription_device_stats,
     telegram,
@@ -38,6 +40,8 @@ api_router.include_router(referral_links.me_router)
 api_router.include_router(me_endpoints.router)
 api_router.include_router(auth.router)
 api_router.include_router(payments.router)
+api_router.include_router(staff_auth.router)
+api_router.include_router(staff_projects.router)
 api_router.include_router(telegram.router)
 api_router.include_router(users.router)
 api_router.include_router(staff_blocked_ips.router)

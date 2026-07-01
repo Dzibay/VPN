@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Annotated, Literal
 from urllib.parse import unquote_plus
 
-from fastapi import Cookie, Depends, Header
+from fastapi import Cookie, Depends, Header, Request
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +11,14 @@ from app.api.security_bearer import bearer_jwt
 from app.config import get_settings
 from app.core.access_token import AccessClaims, decode_access_token, jwt_signing_secret
 from app.core.request_subject import bind_request_subject_user
-from app.core.exceptions import ForbiddenError, ServiceUnavailableError, UnauthorizedError
+from app.core.exceptions import (
+    ForbiddenError,
+    NotFoundError,
+    ServiceUnavailableError,
+    UnauthorizedError,
+)
+from app.domain.tenant.project_cache import get_project_by_bot_secret, get_project_by_id
+from app.domain.tenant.project_context import ProjectContext
 from app.infrastructure.database.session import get_db, get_db_readonly
 
 SessionDep = Annotated[AsyncSession, Depends(get_db)]
@@ -204,25 +211,140 @@ def require_referral_links_api_key(
         raise UnauthorizedError(detail="Недействительный API-ключ")
 
 
-def require_telegram_bot_api_secret(
+async def require_telegram_bot_api_secret(
     x_telegram_bot_secret: Annotated[str | None, Header()] = None,
-) -> None:
+) -> ProjectContext:
     """
-    Тот же секрет, что и для POST /api/auth/telegram, POST /api/telegram/link, POST /api/telegram/site-link/start,
-    GET /api/telegram/referral/me, DELETE /api/telegram/subscription-devices/{device_id},
-    GET /api/telegram/payments/tariffs, GET /api/telegram/payments/tribute-links,
-    POST /api/telegram/payments/yookassa/checkout,
-    POST /api/payments/tribute/webhook-test,
-    POST /api/payments/yookassa/webhook,
-    GET /api/telegram/notification-tasks, POST /api/telegram/notification-tasks/completed,
-    GET /api/telegram/users?group=..., GET /api/telegram/users/{topic_id} и
-    GET /api/telegram/subscription-open-clients (заголовок X-Telegram-Bot-Secret).
-    TELEGRAM_BOT_API_SECRET в env; пусто — 503.
+    Multi-tenant: секрет ищется в ``projects.telegram_bot_api_secret`` (per-project).
+    Возвращает найденный проект — endpoint может использовать его напрямую.
+
+    Fallback: если проект по секрету не найден, но глобальный ``settings.telegram_bot_api_secret``
+    задан и совпадает — принимаем секрет и берём дефолтный проект id=1 (обратная совместимость).
     """
+    got = (x_telegram_bot_secret or "").strip()
+    if not got:
+        raise UnauthorizedError(detail="Недействительный секрет бота")
+
+    project = await get_project_by_bot_secret(got)
+    if project is not None:
+        return project
+
     settings = get_settings()
     expected = (settings.telegram_bot_api_secret or "").strip()
-    if not expected:
+    if expected and secrets.compare_digest(got, expected):
+        legacy_project = await get_project_by_id(1)
+        if legacy_project is not None:
+            return legacy_project
+        raise ServiceUnavailableError(
+            detail="Дефолтный проект (id=1) отсутствует — миграция не выполнена",
+        )
+
+    if not expected and not project:
         raise ServiceUnavailableError(detail="TELEGRAM_BOT_API_SECRET не задан: эндпоинт отключён")
-    got = (x_telegram_bot_secret or "").strip()
-    if not got or not secrets.compare_digest(got, expected):
-        raise UnauthorizedError(detail="Недействительный секрет бота")
+    raise UnauthorizedError(detail="Недействительный секрет бота")
+
+
+# =====================================================================
+# Multi-tenant dependencies: резолвинг проекта по Host / bot-secret / URL-slug.
+# ProjectContextMiddleware кладёт проект в request.state.project (может быть None).
+# =====================================================================
+
+
+def get_project_optional(request: Request) -> ProjectContext | None:
+    """Возвращает текущий проект или None (для health/prometheus SD и admin endpoints)."""
+    return getattr(request.state, "project", None)
+
+
+def require_project(request: Request) -> ProjectContext:
+    """404, если проект не резолвится (для tenant-scoped публичных endpoints).
+
+    Используется в endpoints, где хост запроса обязан принадлежать известному проекту
+    (страницы SPA, публичные API кабинета, payment webhooks, bot API).
+    """
+    project = getattr(request.state, "project", None)
+    if project is None:
+        raise NotFoundError(detail="Проект не найден для этого домена")
+    return project
+
+
+# =====================================================================
+# Staff auth / admin dependencies.
+# =====================================================================
+
+
+def _extract_staff_token(creds: HTTPAuthorizationCredentials | None) -> str | None:
+    return _token_strict(creds)
+
+
+async def get_staff_principal(
+    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_jwt)] = None,
+):
+    """Возвращает ``StaffClaims`` или падает 401/403."""
+    from app.core.staff_token import decode_staff_token
+
+    settings = get_settings()
+    token = _extract_staff_token(creds)
+    if not token:
+        raise UnauthorizedError(
+            detail="Требуется вход персонала",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    claims = decode_staff_token(token, settings)
+    if claims is None:
+        raise UnauthorizedError(detail="Недействительный staff-токен")
+    return claims
+
+
+def require_staff_role(*allowed_roles: str):
+    """Depends-фабрика: требует staff-JWT + одна из перечисленных ролей."""
+    allowed = frozenset(allowed_roles) if allowed_roles else None
+
+    async def _dep(claims=Depends(get_staff_principal)):
+        if allowed is not None and claims.role not in allowed:
+            raise ForbiddenError(detail="Недостаточно прав персонала")
+        return claims
+
+    return _dep
+
+
+require_staff_any = require_staff_role()
+require_super_admin = require_staff_role("super_admin")
+
+
+async def require_admin_project(
+    request: Request,
+    claims=Depends(get_staff_principal),
+) -> ProjectContext | None:
+    """Резолвит проект админ-запроса из заголовка ``X-Admin-Project`` (slug) или query ``?project=slug``.
+
+    Возвращает:
+    - ``ProjectContext`` — конкретный проект (staff должен иметь к нему доступ).
+    - ``None`` — режим «Все проекты» (только для super_admin; API получает NULL и агрегирует).
+
+    Ошибки:
+    - 400, если параметр не передан.
+    - 403, если у staff нет доступа к проекту.
+    - 404, если проект по slug не найден.
+    """
+    from app.core.exceptions import BadRequestError
+
+    slug = request.headers.get("x-admin-project") or request.query_params.get("project")
+    if not slug:
+        raise BadRequestError(detail="Не указан X-Admin-Project / ?project=")
+    slug = slug.strip().lower()
+
+    if slug in ("__all__", "all"):
+        if claims.role != "super_admin":
+            raise ForbiddenError(detail="Режим «Все проекты» доступен только super_admin")
+        return None
+
+    from app.domain.tenant.project_cache import get_project_by_slug
+
+    project = await get_project_by_slug(slug)
+    if project is None:
+        raise NotFoundError(detail=f"Проект '{slug}' не найден")
+
+    if claims.role != "super_admin":
+        if claims.projects is None or project.id not in claims.projects:
+            raise ForbiddenError(detail="Нет доступа к этому проекту")
+    return project

@@ -62,9 +62,9 @@ def happ_utf8_header_value(text: str, *, max_chars: int | None = None) -> str:
 
 def subscription_profile_title_header_value(title: str | None = None) -> str:
     """Заголовок ``profile-title`` — имя профиля подписки в Happ и совместимых клиентах."""
-    from app.constants import BRAND_NAME
+    from app.domain.tenant.branding import resolve_brand_name
 
-    return happ_utf8_header_value(title if title is not None else BRAND_NAME)
+    return happ_utf8_header_value(title if title is not None else resolve_brand_name())
 
 
 def subscription_announce_header_value(text: str) -> str:

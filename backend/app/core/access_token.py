@@ -62,6 +62,19 @@ def create_access_token(
 
 
 def decode_access_token(token: str, settings: Settings) -> AccessClaims | None:
+    """Декодирует access-JWT. Поддерживает 2 типа токенов:
+
+    1. Клиентский JWT (aud отсутствует): sub = users.id, role = admin|manager|user.
+    2. Staff JWT (aud='staff'): sub = staff_users.id, role = super_admin|admin|manager.
+       Для совместимости с legacy endpoints (require_roles('admin','manager')) staff-JWT
+       мапится в AccessClaims следующим образом:
+       - super_admin → role='admin' (полный доступ)
+       - admin → role='admin'
+       - manager → role='manager'
+       ``user_id`` в этом случае = staff_users.id (не users.id!). Endpoints, которым нужен
+       именно клиентский user_id (например, /api/me), не должны видеть staff-токен —
+       для них используем ``require_client_access`` (см. ниже) или проверяем aud явно.
+    """
     try:
         secret = jwt_signing_secret(settings)
     except ValueError:
@@ -71,12 +84,28 @@ def decode_access_token(token: str, settings: Settings) -> AccessClaims | None:
             token,
             secret,
             algorithms=[_JWT_ALG],
-            options={"require": ["exp", "sub", "role"]},
+            options={"require": ["exp", "sub", "role"], "verify_aud": False},
         )
     except jwt.PyJWTError:
         return None
+
     role = payload.get("role")
     sub = payload.get("sub")
+    aud = payload.get("aud")
+
+    # Staff-JWT: маппим в admin/manager для legacy require_roles.
+    if aud == "staff":
+        if role not in ("super_admin", "admin", "manager"):
+            return None
+        try:
+            uid = int(sub)
+        except (TypeError, ValueError):
+            return None
+        mapped_role: Literal["admin", "user", "manager"] = (
+            "admin" if role in ("super_admin", "admin") else "manager"
+        )
+        return AccessClaims(role=mapped_role, user_id=uid)
+
     if role == "admin":
         try:
             uid = int(sub)

@@ -6,6 +6,7 @@ from sqlalchemy import String, cast, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.models.users import StaffUserSearchItem
+from app.domain.tenant.admin_project_scope import apply_project_scope
 from app.infrastructure.persistence.models.user import User
 
 
@@ -29,7 +30,7 @@ async def search_staff_users(
         return []
     cap = min(max(1, limit), 50)
     pattern = f"%{_escape_like_pattern(raw)}%"
-    stmt = (
+    stmt = apply_project_scope(
         select(User)
         .where(
             or_(
@@ -40,7 +41,8 @@ async def search_staff_users(
             ),
         )
         .order_by(User.id.desc())
-        .limit(cap)
+        .limit(cap),
+        User,
     )
     rows = list((await session.scalars(stmt)).all())
     out: list[StaffUserSearchItem] = []

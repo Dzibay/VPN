@@ -1,4 +1,112 @@
 -- Схема для новой БД (CREATE IF NOT EXISTS + индексы). Без ALTER: существующие инстансы уже догнаны вручную.
+-- Multi-tenancy: таблицы projects/staff_users/project_tariffs создаются здесь;
+-- добавление колонки project_id в существующие tenant-scoped таблицы, backfill и переезд UNIQUE-индексов —
+-- в database/migrate.sql (идемпотентная миграция под гуардом schema_one_time_migrations).
+
+-- =====================================================================
+-- Multi-tenancy: корневая таблица проектов + отдельная таблица персонала.
+-- =====================================================================
+
+CREATE TABLE IF NOT EXISTS projects (
+    id BIGSERIAL PRIMARY KEY,
+    slug TEXT NOT NULL,
+    name TEXT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    primary_domain TEXT NOT NULL,
+    extra_domains TEXT[] NOT NULL DEFAULT '{}'::text[],
+    telegram_bot_username TEXT,
+    telegram_bot_api_secret TEXT,
+    support_telegram_username TEXT,
+    support_email TEXT,
+    tribute_api_key TEXT,
+    yookassa_shop_id TEXT,
+    yookassa_secret_key TEXT,
+    yookassa_return_url TEXT,
+    smtp_settings JSONB,
+    referral_bonus_days_per_paid_month INTEGER,
+    referral_fixed_first_payment_bonus_rub INTEGER,
+    referral_bonus_policy TEXT,
+    happ_provider_id TEXT,
+    subscription_sub_expire_banner JSONB,
+    subscription_sub_info_banner JSONB,
+    brand JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT projects_slug_key UNIQUE (slug),
+    CONSTRAINT projects_primary_domain_key UNIQUE (primary_domain)
+);
+
+CREATE TABLE IF NOT EXISTS staff_users (
+    id BIGSERIAL PRIMARY KEY,
+    email TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    full_name TEXT,
+    role TEXT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_login_at TIMESTAMPTZ,
+    CONSTRAINT staff_users_email_key UNIQUE (email),
+    CONSTRAINT staff_users_role_check CHECK (role IN ('super_admin', 'admin', 'manager'))
+);
+
+CREATE TABLE IF NOT EXISTS staff_user_project_access (
+    staff_user_id BIGINT NOT NULL REFERENCES staff_users (id) ON DELETE CASCADE,
+    project_id BIGINT NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    PRIMARY KEY (staff_user_id, project_id),
+    CONSTRAINT staff_user_project_access_role_check CHECK (role IN ('admin', 'manager'))
+);
+
+CREATE TABLE IF NOT EXISTS project_tariffs (
+    id BIGSERIAL PRIMARY KEY,
+    project_id BIGINT NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    months INTEGER NOT NULL,
+    amount NUMERIC(14, 2) NOT NULL,
+    name TEXT,
+    external_link TEXT,
+    external_tg_link TEXT,
+    external_product_id TEXT,
+    kind TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT project_tariffs_provider_check CHECK (provider IN ('tribute', 'yookassa')),
+    CONSTRAINT uq_project_tariffs_prov_months UNIQUE (project_id, provider, months)
+);
+
+CREATE INDEX IF NOT EXISTS idx_projects_active_slug ON projects (slug) WHERE is_active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_staff_user_project_access_project ON staff_user_project_access (project_id);
+
+-- Дефолтный проект id=1 для чистой инсталляции (существующие БД получат тот же id
+-- через backfill в migrate.sql; примерные значения переопределяются в админке / SQL).
+INSERT INTO projects (id, slug, name, primary_domain, extra_domains)
+VALUES (
+    1,
+    'podorozhnik',
+    'Подорожник VPN',
+    'podorozhnik-connect.ru',
+    '{}'::text[]
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- Sync sequence, чтобы SERIAL не дал id=1 при следующем INSERT.
+SELECT setval(
+    pg_get_serial_sequence('projects', 'id'),
+    GREATEST((SELECT COALESCE(MAX(id), 0) FROM projects), 1),
+    TRUE
+);
+
+-- Одноразовые миграции данных: гуард для migrate.sql и Python-миграций (см. schema.py).
+CREATE TABLE IF NOT EXISTS schema_one_time_migrations (
+    name TEXT PRIMARY KEY,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- =====================================================================
+-- Основные таблицы (без project_id-колонки: она добавляется в migrate.sql,
+-- иначе CREATE INDEX IF NOT EXISTS с project_id упадёт на существующей БД
+-- до отработки миграции).
+-- =====================================================================
 
 CREATE TABLE IF NOT EXISTS users (
     id BIGSERIAL PRIMARY KEY,
@@ -266,60 +374,6 @@ CREATE INDEX IF NOT EXISTS idx_users_referral_link_id ON users (referral_link_id
 
 CREATE INDEX IF NOT EXISTS idx_users_registered_at ON users (registered_at DESC NULLS LAST);
 
--- Служебный узел id=0: накопление трафика с удалённых серверов (не в подписке, скрыт в админке).
--- INSERT INTO servers (
---     id,
---     name,
---     host,
---     port,
---     country,
---     load_percent,
---     is_active,
---     whitelist,
---     include_in_auto,
---     is_hidden,
---     provision_ready,
---     provision_status,
---     proxy_kind,
---     vless_uuid,
---     reality_short_id,
---     reality_dest,
---     reality_server_names,
---     reality_fingerprint,
---     reality_spider_x,
---     vless_flow,
---     is_cascade_ru_entry
--- )
--- SELECT
---     0,
---     'Архив (удалённые узлы)',
---     '__traffic_archive__',
---     1,
---     '',
---     0,
---     FALSE,
---     FALSE,
---     FALSE,
---     TRUE,
---     FALSE,
---     'idle',
---     'vless',
---     '00000000-0000-0000-0000-000000000001',
---     '00000000',
---     'www.amazon.com:443',
---     'www.amazon.com,amazon.com',
---     'chrome',
---     '/',
---     'xtls-rprx-vision',
---     FALSE
--- WHERE NOT EXISTS (SELECT 1 FROM servers WHERE id = 0);
-
--- SELECT setval(
---     pg_get_serial_sequence('servers', 'id'),
---     (SELECT COALESCE(MAX(id), 0) FROM servers WHERE id > 0),
---     TRUE
--- );
-
 CREATE INDEX IF NOT EXISTS idx_servers_is_active ON servers (is_active);
 
 CREATE INDEX IF NOT EXISTS idx_servers_cascade_next ON servers (cascade_next_server_id)
@@ -368,8 +422,6 @@ CREATE INDEX IF NOT EXISTS idx_user_server_traffic_date_user
 CREATE INDEX IF NOT EXISTS idx_subscription_devices_user_created_at
     ON subscription_devices (user_id, created_at);
 
--- uq_payments_yookassa_object_id — в migrate.sql (после tribute_webhook → provider_webhook).
-
 CREATE INDEX IF NOT EXISTS idx_tasks_user_created_at
     ON tasks (user_id, created_at DESC);
 
@@ -384,7 +436,6 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status
 -- Бухгалтерия (P&L): расходы, повторяющиеся шаблоны, категории, настройки.
 -- =====================================================================
 
--- Категории расходов (для графиков и группировки P&L).
 CREATE TABLE IF NOT EXISTS expense_categories (
     id BIGSERIAL PRIMARY KEY,
     slug TEXT NOT NULL,
@@ -396,8 +447,6 @@ CREATE TABLE IF NOT EXISTS expense_categories (
     CONSTRAINT uq_expense_categories_slug UNIQUE (slug)
 );
 
--- Повторяющиеся (ежемесячные) расходы — шаблоны. В сводку разворачиваются виртуально
--- по месяцам диапазона (см. rpc_finance_accounting_summary), отдельные строки не материализуются.
 CREATE TABLE IF NOT EXISTS recurring_expenses (
     id BIGSERIAL PRIMARY KEY,
     title TEXT NOT NULL,
@@ -415,7 +464,6 @@ CREATE TABLE IF NOT EXISTS recurring_expenses (
     )
 );
 
--- Разовые расходы.
 CREATE TABLE IF NOT EXISTS expenses (
     id BIGSERIAL PRIMARY KEY,
     incurred_on DATE NOT NULL,
@@ -434,7 +482,6 @@ CREATE TABLE IF NOT EXISTS expenses (
     )
 );
 
--- Счета/кошельки компании. Legacy-платежи без account_id считаются поступившими на default-счет.
 CREATE TABLE IF NOT EXISTS cash_accounts (
     id BIGSERIAL PRIMARY KEY,
     name TEXT NOT NULL,
@@ -452,7 +499,6 @@ CREATE TABLE IF NOT EXISTS cash_accounts (
     CONSTRAINT cash_accounts_opening_balance_check CHECK (opening_balance >= 0)
 );
 
--- На существующих инстансах expenses уже есть без новых колонок (CREATE TABLE IF NOT EXISTS их не добавляет).
 ALTER TABLE expenses
     ADD COLUMN IF NOT EXISTS payment_source TEXT NOT NULL DEFAULT 'company',
     ADD COLUMN IF NOT EXISTS paid_by_name TEXT,
@@ -472,7 +518,6 @@ ALTER TABLE expenses
     ADD CONSTRAINT expenses_cash_account_fk
     FOREIGN KEY (cash_account_id) REFERENCES cash_accounts (id) ON DELETE SET NULL;
 
--- Ручные кассовые корректировки/переводы, не дублирующие платежи, расходы, возвраты и выводы.
 CREATE TABLE IF NOT EXISTS cash_transactions (
     id BIGSERIAL PRIMARY KEY,
     account_id BIGINT NOT NULL REFERENCES cash_accounts (id) ON DELETE RESTRICT,
@@ -488,7 +533,6 @@ CREATE TABLE IF NOT EXISTS cash_transactions (
     )
 );
 
--- Долги организации перед людьми: например, сотрудник оплатил сервер своими деньгами.
 CREATE TABLE IF NOT EXISTS payables (
     id BIGSERIAL PRIMARY KEY,
     counterparty_name TEXT NOT NULL,
@@ -508,7 +552,6 @@ CREATE TABLE IF NOT EXISTS payables (
     CONSTRAINT payables_paid_not_over_amount CHECK (paid_amount <= amount)
 );
 
--- Возвраты клиентам. Это корректирующие операции, а не удаление платежей.
 CREATE TABLE IF NOT EXISTS refunds (
     id BIGSERIAL PRIMARY KEY,
     payment_id BIGINT REFERENCES payments (id) ON DELETE SET NULL,
@@ -525,7 +568,6 @@ CREATE TABLE IF NOT EXISTS refunds (
     CONSTRAINT refunds_status_check CHECK (status IN ('pending', 'succeeded', 'failed', 'cancelled'))
 );
 
--- Вывод прибыли владельцу: уменьшает cash, но не является расходом P&L.
 CREATE TABLE IF NOT EXISTS profit_withdrawals (
     id BIGSERIAL PRIMARY KEY,
     account_id BIGINT REFERENCES cash_accounts (id) ON DELETE SET NULL,
@@ -541,7 +583,6 @@ CREATE TABLE IF NOT EXISTS profit_withdrawals (
     )
 );
 
--- Универсальные staff-редактируемые настройки (ключ → JSONB). Строка 'finance' — налог и валюта.
 CREATE TABLE IF NOT EXISTS app_settings (
     key TEXT PRIMARY KEY,
     value JSONB NOT NULL,
@@ -572,29 +613,60 @@ CREATE INDEX IF NOT EXISTS idx_refunds_refunded_on ON refunds (refunded_on DESC)
 CREATE INDEX IF NOT EXISTS idx_profit_withdrawals_withdrawn_on
     ON profit_withdrawals (withdrawn_on DESC);
 
-INSERT INTO cash_accounts (name, kind, currency, opening_balance, opened_on, active, is_default)
-VALUES ('Расчетный счет', 'bank', 'RUB', 0, CURRENT_DATE, TRUE, TRUE)
-ON CONFLICT DO NOTHING;
+-- Seed «Основной счёт» только на чистой БД, когда таблица ещё не содержит записей и
+-- миграция ещё не добавила NOT NULL project_id. Иначе (после migrate.sql) вставка
+-- дефолтного счёта делается на project_id=1 (см. migrate.sql, там seed для базового проекта).
+DO $seed_cash$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM cash_accounts) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'cash_accounts' AND column_name = 'project_id'
+    ) THEN
+        INSERT INTO cash_accounts (name, kind, currency, opening_balance, opened_on, active, is_default)
+        VALUES ('Расчетный счет', 'bank', 'RUB', 0, CURRENT_DATE, TRUE, TRUE);
+    END IF;
+END
+$seed_cash$;
 
 
 -- Сиды категорий по умолчанию (идемпотентно).
-INSERT INTO expense_categories (slug, title, color, sort_order)
-VALUES
-    ('servers', 'Серверы и хостинг', '#38bdf8', 10),
-    ('marketing', 'Маркетинг и реклама', '#f59e0b', 20),
-    ('salary', 'Зарплаты и подрядчики', '#a78bfa', 30),
-    ('software', 'ПО и сервисы', '#34d399', 40),
-    ('support', 'Поддержка', '#f472b6', 50),
-    ('other', 'Прочее', '#94a3b8', 60)
-ON CONFLICT (slug) DO NOTHING;
+-- Seed категорий расходов и налога по умолчанию. Оборачиваем в DO $seed$, чтобы
+-- на уже мигрированной БД (project_id колонка есть, is_default может измениться)
+-- не пытаться вставлять NULL project_id: миграция создаёт свои seeds для project_id=1.
+DO $seed_finance$
+DECLARE
+    _has_project_id boolean;
+BEGIN
+    SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'expense_categories' AND column_name = 'project_id'
+    ) INTO _has_project_id;
+    IF NOT _has_project_id THEN
+        INSERT INTO expense_categories (slug, title, color, sort_order)
+        VALUES
+            ('servers', 'Серверы и хостинг', '#38bdf8', 10),
+            ('marketing', 'Маркетинг и реклама', '#f59e0b', 20),
+            ('salary', 'Зарплаты и подрядчики', '#a78bfa', 30),
+            ('software', 'ПО и сервисы', '#34d399', 40),
+            ('support', 'Поддержка', '#f472b6', 50),
+            ('other', 'Прочее', '#94a3b8', 60)
+        ON CONFLICT (slug) DO NOTHING;
+    END IF;
 
--- Налог по умолчанию: НПД 4% с валовой выручки (можно изменить в админке).
-INSERT INTO app_settings (key, value)
-VALUES (
-    'finance',
-    '{"tax_mode": "npd", "tax_rate": 0.04, "tax_base": "gross", "currency": "RUB"}'::jsonb
-)
-ON CONFLICT (key) DO NOTHING;
+    SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'app_settings' AND column_name = 'project_id'
+    ) INTO _has_project_id;
+    IF NOT _has_project_id THEN
+        INSERT INTO app_settings (key, value)
+        VALUES (
+            'finance',
+            '{"tax_mode": "npd", "tax_rate": 0.04, "tax_base": "gross", "currency": "RUB"}'::jsonb
+        )
+        ON CONFLICT (key) DO NOTHING;
+    END IF;
+END
+$seed_finance$;
 
 -- SEO-страницы: учёт переходов (views_count) для админки.
 CREATE TABLE IF NOT EXISTS seo_pages (
@@ -607,14 +679,24 @@ CREATE TABLE IF NOT EXISTS seo_pages (
     CONSTRAINT seo_pages_path_key UNIQUE (path)
 );
 
-INSERT INTO seo_pages (path, title, sort_order)
-VALUES
-    ('/', 'Главная', 1),
-    ('/vpn-dlya-youtube', 'VPN для YouTube', 10),
-    ('/vpn-dlya-youtube/android', 'VPN для YouTube на Android', 11),
-    ('/vpn-dlya-youtube/pc', 'VPN для YouTube на ПК', 12),
-    ('/vpn-dlya-gemini', 'VPN для Gemini', 20),
-    ('/vpn-dlya-telegram', 'VPN для Telegram', 30),
-    ('/vpn-dlya-iphone', 'VPN для iPhone', 40),
-    ('/vpn-dlya-android', 'VPN для Android', 41)
-ON CONFLICT (path) DO NOTHING;
+-- Seed SEO-страниц только до миграции v1 (иначе project_id NOT NULL).
+DO $seed_seo$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'seo_pages' AND column_name = 'project_id'
+    ) THEN
+        INSERT INTO seo_pages (path, title, sort_order)
+        VALUES
+            ('/', 'Главная', 1),
+            ('/vpn-dlya-youtube', 'VPN для YouTube', 10),
+            ('/vpn-dlya-youtube/android', 'VPN для YouTube на Android', 11),
+            ('/vpn-dlya-youtube/pc', 'VPN для YouTube на ПК', 12),
+            ('/vpn-dlya-gemini', 'VPN для Gemini', 20),
+            ('/vpn-dlya-telegram', 'VPN для Telegram', 30),
+            ('/vpn-dlya-iphone', 'VPN для iPhone', 40),
+            ('/vpn-dlya-android', 'VPN для Android', 41)
+        ON CONFLICT (path) DO NOTHING;
+    END IF;
+END
+$seed_seo$;

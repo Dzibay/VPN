@@ -14,6 +14,9 @@ class CashAccount(Base):
     __tablename__ = "cash_accounts"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
     name: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'bank'"))
     currency: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'RUB'"))
@@ -22,7 +25,8 @@ class CashAccount(Base):
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("TRUE"))
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("FALSE"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
-    created_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    #: FK теперь на staff_users.
+    created_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("staff_users.id", ondelete="SET NULL"), nullable=True)
 
 
 class CashTransaction(Base):
@@ -31,6 +35,9 @@ class CashTransaction(Base):
     __tablename__ = "cash_transactions"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
     account_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("cash_accounts.id", ondelete="RESTRICT"), nullable=False)
     occurred_on: Mapped[date] = mapped_column(Date, nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
@@ -38,7 +45,7 @@ class CashTransaction(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
-    created_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("staff_users.id", ondelete="SET NULL"), nullable=True)
 
 
 class Payable(Base):
@@ -47,6 +54,9 @@ class Payable(Base):
     __tablename__ = "payables"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
     counterparty_name: Mapped[str] = mapped_column(Text, nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
@@ -58,7 +68,7 @@ class Payable(Base):
     due_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
-    created_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("staff_users.id", ondelete="SET NULL"), nullable=True)
 
 
 class Refund(Base):
@@ -67,6 +77,9 @@ class Refund(Base):
     __tablename__ = "refunds"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
     payment_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("payments.id", ondelete="SET NULL"), nullable=True)
     user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     account_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("cash_accounts.id", ondelete="SET NULL"), nullable=True)
@@ -77,7 +90,7 @@ class Refund(Base):
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
-    created_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("staff_users.id", ondelete="SET NULL"), nullable=True)
 
 
 class ProfitWithdrawal(Base):
@@ -86,6 +99,9 @@ class ProfitWithdrawal(Base):
     __tablename__ = "profit_withdrawals"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
     account_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("cash_accounts.id", ondelete="SET NULL"), nullable=True)
     withdrawn_on: Mapped[date] = mapped_column(Date, nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
@@ -93,4 +109,4 @@ class ProfitWithdrawal(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'succeeded'"))
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
-    created_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("staff_users.id", ondelete="SET NULL"), nullable=True)

@@ -2,8 +2,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { Headphones } from 'lucide-vue-next'
-import { fetchJson } from '../api/client.js'
-import { canAccessReferralsAdmin } from '../auth/permissions.js'
 import {
   refreshClientSupportUnread,
   startClientSupportUnreadPolling,
@@ -22,13 +20,9 @@ const router = useRouter()
 const route = useRoute()
 
 const hasToken = ref(false)
-const staffSupportBadgeCount = ref(0)
 const { unreadCount: clientSupportUnread } = useClientSupportUnread()
-/** @type {ReturnType<typeof setInterval> | null} */
-let staffSupportBadgeTimer = null
 
 const supportBadgeCount = computed(() => {
-  if (showStaffSupportBell.value) return staffSupportBadgeCount.value
   if (showClientSupportBell.value) return clientSupportUnread.value
   return 0
 })
@@ -43,23 +37,15 @@ const showGuestAuthLinks = computed(
   () => !hasToken.value && route.name !== 'cabinet',
 )
 
-const showStaffSupportBell = computed(
-  () => hasToken.value && canAccessReferralsAdmin(getSessionRole()),
-)
-
+// На публичном сайте показываем колокольчик поддержки только клиентам (user).
+// staff-роли (admin/manager) работают в отдельной админ-панели — тут им не место.
 const showClientSupportBell = computed(
   () => hasToken.value && getSessionRole() === 'user',
 )
 
-const showSupportBell = computed(
-  () => showStaffSupportBell.value || showClientSupportBell.value,
-)
+const showSupportBell = showClientSupportBell
 
-const supportBellTo = computed(() =>
-  showStaffSupportBell.value
-    ? { name: 'admin-support-staff' }
-    : { name: 'cabinet-support' },
-)
+const supportBellTo = computed(() => ({ name: 'cabinet-support' }))
 
 const supportBadgeLabel = computed(() => {
   const n = supportBadgeCount.value
@@ -69,11 +55,6 @@ const supportBadgeLabel = computed(() => {
 
 const supportBellAriaLabel = computed(() => {
   const n = supportBadgeCount.value
-  if (showStaffSupportBell.value) {
-    return n > 0
-      ? `Поддержка: ${n} чатов ждут ответа`
-      : 'Поддержка: новых сообщений нет'
-  }
   return n > 0
     ? `Поддержка: ${n} новых ответов`
     : 'Поддержка: новых ответов нет'
@@ -81,12 +62,7 @@ const supportBellAriaLabel = computed(() => {
 
 const supportBellTitle = computed(() => {
   const n = supportBadgeCount.value
-  if (n > 0) {
-    return showStaffSupportBell.value
-      ? `Поддержка: ${n} чатов ждут ответа`
-      : `Поддержка: ${n} новых ответов`
-  }
-  return 'Поддержка'
+  return n > 0 ? `Поддержка: ${n} новых ответов` : 'Поддержка'
 })
 
 const homeNavLinks = [
@@ -108,59 +84,27 @@ const headerWordmarkOk = ref(true)
 function logout() {
   clearSession()
   refreshSessions()
-  staffSupportBadgeCount.value = 0
   stopSupportBadgePolling()
-  if (route.path.startsWith('/cabinet') || route.path.startsWith('/admin')) {
+  if (route.path.startsWith('/cabinet')) {
     router.push('/login')
   } else {
     router.push('/')
   }
 }
 
-async function loadSupportBadgeCount() {
-  if (showStaffSupportBell.value) {
-    try {
-      const data = await fetchJson('/api/staff/support-chats/badge')
-      staffSupportBadgeCount.value = Number(data?.needs_reply_count) || 0
-    } catch {
-      staffSupportBadgeCount.value = 0
-    }
-    return
-  }
-  if (showClientSupportBell.value) {
-    await refreshClientSupportUnread()
-    return
-  }
-  staffSupportBadgeCount.value = 0
-}
-
 function startSupportBadgePolling() {
   stopSupportBadgePolling()
-  if (!showSupportBell.value) return
-  if (showClientSupportBell.value) {
-    startClientSupportUnreadPolling(SUPPORT_BADGE_POLL_MS)
-    return
-  }
-  void loadSupportBadgeCount()
-  staffSupportBadgeTimer = setInterval(() => {
-    void loadSupportBadgeCount()
-  }, SUPPORT_BADGE_POLL_MS)
+  if (!showClientSupportBell.value) return
+  startClientSupportUnreadPolling(SUPPORT_BADGE_POLL_MS)
 }
 
 function stopSupportBadgePolling() {
   stopClientSupportUnreadPolling()
-  if (staffSupportBadgeTimer) {
-    clearInterval(staffSupportBadgeTimer)
-    staffSupportBadgeTimer = null
-  }
 }
 
 watch(showSupportBell, (enabled) => {
   if (enabled) startSupportBadgePolling()
-  else {
-    staffSupportBadgeCount.value = 0
-    stopSupportBadgePolling()
-  }
+  else stopSupportBadgePolling()
 })
 
 onMounted(() => {
@@ -172,7 +116,7 @@ onBeforeUnmount(stopSupportBadgePolling)
 
 router.afterEach(() => {
   refreshSessions()
-  if (showSupportBell.value) void loadSupportBadgeCount()
+  if (showSupportBell.value) void refreshClientSupportUnread()
 })
 </script>
 

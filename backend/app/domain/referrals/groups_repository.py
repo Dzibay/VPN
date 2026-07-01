@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.models.referral_link_groups import DEFAULT_GROUP_COLOR
 from app.domain.referrals.errors import ReferralLinkGroupNotFoundError
+from app.domain.tenant.admin_project_scope import admin_project_id, apply_project_scope
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.referral_link_group import ReferralLinkGroup
 
@@ -15,9 +16,12 @@ async def list_referral_link_groups(session: AsyncSession) -> list[tuple[Referra
     groups = list(
         (
             await session.scalars(
-                select(ReferralLinkGroup).order_by(
-                    ReferralLinkGroup.sort_order.asc(),
-                    ReferralLinkGroup.id.asc(),
+                apply_project_scope(
+                    select(ReferralLinkGroup).order_by(
+                        ReferralLinkGroup.sort_order.asc(),
+                        ReferralLinkGroup.id.asc(),
+                    ),
+                    ReferralLinkGroup,
                 ),
             )
         ).all(),
@@ -43,6 +47,9 @@ async def list_referral_link_groups(session: AsyncSession) -> list[tuple[Referra
 async def get_referral_link_group_row(session: AsyncSession, group_id: int) -> ReferralLinkGroup:
     row = await session.get(ReferralLinkGroup, group_id)
     if row is None:
+        raise ReferralLinkGroupNotFoundError
+    pid = admin_project_id()
+    if pid is not None and int(row.project_id) != pid:
         raise ReferralLinkGroupNotFoundError
     return row
 
