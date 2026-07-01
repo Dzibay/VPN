@@ -46,6 +46,8 @@ from app.domain.tenant.admin_project_scope import (
     apply_project_scope,
     project_scope_clause,
 )
+from app.domain.tenant.project_cache import get_project_by_id
+from app.domain.tenant.project_context import ProjectContext, get_current_project
 from app.domain.users.stats_qualification import user_counts_in_admin_stats
 from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.referral_link import ReferralLink
@@ -162,6 +164,14 @@ async def _referral_link_revenue_net(session: AsyncSession, link_id: int) -> Dec
     return Decimal(str(total or 0))
 
 
+async def _project_context_for_link(link: ReferralLink) -> ProjectContext | None:
+    """Проект ссылки из кэша; иначе контекст текущего запроса."""
+    project = await get_project_by_id(int(link.project_id))
+    if project is not None:
+        return project
+    return get_current_project()
+
+
 async def list_staff_referral_links(session: AsyncSession, cfg: object) -> list:
     """Все реферальные записи в админке, новейшие первыми; URL подставляются из ``cfg``."""
     stmt = apply_project_scope(
@@ -170,8 +180,20 @@ async def list_staff_referral_links(session: AsyncSession, cfg: object) -> list:
     )
     rows = list((await session.scalars(stmt)).all())
     revenues = await _referral_links_revenue_by_id(session)
+    project_ids = {int(r.project_id) for r in rows}
+    projects: dict[int, ProjectContext] = {}
+    for pid in project_ids:
+        p = await get_project_by_id(pid)
+        if p is not None:
+            projects[pid] = p
+    fallback = get_current_project()
     return [
-        referral_link_to_response(r, cfg, revenue_net=revenues.get(int(r.id), Decimal("0")))
+        referral_link_to_response(
+            r,
+            cfg,
+            project=projects.get(int(r.project_id), fallback),
+            revenue_net=revenues.get(int(r.id), Decimal("0")),
+        )
         for r in rows
     ]
 
@@ -185,7 +207,8 @@ async def get_staff_referral_link_by_id(session: AsyncSession, link_id: int, cfg
     if pid is not None and int(row.project_id) != pid:
         raise NotFoundError("Токен не найден")
     revenue_net = await _referral_link_revenue_net(session, link_id)
-    return referral_link_to_response(row, cfg, revenue_net=revenue_net)
+    project = await _project_context_for_link(row)
+    return referral_link_to_response(row, cfg, project=project, revenue_net=revenue_net)
 
 
 async def delete_referral_link_row(session: AsyncSession, link_id: int) -> None:
@@ -211,13 +234,19 @@ async def referral_me_for_user(session: AsyncSession, user_id: int, cfg: object)
 
     row = await get_or_create_user_owned_referral_link(session, user_id)
 
+    project = await get_project_by_id(int(row.project_id))
+    if project is None:
+        user = await session.get(User, user_id)
+        if user is not None:
+            project = await get_project_by_id(int(user.project_id))
+
     pending, received_from_payments, received_immediately = await asyncio.gather(
         sum_referral_bonus_days_pending_activation(session, user_id=user_id),
         sum_referral_bonus_days_received_via_notify_payment(session, user_id=user_id),
         sum_referral_bonus_days_received_immediately(session, user_id=user_id),
     )
     return ReferralMeResponse(
-        link=referral_link_to_response(row, cfg),
+        link=referral_link_to_response(row, cfg, project=project),
         bonus_days_pending_activation=pending,
         bonus_days_received=received_from_payments + received_immediately,
     )

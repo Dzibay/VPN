@@ -33,6 +33,7 @@ from app.domain.referrals.repository import (
     increment_referral_counter_by_token,
     update_referral_link,
 )
+from app.domain.tenant.project_cache import get_project_by_id
 from app.domain.services.referral_links_service import (
     delete_referral_link_row,
     get_staff_referral_link_by_id,
@@ -196,7 +197,8 @@ async def post_referral_link(
         owner_user_id=body.owner_user_id,
         token=body.token,
     )
-    return referral_link_to_response(row, settings)
+    project = await get_project_by_id(int(row.project_id))
+    return referral_link_to_response(row, settings, project=project)
 
 
 @staff_router.patch(
@@ -216,7 +218,8 @@ async def patch_referral_link(
         owner_user_id=body.owner_user_id,
         token=body.token,
     )
-    return referral_link_to_response(row, settings)
+    project = await get_project_by_id(int(row.project_id))
+    return referral_link_to_response(row, settings, project=project)
 
 
 @staff_router.delete(
@@ -261,7 +264,8 @@ async def post_external_referral_link(
 ) -> ReferralLinkOut:
     row, created = await get_or_create_external_referral_link(session, body.token)
     response.status_code = 201 if created else 200
-    return referral_link_to_response(row, settings)
+    project = await get_project_by_id(int(row.project_id))
+    return referral_link_to_response(row, settings, project=project)
 
 
 public_router = APIRouter(prefix="/referral", tags=["public"])
