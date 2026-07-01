@@ -55,10 +55,14 @@ async def get_referral_link_group_row(session: AsyncSession, group_id: int) -> R
 
 
 async def _link_ids_for_group(session: AsyncSession, group_id: int) -> list[int]:
+    group = await get_referral_link_group_row(session, group_id)
     rows = (
         await session.scalars(
             select(ReferralLink.id)
-            .where(ReferralLink.group_id == group_id)
+            .where(
+                ReferralLink.group_id == group_id,
+                ReferralLink.project_id == int(group.project_id),
+            )
             .order_by(ReferralLink.id.asc()),
         )
     ).all()
@@ -113,15 +117,24 @@ async def set_referral_link_group_members(
     group_id: int,
     link_ids: list[int],
 ) -> list[int]:
-    await get_referral_link_group_row(session, group_id)
+    group = await get_referral_link_group_row(session, group_id)
     await session.execute(
         update(ReferralLink)
-        .where(ReferralLink.group_id == group_id, ReferralLink.id.not_in(link_ids or [-1]))
+        .where(
+            ReferralLink.project_id == int(group.project_id),
+            ReferralLink.group_id == group_id,
+            ReferralLink.id.not_in(link_ids or [-1]),
+        )
         .values(group_id=None),
     )
     if link_ids:
         await session.execute(
-            update(ReferralLink).where(ReferralLink.id.in_(link_ids)).values(group_id=group_id),
+            update(ReferralLink)
+            .where(
+                ReferralLink.project_id == int(group.project_id),
+                ReferralLink.id.in_(link_ids),
+            )
+            .values(group_id=group_id),
         )
     await session.flush()
     return await _link_ids_for_group(session, group_id)
@@ -132,11 +145,16 @@ async def add_referral_link_group_members(
     group_id: int,
     link_ids: list[int],
 ) -> list[int]:
-    await get_referral_link_group_row(session, group_id)
+    group = await get_referral_link_group_row(session, group_id)
     if not link_ids:
         return await _link_ids_for_group(session, group_id)
     await session.execute(
-        update(ReferralLink).where(ReferralLink.id.in_(link_ids)).values(group_id=group_id),
+        update(ReferralLink)
+        .where(
+            ReferralLink.project_id == int(group.project_id),
+            ReferralLink.id.in_(link_ids),
+        )
+        .values(group_id=group_id),
     )
     await session.flush()
     return await _link_ids_for_group(session, group_id)
@@ -147,10 +165,14 @@ async def remove_referral_link_group_member(
     group_id: int,
     link_id: int,
 ) -> list[int]:
-    await get_referral_link_group_row(session, group_id)
+    group = await get_referral_link_group_row(session, group_id)
     await session.execute(
         update(ReferralLink)
-        .where(ReferralLink.id == link_id, ReferralLink.group_id == group_id)
+        .where(
+            ReferralLink.project_id == int(group.project_id),
+            ReferralLink.id == link_id,
+            ReferralLink.group_id == group_id,
+        )
         .values(group_id=None),
     )
     await session.flush()
@@ -158,8 +180,9 @@ async def remove_referral_link_group_member(
 
 
 async def delete_referral_link_group(session: AsyncSession, group_id: int) -> bool:
-    row = await session.get(ReferralLinkGroup, group_id)
-    if row is None:
+    try:
+        row = await get_referral_link_group_row(session, group_id)
+    except ReferralLinkGroupNotFoundError:
         return False
     await session.delete(row)
     await session.flush()

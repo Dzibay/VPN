@@ -43,6 +43,7 @@ from app.domain.users.stats_qualification import (
 )
 from app.domain.tenant.admin_project_scope import (
     admin_project_id,
+    apply_project_scope,
     merge_project_sql_params,
     project_scope_clause,
     user_table_project_filter_sql,
@@ -284,6 +285,9 @@ async def extend_active_subscriptions(
         )
         .values(subscription_until=User.subscription_until + days)
     )
+    scope = project_scope_clause(User)
+    if scope is not None:
+        stmt = stmt.where(scope)
     result = await session.execute(stmt)
     n = int(result.rowcount or 0)
     return ExtendActiveSubscriptionsResponse(updated_count=n)
@@ -314,7 +318,8 @@ async def delete_staff_user(session: AsyncSession, user_id: int) -> None:
 
     Вызывающий код ставит синхронизацию Xray в ``BackgroundTasks``.
     """
-    user = await session.get(User, user_id)
+    stmt = apply_project_scope(select(User).where(User.id == int(user_id)).limit(1), User)
+    user = (await session.scalars(stmt)).first()
     if user is None:
         raise NotFoundError("Пользователь не найден")
     _purge_user_redis_keys(user_id)
@@ -328,7 +333,8 @@ async def delete_staff_users_bulk(session: AsyncSession, *, ids: list[int]) -> i
         return 0
     deleted = 0
     for user_id in uniq_ids:
-        user = await session.get(User, user_id)
+        stmt = apply_project_scope(select(User).where(User.id == int(user_id)).limit(1), User)
+        user = (await session.scalars(stmt)).first()
         if user is None:
             continue
         _purge_user_redis_keys(user_id)
@@ -350,7 +356,8 @@ async def patch_staff_user(session: AsyncSession, user_id: int, body: UserUpdate
         apply_pending_referral_bonus_days_to_subscription,
     )
 
-    user = await session.get(User, user_id)
+    stmt = apply_project_scope(select(User).where(User.id == int(user_id)).limit(1), User)
+    user = (await session.scalars(stmt)).first()
     if user is None:
         raise NotFoundError("Пользователь не найден")
     data = body.model_dump(exclude_unset=True)
@@ -386,7 +393,8 @@ async def patch_staff_user(session: AsyncSession, user_id: int, body: UserUpdate
 
 async def require_user_exists(session: AsyncSession, user_id: int) -> User:
     """Проверка существования пользователя для эндпоинтов аналитики (404 на отсутствие)."""
-    user = await session.get(User, user_id)
+    stmt = apply_project_scope(select(User).where(User.id == int(user_id)).limit(1), User)
+    user = (await session.scalars(stmt)).first()
     if user is None:
         raise NotFoundError("Пользователь не найден")
     return user

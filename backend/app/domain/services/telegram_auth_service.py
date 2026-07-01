@@ -190,6 +190,8 @@ async def telegram_link_web_account(
     if uid is None:
         raise BadRequestError("Неверный или истёкший токен привязки")
 
+    project = require_project_context()
+    project_id = int(project.id)
     target = await session.get(User, uid)
     if target is None:
         raise BadRequestError("Пользователь по токену не найден")
@@ -199,8 +201,6 @@ async def telegram_link_web_account(
         raise ConflictError("Этот аккаунт уже привязан к Telegram")
 
     tid = body.telegram_id
-    project = require_project_context()
-    project_id = int(project.id)
     auth_fragment = TelegramAuthBody(
         telegram_id=tid,
         username=body.username,
@@ -326,6 +326,9 @@ async def telegram_site_link_preview_response(
     user = await session.get(User, uid)
     if user is None or user.telegram_id is None:
         raise NotFoundError("Пользователь не найден")
+    project = get_current_project()
+    if project is not None and int(user.project_id) != int(project.id):
+        raise NotFoundError("Пользователь не найден")
 
     ok, _ = user_can_add_credentials_from_site(user)
     bind_request_subject_user(int(user.id), source="telegram_site_link_preview")
@@ -360,6 +363,9 @@ async def telegram_site_link_complete(
     tg_user = await session.get(User, uid)
     if tg_user is None:
         raise NotFoundError("Пользователь не найден")
+    project = get_current_project()
+    if project is not None and int(tg_user.project_id) != int(project.id):
+        raise NotFoundError("Пользователь не найден")
 
     ok, reason = user_can_add_credentials_from_site(tg_user)
     if not ok:
@@ -367,6 +373,8 @@ async def telegram_site_link_complete(
 
     email_norm = normalize_email(str(body.email))
     stmt_existing = select(User).where(User.email == email_norm).limit(1)
+    if project is not None:
+        stmt_existing = stmt_existing.where(User.project_id == int(project.id))
     existing = (await session.scalars(stmt_existing)).first()
 
     winner: User

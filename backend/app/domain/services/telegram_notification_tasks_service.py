@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -13,6 +13,7 @@ from app.domain.models.telegram_notification_tasks import (
     TelegramNotificationTaskItem,
     TelegramNotificationTasksListResponse,
 )
+from app.domain.tenant.project_context import get_current_project
 from app.domain.tasks.delivery_channel import TASK_DELIVERY_TELEGRAM
 from app.domain.tasks.notification_task_types import NOTIFY_PAYMENT, NOTIFICATION_TASK_TYPES
 from app.infrastructure.persistence.models.task import Task
@@ -22,17 +23,28 @@ from app.infrastructure.persistence.models.user import User
 async def list_pending_notification_tasks(
     session: AsyncSession,
 ) -> TelegramNotificationTasksListResponse:
-    """Все pending-задачи оповещений, по возрастанию created_at."""
+    """Pending-задачи оповещений текущего проекта, по возрастанию created_at."""
+    project = get_current_project()
+    if project is None:
+        return TelegramNotificationTasksListResponse(tasks=[])
     ur = aliased(User)
     rr = aliased(User)
     stmt = (
         select(Task, ur.telegram_id, rr.telegram_id, ur.subscription_until)
         .join(ur, ur.id == Task.user_id)
-        .outerjoin(rr, rr.id == Task.referee_id)
+        .outerjoin(
+            rr,
+            and_(
+                rr.id == Task.referee_id,
+                rr.project_id == int(project.id),
+            ),
+        )
         .where(
             Task.status == "pending",
+            Task.project_id == int(project.id),
             Task.task_type.in_(NOTIFICATION_TASK_TYPES),
             Task.delivery_channel == TASK_DELIVERY_TELEGRAM,
+            ur.project_id == int(project.id),
             ur.telegram_id.isnot(None),
         )
         .order_by(Task.created_at.asc())
@@ -84,6 +96,9 @@ async def acknowledge_notification_tasks_with_statuses(
     failed_task_ids: list[int],
 ) -> tuple[list[int], list[int]]:
     """Обновить status для pending-задач; вернуть реально обновлённые completed/failed id."""
+    project = get_current_project()
+    if project is None:
+        return [], []
 
     def _unique_positive(ids: list[int]) -> list[int]:
         seen: set[int] = set()
@@ -106,6 +121,7 @@ async def acknowledge_notification_tasks_with_statuses(
             update(Task)
             .where(
                 Task.id.in_(ids),
+                Task.project_id == int(project.id),
                 Task.status == "pending",
                 Task.task_type.in_(NOTIFICATION_TASK_TYPES),
                 Task.delivery_channel == TASK_DELIVERY_TELEGRAM,

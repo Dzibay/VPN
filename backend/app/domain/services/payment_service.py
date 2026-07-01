@@ -20,6 +20,8 @@ from app.domain.subscription.early_payment_bonus import compute_early_payment_bo
 from app.domain.models.payments import PaymentWebhookAck
 from app.domain.referrals.payment_tasks import apply_referral_bonus_on_payment
 from app.domain.referrals.task_bonus_days import sum_referral_bonus_days_pending_activation
+from app.domain.tenant.admin_project_scope import apply_project_scope
+from app.domain.tenant.project_context import get_current_project
 from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.task import Task
 from app.infrastructure.persistence.models.user import User
@@ -237,7 +239,11 @@ async def _resolve_user_for_fulfillment(
     telegram_user_id: int | None,
 ) -> User | None:
     if user_id is not None:
-        return await session.get(User, int(user_id))
+        stmt = select(User).where(User.id == int(user_id)).limit(1)
+        project = get_current_project()
+        if project is not None:
+            stmt = stmt.where(User.project_id == int(project.id))
+        return (await session.scalars(stmt)).first()
     if telegram_user_id is not None:
         return await find_user_by_telegram_id(session, int(telegram_user_id))
     return None
@@ -254,7 +260,9 @@ async def create_staff_manual_payment(
     created_at: datetime | None = None,
 ) -> Payment:
     """Ручное начисление из админки: ``provider=manual``, без webhook провайдера."""
-    user = await session.get(User, int(user_id))
+    user_stmt = select(User).where(User.id == int(user_id)).limit(1)
+    user_stmt = apply_project_scope(user_stmt, User)
+    user = (await session.scalars(user_stmt)).first()
     if user is None:
         raise LookupError("user_not_found")
 

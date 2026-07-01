@@ -35,6 +35,7 @@ from app.domain.models.auth import (
     TokenResponse,
 )
 from app.domain.public_urls import public_spa_base_url
+from app.domain.tenant.project_context import get_current_project
 from app.infrastructure.email.smtp_sender import (
     SmtpDeliveryError,
     send_verification_email_sync,
@@ -199,6 +200,9 @@ async def verify_email_by_token(
     user = await session.get(User, uid)
     if user is None:
         raise NotFoundError("Пользователь не найден")
+    project = get_current_project()
+    if project is not None and int(user.project_id) != int(project.id):
+        raise NotFoundError("Ссылка недействительна или истекла")
 
     if not user_has_verified_email(user):
         await mark_email_verified_now(session, user)
@@ -233,9 +237,11 @@ async def resend_verification_email(
     cfg: Settings,
 ) -> EmailVerificationPendingResponse:
     email = normalize_email(str(body.email))
-    user = (
-        await session.scalars(select(User).where(User.email == email).limit(1))
-    ).first()
+    stmt = select(User).where(User.email == email).limit(1)
+    project = get_current_project()
+    if project is not None:
+        stmt = stmt.where(User.project_id == int(project.id))
+    user = (await session.scalars(stmt)).first()
     if user is None or not user.password_hash:
         return EmailVerificationPendingResponse(
             email=body.email,

@@ -12,7 +12,7 @@ from app.domain.models.support_messages import (
     StaffSupportMessageRead,
     SupportMessageRead,
 )
-from app.domain.tenant.admin_project_scope import admin_project_id, project_scope_clause
+from app.domain.tenant.admin_project_scope import apply_project_scope, project_scope_clause
 from app.infrastructure.persistence.models.support_message import SupportMessage
 from app.infrastructure.persistence.models.user import User
 
@@ -53,6 +53,12 @@ def _preview_body(body: str) -> str:
     if len(text) <= _PREVIEW_LEN:
         return text
     return f"{text[: _PREVIEW_LEN - 1].rstrip()}…"
+
+
+async def _get_staff_visible_user(session: AsyncSession, user_id: int) -> User | None:
+    stmt = select(User).where(User.id == int(user_id)).limit(1)
+    stmt = apply_project_scope(stmt, User)
+    return (await session.scalars(stmt)).first()
 
 
 def _to_staff_message_read(
@@ -271,11 +277,8 @@ async def list_user_support_messages_for_staff(
     offset: int,
     include_staff_author: bool = False,
 ) -> tuple[list[StaffSupportMessageRead], int]:
-    user = await session.get(User, user_id)
+    user = await _get_staff_visible_user(session, user_id)
     if user is None:
-        raise NotFoundError("Пользователь не найден")
-    pid = admin_project_id()
-    if pid is not None and int(user.project_id) != pid:
         raise NotFoundError("Пользователь не найден")
 
     count_stmt = (
@@ -319,7 +322,7 @@ async def create_staff_support_message(
     staff_user_id: int | None,
     include_staff_author: bool = False,
 ) -> StaffSupportMessageRead:
-    user = await session.get(User, user_id)
+    user = await _get_staff_visible_user(session, user_id)
     if user is None:
         raise NotFoundError("Пользователь не найден")
     row = SupportMessage(

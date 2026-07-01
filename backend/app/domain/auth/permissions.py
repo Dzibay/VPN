@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import BearerPrincipal
 from app.core.exceptions import InternalServerError, UnauthorizedError
 from app.domain.services.email_verification_service import require_verified_email_for_login
+from app.domain.tenant.project_context import get_current_project
 from app.infrastructure.persistence.models.user import User
 
 
@@ -20,12 +21,16 @@ async def resolve_authenticated_user(
     шаги одинаковые — найти пользователя по ``user_id`` из токена и убедиться в согласованности
     роли с фактической ``account_role`` в БД.
     """
+    project = get_current_project()
+
     if principal.role == "admin":
         if principal.user_id is None:
             raise UnauthorizedError("Недействительный токен")
         user = await session.get(User, principal.user_id)
         if user is None:
             raise UnauthorizedError("Пользователь не найден")
+        if project is not None and int(user.project_id) != int(project.id):
+            raise UnauthorizedError("Токен относится к другому проекту")
         if user.account_role != "admin":
             raise UnauthorizedError("Недействительный токен")
         return user, "admin"
@@ -35,6 +40,8 @@ async def resolve_authenticated_user(
     user = await session.get(User, principal.user_id)
     if user is None:
         raise UnauthorizedError("Пользователь не найден")
+    if project is not None and int(user.project_id) != int(project.id):
+        raise UnauthorizedError("Токен относится к другому проекту")
     if not user.email and not user.telegram_id:
         raise InternalServerError("У записи нет ни email, ни telegram_id")
 

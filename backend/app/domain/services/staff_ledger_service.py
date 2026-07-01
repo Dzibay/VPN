@@ -253,10 +253,24 @@ async def list_staff_tasks(
 
 
 async def get_staff_task(session: AsyncSession, task_id: int) -> StaffTaskItem | None:
-    task = await session.get(Task, task_id)
+    stmt = select(Task).where(Task.id == int(task_id)).limit(1)
+    stmt = apply_project_scope(stmt, Task)
+    task = (await session.scalars(stmt)).first()
     if task is None:
         return None
     return _staff_task_item_from_orm(task)
+
+
+async def _get_staff_task_orm(session: AsyncSession, task_id: int) -> Task | None:
+    stmt = select(Task).where(Task.id == int(task_id)).limit(1)
+    stmt = apply_project_scope(stmt, Task)
+    return (await session.scalars(stmt)).first()
+
+
+async def _get_staff_user_orm(session: AsyncSession, user_id: int) -> User | None:
+    stmt = select(User).where(User.id == int(user_id)).limit(1)
+    stmt = apply_project_scope(stmt, User)
+    return (await session.scalars(stmt)).first()
 
 
 def _staff_task_item_from_orm(t: Task) -> StaffTaskItem:
@@ -288,11 +302,12 @@ async def create_staff_task(
     paid_months: int | None,
 ) -> StaffTaskItem:
     """Создать pending-задачу (разрешённые типы совпадают с CHECK в БД)."""
-    recipient = await session.get(User, int(user_id))
+    recipient = await _get_staff_user_orm(session, int(user_id))
     if recipient is None:
         raise LookupError("user_not_found")
     if referee_id is not None:
-        if await session.scalar(select(User.id).where(User.id == referee_id)) is None:
+        referee = await _get_staff_user_orm(session, int(referee_id))
+        if referee is None or int(referee.project_id) != int(recipient.project_id):
             raise LookupError("referee_not_found")
 
     task = Task(
@@ -322,11 +337,12 @@ async def create_all_staff_task_types(
     paid_months: int,
 ) -> StaffCreateAllTaskTypesResponse:
     """Создать по одной pending-задаче каждого разрешённого типа для пользователя."""
-    recipient = await session.get(User, int(user_id))
+    recipient = await _get_staff_user_orm(session, int(user_id))
     if recipient is None:
         raise LookupError("user_not_found")
     if referee_id is not None:
-        if await session.scalar(select(User.id).where(User.id == referee_id)) is None:
+        referee = await _get_staff_user_orm(session, int(referee_id))
+        if referee is None or int(referee.project_id) != int(recipient.project_id):
             raise LookupError("referee_not_found")
 
     delivery_channel = delivery_channel_for_user(recipient)
@@ -361,7 +377,7 @@ async def update_staff_task(
     task_id: int,
     patch: StaffPatchTaskBody,
 ) -> StaffTaskItem:
-    task = await session.get(Task, task_id)
+    task = await _get_staff_task_orm(session, task_id)
     if task is None:
         raise LookupError("task_not_found")
 
@@ -369,14 +385,19 @@ async def update_staff_task(
 
     if "user_id" in data:
         uid = data["user_id"]
-        if uid is not None and await session.scalar(select(User.id).where(User.id == uid)) is None:
-            raise LookupError("user_not_found")
+        if uid is not None:
+            recipient = await _get_staff_user_orm(session, int(uid))
+            if recipient is None:
+                raise LookupError("user_not_found")
+            task.project_id = int(recipient.project_id)
         task.user_id = uid
 
     if "referee_id" in data:
         rid = data["referee_id"]
-        if rid is not None and await session.scalar(select(User.id).where(User.id == rid)) is None:
-            raise LookupError("referee_not_found")
+        if rid is not None:
+            referee = await _get_staff_user_orm(session, int(rid))
+            if referee is None or int(referee.project_id) != int(task.project_id):
+                raise LookupError("referee_not_found")
         task.referee_id = rid
 
     if "bonus_days" in data:
@@ -412,7 +433,7 @@ async def update_staff_task(
 
 
 async def delete_staff_task(session: AsyncSession, task_id: int) -> None:
-    task = await session.get(Task, task_id)
+    task = await _get_staff_task_orm(session, task_id)
     if task is None:
         raise LookupError("task_not_found")
     await session.delete(task)

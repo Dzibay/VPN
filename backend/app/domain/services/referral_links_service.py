@@ -42,7 +42,6 @@ from app.domain.referrals.registrations_daily import (
     referral_traffic_registrations_daily,
 )
 from app.domain.tenant.admin_project_scope import (
-    admin_project_id,
     apply_project_scope,
     project_scope_clause,
 )
@@ -200,11 +199,12 @@ async def list_staff_referral_links(session: AsyncSession, cfg: object) -> list:
 
 async def get_staff_referral_link_by_id(session: AsyncSession, link_id: int, cfg: object):
     """Одна запись для админки; 404 если не найдена."""
-    row = await session.get(ReferralLink, link_id)
+    stmt = apply_project_scope(
+        select(ReferralLink).where(ReferralLink.id == int(link_id)).limit(1),
+        ReferralLink,
+    )
+    row = (await session.scalars(stmt)).first()
     if row is None:
-        raise NotFoundError("Токен не найден")
-    pid = admin_project_id()
-    if pid is not None and int(row.project_id) != pid:
         raise NotFoundError("Токен не найден")
     revenue_net = await _referral_link_revenue_net(session, link_id)
     project = await _project_context_for_link(row)
@@ -213,6 +213,12 @@ async def get_staff_referral_link_by_id(session: AsyncSession, link_id: int, cfg
 
 async def delete_referral_link_row(session: AsyncSession, link_id: int) -> None:
     """Удалить запись по id; 404 если не найдена."""
+    stmt = apply_project_scope(
+        select(ReferralLink.id).where(ReferralLink.id == int(link_id)).limit(1),
+        ReferralLink,
+    )
+    if await session.scalar(stmt) is None:
+        raise NotFoundError("Токен не найден")
     if not await delete_referral_link(session, link_id):
         raise NotFoundError("Токен не найден")
 

@@ -24,6 +24,7 @@ from app.domain.referrals.tokens import (
     generate_referral_token,
     validate_token_shape,
 )
+from app.domain.tenant.project_context import get_current_project
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.user import User
 
@@ -38,13 +39,25 @@ def _is_one_owner_per_user_conflict(e: IntegrityError) -> bool:
     return "uq_referral_links_one_user_owner" in blob
 
 
+def _current_project_id() -> int | None:
+    project = get_current_project()
+    return int(project.id) if project is not None else None
+
+
+def _scope_referral_link_stmt(stmt):
+    pid = _current_project_id()
+    if pid is not None:
+        stmt = stmt.where(ReferralLink.project_id == pid)
+    return stmt
+
+
 async def get_user_owned_referral_link(
     session: AsyncSession, user_id: int,
 ) -> ReferralLink | None:
     """Личная ссылка пользователя (``owner_kind=user``); ``None`` — если ещё не создавалась."""
     return (
         await session.scalars(
-            select(ReferralLink)
+            _scope_referral_link_stmt(select(ReferralLink))
             .where(
                 ReferralLink.owner_kind == "user",
                 ReferralLink.owner_user_id == user_id,
@@ -66,13 +79,18 @@ async def create_user_owned_referral_link(
     """
     if await get_user_owned_referral_link(session, user_id) is not None:
         raise PersonalReferralLinkExistsError("У вас уже создана персональная реферальная ссылка")
-    exists = await session.scalar(select(User.id).where(User.id == user_id).limit(1))
-    if exists is None:
+    user_stmt = select(User.project_id).where(User.id == user_id).limit(1)
+    pid = _current_project_id()
+    if pid is not None:
+        user_stmt = user_stmt.where(User.project_id == pid)
+    user_project_id = await session.scalar(user_stmt)
+    if user_project_id is None:
         raise ReferralUserNotFoundError
 
     raw = token.strip() if token else generate_referral_token()
     validate_token_shape(raw)
     row = ReferralLink(
+        project_id=int(user_project_id),
         token=raw,
         owner_kind="user",
         owner_user_id=user_id,
@@ -124,7 +142,9 @@ async def get_referral_link_by_token(
         return None
     return (
         await session.scalars(
-            select(ReferralLink).where(ReferralLink.token == raw).limit(1),
+            _scope_referral_link_stmt(select(ReferralLink))
+            .where(ReferralLink.token == raw)
+            .limit(1),
         )
     ).first()
 
@@ -169,21 +189,26 @@ async def create_referral_link(
     if kind == "user":
         if owner_user_id is None:
             raise ReferralOwnerArgsError("Для owner_kind=user укажите owner_user_id")
-        exists = await session.scalar(
-            select(User.id).where(User.id == owner_user_id).limit(1),
-        )
-        if exists is None:
+        user_stmt = select(User.project_id).where(User.id == owner_user_id).limit(1)
+        pid = _current_project_id()
+        if pid is not None:
+            user_stmt = user_stmt.where(User.project_id == pid)
+        owner_project_id = await session.scalar(user_stmt)
+        if owner_project_id is None:
             raise ReferralUserNotFoundError("Пользователь с таким id не найден")
+        project_id = int(owner_project_id)
     else:
         if owner_user_id is not None:
             raise ReferralOwnerArgsError(
                 "Для именованного источника (не user) поле owner_user_id должно быть пустым",
             )
+        project_id = _current_project_id()
 
     raw = token.strip() if token else generate_referral_token()
     validate_token_shape(raw)
 
     row = ReferralLink(
+        **({"project_id": int(project_id)} if project_id is not None else {}),
         token=raw,
         owner_kind=kind,
         owner_user_id=owner_user_id,
@@ -208,7 +233,8 @@ async def update_referral_link(
     token: str,
 ) -> ReferralLink:
     """Полное обновление записи; новый токен проверяется на занятость до записи."""
-    row = await session.get(ReferralLink, link_id)
+    stmt = _scope_referral_link_stmt(select(ReferralLink)).where(ReferralLink.id == link_id).limit(1)
+    row = (await session.scalars(stmt)).first()
     if row is None:
         raise ReferralLinkNotFoundError
 
@@ -216,10 +242,12 @@ async def update_referral_link(
     if kind == "user":
         if owner_user_id is None:
             raise ReferralOwnerArgsError("Для owner_kind=user укажите owner_user_id")
-        exists = await session.scalar(
-            select(User.id).where(User.id == owner_user_id).limit(1),
-        )
-        if exists is None:
+        user_stmt = select(User.project_id).where(User.id == owner_user_id).limit(1)
+        pid = _current_project_id()
+        if pid is not None:
+            user_stmt = user_stmt.where(User.project_id == pid)
+        owner_project_id = await session.scalar(user_stmt)
+        if owner_project_id is None:
             raise ReferralUserNotFoundError("Пользователь с таким id не найден")
     else:
         if owner_user_id is not None:
@@ -232,7 +260,7 @@ async def update_referral_link(
 
     if raw != row.token:
         taken = await session.scalar(
-            select(ReferralLink.id)
+            _scope_referral_link_stmt(select(ReferralLink.id))
             .where(ReferralLink.token == raw, ReferralLink.id != link_id)
             .limit(1),
         )
@@ -254,7 +282,13 @@ async def update_referral_link(
 
 async def delete_referral_link(session: AsyncSession, link_id: int) -> bool:
     """Удалить запись; ``True`` — если строка существовала."""
-    row = await session.get(ReferralLink, link_id)
+    row = (
+        await session.scalars(
+            _scope_referral_link_stmt(select(ReferralLink))
+            .where(ReferralLink.id == link_id)
+            .limit(1),
+        )
+    ).first()
     if row is None:
         return False
     await session.delete(row)
@@ -268,6 +302,9 @@ async def increment_referral_counter(
 ) -> bool:
     """Атомарный ``+1`` к счётчику; ``True`` — если строка найдена."""
     stmt = update(ReferralLink).where(ReferralLink.id == link_id)
+    pid = _current_project_id()
+    if pid is not None:
+        stmt = stmt.where(ReferralLink.project_id == pid)
     if kind == "clicks":
         stmt = stmt.values(clicks_count=ReferralLink.clicks_count + 1)
     elif kind == "registrations":
@@ -288,7 +325,7 @@ async def increment_referral_counter_by_token(
     if not t:
         return False
     row_id = await session.scalar(
-        select(ReferralLink.id).where(ReferralLink.token == t).limit(1),
+        _scope_referral_link_stmt(select(ReferralLink.id)).where(ReferralLink.token == t).limit(1),
     )
     if row_id is None:
         return False

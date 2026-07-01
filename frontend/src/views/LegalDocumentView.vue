@@ -7,6 +7,7 @@ import {
   LEGAL_FOOTER_LINKS,
   getLegalDocument,
 } from '../content/legal.js'
+import { linkifyText } from '../utils/linkifyText.js'
 
 const route = useRoute()
 
@@ -23,17 +24,7 @@ const otherDocs = computed(() =>
   LEGAL_FOOTER_LINKS.filter((link) => link.to !== route.path),
 )
 
-function linkify(text) {
-  if (!text) return ''
-  const escaped = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-  return escaped.replace(
-    /(https?:\/\/[^\s<]+|mailto:[^\s<]+)/g,
-    '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>',
-  )
-}
+const linkify = linkifyText
 </script>
 
 <template>

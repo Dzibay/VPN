@@ -47,7 +47,7 @@ from app.domain.public_urls import (
 )
 from app.domain.referrals.registration_tasks import create_notify_ref_reg_task_if_applicable
 from app.domain.referrals.repository import increment_referral_counter
-from app.domain.tenant.project_context import ProjectContext
+from app.domain.tenant.project_context import ProjectContext, get_current_project
 from app.domain.users.identifiers import new_subscription_token, new_vless_uuid
 from app.domain.subscription.devices import (
     effective_subscription_device_limit,
@@ -72,9 +72,11 @@ async def login_with_password(
 ) -> TokenResponse:
     """Логин по email и паролю; ответ — JWT-токен с API-ролью."""
     email = normalize_email(str(body.email))
-    user = (
-        await session.scalars(select(User).where(User.email == email).limit(1))
-    ).first()
+    stmt = select(User).where(User.email == email).limit(1)
+    project = get_current_project()
+    if project is not None:
+        stmt = stmt.where(User.project_id == int(project.id))
+    user = (await session.scalars(stmt)).first()
     if user is None:
         raise UnauthorizedError("Неверный email или пароль")
     if not user.password_hash:
@@ -110,6 +112,9 @@ async def register_with_email(
     rlink: ReferralLink | None = None
     if body.referral_token:
         rstmt = select(ReferralLink).where(ReferralLink.token == body.referral_token).limit(1)
+        project = get_current_project()
+        if project is not None:
+            rstmt = rstmt.where(ReferralLink.project_id == int(project.id))
         rlink = (await session.scalars(rstmt)).first()
     trial_extra = trial_extra_days_for_referral_link(rlink)
     user = User(
