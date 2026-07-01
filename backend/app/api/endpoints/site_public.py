@@ -27,6 +27,10 @@ def _legal_info_response() -> PublicProjectLegalInfo:
         operator_inn=profile.operator_inn,
         dispute_jurisdiction=profile.dispute_jurisdiction,
         effective_date=profile.effective_date,
+        trial_days_after_registration=profile.trial_days_after_registration,
+        trial_extra_days_referral_registration=profile.trial_extra_days_referral_registration,
+        trial_days_with_referral=profile.trial_days_with_referral,
+        trial_traffic_limit_gib=profile.trial_traffic_limit_gib,
     )
 
 

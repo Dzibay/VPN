@@ -83,6 +83,19 @@ const sections = [
     ],
   },
   {
+    title: 'Тестовый период и лимиты',
+    fields: [
+      { key: 'trial_days_after_registration', label: 'Дней тестового периода', type: 'number-int',
+        hint: 'Базовый триал для новых пользователей. Подставляется в оферту и политики.' },
+      { key: 'trial_extra_days_referral_registration', label: 'Доп. дней при регистрации по ссылке друга', type: 'number-int',
+        hint: 'Бонус к базовому триалу при регистрации по персональной реферальной ссылке пользователя.' },
+      { key: 'trial_traffic_limit_gib', label: 'Лимит трафика для новых (GiB)', type: 'number-int',
+        hint: 'Объём up+down до первой оплаты. Отображается в юридических документах.' },
+      { key: 'trial_traffic_limit_enabled', label: 'Включить лимит трафика на триале', type: 'checkbox',
+        hint: 'Если выключено — новым пользователям без оплат не задаётся лимит.' },
+    ],
+  },
+  {
     title: 'Брендинг подписки',
     fields: [
       { key: 'happ_provider_id', label: 'Happ provider ID', type: 'text',

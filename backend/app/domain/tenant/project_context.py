@@ -33,6 +33,10 @@ class ProjectContext:
     referral_bonus_days_per_paid_month: int | None = None
     referral_fixed_first_payment_bonus_rub: int | None = None
     referral_bonus_policy: str | None = None
+    trial_days_after_registration: int | None = None
+    trial_extra_days_referral_registration: int | None = None
+    trial_traffic_limit_gib: int | None = None
+    trial_traffic_limit_enabled: bool | None = None
     happ_provider_id: str | None = None
     subscription_sub_expire_banner: dict[str, Any] | None = None
     subscription_sub_info_banner: dict[str, Any] | None = None

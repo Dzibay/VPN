@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, settings
 from app.domain.subscription.validity import subscription_calendar_active_sql
+from app.domain.tenant.project_trial import resolve_project_trial_settings
 from app.domain.user_traffic import user_traffic_over_limit_sql
 from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.user import User
@@ -42,21 +43,26 @@ class TrafficLimitEnforceResult:
     notify_over_created: int = 0
 
 
-def default_traffic_limit_bytes(cfg: Settings | None = None) -> int:
-    """Дефолтный лимит из настроек (GiB → байты)."""
+def default_traffic_limit_bytes(cfg: Settings | None = None) -> int | None:
+    """Дефолтный лимит из настроек проекта (GiB → байты); None — лимит не применяется."""
     cfg = cfg or settings
-    gib = max(1, int(cfg.trial_traffic_limit_gib))
-    return gib * 1024 * 1024 * 1024
+    trial = resolve_project_trial_settings(cfg)
+    if not trial.trial_traffic_limit_enabled:
+        return None
+    return trial.trial_traffic_limit_gib * 1024 * 1024 * 1024
 
 
 def apply_default_traffic_limit_for_new_client(user: User, *, cfg: Settings | None = None) -> None:
-    """Новый клиент без оплаты: персональный лимит = дефолт из settings."""
+    """Новый клиент без оплаты: персональный лимит = дефолт проекта."""
     # До flush ORM не подставляет server_default — считаем None как client (как в БД).
     if (user.account_role or "client") != "client":
         return
     if user.traffic_limit_bytes is not None:
         return
-    user.traffic_limit_bytes = default_traffic_limit_bytes(cfg)
+    limit = default_traffic_limit_bytes(cfg)
+    if limit is None:
+        return
+    user.traffic_limit_bytes = limit
 
 
 def traffic_limit_quota_applies_sql():

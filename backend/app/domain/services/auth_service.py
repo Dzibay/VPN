@@ -116,14 +116,14 @@ async def register_with_email(
         if project is not None:
             rstmt = rstmt.where(ReferralLink.project_id == int(project.id))
         rlink = (await session.scalars(rstmt)).first()
-    trial_extra = trial_extra_days_for_referral_link(rlink)
+    trial_extra = trial_extra_days_for_referral_link(rlink, cfg=cfg)
     user = User(
         email=email,
         password_hash=pwd_hash,
         telegram_id=None,
         telegram_properties=None,
         account_role="client",
-        subscription_until=subscription_until_after_registration(extra_trial_days=trial_extra),
+        subscription_until=subscription_until_after_registration(extra_trial_days=trial_extra, cfg=cfg),
         token=new_subscription_token(),
         vless_uuid=new_vless_uuid(),
     )

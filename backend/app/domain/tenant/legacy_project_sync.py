@@ -86,6 +86,21 @@ async def sync_legacy_project_settings(session: AsyncSession, settings: Settings
     if project.referral_fixed_first_payment_bonus_rub is None:
         patch["referral_fixed_first_payment_bonus_rub"] = settings.referral_fixed_first_payment_bonus_rub
 
+    from app.constants import (
+        TRIAL_DAYS_AFTER_REGISTRATION,
+        TRIAL_EXTRA_DAYS_USER_REFERRAL_REGISTRATION,
+        TRIAL_TRAFFIC_LIMIT_GIB,
+    )
+
+    if project.trial_days_after_registration is None:
+        patch["trial_days_after_registration"] = TRIAL_DAYS_AFTER_REGISTRATION
+    if project.trial_extra_days_referral_registration is None:
+        patch["trial_extra_days_referral_registration"] = TRIAL_EXTRA_DAYS_USER_REFERRAL_REGISTRATION
+    if project.trial_traffic_limit_gib is None:
+        patch["trial_traffic_limit_gib"] = int(settings.trial_traffic_limit_gib or TRIAL_TRAFFIC_LIMIT_GIB)
+    if project.trial_traffic_limit_enabled is None:
+        patch["trial_traffic_limit_enabled"] = bool(settings.trial_traffic_limit_enabled)
+
     if not project.brand:
         patch["brand"] = {"brand_name": "🍃 Подорожник VPN"}
 

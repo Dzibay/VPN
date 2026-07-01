@@ -10,6 +10,7 @@ from app.domain.public_urls import (
     telegram_bot_public_page_url,
 )
 from app.domain.tenant.project_context import get_current_project
+from app.domain.tenant.project_trial import resolve_project_trial_settings
 
 
 def _brand_legal_field(project, key: str) -> str | None:
@@ -51,6 +52,10 @@ class ProjectLegalProfile:
     operator_inn: str | None
     dispute_jurisdiction: str | None
     effective_date: str | None
+    trial_days_after_registration: int
+    trial_extra_days_referral_registration: int
+    trial_days_with_referral: int
+    trial_traffic_limit_gib: int
     telegram_bot_page_url: str | None
     support_telegram_url: str | None
 
@@ -92,6 +97,8 @@ def build_project_legal_profile(settings: object) -> ProjectLegalProfile:
     if project is not None and project.support_email:
         support_email = str(project.support_email).strip() or None
 
+    trial = resolve_project_trial_settings(settings, project=project)
+
     return ProjectLegalProfile(
         service_name=service_name,
         site_url=site_url,
@@ -103,6 +110,10 @@ def build_project_legal_profile(settings: object) -> ProjectLegalProfile:
         operator_inn=_brand_legal_field(project, "operator_inn"),
         dispute_jurisdiction=_brand_legal_field(project, "dispute_jurisdiction"),
         effective_date=_brand_legal_field(project, "effective_date"),
+        trial_days_after_registration=trial.trial_days_after_registration,
+        trial_extra_days_referral_registration=trial.trial_extra_days_referral_registration,
+        trial_days_with_referral=trial.trial_days_with_referral,
+        trial_traffic_limit_gib=trial.trial_traffic_limit_gib,
         telegram_bot_page_url=telegram_bot_public_page_url(settings, project),
         support_telegram_url=support_telegram_public_url(settings, project),
     )

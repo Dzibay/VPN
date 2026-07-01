@@ -20,6 +20,10 @@ export const LEGAL_FOOTER_LINKS = [
  *   operatorInn: string,
  *   disputeJurisdiction: string,
  *   effectiveDate: string,
+ *   trialDays: number,
+ *   trialExtraDaysReferral: number,
+ *   trialDaysWithReferral: number,
+ *   trialTrafficLimitGib: number,
  * }} ProjectLegalTokens */
 
 function tokens() {
@@ -41,6 +45,16 @@ function siteUrl() {
   return fromTokens || (tokens().domain ? `https://${tokens().domain}` : '')
 }
 
+/** @param {number} n */
+function daysLabel(n) {
+  const num = Math.abs(Number(n) || 0)
+  const mod10 = num % 10
+  const mod100 = num % 100
+  if (mod10 === 1 && mod100 !== 11) return `${num} день`
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return `${num} дня`
+  return `${num} дней`
+}
+
 export function fill(text) {
   const t = tokens()
   return text
@@ -53,6 +67,13 @@ export function fill(text) {
     .replaceAll('{{OPERATOR_NAME}}', t.operatorName)
     .replaceAll('{{OPERATOR_INN}}', t.operatorInn)
     .replaceAll('{{DISPUTE_JURISDICTION}}', t.disputeJurisdiction)
+    .replaceAll('{{TRIAL_DAYS}}', String(t.trialDays))
+    .replaceAll('{{TRIAL_DAYS_LABEL}}', daysLabel(t.trialDays))
+    .replaceAll('{{TRIAL_EXTRA_DAYS_REFERRAL}}', String(t.trialExtraDaysReferral))
+    .replaceAll('{{TRIAL_EXTRA_DAYS_REFERRAL_LABEL}}', daysLabel(t.trialExtraDaysReferral))
+    .replaceAll('{{TRIAL_DAYS_REFERRAL}}', String(t.trialDaysWithReferral))
+    .replaceAll('{{TRIAL_DAYS_REFERRAL_LABEL}}', daysLabel(t.trialDaysWithReferral))
+    .replaceAll('{{TRIAL_TRAFFIC_LIMIT_GIB}}', String(t.trialTrafficLimitGib))
 }
 
 function fillBlock(block) {

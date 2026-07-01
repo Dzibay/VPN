@@ -721,16 +721,10 @@ BEGIN
     ON CONFLICT (name) DO NOTHING;
 END $$;
 
--- Юридические плейсхолдеры для SPA: projects.brand.legal (редактируются в админке).
+-- Per-project: тестовый период, бонус за регистрацию по ссылке друга, лимит трафика.
 DO $$
 DECLARE
-    _migration_name TEXT := '20260703_projects_brand_legal_defaults';
-    _legal JSONB := jsonb_build_object(
-        'operator_name', 'Балыбин Антон Денисович',
-        'operator_inn', '524929428660',
-        'dispute_jurisdiction', 'г. Санкт-Петербург, Российская Федерация',
-        'effective_date', '09.06.2026'
-    );
+    _migration_name TEXT := '20260704_projects_trial_settings';
 BEGIN
     IF EXISTS (
         SELECT 1 FROM schema_one_time_migrations WHERE name = _migration_name
@@ -738,12 +732,17 @@ BEGIN
         RETURN;
     END IF;
 
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS trial_days_after_registration INTEGER;
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS trial_extra_days_referral_registration INTEGER;
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS trial_traffic_limit_gib INTEGER;
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS trial_traffic_limit_enabled BOOLEAN;
+
     UPDATE projects
-    SET brand = COALESCE(brand, '{}'::jsonb)
-        || jsonb_build_object('legal', _legal)
-    WHERE brand IS NULL
-       OR brand->'legal' IS NULL
-       OR brand->'legal' = 'null'::jsonb;
+    SET
+        trial_days_after_registration = COALESCE(trial_days_after_registration, 3),
+        trial_extra_days_referral_registration = COALESCE(trial_extra_days_referral_registration, 2),
+        trial_traffic_limit_gib = COALESCE(trial_traffic_limit_gib, 20),
+        trial_traffic_limit_enabled = COALESCE(trial_traffic_limit_enabled, TRUE);
 
     INSERT INTO schema_one_time_migrations (name)
     VALUES (_migration_name)

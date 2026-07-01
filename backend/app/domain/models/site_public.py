@@ -30,6 +30,22 @@ class PublicProjectLegalInfo(BaseModel):
         default=None,
         description="Дата редакции документов (brand.legal.effective_date).",
     )
+    trial_days_after_registration: int = Field(
+        default=3,
+        description="Длина тестового периода для новых пользователей (календарных дней).",
+    )
+    trial_extra_days_referral_registration: int = Field(
+        default=2,
+        description="Дополнительные дни триала при регистрации по реферальной ссылке друга.",
+    )
+    trial_days_with_referral: int = Field(
+        default=5,
+        description="Суммарный триал при регистрации по реферальной ссылке.",
+    )
+    trial_traffic_limit_gib: int = Field(
+        default=20,
+        description="Лимит трафика (GiB) для новых пользователей без оплат.",
+    )
 
 
 class PublicSiteLinksResponse(BaseModel):

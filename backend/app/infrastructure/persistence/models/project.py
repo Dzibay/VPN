@@ -60,6 +60,11 @@ class Project(Base):
     referral_fixed_first_payment_bonus_rub: Mapped[int | None] = mapped_column(Integer, nullable=True)
     referral_bonus_policy: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    trial_days_after_registration: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    trial_extra_days_referral_registration: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    trial_traffic_limit_gib: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    trial_traffic_limit_enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
     # --- Брендинг подписки (Happ) ---
     happ_provider_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: Баннер об истечении подписки (payload для yaml подписки).

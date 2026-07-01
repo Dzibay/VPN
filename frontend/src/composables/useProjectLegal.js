@@ -19,6 +19,10 @@ const EMPTY_TOKENS = {
   operatorInn: '',
   disputeJurisdiction: '',
   effectiveDate: '',
+  trialDays: 3,
+  trialExtraDaysReferral: 2,
+  trialDaysWithReferral: 5,
+  trialTrafficLimitGib: 20,
 }
 
 function hostnameFallback() {
@@ -68,6 +72,10 @@ function tokensFromApiLegal(legal) {
     operatorInn: String(legal.operator_inn || '').trim(),
     disputeJurisdiction: String(legal.dispute_jurisdiction || '').trim(),
     effectiveDate: String(legal.effective_date || '').trim(),
+    trialDays: Number(legal.trial_days_after_registration) || 3,
+    trialExtraDaysReferral: Number(legal.trial_extra_days_referral_registration) || 2,
+    trialDaysWithReferral: Number(legal.trial_days_with_referral) || 5,
+    trialTrafficLimitGib: Number(legal.trial_traffic_limit_gib) || 20,
   }
 }
 
