@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.subscription.validity import subscription_active_sql
 from app.domain.user_traffic import user_traffic_over_limit_sql
+from app.domain.tenant.project_context import get_current_project
 from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.user import User
 
@@ -75,10 +76,22 @@ _GROUP_CONDITIONS: dict[TelegramUserGroup, object] = {
 async def list_telegram_user_ids_by_group(
     session: AsyncSession,
     group: TelegramUserGroup,
+    *,
+    project_id: int | None = None,
 ) -> list[int]:
+    pid = project_id
+    if pid is None:
+        project = get_current_project()
+        if project is None:
+            return []
+        pid = int(project.id)
     stmt = (
         select(User.telegram_id)
-        .where(_telegram_users_base(), _GROUP_CONDITIONS[group])
+        .where(
+            User.project_id == int(pid),
+            _telegram_users_base(),
+            _GROUP_CONDITIONS[group],
+        )
         .order_by(User.telegram_id.asc())
     )
     rows = (await session.scalars(stmt)).all()

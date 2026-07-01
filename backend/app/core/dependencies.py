@@ -18,7 +18,7 @@ from app.core.exceptions import (
     UnauthorizedError,
 )
 from app.domain.tenant.project_cache import get_project_by_bot_secret, get_project_by_id
-from app.domain.tenant.project_context import ProjectContext
+from app.domain.tenant.project_context import ProjectContext, set_current_project
 from app.infrastructure.database.session import get_db, get_db_readonly
 
 SessionDep = Annotated[AsyncSession, Depends(get_db)]
@@ -212,6 +212,7 @@ def require_referral_links_api_key(
 
 
 async def require_telegram_bot_api_secret(
+    request: Request,
     x_telegram_bot_secret: Annotated[str | None, Header()] = None,
 ) -> ProjectContext:
     """
@@ -219,29 +220,33 @@ async def require_telegram_bot_api_secret(
     Возвращает найденный проект — endpoint может использовать его напрямую.
 
     Fallback: если проект по секрету не найден, но глобальный ``settings.telegram_bot_api_secret``
-    задан и совпадает — принимаем секрет и берём дефолтный проект id=1 (обратная совместимость).
+    задан и совпадает — принимаем секрет и берём дефолтный проект id=1 (обратная совместимость
+  для бота Подорожника). Секрет другого проекта без записи в БД → 401, не подмена на id=1.
     """
     got = (x_telegram_bot_secret or "").strip()
     if not got:
         raise UnauthorizedError(detail="Недействительный секрет бота")
 
     project = await get_project_by_bot_secret(got)
-    if project is not None:
-        return project
+    if project is None:
+        settings = get_settings()
+        expected = (settings.telegram_bot_api_secret or "").strip()
+        if expected and secrets.compare_digest(got, expected):
+            project = await get_project_by_id(1)
+            if project is None:
+                raise ServiceUnavailableError(
+                    detail="Дефолтный проект (id=1) отсутствует — миграция не выполнена",
+                )
+        else:
+            if not expected:
+                raise ServiceUnavailableError(
+                    detail="TELEGRAM_BOT_API_SECRET не задан: эндпоинт отключён",
+                )
+            raise UnauthorizedError(detail="Недействительный секрет бота")
 
-    settings = get_settings()
-    expected = (settings.telegram_bot_api_secret or "").strip()
-    if expected and secrets.compare_digest(got, expected):
-        legacy_project = await get_project_by_id(1)
-        if legacy_project is not None:
-            return legacy_project
-        raise ServiceUnavailableError(
-            detail="Дефолтный проект (id=1) отсутствует — миграция не выполнена",
-        )
-
-    if not expected and not project:
-        raise ServiceUnavailableError(detail="TELEGRAM_BOT_API_SECRET не задан: эндпоинт отключён")
-    raise UnauthorizedError(detail="Недействительный секрет бота")
+    request.state.project = project
+    set_current_project(project)
+    return project
 
 
 # =====================================================================

@@ -47,6 +47,7 @@ from app.domain.public_urls import (
 )
 from app.domain.referrals.registration_tasks import create_notify_ref_reg_task_if_applicable
 from app.domain.referrals.repository import increment_referral_counter
+from app.domain.tenant.project_context import ProjectContext
 from app.domain.users.identifiers import new_subscription_token, new_vless_uuid
 from app.domain.subscription.devices import (
     effective_subscription_device_limit,
@@ -156,6 +157,7 @@ async def account_me_from_user(
     cfg: Settings,
     *,
     api_role: str | None = None,
+    project: ProjectContext | None = None,
 ) -> AccountMeResponse:
     """Сборка ответа профиля по строке пользователя (роль из JWT или из ``jwt_role_for_user``)."""
     role = api_role if api_role is not None else jwt_role_for_user(user)
@@ -170,8 +172,8 @@ async def account_me_from_user(
         email=user.email,
         telegram_id=user.telegram_id,
         telegram_properties=user.telegram_properties,
-        telegram_bot_page_url=telegram_bot_public_page_url(cfg),
-        support_telegram_url=support_telegram_public_url(cfg),
+        telegram_bot_page_url=telegram_bot_public_page_url(cfg, project),
+        support_telegram_url=support_telegram_public_url(cfg, project),
         registered_at=user.registered_at,
         subscription_until=user.subscription_until,
         subscription_active=user_has_active_subscription(user, used_bytes=total_b),

@@ -129,17 +129,16 @@ class Settings(BaseSettings):
     telegram_bot_api_secret: str = Field(
         default="",
         description=(
-            "Секрет для POST /api/auth/telegram, POST /api/telegram/link, POST /api/telegram/site-link/start, "
-            "GET /api/telegram/referral/me, DELETE /api/telegram/subscription-devices/{device_id}, "
-            "GET /api/telegram/payments/tariffs, GET /api/telegram/payments/tribute-links, "
-            "POST /api/telegram/payments/yookassa/checkout, "
-            "POST /api/payments/tribute/webhook-test, "
-            "POST /api/payments/yookassa/webhook, "
-            "GET /api/telegram/notification-tasks, POST /api/telegram/notification-tasks/completed, "
-            "GET /api/telegram/users?group=..., GET /api/telegram/users/{topic_id} и "
-            "GET /api/telegram/subscription-open-clients: "
-            "заголовок X-Telegram-Bot-Secret (вызывает только бэкенд бота, не Telegram-клиент). "
-            "Пусто — эндпоинты отвечают 503."
+            "Секрет бота Подорожника (legacy / project id=1): POST /api/auth/telegram и остальные "
+            "/api/telegram/* с заголовком X-Telegram-Bot-Secret. Для других проектов — "
+            "projects.telegram_bot_api_secret в БД или HALYAL_TELEGRAM_BOT_API_SECRET в env."
+        ),
+    )
+    halyal_telegram_bot_api_secret: str = Field(
+        default="",
+        description=(
+            "Секрет бота Halyal VPN (проект slug=halyal). При старте API записывается в "
+            "projects.telegram_bot_api_secret, если там ещё пусто. Заголовок: X-Telegram-Bot-Secret."
         ),
     )
     site_address: str = Field(

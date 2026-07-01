@@ -143,9 +143,22 @@ async def fulfill_subscription_payment(
         enqueue_xray_clients_sync_for_access_change()
 
 
-async def find_user_by_telegram_id(session: AsyncSession, telegram_id: int) -> User | None:
-    stmt = select(User).where(User.telegram_id == int(telegram_id)).limit(1)
-    return (await session.scalars(stmt)).first()
+async def find_user_by_telegram_id(
+    session: AsyncSession,
+    telegram_id: int,
+    *,
+    project_id: int | None = None,
+) -> User | None:
+    from app.domain.users.telegram_lookup import user_by_telegram_id_in_project
+    from app.domain.tenant.project_context import get_current_project
+
+    pid = project_id
+    if pid is None:
+        project = get_current_project()
+        if project is None:
+            return None
+        pid = int(project.id)
+    return await user_by_telegram_id_in_project(session, int(telegram_id), int(pid))
 
 
 async def find_duplicate_payment_id(

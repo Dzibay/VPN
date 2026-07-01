@@ -1,4 +1,5 @@
 import logging
+from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
 
@@ -8,6 +9,7 @@ from app.core.dependencies import (
     SessionDep,
     require_telegram_bot_api_secret,
 )
+from app.domain.tenant.project_context import ProjectContext
 from app.domain.models.auth import (
     AccountLoginBody,
     AccountRegisterBody,
@@ -100,7 +102,6 @@ async def resend_verification_ep(
     response_model=TelegramAuthUserResponse,
     status_code=201,
     tags=["telegram"],
-    dependencies=[Depends(require_telegram_bot_api_secret)],
     summary=(
         "Аутентификация и регистрация через Telegram; ответ — профиль пользователя"
     ),
@@ -109,8 +110,9 @@ async def telegram_auth(
     body: TelegramAuthBody,
     session: SessionDep,
     background_tasks: BackgroundTasks,
+    project: Annotated[ProjectContext, Depends(require_telegram_bot_api_secret)],
 ) -> TelegramAuthUserResponse:
-    resp = await telegram_authenticate(session, body, settings)
+    resp = await telegram_authenticate(session, body, settings, project=project)
     if resp.is_new_user:
         background_tasks.add_task(enqueue_sync_xray_clients_all_servers)
     return resp

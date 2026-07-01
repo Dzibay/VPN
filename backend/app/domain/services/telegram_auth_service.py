@@ -66,7 +66,12 @@ from app.domain.services.auth_service import account_me_from_user
 from app.domain.public_urls import public_spa_base_url, telegram_bot_public_page_url
 from app.domain.referrals.registration_tasks import create_notify_ref_reg_task_if_applicable
 from app.domain.referrals.repository import increment_referral_counter
+from app.domain.tenant.project_context import ProjectContext, get_current_project
 from app.domain.users.identifiers import new_subscription_token, new_vless_uuid
+from app.domain.users.telegram_lookup import (
+    require_project_context,
+    user_by_telegram_id_in_project,
+)
 from app.domain.subscription.traffic_limit import apply_default_traffic_limit_for_new_client
 from app.domain.subscription.validity import (
     subscription_until_after_registration,
@@ -85,29 +90,33 @@ async def telegram_authenticate(
     session: AsyncSession,
     body: TelegramAuthBody,
     cfg: Settings,
+    *,
+    project: ProjectContext,
 ) -> TelegramAuthUserResponse:
     """Аутентификация и регистрация по ``telegram_id`` (вызывается ботом).
 
-    Если такого ``telegram_id`` ещё нет — создаём нового пользователя с триал-подпиской и
-    учитываем реферальный токен (клик и регистрацию). Если есть — лишь обновляем профиль
-    при наличии новых полей.
+    Учётная запись изолирована по ``project.id`` (один telegram_id может быть в разных проектах).
     """
     tid = body.telegram_id
+    project_id = int(project.id)
     profile = merge_telegram_auth_profile(body, None)
-    stmt = select(User).where(User.telegram_id == tid).limit(1)
-    user = (await session.scalars(stmt)).first()
+    user = await user_by_telegram_id_in_project(session, tid, project_id)
     is_new_user = False
     if user is None:
         rlink: ReferralLink | None = None
         if body.referral_token:
             rstmt = (
                 select(ReferralLink)
-                .where(ReferralLink.token == body.referral_token)
+                .where(
+                    ReferralLink.token == body.referral_token,
+                    ReferralLink.project_id == project_id,
+                )
                 .limit(1)
             )
             rlink = (await session.scalars(rstmt)).first()
         trial_extra = trial_extra_days_for_referral_link(rlink)
         user = User(
+            project_id=project_id,
             email=None,
             password_hash=None,
             telegram_id=tid,
@@ -123,11 +132,7 @@ async def telegram_authenticate(
         except IntegrityError as e:
             log.warning("telegram register conflict, refetch: %s", e)
             await session.rollback()
-            user = (
-                await session.scalars(
-                    select(User).where(User.telegram_id == tid).limit(1),
-                )
-            ).first()
+            user = await user_by_telegram_id_in_project(session, tid, project_id)
             if user is None:
                 raise ConflictError(
                     "Не удалось создать или найти пользователя по telegram_id",
@@ -149,7 +154,7 @@ async def telegram_authenticate(
         await session.flush()
 
     bind_request_subject_user(int(user.id), source="telegram_bot_auth")
-    me = await account_me_from_user(session, user, cfg)
+    me = await account_me_from_user(session, user, cfg, project=project)
     return TelegramAuthUserResponse(**me.model_dump(), is_new_user=is_new_user)
 
 
@@ -175,10 +180,14 @@ async def telegram_link_web_account(
     target = await session.get(User, uid)
     if target is None:
         raise BadRequestError("Пользователь по токену не найден")
+    if int(target.project_id) != project_id:
+        raise BadRequestError("Токен привязки относится к другому проекту")
     if target.telegram_id is not None:
         raise ConflictError("Этот аккаунт уже привязан к Telegram")
 
     tid = body.telegram_id
+    project = require_project_context()
+    project_id = int(project.id)
     auth_fragment = TelegramAuthBody(
         telegram_id=tid,
         username=body.username,
@@ -187,7 +196,10 @@ async def telegram_link_web_account(
         topic_id=body.topic_id,
     )
 
-    stmt = select(User).where(User.telegram_id == tid).limit(1)
+    stmt = select(User).where(
+        User.telegram_id == tid,
+        User.project_id == project_id,
+    ).limit(1)
     other = (await session.scalars(stmt)).first()
 
     merged = False
@@ -232,7 +244,11 @@ async def telegram_site_link_start(
     SSO-ссылку в кабинет (через JWT во фрагменте URL); иначе — одноразовую ссылку на форму
     ввода email и пароля.
     """
-    stmt = select(User).where(User.telegram_id == body.telegram_id).limit(1)
+    project = require_project_context()
+    stmt = select(User).where(
+        User.telegram_id == body.telegram_id,
+        User.project_id == int(project.id),
+    ).limit(1)
     user = (await session.scalars(stmt)).first()
     if user is None:
         raise NotFoundError(
@@ -244,7 +260,7 @@ async def telegram_site_link_start(
 
     mail = (getattr(user, "email", None) or "").strip()
     if mail and user.password_hash:
-        base = public_spa_base_url(cfg)
+        base = public_spa_base_url(cfg, project)
         if not base:
             raise ServiceUnavailableError(
                 "Не задан публичный URL SPA: задайте SITE_ADDRESS в окружении (полный URL или host[:port]).",
@@ -269,7 +285,7 @@ async def telegram_site_link_start(
     if not ok:
         raise ConflictError(reason or "Нельзя добавить данные сайта для этого аккаунта")
 
-    base = public_spa_base_url(cfg)
+    base = public_spa_base_url(cfg, project)
     if not base:
         raise ServiceUnavailableError(
             "Не задан публичный URL SPA: задайте SITE_ADDRESS в окружении (полный URL или host[:port]).",

@@ -191,6 +191,41 @@ async def _bootstrap_projects(session: AsyncSession, specs: list[_ProjectSpec]) 
     return changed
 
 
+async def _sync_per_project_bot_secrets_from_env(
+    session: AsyncSession, settings: Settings
+) -> bool:
+    """Заполняет пустые projects.telegram_bot_api_secret из env (per-slug)."""
+    mapping: list[tuple[str, str]] = [
+        ("halyal", settings.halyal_telegram_bot_api_secret),
+    ]
+    changed = False
+    for slug, raw in mapping:
+        secret = (raw or "").strip()
+        if not secret:
+            continue
+        row = (
+            await session.execute(select(Project).where(Project.slug == slug))
+        ).scalars().first()
+        if row is None:
+            log.warning(
+                "BOT_SECRET bootstrap: проект %s не найден — секрет из env пропущен", slug
+            )
+            continue
+        if row.telegram_bot_api_secret:
+            continue
+        row.telegram_bot_api_secret = secret
+        log.info("BOT_SECRET bootstrap: записан секрет для проекта %s", slug)
+        changed = True
+    if changed:
+        try:
+            await session.commit()
+        except Exception:  # noqa: BLE001
+            await session.rollback()
+            log.exception("BOT_SECRET bootstrap: ошибка коммита")
+            return False
+    return changed
+
+
 async def _upsert_staff(session: AsyncSession, spec: _StaffSpec) -> StaffUser | None:
     """Создаёт или обновляет staff. Возвращает None при ошибке."""
     row = (
@@ -310,8 +345,9 @@ async def bootstrap_from_env(session: AsyncSession, settings: Settings) -> None:
     # 1. Проекты сначала — чтобы staff-managers могли на них ссылаться.
     project_specs = _parse_projects(settings.bootstrap_projects)
     projects_changed = await _bootstrap_projects(session, project_specs)
+    secrets_changed = await _sync_per_project_bot_secrets_from_env(session, settings)
 
-    if projects_changed:
+    if projects_changed or secrets_changed:
         # Кэш проектов должен подхватить новые домены.
         try:
             from app.domain.tenant.project_cache import invalidate as _invalidate_projects
