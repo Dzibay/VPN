@@ -6,6 +6,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy import select
 
 from app.config import settings
 from app.core.dependencies import SessionDep, get_staff_principal
@@ -13,6 +14,7 @@ from app.domain.services.staff_auth_service import (
     authenticate_staff,
     staff_last_login_iso,
 )
+from app.infrastructure.persistence.models.staff_user import StaffUser
 
 router = APIRouter(prefix="/staff/auth", tags=["staff"])
 
@@ -59,24 +61,28 @@ async def staff_login(body: StaffLoginRequest, session: SessionDep) -> StaffLogi
 
 
 @router.get("/me", response_model=StaffProfileResponse, summary="Текущий staff-пользователь")
-async def staff_me(claims=Depends(get_staff_principal)) -> StaffProfileResponse:
-    from sqlalchemy import select
-    from app.infrastructure.database.session import AsyncSessionLocal
-    from app.infrastructure.persistence.models.staff_user import StaffUser
+async def staff_me(
+    session: SessionDep,
+    claims=Depends(get_staff_principal),
+) -> StaffProfileResponse:
+    from app.domain.services.staff_auth_service import _load_projects_for
 
-    async with AsyncSessionLocal() as session:
-        row = (
-            await session.execute(select(StaffUser).where(StaffUser.id == claims.staff_user_id))
-        ).scalars().first()
+    row = (
+        await session.execute(select(StaffUser).where(StaffUser.id == claims.staff_user_id))
+    ).scalars().first()
     if row is None:
         from app.core.exceptions import UnauthorizedError
 
         raise UnauthorizedError(detail="Staff-пользователь удалён")
+    if row.role == "super_admin":
+        projects: list[int] | None = None
+    else:
+        projects = await _load_projects_for(session, int(row.id))
     return StaffProfileResponse(
         id=int(row.id),
         email=row.email,
         full_name=row.full_name,
         role=row.role,  # type: ignore[arg-type]
-        projects=claims.projects,
+        projects=projects,
         last_login_at=staff_last_login_iso(row.last_login_at),
     )

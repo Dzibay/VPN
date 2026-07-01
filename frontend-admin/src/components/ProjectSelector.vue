@@ -6,37 +6,65 @@ import {
   getCurrentProject,
   getStaffProfile,
   setCurrentProject,
+  updateStaffProfile,
 } from '../auth/staffSession.js'
 
 const router = useRouter()
 const projects = ref([])
-const current = ref(getCurrentProject() || '__all__')
+const current = ref(getCurrentProject() || '')
 const loading = ref(false)
 const error = ref(null)
 
 const profile = computed(() => getStaffProfile())
 const isSuperAdmin = computed(() => profile.value?.role === 'super_admin')
-const allowedIds = computed(() => profile.value?.projects || null)
+const allowedIds = computed(() => {
+  const ids = profile.value?.projects
+  return Array.isArray(ids) && ids.length > 0 ? ids : null
+})
 
 const visibleProjects = computed(() => {
   if (isSuperAdmin.value) return projects.value
   if (!allowedIds.value) return []
-  const allowed = new Set(allowedIds.value)
-  return projects.value.filter((p) => allowed.has(p.id))
+  const allowed = new Set(allowedIds.value.map((id) => Number(id)))
+  return projects.value.filter((p) => allowed.has(Number(p.id)))
 })
+
+function syncCurrentSelection() {
+  if (isSuperAdmin.value) {
+    const ok =
+      current.value === '__all__'
+      || visibleProjects.value.some((p) => p.slug === current.value)
+    if (!ok) current.value = '__all__'
+    setCurrentProject(current.value === '__all__' ? '__all__' : current.value)
+    return
+  }
+
+  if (current.value === '__all__') current.value = ''
+
+  const visible = visibleProjects.value
+  if (!visible.length) {
+    current.value = ''
+    setCurrentProject(null)
+    return
+  }
+
+  if (!visible.some((p) => p.slug === current.value)) {
+    current.value = visible[0].slug
+  }
+  setCurrentProject(current.value)
+}
 
 async function load() {
   loading.value = true
   error.value = null
   try {
+    try {
+      const me = await apiFetch('/api/staff/auth/me', { withProject: false })
+      if (me) updateStaffProfile(me)
+    } catch (_) { /* profile из login достаточен */ }
+
     projects.value = await apiFetch('/api/admin/projects', { withProject: false })
-    const exists = projects.value.some((p) => p.slug === current.value)
-    if (!exists && current.value !== '__all__') {
-      current.value = isSuperAdmin.value
-        ? '__all__'
-        : (visibleProjects.value[0]?.slug ?? '')
-    }
-    setCurrentProject(current.value === '__all__' ? '__all__' : current.value)
+    syncCurrentSelection()
   } catch (e) {
     error.value = e.message
   } finally {
@@ -54,9 +82,10 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="project-selector">
+  <div v-if="isSuperAdmin || profile" class="project-selector">
     <label class="project-selector__label" for="admin-project-select">Проект</label>
     <select
+      v-if="isSuperAdmin || visibleProjects.length"
       id="admin-project-select"
       v-model="current"
       class="project-selector__select"
@@ -72,6 +101,10 @@ onMounted(load)
         {{ p.name }}
       </option>
     </select>
+    <span
+      v-else-if="!loading"
+      class="project-selector__empty"
+    >Нет проектов</span>
     <small v-if="error" class="project-selector__err">{{ error }}</small>
   </div>
 </template>
@@ -139,6 +172,14 @@ onMounted(load)
   color: var(--danger);
   font-size: 11px;
   white-space: nowrap;
+}
+
+.project-selector__empty {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 @media (max-width: 560px) {

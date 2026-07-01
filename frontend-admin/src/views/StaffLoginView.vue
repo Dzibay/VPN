@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiFetch } from '../api/client.js'
-import { setStaffSession } from '../auth/staffSession.js'
+import { setStaffSession, setCurrentProject, getCurrentProject } from '../auth/staffSession.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -23,6 +23,11 @@ async function submit() {
       withProject: false,
     })
     setStaffSession(res.access_token, res.profile)
+    if (res.profile.role === 'super_admin') {
+      if (!getCurrentProject()) setCurrentProject('__all__')
+    } else if (!getCurrentProject() || getCurrentProject() === '__all__') {
+      setCurrentProject(null)
+    }
     const redirect = route.query.redirect || '/dashboard'
     router.replace(redirect)
   } catch (e) {

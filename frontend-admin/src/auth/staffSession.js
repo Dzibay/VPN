@@ -36,6 +36,14 @@ export function setStaffSession(token, profile) {
   _syncLegacy(token, profile?.role)
 }
 
+/** Обновить profile без смены JWT (например после GET /api/staff/auth/me). */
+export function updateStaffProfile(profile) {
+  try {
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile || null))
+  } catch (_) { /* ignore */ }
+  _syncLegacy(getStaffToken(), profile?.role)
+}
+
 export function getStaffToken() {
   try { return localStorage.getItem(KEY) || null } catch (_) { return null }
 }
