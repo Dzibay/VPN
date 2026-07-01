@@ -14,7 +14,7 @@ const jsonErrors = ref({}) // key -> строка с текстом ошибки
 
 const canEdit = computed(() => getStaffProfile()?.role === 'super_admin')
 
-// Секции полей (label, key, тип, hint). Тип: text, secret, checkbox, number,
+// Секции полей (label, key, тип, hint). Тип: text, checkbox, number,
 // number-int (nullable), multiline (для JSON), array-csv (extra_domains через запятую).
 // key с точкой (например smtp_settings.host) собирается обратно в JSON-объект.
 const sections = [
@@ -42,7 +42,7 @@ const sections = [
     fields: [
       { key: 'telegram_bot_username', label: 'Bot username', type: 'text',
         hint: 'Без @, для ссылок вида t.me/<username>.' },
-      { key: 'telegram_bot_api_secret', label: 'Bot API secret', type: 'secret',
+      { key: 'telegram_bot_api_secret', label: 'Bot API secret', type: 'text',
         hint: 'Заголовок X-Telegram-Bot-Secret. Должен совпадать с секретом на стороне бота.' },
       { key: 'support_telegram_username', label: 'Support TG username', type: 'text' },
       { key: 'support_email', label: 'Support email', type: 'text' },
@@ -51,10 +51,10 @@ const sections = [
   {
     title: 'Платёжные системы',
     fields: [
-      { key: 'tribute_api_key', label: 'Tribute API key', type: 'secret',
+      { key: 'tribute_api_key', label: 'Tribute API key', type: 'text',
         hint: 'Оставить пустым — fallback на глобальный settings.tribute_api_key (если проект #1).' },
       { key: 'yookassa_shop_id', label: 'YooKassa shop_id', type: 'text' },
-      { key: 'yookassa_secret_key', label: 'YooKassa secret_key', type: 'secret' },
+      { key: 'yookassa_secret_key', label: 'YooKassa secret_key', type: 'text' },
       { key: 'yookassa_return_url', label: 'YooKassa return URL', type: 'text',
         hint: 'Например: https://<domain>/cabinet/pay/return' },
     ],
@@ -66,7 +66,7 @@ const sections = [
       { key: 'smtp_settings.port', label: 'SMTP port', type: 'number-int',
         hint: 'Обычно 587 для STARTTLS или 465 для SSL.' },
       { key: 'smtp_settings.username', label: 'SMTP username', type: 'text' },
-      { key: 'smtp_settings.password', label: 'SMTP password', type: 'secret' },
+      { key: 'smtp_settings.password', label: 'SMTP password', type: 'text' },
       { key: 'smtp_settings.from_email', label: 'From email', type: 'text' },
       { key: 'smtp_settings.from_name', label: 'From name', type: 'text' },
       { key: 'smtp_settings.use_tls', label: 'Use STARTTLS', type: 'checkbox' },
@@ -290,14 +290,6 @@ onMounted(load)
                   rows="4"
                   spellcheck="false"
                 ></textarea>
-              </template>
-              <template v-else-if="f.type === 'secret'">
-                <input
-                  type="password"
-                  v-model="editable[f.key]"
-                  :disabled="!canEdit"
-                  autocomplete="off"
-                />
               </template>
               <template v-else-if="f.type === 'number-int'">
                 <input

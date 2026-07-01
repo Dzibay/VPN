@@ -81,8 +81,8 @@ def _serialize_project(row: Project, *, include_secrets: bool = True) -> dict[st
 
 async def list_projects(session: AsyncSession) -> list[dict[str, Any]]:
     rows = (await session.execute(select(Project).order_by(Project.id))).scalars().all()
-    # В списке секреты маскируем (детальный экран отдельно).
-    return [_serialize_project(r, include_secrets=False) for r in rows]
+    # В списке и в деталях отдаём полные значения — админка только для super_admin.
+    return [_serialize_project(r, include_secrets=True) for r in rows]
 
 
 async def get_project(session: AsyncSession, project_id: int) -> dict[str, Any]:
@@ -138,7 +138,11 @@ async def delete_project(session: AsyncSession, project_id: int) -> None:
 # =============================================
 
 
-def _serialize_staff(row: StaffUser, projects: list[int] | None = None) -> dict[str, Any]:
+def _serialize_staff(
+    row: StaffUser,
+    projects: list[int] | None = None,
+    project_role: str | None = None,
+) -> dict[str, Any]:
     return {
         "id": int(row.id),
         "email": row.email,
@@ -146,6 +150,7 @@ def _serialize_staff(row: StaffUser, projects: list[int] | None = None) -> dict[
         "role": row.role,
         "is_active": bool(row.is_active),
         "projects": projects if projects is not None else [],
+        "project_role": project_role,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "last_login_at": row.last_login_at.isoformat() if row.last_login_at else None,
     }
@@ -158,15 +163,27 @@ async def list_staff_users(session: AsyncSession) -> list[dict[str, Any]]:
     ids = [int(r.id) for r in rows]
     access_rows = (
         await session.execute(
-            select(StaffUserProjectAccess.staff_user_id, StaffUserProjectAccess.project_id).where(
-                StaffUserProjectAccess.staff_user_id.in_(ids)
-            )
+            select(
+                StaffUserProjectAccess.staff_user_id,
+                StaffUserProjectAccess.project_id,
+                StaffUserProjectAccess.role,
+            ).where(StaffUserProjectAccess.staff_user_id.in_(ids))
         )
     ).all()
     projects_by_uid: dict[int, list[int]] = {}
-    for uid, pid in access_rows:
-        projects_by_uid.setdefault(int(uid), []).append(int(pid))
-    return [_serialize_staff(r, projects_by_uid.get(int(r.id), [])) for r in rows]
+    project_role_by_uid: dict[int, str] = {}
+    for uid, pid, access_role in access_rows:
+        uid_int = int(uid)
+        projects_by_uid.setdefault(uid_int, []).append(int(pid))
+        project_role_by_uid.setdefault(uid_int, str(access_role))
+    return [
+        _serialize_staff(
+            r,
+            projects_by_uid.get(int(r.id), []),
+            project_role_by_uid.get(int(r.id)),
+        )
+        for r in rows
+    ]
 
 
 async def create_staff_user(
@@ -208,7 +225,13 @@ async def create_staff_user(
             )
         await session.commit()
 
-    return _serialize_staff(staff, list(project_ids) if role != "super_admin" else None)
+    return _serialize_staff(
+        staff,
+        list(project_ids) if role != "super_admin" else None,
+        (payload.get("project_role") or ("admin" if role == "admin" else "manager"))
+        if role != "super_admin" and project_ids
+        else None,
+    )
 
 
 async def update_staff_user(
@@ -227,7 +250,13 @@ async def update_staff_user(
         if res.rowcount == 0:
             raise NotFoundError(detail="Staff не найден")
 
-    if "projects" in payload:
+    if "role" in payload and payload["role"] == "super_admin":
+        await session.execute(
+            delete(StaffUserProjectAccess).where(
+                StaffUserProjectAccess.staff_user_id == staff_user_id
+            )
+        )
+    elif "projects" in payload:
         await session.execute(
             delete(StaffUserProjectAccess).where(
                 StaffUserProjectAccess.staff_user_id == staff_user_id
@@ -252,12 +281,15 @@ async def update_staff_user(
         raise NotFoundError(detail="Staff не найден")
     access = (
         await session.execute(
-            select(StaffUserProjectAccess.project_id).where(
-                StaffUserProjectAccess.staff_user_id == staff_user_id
-            )
+            select(
+                StaffUserProjectAccess.project_id,
+                StaffUserProjectAccess.role,
+            ).where(StaffUserProjectAccess.staff_user_id == staff_user_id)
         )
     ).all()
-    return _serialize_staff(row, [int(r[0]) for r in access])
+    project_ids = [int(r[0]) for r in access]
+    project_role = str(access[0][1]) if access else None
+    return _serialize_staff(row, project_ids, project_role)
 
 
 async def delete_staff_user(session: AsyncSession, staff_user_id: int) -> None:
