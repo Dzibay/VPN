@@ -21,15 +21,17 @@ from app.domain.users.daily_stats import (
     count_users_with_subscription_device,
 )
 from app.domain.users.stats_qualification import user_counts_in_admin_stats
-from app.domain.tenant.admin_project_scope import admin_project_id, project_scope_clause
+from app.domain.tenant.admin_project_scope import (
+    admin_project_id,
+    merge_project_sql_params,
+    project_scope_clause,
+    user_table_project_filter_sql,
+)
 from app.infrastructure.persistence.models.payment import Payment
 from app.infrastructure.persistence.models.referral_link import ReferralLink
 from app.infrastructure.persistence.models.referral_link_group import ReferralLinkGroup
 from app.infrastructure.persistence.models.subscription_device import SubscriptionDevice
 from app.infrastructure.persistence.models.user import User
-
-
-_USER_PROJECT_SQL = "AND (:p_project_id IS NULL OR u.project_id = :p_project_id)"
 
 
 def _user_scope_filter():
@@ -268,8 +270,10 @@ async def _active_users_count_for_utc_date_by_links(
     cal_day: date,
     link_ids: list[int],
 ) -> int:
+    pid = admin_project_id()
+    user_project_sql = user_table_project_filter_sql("u", project_id=pid)
     stmt = text(
-        """
+        f"""
         WITH qualified AS (
             SELECT u.id
             FROM users u
@@ -281,7 +285,7 @@ async def _active_users_count_for_utc_date_by_links(
                     AND u.email_verified_at IS NOT NULL
                 )
             )
-            {_USER_PROJECT_SQL}
+            {user_project_sql}
             AND u.referral_link_id = ANY(:link_ids)
         ),
         traffic_cum AS (
@@ -322,7 +326,10 @@ async def _active_users_count_for_utc_date_by_links(
         (
             await session.execute(
                 stmt,
-                {"cal_day": cal_day, "link_ids": link_ids, "p_project_id": admin_project_id()},
+                merge_project_sql_params(
+                    {"cal_day": cal_day, "link_ids": link_ids},
+                    project_id=pid,
+                ),
             )
         ).scalar()
         or 0,

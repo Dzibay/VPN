@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { apiFetch } from '../api/client.js'
+import StaffProjectAccessPicker from '../components/StaffProjectAccessPicker.vue'
 
 const items = ref([])
 const projects = ref([])
@@ -19,13 +20,19 @@ const draft = ref({
 
 const projectById = computed(() => {
   const map = new Map()
-  for (const p of projects.value) map.set(p.id, p)
+  for (const p of projects.value) map.set(Number(p.id), p)
   return map
 })
 
+function normalizeProjectIds(ids) {
+  if (!Array.isArray(ids)) return []
+  return [...new Set(ids.map((id) => Number(id)).filter((id) => id > 0))].sort((a, b) => a - b)
+}
+
 function projectNames(ids) {
-  if (!ids?.length) return '—'
-  return ids
+  const normalized = normalizeProjectIds(ids)
+  if (!normalized.length) return '—'
+  return normalized
     .map((id) => {
       const p = projectById.value.get(id)
       return p ? `${p.name} (${p.slug})` : `#${id}`
@@ -39,7 +46,7 @@ function startEdit(u) {
     full_name: u.full_name || '',
     role: u.role,
     password: '',
-    projects: [...(u.projects || [])],
+    projects: normalizeProjectIds(u.projects),
     project_role: u.project_role || 'manager',
     is_active: u.is_active,
   }
@@ -64,6 +71,11 @@ async function load() {
 }
 
 async function submitCreate() {
+  const projectsPayload = normalizeProjectIds(draft.value.projects)
+  if (draft.value.role !== 'super_admin' && !projectsPayload.length) {
+    alert('Выберите хотя бы один проект')
+    return
+  }
   try {
     await apiFetch('/api/admin/staff-users', {
       method: 'POST',
@@ -73,7 +85,7 @@ async function submitCreate() {
         password: draft.value.password,
         full_name: draft.value.full_name || null,
         role: draft.value.role,
-        projects: draft.value.role === 'super_admin' ? [] : draft.value.projects,
+        projects: draft.value.role === 'super_admin' ? [] : projectsPayload,
         project_role: draft.value.project_role,
       },
     })
@@ -93,6 +105,11 @@ async function submitCreate() {
 
 async function saveEdit() {
   if (!editDraft.value || editingId.value == null) return
+  const projectsPayload = normalizeProjectIds(editDraft.value.projects)
+  if (editDraft.value.role !== 'super_admin' && !projectsPayload.length) {
+    alert('Выберите хотя бы один проект')
+    return
+  }
   const body = {
     full_name: editDraft.value.full_name || null,
     role: editDraft.value.role,
@@ -100,7 +117,7 @@ async function saveEdit() {
   }
   if (editDraft.value.password) body.password = editDraft.value.password
   if (editDraft.value.role !== 'super_admin') {
-    body.projects = editDraft.value.projects
+    body.projects = projectsPayload
     body.project_role = editDraft.value.project_role
   }
   try {
@@ -209,14 +226,10 @@ onMounted(load)
           <input v-model="editDraft.is_active" type="checkbox" />
         </label>
         <template v-if="editDraft.role !== 'super_admin'">
-          <label>
-            <span>Доступные проекты</span>
-            <select v-model="editDraft.projects" multiple size="5">
-              <option v-for="p in projects" :key="p.id" :value="p.id">
-                {{ p.name }} ({{ p.slug }}, id={{ p.id }})
-              </option>
-            </select>
-          </label>
+          <div class="field">
+            <span class="field__label">Доступные проекты</span>
+            <StaffProjectAccessPicker v-model="editDraft.projects" :projects="projects" />
+          </div>
           <label>
             <span>Роль внутри проектов</span>
             <select v-model="editDraft.project_role">
@@ -256,14 +269,10 @@ onMounted(load)
           </select>
         </label>
         <template v-if="draft.role !== 'super_admin'">
-          <label>
-            <span>Доступные проекты</span>
-            <select v-model="draft.projects" multiple size="5">
-              <option v-for="p in projects" :key="p.id" :value="p.id">
-                {{ p.name }} ({{ p.slug }}, id={{ p.id }})
-              </option>
-            </select>
-          </label>
+          <div class="field">
+            <span class="field__label">Доступные проекты</span>
+            <StaffProjectAccessPicker v-model="draft.projects" :projects="projects" />
+          </div>
           <label>
             <span>Роль внутри проектов</span>
             <select v-model="draft.project_role">
@@ -286,9 +295,15 @@ label {
   font-size: 12px;
   color: var(--text-muted);
 }
-label span {
+label span,
+.field__label {
   padding-left: 4px;
   font-family: monospace;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .row {
   display: flex;

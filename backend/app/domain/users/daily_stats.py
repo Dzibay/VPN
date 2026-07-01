@@ -44,8 +44,10 @@ from app.domain.traffic_daily import (
 from app.domain.users.stats_qualification import user_counts_in_admin_stats
 from app.domain.tenant.admin_project_scope import (
     admin_project_id,
+    merge_project_sql_params,
     project_scope_clause,
     rpc_project_params,
+    user_table_project_filter_sql,
 )
 from app.infrastructure.persistence.models.subscription_device import SubscriptionDevice
 from app.infrastructure.persistence.models.user import User
@@ -72,8 +74,6 @@ _DAILY_STATS_ROW_SQL = """
                active_users_with_payment_count,
                users_with_active_subscription_count
 """
-
-_USER_PROJECT_SQL = "AND (:p_project_id IS NULL OR u.project_id = :p_project_id)"
 
 
 def _rows_to_stats(rows: list) -> list[UserStatsByDateRow]:
@@ -276,6 +276,8 @@ async def daily_payments_expiry_stats(
     )
     if scope is not None:
         elig_stmt = elig_stmt.where(scope)
+    pid = admin_project_id()
+    user_project_sql = user_table_project_filter_sql("u", project_id=pid)
     elig_raw = (await session.execute(elig_stmt)).all()
     by_su: dict[date, list[int]] = defaultdict(list)
     for uid_raw, su_raw in elig_raw:
@@ -291,7 +293,7 @@ async def daily_payments_expiry_stats(
         INNER JOIN users u ON u.id = p.user_id
         WHERE u.registered_at IS NOT NULL
           AND u.subscription_until IS NOT NULL
-          {_USER_PROJECT_SQL}
+          {user_project_sql}
           AND (
               u.telegram_id IS NOT NULL
               OR (
@@ -303,7 +305,7 @@ async def daily_payments_expiry_stats(
         GROUP BY 1
         """,
     )
-    pay_rows = (await session.execute(pay_stmt, {"p_project_id": admin_project_id()})).all()
+    pay_rows = (await session.execute(pay_stmt, merge_project_sql_params(project_id=pid))).all()
     pay_by: dict[date, int] = {row[0]: int(row[1] or 0) for row in pay_rows if row[0] is not None}
 
     pay_split_stmt = text(
@@ -318,7 +320,7 @@ async def daily_payments_expiry_stats(
             INNER JOIN users u ON u.id = p.user_id
             WHERE u.registered_at IS NOT NULL
               AND u.subscription_until IS NOT NULL
-              {_USER_PROJECT_SQL}
+              {user_project_sql}
               AND (
                   u.telegram_id IS NOT NULL
                   OR (
@@ -337,7 +339,7 @@ async def daily_payments_expiry_stats(
         """,
     )
     pay_split_rows = (
-        await session.execute(pay_split_stmt, {"p_project_id": admin_project_id()})
+        await session.execute(pay_split_stmt, merge_project_sql_params(project_id=pid))
     ).all()
     pay_first_by: dict[date, int] = {
         row[0]: int(row[1] or 0) for row in pay_split_rows if row[0] is not None
@@ -353,7 +355,7 @@ async def daily_payments_expiry_stats(
         INNER JOIN users u ON u.id = p.user_id
         WHERE u.registered_at IS NOT NULL
           AND u.subscription_until IS NOT NULL
-          {_USER_PROJECT_SQL}
+          {user_project_sql}
           AND (
               u.telegram_id IS NOT NULL
               OR (
@@ -366,7 +368,7 @@ async def daily_payments_expiry_stats(
     )
     paid_uids = {
         int(row[0])
-        for row in (await session.execute(paid_uids_stmt, {"p_project_id": admin_project_id()})).all()
+        for row in (await session.execute(paid_uids_stmt, merge_project_sql_params(project_id=pid))).all()
         if row[0] is not None
     }
     expiring_paid_by: dict[date, int] = defaultdict(int)
@@ -567,6 +569,8 @@ async def daily_payments_expiry_day_detail(
     )
     if scope is not None:
         elig_stmt = elig_stmt.where(scope)
+    pid = admin_project_id()
+    user_project_sql = user_table_project_filter_sql("u", project_id=pid)
     elig_raw = (await session.execute(elig_stmt)).all()
     by_su: dict[date, list[int]] = defaultdict(list)
     for uid_raw, su_raw in elig_raw:
@@ -582,7 +586,7 @@ async def daily_payments_expiry_day_detail(
         INNER JOIN users u ON u.id = p.user_id
         WHERE u.registered_at IS NOT NULL
           AND u.subscription_until IS NOT NULL
-          {_USER_PROJECT_SQL}
+          {user_project_sql}
           AND (
               u.telegram_id IS NOT NULL
               OR (
@@ -595,7 +599,7 @@ async def daily_payments_expiry_day_detail(
     )
     paid_uids = {
         int(row[0])
-        for row in (await session.execute(paid_uids_stmt, {"p_project_id": admin_project_id()})).all()
+        for row in (await session.execute(paid_uids_stmt, merge_project_sql_params(project_id=pid))).all()
         if row[0] is not None
     }
 
@@ -615,7 +619,7 @@ async def daily_payments_expiry_day_detail(
             INNER JOIN users u ON u.id = p.user_id
             WHERE u.registered_at IS NOT NULL
               AND u.subscription_until IS NOT NULL
-              {_USER_PROJECT_SQL}
+              {user_project_sql}
               AND (
                   u.telegram_id IS NOT NULL
                   OR (
@@ -634,7 +638,7 @@ async def daily_payments_expiry_day_detail(
     pay_rows = (
         await session.execute(
             pay_detail_stmt,
-            {"day": day, "p_project_id": admin_project_id()},
+            merge_project_sql_params({"day": day}, project_id=pid),
         )
     ).all()
     paid_on_day_uids = {
@@ -770,8 +774,10 @@ async def active_users_count_for_utc_date(
 ) -> int:
     """«Активные» за календарный день UTC по ``traffic_date`` (воронка рефералов)."""
 
+    pid = admin_project_id()
+    user_project_sql = user_table_project_filter_sql("u", project_id=pid)
     user_filter_sql = ""
-    params: dict[str, object] = {"cal_day": cal_day, "p_project_id": admin_project_id()}
+    params = merge_project_sql_params({"cal_day": cal_day}, project_id=pid)
     if referral_link_id is not None:
         user_filter_sql = "AND u.referral_link_id = :referral_link_id"
         params["referral_link_id"] = referral_link_id
@@ -789,7 +795,7 @@ async def active_users_count_for_utc_date(
                     AND u.email_verified_at IS NOT NULL
                 )
             )
-            {_USER_PROJECT_SQL}
+            {user_project_sql}
             {user_filter_sql}
         ),
         traffic_cum AS (

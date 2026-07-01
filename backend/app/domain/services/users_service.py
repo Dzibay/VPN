@@ -41,7 +41,12 @@ from app.domain.users.stats_qualification import (
     user_counts_in_admin_stats,
     user_unverified_email_without_telegram,
 )
-from app.domain.tenant.admin_project_scope import admin_project_id, project_scope_clause
+from app.domain.tenant.admin_project_scope import (
+    admin_project_id,
+    merge_project_sql_params,
+    project_scope_clause,
+    user_table_project_filter_sql,
+)
 from app.infrastructure.cache import get_redis
 from app.domain.users.search import search_staff_users
 from app.domain.users.staff_listing import (
@@ -161,7 +166,7 @@ async def users_count(session: AsyncSession) -> UsersCountResponse:
         or 0,
     )
 
-    _project_sql = "AND (:p_project_id IS NULL OR u.project_id = :p_project_id)"
+    project_sql = user_table_project_filter_sql("u", project_id=pid)
     gap_overall_stmt = text(
         f"""
         WITH ordered AS (
@@ -169,7 +174,7 @@ async def users_count(session: AsyncSession) -> UsersCountResponse:
             FROM users u
             WHERE u.registered_at IS NOT NULL
               AND u.subscription_until IS NOT NULL
-              {_project_sql}
+              {project_sql}
               AND (
                   u.telegram_id IS NOT NULL
                   OR (
@@ -197,7 +202,7 @@ async def users_count(session: AsyncSession) -> UsersCountResponse:
               AND u.subscription_until IS NOT NULL
               AND u.registered_at >= :start_today
               AND u.registered_at < :end_today
-              {_project_sql}
+              {project_sql}
               AND (
                   u.telegram_id IS NOT NULL
                   OR (
@@ -216,9 +221,17 @@ async def users_count(session: AsyncSession) -> UsersCountResponse:
         SELECT AVG(gap_ms) FROM gaps WHERE gap_ms IS NOT NULL
         """,
     )
-    gap_params = {"p_project_id": pid, "start_today": start_today, "end_today": end_today}
-    gap_overall_raw = await session.scalar(gap_overall_stmt, {"p_project_id": pid})
-    gap_today_raw = await session.scalar(gap_today_stmt, gap_params)
+    gap_overall_raw = await session.scalar(
+        gap_overall_stmt,
+        merge_project_sql_params(project_id=pid),
+    )
+    gap_today_raw = await session.scalar(
+        gap_today_stmt,
+        merge_project_sql_params(
+            {"start_today": start_today, "end_today": end_today},
+            project_id=pid,
+        ),
+    )
     gap_overall = float(gap_overall_raw) if gap_overall_raw is not None else None
     gap_today = float(gap_today_raw) if gap_today_raw is not None else None
 

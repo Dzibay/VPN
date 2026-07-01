@@ -138,6 +138,20 @@ async def delete_project(session: AsyncSession, project_id: int) -> None:
 # =============================================
 
 
+def _normalize_project_ids(raw: object) -> list[int]:
+    if not isinstance(raw, (list, tuple)):
+        return []
+    out: list[int] = []
+    for item in raw:
+        try:
+            pid = int(item)
+        except (TypeError, ValueError):
+            continue
+        if pid > 0 and pid not in out:
+            out.append(pid)
+    return out
+
+
 def _serialize_staff(
     row: StaffUser,
     projects: list[int] | None = None,
@@ -212,14 +226,16 @@ async def create_staff_user(
         raise ConflictError(detail=f"Не удалось создать staff: {e}") from e
     await session.refresh(staff)
 
-    project_ids = payload.get("projects") or []
-    if role != "super_admin" and project_ids:
+    project_ids = _normalize_project_ids(payload.get("projects"))
+    if role != "super_admin" and not project_ids:
+        raise ConflictError(detail="Укажите хотя бы один проект")
+    if role != "super_admin":
         access_role = payload.get("project_role") or ("admin" if role == "admin" else "manager")
         for pid in project_ids:
             session.add(
                 StaffUserProjectAccess(
                     staff_user_id=int(staff.id),
-                    project_id=int(pid),
+                    project_id=pid,
                     role=access_role,
                 )
             )
@@ -227,9 +243,9 @@ async def create_staff_user(
 
     return _serialize_staff(
         staff,
-        list(project_ids) if role != "super_admin" else None,
+        project_ids if role != "super_admin" else None,
         (payload.get("project_role") or ("admin" if role == "admin" else "manager"))
-        if role != "super_admin" and project_ids
+        if role != "super_admin"
         else None,
     )
 
@@ -257,17 +273,27 @@ async def update_staff_user(
             )
         )
     elif "projects" in payload:
+        new_role = payload.get("role")
+        effective_role = new_role if new_role in ("super_admin", "admin", "manager") else None
+        if effective_role is None:
+            row = (
+                await session.execute(select(StaffUser).where(StaffUser.id == staff_user_id))
+            ).scalars().first()
+            effective_role = row.role if row is not None else "manager"
+        project_ids = _normalize_project_ids(payload.get("projects"))
+        if effective_role != "super_admin" and not project_ids:
+            raise ConflictError(detail="Укажите хотя бы один проект")
         await session.execute(
             delete(StaffUserProjectAccess).where(
                 StaffUserProjectAccess.staff_user_id == staff_user_id
             )
         )
         access_role = payload.get("project_role") or "manager"
-        for pid in payload.get("projects") or []:
+        for pid in project_ids:
             session.add(
                 StaffUserProjectAccess(
                     staff_user_id=int(staff_user_id),
-                    project_id=int(pid),
+                    project_id=pid,
                     role=access_role,
                 )
             )
