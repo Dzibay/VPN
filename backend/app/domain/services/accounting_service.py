@@ -214,8 +214,13 @@ async def get_accounting_summary(
                 SUM(r.amount)::numeric(14, 2) AS gross,
                 SUM(r.net_amount)::numeric(14, 2) AS net
             FROM refunds r
+            LEFT JOIN users ru ON ru.id = r.user_id
+            LEFT JOIN payments rp ON rp.id = r.payment_id
             WHERE r.status = 'succeeded'
-              AND (:p_project_id IS NULL OR r.project_id = :p_project_id)
+              AND (
+                  :p_project_id IS NULL
+                  OR COALESCE(ru.project_id, rp.project_id) = :p_project_id
+              )
               AND date_trunc('month', r.refunded_on)::date
                   BETWEEN date_trunc('month', CAST(:p_from AS date))::date
                       AND date_trunc('month', CAST(:p_to AS date))::date

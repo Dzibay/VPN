@@ -59,9 +59,14 @@ SELECT jsonb_build_object(
     COALESCE((
         SELECT SUM(r.net_amount)
         FROM refunds r
+        LEFT JOIN users ru ON ru.id = r.user_id
+        LEFT JOIN payments rp ON rp.id = r.payment_id
         WHERE r.status = 'succeeded'
           AND r.refunded_on <= p_as_of
-          AND (p_project_id IS NULL OR r.project_id = p_project_id)
+          AND (
+              p_project_id IS NULL
+              OR COALESCE(ru.project_id, rp.project_id) = p_project_id
+          )
     ), 0)::text,
     'withdrawals',
     COALESCE((
